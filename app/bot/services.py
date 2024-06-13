@@ -19,7 +19,7 @@ class CredexBotService:
         self.user = user
         self.body = self.message['message']
 
-        # Registering Methods Needed To Handle This Particular Stage 
+        # Registering Methods Needed To Handle This Particular Stage
         """ 
             I dynamically add methods to the class 
             to  avoid cluttering the class and file 
@@ -30,7 +30,7 @@ class CredexBotService:
                 check balane handler
         """
 
-        # Load 
+        # Load
         state = self.user.state
         print("####### ", self.user.state)
         current_state = state.get_state(self.user)
@@ -53,8 +53,8 @@ class CredexBotService:
             current_state = current_state.state
 
         # IF THERE IS NO MEMBER DETAILS IN STATE THE REFRESH MEMBER/FETCH INFO
-        if not current_state.get('member'):
-            self.refresh()
+        # if not current_state.get('member'):
+        #     self.refresh()
 
         # OVERRIDE FLOW IF USER WANTS TO ACCEPT, DECLINE OR CANCEL CREDEXES AND ROUTE TO THE APPROPRIATE METHOD
         if f"{self.body}".startswith("accept_") or f"{self.body}".startswith("cancel_") or f"{self.body}".startswith(
@@ -156,8 +156,16 @@ class CredexBotService:
                             username=self.body.get('email'),
                             phone=self.message['from']
                         ),
-                        x_is_menu=True
+                        x_is_menu=True, back_is_cancel=False
                     )
+                else:
+                    try:
+                        if "Phone number already in use" in response.json().get('message'):
+                            self.body = "hi"
+                            return self.handle_action_menu
+                    except Exception as e:
+                        pass
+                    print(response.content)
 
             return {
                 "messaging_product": "whatsapp",
@@ -175,8 +183,8 @@ class CredexBotService:
                             "flow_message_version": "3",
                             "flow_action": "navigate",
                             "flow_token": "not-used",
-                            "flow_id": "2132950867068712",
-                            "flow_cta": "Rgister",
+                            "flow_id": "3774779999457704",
+                            "flow_cta": "Register",
                             "flow_action_payload": {
                                 "screen": "REGISTRATION"
                             }
@@ -234,8 +242,8 @@ class CredexBotService:
                             "flow_message_version": "3",
                             "flow_action": "navigate",
                             "flow_token": "not-used",
-                            "flow_id": "2132950867068712",
-                            "flow_cta": "Rgister",
+                            "flow_id": "3774779999457704",
+                            "flow_cta": "Register",
                             "flow_action_payload": {
                                 "screen": "REGISTRATION"
                             }
@@ -255,6 +263,8 @@ class CredexBotService:
         secured = ""
         for item in current_state['member']['balanceData']['securedNetBalancesByDenom']:
             secured += f" *{item}* \n"
+
+        # print("Member >>> ", current_state['member'])
 
         return {
             "messaging_product": "whatsapp",
@@ -511,11 +521,11 @@ class CredexBotService:
         }
 
         response = requests.request("PUT", f"{config('CREDEX')}/acceptCredex", headers=headers, data=payload)
+        print(response.content)
         if response.status_code == 200:
             self.refresh()
-            if not response.json().get('Error'):
-                return self.wrap_text("> *🥳 Success*\n\n Offer successfully accepted!", x_is_menu=True,
-                                      back_is_cancel=False)
+            return self.wrap_text("> *🥳 Success*\n\n Offer successfully accepted!", x_is_menu=True,
+                                  back_is_cancel=False)
         return self.wrap_text("> *😞 Failed*\n\n Failed to accept offer!", x_is_menu=True, back_is_cancel=False)
 
     @property
@@ -538,9 +548,8 @@ class CredexBotService:
         response = requests.request("PUT", f"{config('CREDEX')}/declineCredex", headers=headers, data=payload)
         if response.status_code == 200:
             self.refresh()
-            if not response.json().get('Error'):
-                return self.wrap_text("> *🥳 Success*\n\n Offer successfully declined!", x_is_menu=True,
-                                      back_is_cancel=False)
+            return self.wrap_text("> *🥳 Success*\n\n Offer successfully declined!", x_is_menu=True,
+                                  back_is_cancel=False)
         return self.wrap_text("> *😞 Failed*\n\n Failed to decline offer!", x_is_menu=True, back_is_cancel=False)
 
     @property
@@ -563,9 +572,8 @@ class CredexBotService:
         response = requests.request("PUT", f"{config('CREDEX')}/cancelCredex", headers=headers, data=payload)
         if response.status_code == 200:
             self.refresh()
-            if not response.json().get('Error'):
-                return self.wrap_text("> *🥳 Success*\n\n Offer successfully cancelled!", x_is_menu=True,
-                                      back_is_cancel=False)
+            return self.wrap_text("> *🥳 Success*\n\n Offer successfully cancelled!", x_is_menu=True,
+                                  back_is_cancel=False)
         return self.wrap_text("> *😞 Failed*\n\n Failed to cancel offer!", x_is_menu=True, back_is_cancel=False)
 
     @property
@@ -608,7 +616,8 @@ class CredexBotService:
                         "interactive": {
                             "type": "button",
                             "body": {
-                                "text": ACCEPT_CREDEX.format(amount=item.get('title'), party=item.get('description'))
+                                "text": ACCEPT_CREDEX.format(amount=item.get('title'),
+                                                             party=item.get('description').replace(' ', '\n', 1))
                             },
                             "action": {
                                 "buttons": [
@@ -810,6 +819,7 @@ class CredexBotService:
         """THIS METHOD HANDLES OFFERING CREDEX LOGIC"""
         state = self.user.state
         current_state = state.get_state(self.user)
+        message = ''
 
         if not isinstance(current_state, dict):
             current_state = current_state.state
@@ -841,19 +851,21 @@ class CredexBotService:
                         "securedCredex": True
                     }
 
-            if "->" in f"{self.body}" and '=' in f"{self.body}":
-                amount, user_date = f"{self.body}".split('->')
-                user, date = user_date.split('=')
+            if "->" in f"{self.body}":
+                if '=' in f"{self.body}":
+                    amount, user_date = f"{self.body}".split('->')
+                    user, date = user_date.split('=')
 
-                try:
-                    from datetime import datetime
-                    # Try to parse the date string with the specified format
-                    datetime.strptime(date, '%Y-%m-%d')
+                    try:
+                        from datetime import datetime
+                        # Try to parse the date string with the specified format
+                        datetime.strptime(date, '%Y-%m-%d')
 
-                except ValueError:
-                    # If a ValueError is raised, the date string is not in the correct format
-                    return self.wrap_text(OFFER_CREDEX.format(message='*Invalid Due Date❗*'), x_is_menu=True)
-
+                    except ValueError:
+                        # If a ValueError is raised, the date string is not in the correct format
+                        return self.wrap_text(OFFER_CREDEX.format(message='*Invalid Due Date❗*'), x_is_menu=True)
+                else:
+                    return self.wrap_text(OFFER_CREDEX.format(message='*Missing Due Date❗*'), x_is_menu=True)
                 payload = {
                     "issuer_member_id": current_state['member']['memberData'].get('memberID'),
                     "handle": user,
@@ -889,14 +901,17 @@ class CredexBotService:
                     option="handle_action_confirm_offer_credex"
                 )
                 return self.wrap_text(response, use_buttons=True, yes_or_no=True)
-
-        cancelled = False
+            else:
+                for err in serializer.errors.keys():
+                    if "This field is required." != serializer.errors[err][0]:
+                        message = f'*{serializer.errors[err][0]}❗*'
+                        break
 
         if self.body in ['Y', 'y', 'yes', 'YES', 'Yes', 'n', 'NO', 'no', 'No', 'N', '1', '2', 'CANCEL', 'Cancel',
                          'cancel', 'CONFIRM', 'Confirm', 'confirm'] and current_state.get('confirm_offer_payload'):
             if self.body in ['n', 'NO', 'no', 'No', 'N', '2', 'CANCEL', 'Cancel', 'cancel']:
                 current_state.pop('confirm_offer_payload')
-                cancelled = True
+                message = '*Offer Cancelled By User❗*'
             else:
                 url = f"{config('CREDEX')}/offerCredex"
                 if current_state['confirm_offer_payload'].get('securedCredex'):
@@ -909,6 +924,7 @@ class CredexBotService:
                     'Content-Type': 'application/json'
                 }
                 response = requests.request("POST", url, headers=headers, data=payload)
+                print(response.content)
                 if response.status_code == 200:
                     response = response.json()
                     if response.get('credex'):
@@ -920,9 +936,16 @@ class CredexBotService:
                             currency=response['credex']['Denomination'],
                             recipient=confirm_offer_payload.pop('full_name'),
                             secured='yes' if to_credex['secured'] else 'no'
-                        ), x_is_menu=True, navigate_is="Menu", back_is_cancel=False)
+                        ), x_is_menu=True, back_is_cancel=False)
+                try:
+                    message = self.format_synopsis(response.get('message'))
+                    return self.wrap_text(OFFER_FAILED.format(message=message), x_is_menu=True, back_is_cancel=False)
+                except Exception as e:
+                    print("E : ", e)
+                    pass
+
                 confirm_offer_payload = current_state.pop('confirm_offer_payload', {})
-                return self.wrap_text(OFFER_FAILED, x_is_menu=True)
+                return self.wrap_text(OFFER_FAILED.format(message=''), x_is_menu=True, back_is_cancel=False)
 
         state.update_state(
             state=current_state,
@@ -931,7 +954,24 @@ class CredexBotService:
             option="handle_action_offer_credex"
         )
 
-        return self.wrap_text(OFFER_CREDEX.format(message='*Offer Cancelled By User❗*' if cancelled else ''))
+        return self.wrap_text(OFFER_CREDEX.format(message=message))
+
+    def format_synopsis(self, synopsis, style=None):
+        formatted_synopsis = ""
+        words = synopsis.split()
+        line_length = 0
+
+        for word in words:
+            # If adding the word exceeds the line length, start a new line
+            if line_length + len(word) + 1 > 30:
+                formatted_synopsis += "\n"
+                line_length = 0
+            if style:
+                word = f"{style}{word}{style}"
+            formatted_synopsis += word + " "
+            line_length += len(word) + 1
+
+        return formatted_synopsis.strip()
 
     def wrap_text(self, message, proceed_option=False, x_is_menu=False, include_back=False, navigate_is="Navigate",
                   extra_rows=[], number=None, back_is_cancel=False, use_buttons=False, yes_or_no=False, custom={}):
@@ -989,25 +1029,16 @@ class CredexBotService:
             }
         rows = extra_rows
 
-        if include_back:
-            rows.append({
-                "id": "back" if not back_is_cancel else 'X',
-                "title": "🔙 Back"
-            })
-
         if proceed_option == True:
             rows.append({
                 "id": "Y",
                 "title": "✅ Continue"
             })
         rows.append({
-                        "id": "X",
-                        "title": "❌ Cancel"
-                    } if not x_is_menu else {
             "id": "X",
             "title": "🏡 Menu"
         }
-                    )
+        )
         row_data = []
         keystore = []
         for row in rows:
@@ -1037,8 +1068,7 @@ class CredexBotService:
             }
         }
 
-        # @property
-
+    # @property
     # def handle_action_balance_enquiry(self):
     #     state = self.user.state
     #     current_state = state.get_state(self.user)
