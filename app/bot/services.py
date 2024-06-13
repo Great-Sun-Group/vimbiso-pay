@@ -265,8 +265,6 @@ class CredexBotService:
         for item in current_state['member']['balanceData']['securedNetBalancesByDenom']:
             secured += f" *{item}* \n"
 
-        # print("Member >>> ", current_state['member'])
-
         return {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -276,7 +274,7 @@ class CredexBotService:
                 "type": "list",
                 "body": {
                     "text": HOME.format(
-                        greeting=get_greeting(current_state['member']['memberData'].get('firstname')),
+                        greeting=get_greeting(current_state['member']['memberData'].get('displayName').split(' ')[0]),
                         balance=BALANCE.format(
                             securedNetBalancesByDenom=
                             current_state['member']['balanceData']['securedNetBalancesByDenom'][0] if
@@ -291,7 +289,8 @@ class CredexBotService:
                                 'netCredexAssetsInDefaultDenom']
                         ),
                         pending_in=pending_in,
-                        pending_out=pending_out
+                        pending_out=pending_out,
+                        handle=current_state['member']['memberData']['handle']
                     )
                 },
                 "action":
@@ -582,6 +581,21 @@ class CredexBotService:
         """THIS METHOD HANDLES ACCEPTING ALL INCOMING OFFERS"""
         state = self.user.state
         current_state = state.get_state(self.user)
+
+        payload = json.dumps({
+            "credexID": self.body.split("_")[-1],
+            "memberID": current_state['member']['memberData'].get('memberID')
+        })
+        headers = {
+            'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
+            'Content-Type': 'application/json'
+        }
+        response = requests.request("PUT", f"{config('CREDEX')}/acceptCredexBulk", headers=headers, data=payload)
+        if response.status_code == 200:
+            self.refresh()
+            return self.wrap_text("> *🥳 Success*\n\n Offer successfully declined!", x_is_menu=True,
+                                  back_is_cancel=False)
+        return self.wrap_text("> *😞 Failed*\n\n Failed to decline offer!", x_is_menu=True, back_is_cancel=False)
 
         if not isinstance(current_state, dict):
             current_state = current_state.state
@@ -916,7 +930,9 @@ class CredexBotService:
             else:
                 url = f"{config('CREDEX')}/offerCredex"
                 if current_state['confirm_offer_payload'].get('securedCredex'):
-                    secured = current_state['confirm_offer_payload'].pop('securedCredex')
+                    # secured = current_state['confirm_offer_payload'].pop('securedCredex')
+                    current_state['confirm_offer_payload'].pop('dueDate')
+                    current_state['confirm_offer_payload'].pop('full_name')
                 to_credex = current_state.get('confirm_offer_payload')
                 to_credex.pop("handle", None)
                 payload = json.dumps(current_state.get('confirm_offer_payload'))
@@ -924,19 +940,20 @@ class CredexBotService:
                     'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                     'Content-Type': 'application/json'
                 }
+                print("Sent : ", payload)
                 response = requests.request("POST", url, headers=headers, data=payload)
                 print(response.content)
                 if response.status_code == 200:
                     response = response.json()
                     if response.get('credex'):
-                        confirm_offer_payload = current_state.pop('confirm_offer_payload', {})
+                        current_state.pop('confirm_offer_payload', {})
                         self.refresh()
                         return self.wrap_text(OFFER_SUCCESSFUL.format(
-                            type=response['credex']['credexType'],
-                            amount=round(response['credex']['InitialAmount'] / response['credex']['CXXmultiplier'], 2),
-                            currency=response['credex']['Denomination'],
-                            recipient=confirm_offer_payload.pop('full_name'),
-                            secured='yes' if to_credex['secured'] else 'no'
+                            type='Secured Credex' if response['credex']['secured'] else 'Unsecured Credex',
+                            amount=response['credex']['formattedInitialAmount'],
+                            currency=current_state['member']['memberData']['defaultDenom'],
+                            recipient=response['credex']['counterpartyDisplayname'],
+                            secured='yes' if response['credex']['secured'] else 'no'
                         ), x_is_menu=True, back_is_cancel=False)
                 try:
                     message = self.format_synopsis(response.get('message'))
@@ -945,7 +962,7 @@ class CredexBotService:
                     print("E : ", e)
                     pass
 
-                confirm_offer_payload = current_state.pop('confirm_offer_payload', {})
+                current_state.pop('confirm_offer_payload', {})
                 return self.wrap_text(OFFER_FAILED.format(message=''), x_is_menu=True, back_is_cancel=False)
 
         state.update_state(
