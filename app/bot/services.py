@@ -53,8 +53,8 @@ class CredexBotService:
             current_state = current_state.state
 
         # IF THERE IS NO MEMBER DETAILS IN STATE THE REFRESH MEMBER/FETCH INFO
-        # if not current_state.get('member'):
-        #     self.refresh()
+        if not current_state.get('member'):
+            self.refresh()
 
         # OVERRIDE FLOW IF USER WANTS TO ACCEPT, DECLINE OR CANCEL CREDEXES AND ROUTE TO THE APPROPRIATE METHOD
         if f"{self.body}".startswith("accept_") or f"{self.body}".startswith("cancel_") or f"{self.body}".startswith(
@@ -202,55 +202,56 @@ class CredexBotService:
         if not isinstance(current_state, dict):
             current_state = current_state.state
 
-        payload = json.dumps({
-            "phone": self.message['from']
-        })
-        headers = {
-            'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-            'Content-Type': 'application/json'
-        }
+        if not current_state.get('member'):
+            payload = json.dumps({
+                "phone": self.message['from']
+            })
+            headers = {
+                'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
+                'Content-Type': 'application/json'
+            }
 
-        response = requests.request("GET", f"{config('CREDEX')}/getMemberByPhone", headers=headers, data=payload)
-        if response.status_code == 200:
-            current_state['member'] = response.json()
-            state.update_state(
-                state=current_state,
-                stage='handle_action_menu',
-                update_from="handle_action_menu",
-                option="handle_action_menu"
-            )
-        else:
-            state.update_state(
-                state=current_state,
-                stage='handle_action_register',
-                update_from="handle_action_menu",
-                option="handle_action_register"
-            )
-            return {
-                "messaging_product": "whatsapp",
-                "to": self.user.mobile_number,
-                "recipient_type": "individual",
-                "type": "interactive",
-                "interactive": {
-                    "type": "flow",
-                    "body": {
-                        "text": REGISTER
-                    },
-                    "action": {
-                        "name": "flow",
-                        "parameters": {
-                            "flow_message_version": "3",
-                            "flow_action": "navigate",
-                            "flow_token": "not-used",
-                            "flow_id": "3774779999457704",
-                            "flow_cta": "Register",
-                            "flow_action_payload": {
-                                "screen": "REGISTRATION"
+            response = requests.request("GET", f"{config('CREDEX')}/getMemberByPhone", headers=headers, data=payload)
+            if response.status_code == 200:
+                current_state['member'] = response.json()
+                state.update_state(
+                    state=current_state,
+                    stage='handle_action_menu',
+                    update_from="handle_action_menu",
+                    option="handle_action_menu"
+                )
+            else:
+                state.update_state(
+                    state=current_state,
+                    stage='handle_action_register',
+                    update_from="handle_action_menu",
+                    option="handle_action_register"
+                )
+                return {
+                    "messaging_product": "whatsapp",
+                    "to": self.user.mobile_number,
+                    "recipient_type": "individual",
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "flow",
+                        "body": {
+                            "text": REGISTER
+                        },
+                        "action": {
+                            "name": "flow",
+                            "parameters": {
+                                "flow_message_version": "3",
+                                "flow_action": "navigate",
+                                "flow_token": "not-used",
+                                "flow_id": "3774779999457704",
+                                "flow_cta": "Register",
+                                "flow_action_payload": {
+                                    "screen": "REGISTRATION"
+                                }
                             }
                         }
                     }
                 }
-            }
 
             # print(response.text)
         pending_in = 0
