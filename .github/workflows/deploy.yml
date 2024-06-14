@@ -41,6 +41,6 @@ jobs:
             cd /var/www/html/CredexBot-ec2 &&
             source venv/bin/activate &&
             pip install -r requirements.txt &&
-            python manage.py migrate &&
+            python app/manage.py migrate &&
             sudo systemctl restart gunicorn
           "
