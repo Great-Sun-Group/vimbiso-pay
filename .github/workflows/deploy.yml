@@ -1,5 +1,5 @@
 name: Deploy Credex-Bot to EC2
-run-name: ${{ github.actor }} pushed to auto-deployed with commit message '${{ github.event.head_commit.message }}'
+run-name: ${{ github.actor }} pushed to auto-deploy-setup with commit message '${{ github.event.head_commit.message }}'
 
 on:
   push:
@@ -37,7 +37,7 @@ jobs:
 
       - name: Install dependencies and deploy
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_IP }} "
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
             cd /var/www/html/CredexBot-ec2 &&
             source venv/bin/activate &&
             git pull &&
