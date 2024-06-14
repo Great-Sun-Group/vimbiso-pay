@@ -23,7 +23,7 @@ jobs:
           
       - name: Create .env file
         run: |
-          echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env
+          echo "SECRET_KEY"=${{ secrets.SECRET_KEY }} >> .env
         
       - name: Set up SSH deploy keys
         uses: webfactory/ssh-agent@v0.5.3
@@ -43,7 +43,6 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
             cd /var/www/html/CredexBot-ec2 &&
-            python -m venv venv &&
             source venv/bin/activate &&
             pip install -r requirements.txt &&
             python app/manage.py migrate &&
