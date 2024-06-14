@@ -28,8 +28,8 @@ jobs:
 
       - name: Add EC2 Host to Known Hosts
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.EC2_IP }} >> ~/.ssh/known_hosts
+            mkdir -p ~/.ssh
+            ssh-keyscan -H ${{ secrets.EC2_IP }} >> ~/.ssh/known_ho
 
       - name: Copy Project to EC2
         run: |
