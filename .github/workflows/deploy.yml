@@ -5,7 +5,7 @@ on:
   push:
     branches:
       # - auto-deployed
-      - auto-deploy-setup)
+      - auto-deploy-setup
   pull_request:
     branches:
       # - auto-deployed
@@ -35,11 +35,11 @@ jobs:
 
       - name: Copy Project to EC2
         run: |
-          rsync -avz -e "ssh -i ~/.ssh/id_rsa" ./* ec2-user@${{ secrets.EC2_IP }}:/var/www/html/CredexBot-ec2
+          rsync -avz -e "ssh -i ${{ secrets.SSH_KEY }}" ./* ec2-user@${{ secrets.EC2_IP }}:/var/www/html/CredexBot-ec2
 
       - name: Install dependencies and deploy
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_IP }} "
+          ssh -o StrictHostKeyChecking=no -i ${{ secrets.SSH_KEY }} ec2-user@${{ secrets.EC2_IP }} "
             cd /var/www/html/CredexBot-ec2 &&
             source venv/bin/activate &&
             git pull &&
