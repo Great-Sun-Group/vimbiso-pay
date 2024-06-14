@@ -4,10 +4,10 @@ run-name: ${{ github.actor }} pushed to auto-deploy-setup with commit message '$
 on:
   push:
     branches:
-      - auto-deploy-setup
+      - auto-deployed
   pull_request:
     branches:
-      - auto-deploy-setup
+      - auto-deployed
 
 jobs:
   deploy:
