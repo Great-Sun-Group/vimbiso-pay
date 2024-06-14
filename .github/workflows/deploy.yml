@@ -5,11 +5,11 @@ on:
   push:
     branches:
       # - auto-deployed
-      - auto-deploy-setup)
+      - auto-deploy-setup
   pull_request:
     branches:
       # - auto-deployed
-      - auto-deploy-setup)
+      - auto-deploy-setup
 
 jobs:
   deploy:
