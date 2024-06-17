@@ -1,0 +1,50 @@
+name: Deploy Credex-Bot to EC2
+run-name: ${{ github.actor }} pushed to auto-deploy-setup with commit message '${{ github.event.head_commit.message }}'
+
+on:
+  push:
+    branches:
+      - auto-deployed
+  pull_request:
+    branches:
+      - auto-deployed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+          
+      - name: Create .env file
+        run: |
+          echo "SECRET_KEY"=${{ secrets.SECRET_KEY }} >> .env
+        
+      - name: Set up SSH deploy keys
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      - name: Add EC2 Host to Known Hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.EC2_IP }} >> ~/.ssh/known_hosts
+
+      - name: Copy Project to EC2
+        run: |
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./* ec2-user@${{ secrets.EC2_IP }}:/var/www/html/CredexBot-ec2
+
+      - name: Install dependencies and deploy
+        run: |
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
+            cd /var/www/html/CredexBot-ec2 &&
+            source venv/bin/activate &&
+            pip install -r requirements.txt &&
+            python app/manage.py migrate &&
+            sudo systemctl restart gunicorn
+          "
