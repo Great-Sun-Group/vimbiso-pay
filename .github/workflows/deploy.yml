@@ -78,21 +78,4 @@ jobs:
             sudo systemctl restart gunicorn
           "
 
-      - name: Send email notification on failure
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.SMTP_SERVER }}
-          server_port: ${{ secrets.SMTP_PORT }}
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: 'Deployment failure notification'
-          to: ${{ secrets.EMAIL_TO }}
-          from: ${{ secrets.EMAIL_FROM }}
-          content_type: text/plain
-          body: |
-            The deployment failed for the following commit:
-            Commit ID: ${{ github.event.head_commit.id }}
-            Commit message: ${{ github.event.head_commit.message }}
-            Author: ${{ github.event.head_commit.author.name }}
-            Please check the logs for more details.
+      
