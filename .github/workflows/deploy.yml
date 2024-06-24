@@ -36,7 +36,12 @@ jobs:
       #     ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
       #       sudo cp -r /var/www/html/CredexBot-ec2 /var/www/html/CredexBot-ec2-backup
       #     "
-
+      - name: Set correct permissions for Gunicorn socket
+        run: |
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
+            sudo chown -R ec2-user:nginx /var/www/html/CredexBot-ec2 &&
+            sudo chmod -R 775 /var/www/html/CredexBot-ec2
+          "
       # - name: Create .env file
       #   run: |
       #     echo "SECRET_KEY"=${{ secrets.SECRET_KEY }} >> .env
