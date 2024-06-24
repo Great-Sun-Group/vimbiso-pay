@@ -60,9 +60,7 @@ jobs:
 
       - name: Copy Project to EC2
         run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "sudo mkdir -p /var/www/html/CredexBot-ec2"
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no" --delete ./ ec2-user@${{ secrets.EC2_IP }}:/var/www/html/CredexBot-ec2/
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "sudo chown -R ec2-user:ec2-user /var/www/html/CredexBot-ec2"
+         rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./* ec2-user@${{ secrets.EC2_IP }}:/var/www/html/CredexBot-ec2
 
       - name: Install dependencies and deploy
         run: |
