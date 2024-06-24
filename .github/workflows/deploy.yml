@@ -67,6 +67,6 @@ jobs:
           " || ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
             echo 'Deployment failed, reverting to last working version' &&
             sudo rm -rf /var/www/html/CredexBot-ec2 &&
-            mv /var/www/html/CredexBot-ec2-backup /var/www/html/CredexBot-ec2 &&
+            sudo mv /var/www/html/CredexBot-ec2-backup /var/www/html/CredexBot-ec2 &&
             sudo systemctl restart gunicorn
           "
