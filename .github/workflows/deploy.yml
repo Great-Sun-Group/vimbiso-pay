@@ -31,11 +31,11 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.EC2_IP }} >> ~/.ssh/known_hosts
 
-      - name: Create backup of current deployment
-        run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
-            sudo cp -r /var/www/html/CredexBot-ec2 /var/www/html/CredexBot-ec2-backup
-          "
+      # - name: Create backup of current deployment
+      #   run: |
+      #     ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
+      #       sudo cp -r /var/www/html/CredexBot-ec2 /var/www/html/CredexBot-ec2-backup
+      #     "
 
       # - name: Create .env file
       #   run: |
