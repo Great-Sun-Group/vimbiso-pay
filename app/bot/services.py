@@ -1409,7 +1409,7 @@ class CredexBotService:
             if not data.get('Error'):
                 data = data['memberData']
                 data['handle'] = self.body.lower()
-                current_state[f'authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}'] = data
+                current_state[f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}"] = data
                 state.update_state(
                     state=current_state,
                     stage='handle_action_authorize_member',
@@ -1438,7 +1438,6 @@ class CredexBotService:
                 url = f"{config('CREDEX')}/authorizeForCompany"
 
                 payload = json.dumps({
-                    "MemberIDtoBeAuthorized": current_state[f'authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}'].get('memberID'),
                     "MemberIDtoBeAuthorized": current_state[f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}"].get('memberID'),
                     "companyID": current_state['member'].get('defaultAccountData', {}).get('memberID'),
                     "ownerID": current_state['member']['loginData']['humanMemberData'].get('memberID')
@@ -1455,10 +1454,11 @@ class CredexBotService:
                     data = response.json()
                     print(data)
                     if not data.get('Error'):
-                        return self.wrap_text(AUTHORIZATION_SUCCESSFUL.format(member=current_state[f'authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}'].get('displayName'), company=current_state['member'].get('defaultAccountData', {}).get('displayName')), x_is_menu=True, back_is_cancel=False)
+                        return self.wrap_text(AUTHORIZATION_SUCCESSFUL.format(member=current_state[f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}"].get('displayName'), company=current_state['member'].get('defaultAccountData', {}).get('displayName')), x_is_menu=True, back_is_cancel=False)
                     else:
                         return self.wrap_text()
             return self.wrap_text(AUTHORIZATION_FAILED)
+
         
         state.update_state(
             state=current_state,
