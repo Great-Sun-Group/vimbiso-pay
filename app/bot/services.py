@@ -1439,7 +1439,7 @@ class CredexBotService:
 
                 payload = json.dumps({
                     "MemberIDtoBeAuthorized": current_state[f'authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}'].get('memberID'),
-                    "MemberHandleToBeAuthorized": current_state[f'authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}'].get('handle'),
+                    "MemberIDtoBeAuthorized": current_state[f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}"].get('memberID'),
                     "companyID": current_state['member'].get('defaultAccountData', {}).get('memberID'),
                     "ownerID": current_state['member']['loginData']['humanMemberData'].get('memberID')
                 })
