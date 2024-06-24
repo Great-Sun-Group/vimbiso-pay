@@ -36,13 +36,18 @@ jobs:
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
             sudo cp -r /var/www/html/CredexBot-ec2 /var/www/html/CredexBot-ec2-backup
           "
-          
+
+      - name: Copy Project to EC2
+        run: |
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no" --exclude 'venv' ./* ec2-user@${{ secrets.EC2_IP }}:/var/www/html/CredexBot-ec2
+
       - name: Set correct permissions for Gunicorn socket
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
             sudo chown -R ec2-user:nginx /var/www/html/CredexBot-ec2 &&
             sudo chmod -R 775 /var/www/html/CredexBot-ec2
           "
+
       # - name: Create .env file
       #   run: |
       #     echo "SECRET_KEY"=${{ secrets.SECRET_KEY }} >> .env
@@ -58,12 +63,6 @@ jobs:
       #     echo "Whatsapp_phone"=${{ secrets.WHATSAPP_PHONE_NUMBER_ID }} >> .env
       #     echo "Whatsapp_region"=${{ secrets.WHATSAPP_REGISTRATION_FLOW_ID }} >> .env
 
-      - name: Copy Project to EC2
-        run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "sudo mkdir -p /var/www/html/CredexBot-ec2 && sudo chown -R ec2-user:ec2-user /var/www/html/CredexBot-ec2"
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./* ec2-user@${{ secrets.EC2_IP }}:/var/www/html/CredexBot-ec2
-
-
       - name: Install dependencies and deploy
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
@@ -78,3 +77,22 @@ jobs:
             sudo mv /var/www/html/CredexBot-ec2-backup /var/www/html/CredexBot-ec2 &&
             sudo systemctl restart gunicorn
           "
+
+      - name: Send email notification on failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: 'Deployment failure notification'
+          to: ${{ secrets.EMAIL_TO }}
+          from: ${{ secrets.EMAIL_FROM }}
+          content_type: text/plain
+          body: |
+            The deployment failed for the following commit:
+            Commit ID: ${{ github.event.head_commit.id }}
+            Commit message: ${{ github.event.head_commit.message }}
+            Author: ${{ github.event.head_commit.author.name }}
+            Please check the logs for more details.
