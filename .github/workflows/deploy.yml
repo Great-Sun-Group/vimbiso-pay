@@ -34,7 +34,7 @@ jobs:
       - name: Create backup of current deployment
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
-            cp -r /var/www/html/CredexBot-ec2 /var/www/html/CredexBot-ec2-backup
+            sudo cp -r /var/www/html/CredexBot-ec2 /var/www/html/CredexBot-ec2-backup
           "
 
       # - name: Create .env file
