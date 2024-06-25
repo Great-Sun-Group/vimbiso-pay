@@ -20,8 +20,7 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: '3.x'
-          
-          
+
       - name: Set up SSH deploy keys
         uses: webfactory/ssh-agent@v0.5.3
         with:
@@ -38,8 +37,8 @@ jobs:
             if [ -d /var/www/html/CredexBot-ec2 ]; then
               sudo cp -r /var/www/html/CredexBot-ec2 /var/www/html/CredexBot-ec2-backup
             fi
-          "       
-     
+          "
+
       - name: Ensure target directory exists
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
@@ -50,7 +49,7 @@ jobs:
       - name: Copy Project to EC2
         run: |
           rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./* ec2-user@${{ secrets.EC2_IP }}:/var/www/html/CredexBot-ec2
-       
+
       - name: Install dependencies and deploy
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
@@ -58,9 +57,11 @@ jobs:
             rm -rf venv &&
             python3 -m venv venv &&
             source venv/bin/activate &&
-            pip install gunicorn
+            pip install gunicorn &&
             pip install -r requirements.txt &&
             python app/manage.py migrate &&
+            sudo chown -R ec2-user:ec2-user /var/www/html/CredexBot-ec2 &&
+            sudo chmod -R 775 /var/www/html/CredexBot-ec2 &&
             sudo systemctl restart gunicorn &&
             sudo systemctl restart nginx
           " || ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
@@ -69,9 +70,11 @@ jobs:
             sudo mv /var/www/html/CredexBot-ec2-backup/* /var/www/html/CredexBot-ec2/ &&
             cd /var/www/html/CredexBot-ec2 &&
             source venv/bin/activate &&
-            pip install gunicorn
+            pip install gunicorn &&
             pip install -r requirements.txt &&
             python app/manage.py migrate &&
+            sudo chown -R ec2-user:ec2-user /var/www/html/CredexBot-ec2 &&
+            sudo chmod -R 775 /var/www/html/CredexBot-ec2 &&
             sudo systemctl restart gunicorn &&
             sudo systemctl restart nginx
           "
