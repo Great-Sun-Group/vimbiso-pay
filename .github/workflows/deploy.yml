@@ -58,6 +58,7 @@ jobs:
             rm -rf venv &&
             python3 -m venv venv &&
             source venv/bin/activate &&
+            pip install gunicorn
             pip install -r requirements.txt &&
             python app/manage.py migrate &&
             sudo systemctl restart gunicorn &&
@@ -68,6 +69,7 @@ jobs:
             sudo mv /var/www/html/CredexBot-ec2-backup/* /var/www/html/CredexBot-ec2/ &&
             cd /var/www/html/CredexBot-ec2 &&
             source venv/bin/activate &&
+            pip install gunicorn
             pip install -r requirements.txt &&
             python app/manage.py migrate &&
             sudo systemctl restart gunicorn &&
