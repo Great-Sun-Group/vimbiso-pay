@@ -39,11 +39,12 @@ jobs:
             fi
           "
 
-      - name: Ensure target directory exists
+      - name: Ensure target directory exists and set permissions
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
             sudo mkdir -p /var/www/html/CredexBot-ec2 &&
-            sudo chown ec2-user:ec2-user /var/www/html/CredexBot-ec2
+            sudo chown -R ec2-user:ec2-user /var/www/html/CredexBot-ec2 &&
+            sudo chmod -R 775 /var/www/html/CredexBot-ec2
           "
 
       - name: Copy Project to EC2
