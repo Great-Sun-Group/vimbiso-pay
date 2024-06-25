@@ -31,10 +31,12 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.EC2_IP }} >> ~/.ssh/known_hosts
 
-      - name: Create backup of current deployment
+      - name: Create backup of current deployment if it exists
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
-            sudo cp -r /var/www/html/CredexBot-ec2 /var/www/html/CredexBot-ec2-backup
+            if [ -d /var/www/html/CredexBot-ec2 ]; then
+              sudo cp -r /var/www/html/CredexBot-ec2 /var/www/html/CredexBot-ec2-backup
+            fi
           "
           
       - name: Set correct permissions for deployment directory
