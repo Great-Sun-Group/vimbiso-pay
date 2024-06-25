@@ -37,10 +37,8 @@ jobs:
             if [ -d /var/www/html/CredexBot-ec2 ]; then
               sudo cp -r /var/www/html/CredexBot-ec2 /var/www/html/CredexBot-ec2-backup
             fi
-          "
-          
+          "       
      
-
       - name: Copy Project to EC2
         run: |
           rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./* ec2-user@${{ secrets.EC2_IP }}:/var/www/html/CredexBot-ec2
