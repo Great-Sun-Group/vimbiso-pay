@@ -39,11 +39,17 @@ jobs:
             fi
           "       
      
+      - name: Ensure target directory exists
+        run: |
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
+            sudo mkdir -p /var/www/html/CredexBot-ec2 &&
+            sudo chown ec2-user:ec2-user /var/www/html/CredexBot-ec2
+          "
+
       - name: Copy Project to EC2
         run: |
           rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./* ec2-user@${{ secrets.EC2_IP }}:/var/www/html/CredexBot-ec2
        
-      
       - name: Install dependencies and deploy
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
