@@ -39,12 +39,7 @@ jobs:
             fi
           "
           
-      - name: Set correct permissions for deployment directory
-        run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
-            sudo chown -R ec2-user:nginx /var/www/html/CredexBot-ec2 &&
-            sudo chmod -R 775 /var/www/html/CredexBot-ec2
-          "
+     
 
       - name: Copy Project to EC2
         run: |
