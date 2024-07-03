@@ -7,6 +7,7 @@ import json
 from bot.utils import convert_timestamp_to_date
 
 class OfferCredexSerializer(serializers.Serializer):
+    authorizer_member_id = serializers.CharField(required=True)
     issuer_member_id = serializers.CharField(required=True)
     handle = serializers.CharField(required=True)
     amount = serializers.FloatField(required=True)
@@ -30,7 +31,8 @@ class OfferCredexSerializer(serializers.Serializer):
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
 
         response = requests.request("GET", url, headers=headers, data=payload)
@@ -40,6 +42,7 @@ class OfferCredexSerializer(serializers.Serializer):
                 if not data.get('Error'):
                     data = data['memberData']
                     return {
+                        "authorizerMemberID": attrs.get('authorizer_member_id'),
                         "issuerMemberID": attrs.get('issuer_member_id'),
                         "receiverMemberID": data['memberID'],
                         "Denomination": attrs.get('currency'),

@@ -46,7 +46,9 @@ class CredexBotService:
 
         #IF THERE IS NO MEMBER DETAILS IN STATE THE REFRESH MEMBER/FETCH INFO
         if not current_state.get('member'):
-            self.refresh()
+            response = self.refresh()
+            if response and state.stage != "handle_action_register":
+                return response
 
         
         # OVERRIDE FLOW IF USER WANTS TO ACCEPT, DECLINE OR CANCEL CREDEXES AND ROUTE TO THE APPROPRIATE METHOD
@@ -116,7 +118,8 @@ class CredexBotService:
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
 
         response = requests.request("GET", url, headers=headers, data=payload)
@@ -189,13 +192,14 @@ class CredexBotService:
             }
             message = ""
             serializer = MemberDetailsSerializer(data=payload)
+            print(serializer.is_valid(), serializer.errors)
             if serializer.is_valid():
                 url = f"{config('CREDEX')}/createMember" 
                 headers = {
                     'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                     'Content-Type': 'application/json'
                 }
-                
+                print(payload)
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
                 print("########### ", response.content)
                 if response.status_code == 200:
@@ -329,6 +333,7 @@ class CredexBotService:
     @property
     def handle_action_menu(self):
         """HANDLES MENU STAGE GIVING THE USER THE MAIN MENU"""
+        
         state = self.user.state
         current_state = state.get_state(self.user)
         
@@ -600,7 +605,8 @@ class CredexBotService:
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
 
         response = requests.request("GET", url, headers=headers, data=payload)
@@ -697,15 +703,22 @@ class CredexBotService:
             current_state = current_state.state
         payload = json.dumps({
             "credexID": self.body.split("_")[-1],
-            "memberID": current_state['member']['defaultAccountData'].get('memberID')
+            "memberID": current_state['member']['loginData']['humanMemberData'].get('memberID'),
+            "accountID": current_state['member']['defaultAccountData'].get('memberID')
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/acceptCredex", headers=headers, data=payload)
         if response.status_code == 200:
-            self.refresh()
+            try:
+                current_state['member']['defaultAccountData']['pendingInData'] = response.get("dashboardData", {}).get("pendingInData", {})
+                current_state['member']['defaultAccountData']['pendingOutData'] = response.get("dashboardData", {}).get("pendingOutData", {})
+                current_state['member']['defaultAccountData']['balanceData'] = response.get("dashboardData", {}).get("balanceData", {})
+            except Exception as e:
+                print("ERROR FETCHING ", e)
             return self.wrap_text("> *🥳 Success*\n\n Offer successfully accepted!",  x_is_menu=True, back_is_cancel=False)
         return self.wrap_text("> *😞 Failed*\n\n Failed to accept offer!",  x_is_menu=True, back_is_cancel=False)
     
@@ -724,7 +737,8 @@ class CredexBotService:
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/declineCredex", headers=headers, data=payload)
         if response.status_code == 200:
@@ -747,7 +761,8 @@ class CredexBotService:
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/cancelCredex", headers=headers, data=payload)
         if response.status_code == 200:
@@ -767,7 +782,8 @@ class CredexBotService:
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/acceptCredexBulk", headers=headers, data=payload)
         if response.status_code == 200:
@@ -1017,6 +1033,7 @@ class CredexBotService:
         if "=>" in f"{self.body}" or "->" f"{self.body}" or self.message['type'] == "nfm_reply":
             if self.message['type'] == "nfm_reply":
                 payload = {
+                    "authorizer_member_id": current_state['member']['loginData']['humanMemberData'].get('memberID'),
                     "issuer_member_id": current_state['member']['defaultAccountData'].get('memberID'),
                     "recipient_phone_number": self.body.get('recipent_phone_number'),
                     "amount": self.body.get('amount'),
@@ -1032,6 +1049,7 @@ class CredexBotService:
                         user, _ = user.split("=")
                     from datetime import datetime, timedelta
                     payload = {
+                        "authorizer_member_id": current_state['member']['loginData']['humanMemberData'].get('memberID'),
                         "issuer_member_id": current_state['member']['defaultAccountData'].get('memberID'),
                         "handle": user,
                         "amount": amount,
@@ -1056,6 +1074,7 @@ class CredexBotService:
                 else:
                     return self.wrap_text(OFFER_CREDEX.format(message='*Missing Due Date❗*'), x_is_menu=True)
                 payload = {
+                    "authorizer_member_id": current_state['member']['loginData']['humanMemberData'].get('memberID'),
                     "issuer_member_id": current_state['member']['defaultAccountData'].get('memberID'),
                     "handle": user,
                     "amount": amount,
@@ -1155,17 +1174,52 @@ class CredexBotService:
                     payload = json.dumps(current_state.get('confirm_offer_payload'))
                     headers = {
                         'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'API-KEY': config('CREDEX_API_CREDENTIALS'),
                     }
                     message = ''
                     print("Sent : ", payload)
                     response = requests.request("POST", url, headers=headers, data=payload)
-                    print(response.content)
+                    print(response.content, response.status_code)
+                    resp = {
+                        "offerCredexData":{
+                            "credex":False,
+                            "message":"Error: Your secured credex for 2.00 USD cannot be issued because your maximum securable USD balance is 0.00 USD"
+                        },
+                        "dashboardData":{
+                            "dashboardType":"human",
+                            "memberID":"e0c40739-21db-435a-8db9-130ebb5dddbb",
+                            "displayName":"Takudzwa Sharara",
+                            "handle":"shararagarnet",
+                            "defaultDenom":"USD",
+                            "offerRecipientID":"e0c40739-21db-435a-8db9-130ebb5dddbb",
+                            "offerRecipientDisplayname":"Takudzwa Sharara",
+                            "authorizedMembers":[],
+                            "balanceData":{
+                                "securedNetBalancesByDenom":[],
+                                "unsecuredBalancesInDefaultDenom":{
+                                    "totalPayables":"0.00 USD",
+                                    "totalReceivables":"0.00 USD",
+                                    "netPayRec":"0.00 USD"
+                                },
+                                "netCredexAssetsInDefaultDenom":"0.00 USD"
+                            },
+                            "pendingInData":{},
+                            "pendingOutData":{}
+                        }
+                    }
                     if response.status_code == 200:
+                        
                         response = response.json()
-                        if response.get('credex'):
+                        try:
+                            current_state['member']['defaultAccountData']['pendingInData'] = response.get("dashboardData", {}).get("pendingInData", {})
+                            current_state['member']['defaultAccountData']['pendingOutData'] = response.get("dashboardData", {}).get("pendingOutData", {})
+                            current_state['member']['defaultAccountData']['balanceData'] = response.get("dashboardData", {}).get("balanceData", {})
+                        except Exception as e:
+                            print("ERROR FETCHING ", e)
+
+                        if response.get("offerCredexData", {}).get("credex"):
                             current_state.pop('confirm_offer_payload', {})
-                            self.refresh()
                             return self.wrap_text(OFFER_SUCCESSFUL.format(
                                     type='Secured Credex' if response['credex']['secured'] else 'Unsecured Credex',
                                     amount=response['credex']['formattedInitialAmount'],
@@ -1173,10 +1227,12 @@ class CredexBotService:
                                     recipient=response['credex']['counterpartyDisplayname'],
                                     secured='yes' if response['credex']['secured'] else 'no'
                                 ),  x_is_menu=True, back_is_cancel=False)
+                        else:
+                            current_state.pop('confirm_offer_payload', {})
+                            message = self.format_synopsis(response.get("offerCredexData", {}).get('message'))
                     try:
                         current_state.pop('confirm_offer_payload', {})
-                        self.refresh()
-                        message = self.format_synopsis(response.get('message'))
+                        message = self.format_synopsis(response.get("offerCredexData", {}).get('message'))
                         return self.wrap_text(OFFER_FAILED.format(message=message), x_is_menu=True, back_is_cancel=False)
                     except Exception as e:
                         print("E : ", e)
