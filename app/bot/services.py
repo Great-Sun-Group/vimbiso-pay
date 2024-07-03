@@ -42,16 +42,6 @@ class CredexBotService:
 
         # IF THERE IS NO MEMBER DETAILS IN STATE THE REFRESH MEMBER/FETCH INFO
         if not current_state.get('member'):
-            CredexWhatsappService(payload={
-                    "messaging_product": "whatsapp",
-                    "preview_url": False,
-                    "recipient_type": "individual",
-                    "to": self.user.mobile_number,
-                    "type": "text",
-                    "text": {
-                        "body": DELAY
-                    }
-                }).send_message()
             response = self.refresh()
             if response and state.stage != "handle_action_register":
                 return response
@@ -128,7 +118,16 @@ class CredexBotService:
             'Content-Type': 'application/json',
             'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
-
+        CredexWhatsappService(payload={
+            "messaging_product": "whatsapp",
+            "preview_url": False,
+            "recipient_type": "individual",
+            "to": self.user.mobile_number,
+            "type": "text",
+            "text": {
+                "body": DELAY
+            }
+        }).send_message()
         response = requests.request("GET", url, headers=headers, data=payload)
         if response.status_code == 200:
             current_state['member'] = response.json()
