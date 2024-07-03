@@ -555,6 +555,7 @@ class CredexBotService:
             if response.status_code == 200:
                 credex = response.json()
                 if credex:
+
                     return {
                         "messaging_product": "whatsapp",
                         "recipient_type": "individual",
