@@ -7,6 +7,7 @@ import json
 from bot.utils import convert_timestamp_to_date
 
 class OfferCredexSerializer(serializers.Serializer):
+    authorizer_member_id = serializers.CharField(required=True)
     issuer_member_id = serializers.CharField(required=True)
     handle = serializers.CharField(required=True)
     amount = serializers.FloatField(required=True)
@@ -30,29 +31,33 @@ class OfferCredexSerializer(serializers.Serializer):
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
 
         response = requests.request("GET", url, headers=headers, data=payload)
         try:
             if response.status_code == 200:
-                response = response.json()
-                print(response)
-                if not response.get('Error'):
+                data = response.json()
+                if not data.get('Error'):
+                    data = data['memberData']
                     return {
+                        "authorizerMemberID": attrs.get('authorizer_member_id'),
                         "issuerMemberID": attrs.get('issuer_member_id'),
-                        "receiverMemberID": response['memberData']['memberID'],
+                        "receiverMemberID": data['memberID'],
                         "Denomination": attrs.get('currency'),
                         "InitialAmount": attrs.get('amount'),
                         "dueDate": convert_timestamp_to_date(attrs.get('dueDate')),
                         "securedCredex": attrs.get('securedCredex'),
-                        "handle": response['memberData'].get('handle'),
-                        "full_name": f"{response['memberData'].get('displayName')}"
+                        "handle": attrs.get('handle'),
+                        "full_name": f"{data.get('displayName')}"
                     }
+            print("EROR : ", response.content)
         except Exception as e:
+            print("EROR : ", response.content, e)
             pass
             
-        raise serializers.ValidationError({"recipient": "Recipient Not Founs!"})
+        raise serializers.ValidationError({"recipient": "Handle Not Found"})
         
 
 

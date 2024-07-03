@@ -61,7 +61,7 @@ class CredexWhatsappService:
             )
             data = response.json()
             print('Credex', " REPLIED TO ", self.payload.get('to'))
-            print("BOT.RESP ", data)
+            # print("BOT.RESP ", data)
                 
         except Exception as e:
             print("ERROR SENDING MESSAGE TO WHATSAPP", e)

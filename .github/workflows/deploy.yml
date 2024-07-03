@@ -1,0 +1,81 @@
+name: Deploy Credex-Bot to EC2
+run-name: ${{ github.actor }} pushed to auto-deploy-setup with commit message '${{ github.event.head_commit.message }}'
+
+on:
+  push:
+    branches:
+      - auto-deployed
+  pull_request:
+    branches:
+      - auto-deployed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Set up SSH deploy keys
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      - name: Add EC2 Host to Known Hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.EC2_IP }} >> ~/.ssh/known_hosts
+
+      - name: Create backup of current deployment if it exists
+        run: |
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
+            if [ -d /var/www/html/CredexBot-ec2 ]; then
+              sudo cp -r /var/www/html/CredexBot-ec2 /var/www/html/CredexBot-ec2-backup
+            fi
+          "
+
+      - name: Ensure target directory exists and set permissions
+        run: |
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
+            sudo mkdir -p /var/www/html/CredexBot-ec2 &&
+            sudo chown -R ec2-user:ec2-user /var/www/html/CredexBot-ec2 &&
+            sudo chmod -R 775 /var/www/html/CredexBot-ec2
+          "
+
+      - name: Copy Project to EC2
+        run: |
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./* ec2-user@${{ secrets.EC2_IP }}:/var/www/html/CredexBot-ec2
+
+      - name: Install dependencies and deploy
+        run: |
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
+            cd /var/www/html/CredexBot-ec2 &&
+            rm -rf venv &&
+            python3 -m venv venv &&
+            source venv/bin/activate &&
+            pip install gunicorn &&
+            pip install -r requirements.txt &&
+            python app/manage.py migrate &&
+            sudo chown -R ec2-user:ec2-user /var/www/html/CredexBot-ec2 &&
+            sudo chmod -R 775 /var/www/html/CredexBot-ec2 &&
+            sudo systemctl restart gunicorn &&
+            sudo systemctl restart nginx
+          " || ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
+            echo 'Deployment failed, reverting to last working version' &&
+            sudo rm -rf /var/www/html/CredexBot-ec2 &&
+            sudo mv /var/www/html/CredexBot-ec2-backup /var/www/html/CredexBot-ec2 &&
+            cd /var/www/html/CredexBot-ec2 &&
+            source venv/bin/activate &&
+            pip install gunicorn &&
+            pip install -r requirements.txt &&
+            python app/manage.py migrate &&
+            sudo chown -R ec2-user:ec2-user /var/www/html/CredexBot-ec2 &&
+            sudo chmod -R 775 /var/www/html/CredexBot-ec2 &&
+            sudo systemctl restart gunicorn &&
+            sudo systemctl restart nginx
+          "

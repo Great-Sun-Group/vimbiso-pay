@@ -26,18 +26,18 @@ GREETINGS = [
 import datetime
 
 
-def get_greeting(name):
+def get_greeting():
     current_time = datetime.datetime.now() + timedelta(hours=2)
     hour = current_time.hour
 
     if 5 <= hour < 12:
-        return f"Good Morning {name} 🌅"
+        return f"Good Morning 🌅"
     elif 12 <= hour < 18:
-        return f"Good Afternoon {name} ☀️"
+        return f"Good Afternoon ☀️"
     elif 18 <= hour < 22:
-        return f"Good Evening {name} 🌆"
+        return f"Good Evening 🌆"
     else:
-        return f"Hello There {name} 🌙"
+        return f"Hello There 🌙"
 
 
 class CachedUserState:
@@ -86,12 +86,14 @@ class CachedUser:
 MENU_OPTIONS = {
     '1': "handle_action_pending_offers_in",
     'handle_action_pending_offers_in': "handle_action_pending_offers_in",
-    '2': "handle_action_pending_offers_out",
-    'handle_action_pending_offers_out': "handle_action_pending_offers_out",
-    '3': "handle_action_offer_credex",
+    '2': "handle_action_switch_account",
+    'handle_action_switch_account': "handle_action_switch_account",
+    '3': "handle_action_transactions",
+    'handle_action_transactions': "handle_action_transactions",
+    '4': "handle_action_offer_credex",
     'handle_action_offer_credex': "handle_action_offer_credex",
-    '4': "handle_action_transactions",
-    'handle_action_transactions': "handle_action_transactions"
+    '5': "handle_action_more_options",
+    'handle_action_more_options': "handle_action_more_options"
 }
 
 ABOUT = """
