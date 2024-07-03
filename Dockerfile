@@ -48,6 +48,5 @@ COPY . .
 EXPOSE 8000
 
 # Run the application.
-# CMD ./start_app.sh
 
-CMD python3 app/manage.py runserver
+CMD ./app/start_app.sh
