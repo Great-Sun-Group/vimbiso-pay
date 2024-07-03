@@ -40,6 +40,10 @@ INVALID_ACTION = """
 *Invalid option selected*
 """
 
+DELAY = """
+*Hold on a moment ...*
+"""
+
 BALANCE = """
 *SECURED BALANCE*
   Balance : *{securedNetBalancesByDenom}*

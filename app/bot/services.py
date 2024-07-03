@@ -2,6 +2,7 @@ import json
 import locale
 import requests
 from decouple import config
+from bot.utils import CredexWhatsappService
 from bot.serializers.company import CompanyDetailsSerializer
 from bot.serializers.offers import OfferCredexSerializer
 from bot.serializers.members import MemberDetailsSerializer
@@ -41,9 +42,20 @@ class CredexBotService:
 
         # IF THERE IS NO MEMBER DETAILS IN STATE THE REFRESH MEMBER/FETCH INFO
         if not current_state.get('member'):
+            CredexWhatsappService(payload={
+                    "messaging_product": "whatsapp",
+                    "preview_url": False,
+                    "recipient_type": "individual",
+                    "to": self.user.mobile_number,
+                    "type": "text",
+                    "text": {
+                        "body": DELAY
+                    }
+                }).send_message()
             response = self.refresh()
             if response and state.stage != "handle_action_register":
                 return response
+            
 
         # OVERRIDE FLOW IF USER WANTS TO ACCEPT, DECLINE OR CANCEL CREDEXES AND ROUTE TO THE APPROPRIATE METHOD
         if f"{self.body}".startswith("accept_") or f"{self.body}".startswith("cancel_") or f"{self.body}".startswith(
@@ -555,7 +567,6 @@ class CredexBotService:
             if response.status_code == 200:
                 credex = response.json()
                 if credex:
-
                     return {
                         "messaging_product": "whatsapp",
                         "recipient_type": "individual",
