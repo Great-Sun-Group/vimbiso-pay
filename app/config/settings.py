@@ -89,7 +89,7 @@ RQ_QUEUES = {
         "DEFAULT_TIMEOUT": 360
     }
 }
-CELERY_BROKER_REDIS_URL="redis://localhost:6380"
+CELERY_BROKER_REDIS_URL=config("REDIS_URL", "redis://localhost:6379/"),
 DEBUG=True
 CACHE_TTL = 60 * 15
 
