@@ -1,8 +1,5 @@
-from rest_framework import serializers
-import re
-import requests
-from decouple import config
-import json
+from rest_framework import serializers 
+import json, os, requests, re
 
 from bot.utils import convert_timestamp_to_date
 
@@ -24,15 +21,15 @@ class OfferCredexSerializer(serializers.Serializer):
         # if not phone_number.isdigit():
         #     raise serializers.ValidationError({"recipient_phone_number": "Invalid phone number"})
 
-        url = f"{config('CREDEX')}/getMemberByHandle"
+        url = f"{os.getenv('CREDEX')}/getMemberByHandle"
 
         payload = json.dumps({
             "handle": attrs.get('handle')
         })
         headers = {
-            'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
+            'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': config('CREDEX_API_CREDENTIALS'),
+            'API-KEY': os.getenv('CREDEX_API_CREDENTIALS'),
         }
 
         response = requests.request("GET", url, headers=headers, data=payload)
