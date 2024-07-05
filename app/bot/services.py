@@ -7,7 +7,7 @@ from bot.constants import *
 import os, requests, locale, json
 
 
-locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+# locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 
 
 class CredexBotService:
