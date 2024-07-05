@@ -35,5 +35,8 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
             cd credex-bot &&
+            git checkout auto-deployed &&
+            git pull origin auto-deployed &&
+            cd app &&
             docker-compose up --build
           "
