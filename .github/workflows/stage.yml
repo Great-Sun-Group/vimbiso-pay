@@ -4,10 +4,10 @@ run-name: ${{ github.actor }} pushed to auto-deploy-setup with commit message '$
 on:
   push:
     branches:
-      - auto-deployed
+      - stage
   pull_request:
     branches:
-      - auto-deployed
+      - stage
 
 jobs:
   deploy:
@@ -34,9 +34,8 @@ jobs:
       - name: Build and Deploy
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
-            cd credex-bot &&
-            git checkout auto-deployed &&
-            git pull origin auto-deployed &&
-            cd app &&
+            cd credex-bot/app &&
+            git checkout stage &&
+            git pull origin stage &&
             docker-compose up --build
           "
