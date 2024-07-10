@@ -12,7 +12,7 @@ services:
     build:
       context: .
     ports:
-      - 8000:8000
+      - 7000:7000
     environment:
       - SECRET_KEY=${SECRET_KEY}
       - PLATFORM_NAME=${PLATFORM_NAME}
