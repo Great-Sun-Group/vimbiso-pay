@@ -4,10 +4,8 @@ from bot.serializers.offers import OfferCredexSerializer
 from bot.serializers.members import MemberDetailsSerializer
 from bot.screens import *
 from bot.constants import *
-import os, requests, locale, json
-
-
-# locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+import requests, json
+from decouple import config
 
 
 class CredexBotService:
@@ -42,7 +40,6 @@ class CredexBotService:
             response = self.refresh()
             if response and state.stage != "handle_action_register":
                 return response
-            
 
         # OVERRIDE FLOW IF USER WANTS TO ACCEPT, DECLINE OR CANCEL CREDEXES AND ROUTE TO THE APPROPRIATE METHOD
         if f"{self.body}".startswith("accept_") or f"{self.body}".startswith("cancel_") or f"{self.body}".startswith(
@@ -105,15 +102,15 @@ class CredexBotService:
         if not isinstance(current_state, dict):
             current_state = current_state.state
 
-        url = f"{os.getenv('CREDEX')}/whatsAppLogin"
+        url = f"{config('CREDEX')}/whatsAppLogin"
 
         payload = json.dumps({
             "phone": self.message['from']
         })
         headers = {
-            'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+            'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': os.getenv('CREDEX_API_CREDENTIALS'),
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
         CredexWhatsappService(payload={
             "messaging_product": "whatsapp",
@@ -158,7 +155,7 @@ class CredexBotService:
                             "flow_message_version": "3",
                             "flow_action": "navigate",
                             "flow_token": "not-used",
-                            "flow_id": os.getenv('WHATSAPP_REGISTRATION_FLOW_ID'),
+                            "flow_id": config('WHATSAPP_REGISTRATION_FLOW_ID'),
                             "flow_cta": "Register",
                             "flow_action_payload": {
                                 "screen": "REGISTRATION"
@@ -197,9 +194,9 @@ class CredexBotService:
             serializer = MemberDetailsSerializer(data=payload)
             print(serializer.is_valid(), serializer.errors)
             if serializer.is_valid():
-                url = f"{os.getenv('CREDEX')}/createMember"
+                url = f"{config('CREDEX')}/createMember"
                 headers = {
-                    'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+                    'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                     'Content-Type': 'application/json'
                 }
                 print(payload)
@@ -242,7 +239,7 @@ class CredexBotService:
                             "flow_message_version": "3",
                             "flow_action": "navigate",
                             "flow_token": "not-used",
-                            "flow_id": os.getenv('WHATSAPP_COMPANY_REGISTRATION_FLOW_ID'),
+                            "flow_id": config('WHATSAPP_COMPANY_REGISTRATION_FLOW_ID'),
                             "flow_cta": "Register",
                             "flow_action_payload": {
                                 "screen": "COMPANY"
@@ -274,9 +271,9 @@ class CredexBotService:
             serializer = CompanyDetailsSerializer(data=payload)
 
             if serializer.is_valid():
-                url = f"{os.getenv('CREDEX')}/createCompany"
+                url = f"{config('CREDEX')}/createCompany"
                 headers = {
-                    'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+                    'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                     'Content-Type': 'application/json'
                 }
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
@@ -547,14 +544,14 @@ class CredexBotService:
                     print(current_state['current_page'][int(self.body) - 1])
                     self.body = current_state['current_page'][int(self.body) - 1]['id']
 
-            url = f"{os.getenv('CREDEX')}/getCredex"
+            url = f"{config('CREDEX')}/getCredex"
 
             payload = json.dumps({
                 "credexID": self.body,
                 "memberID": current_state['member']['defaultAccountData'].get('memberID'),
             })
             headers = {
-                'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+                'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                 'Content-Type': 'application/json'
             }
 
@@ -607,7 +604,7 @@ class CredexBotService:
             ]
             return self.wrap_text(message=menu_string, extra_rows=rows)
 
-        url = f"{os.getenv('CREDEX')}/getLedger"
+        url = f"{config('CREDEX')}/getLedger"
 
         payload = json.dumps({
             "memberID": current_state['member']['defaultAccountData'].get('memberID'),
@@ -615,9 +612,9 @@ class CredexBotService:
             "startRow": (page_number * 7) - 7
         })
         headers = {
-            'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+            'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': os.getenv('CREDEX_API_CREDENTIALS'),
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
 
         response = requests.request("GET", url, headers=headers, data=payload)
@@ -718,11 +715,11 @@ class CredexBotService:
             "accountID": current_state['member']['defaultAccountData'].get('memberID')
         })
         headers = {
-            'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+            'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': os.getenv('CREDEX_API_CREDENTIALS'),
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
-        response = requests.request("PUT", f"{os.getenv('CREDEX')}/acceptCredex", headers=headers, data=payload)
+        response = requests.request("PUT", f"{config('CREDEX')}/acceptCredex", headers=headers, data=payload)
         if response.status_code == 200:
             try:
                 current_state['member']['defaultAccountData']['pendingInData'] = response.get("dashboardData", {}).get(
@@ -751,11 +748,11 @@ class CredexBotService:
             "memberID": current_state['member']['defaultAccountData'].get('memberID')
         })
         headers = {
-            'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+            'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': os.getenv('CREDEX_API_CREDENTIALS'),
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
-        response = requests.request("PUT", f"{os.getenv('CREDEX')}/declineCredex", headers=headers, data=payload)
+        response = requests.request("PUT", f"{config('CREDEX')}/declineCredex", headers=headers, data=payload)
         if response.status_code == 200:
             self.refresh()
             return self.wrap_text("> *🥳 Success*\n\n Offer successfully declined!", x_is_menu=True,
@@ -776,11 +773,11 @@ class CredexBotService:
             "memberID": current_state['member']['defaultAccountData'].get('memberID')
         })
         headers = {
-            'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+            'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': os.getenv('CREDEX_API_CREDENTIALS'),
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
-        response = requests.request("PUT", f"{os.getenv('CREDEX')}/cancelCredex", headers=headers, data=payload)
+        response = requests.request("PUT", f"{config('CREDEX')}/cancelCredex", headers=headers, data=payload)
         if response.status_code == 200:
             self.refresh()
             return self.wrap_text("> *🥳 Success*\n\n Offer successfully cancelled!", x_is_menu=True,
@@ -798,11 +795,11 @@ class CredexBotService:
             "memberID": current_state['member']['defaultAccountData'].get('memberID')
         })
         headers = {
-            'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+            'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': os.getenv('CREDEX_API_CREDENTIALS'),
+            'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
-        response = requests.request("PUT", f"{os.getenv('CREDEX')}/acceptCredexBulk", headers=headers, data=payload)
+        response = requests.request("PUT", f"{config('CREDEX')}/acceptCredexBulk", headers=headers, data=payload)
         if response.status_code == 200:
             self.refresh()
             return self.wrap_text("> *🥳 Success*\n\n Accepted all successfully!", x_is_menu=True, back_is_cancel=False)
@@ -1182,7 +1179,7 @@ class CredexBotService:
                     message = '*Offer Cancelled By User❗*'
                 else:
                     current_state['confirm_offer_payload']['issuerMemberID'] = self.body
-                    url = f"{os.getenv('CREDEX')}/offerCredex"
+                    url = f"{config('CREDEX')}/offerCredex"
                     if current_state['confirm_offer_payload'].get('securedCredex'):
                         # secured = current_state['confirm_offer_payload'].pop('securedCredex')
                         current_state['confirm_offer_payload'].pop('dueDate')
@@ -1195,9 +1192,9 @@ class CredexBotService:
                     to_credex.pop("handle", None)
                     payload = json.dumps(current_state.get('confirm_offer_payload'))
                     headers = {
-                        'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+                        'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                         'Content-Type': 'application/json',
-                        'API-KEY': os.getenv('CREDEX_API_CREDENTIALS'),
+                        'API-KEY': config('CREDEX_API_CREDENTIALS'),
                     }
                     message = ''
                     response = requests.request("POST", url, headers=headers, data=payload)
@@ -1449,13 +1446,13 @@ class CredexBotService:
         message = ''
 
         if state.option == "get_handle":
-            url = f"{os.getenv('CREDEX')}/getMemberByHandle"
+            url = f"{config('CREDEX')}/getMemberByHandle"
 
             payload = json.dumps({
                 "handle": self.body.lower()
             })
             headers = {
-                'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+                'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                 'Content-Type': 'application/json'
             }
 
@@ -1493,7 +1490,7 @@ class CredexBotService:
                 }
 
             if self.body == '1':
-                url = f"{os.getenv('CREDEX')}/authorizeForCompany"
+                url = f"{config('CREDEX')}/authorizeForCompany"
 
                 payload = json.dumps({
                     "MemberIDtoBeAuthorized": current_state[
@@ -1507,7 +1504,7 @@ class CredexBotService:
                 })
 
                 headers = {
-                    'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+                    'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                     'Content-Type': 'application/json'
                 }
                 print(payload)
@@ -1569,13 +1566,13 @@ class CredexBotService:
     # if not isinstance(current_state, dict):
     #     current_state = current_state.state
 
-    #     url = f"{os.getenv('CREDEX')}/getBalances"
+    #     url = f"{config('CREDEX')}/getBalances"
 
     #     payload = json.dumps({
     #         "memberID": current_state['member']['defaultAccountData'].get('memberID'),
     #     })
     #     headers = {
-    #         'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+    #         'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
     #         'Content-Type': 'application/json'
     #     }
 

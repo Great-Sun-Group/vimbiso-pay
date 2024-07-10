@@ -34,6 +34,8 @@ MANAGE_ACCOUNTS = """
  *3. 📤 Pending Outgoing ({pending_out})*
 
 Send *'Menu'* to go back to Menu
+
+⚠️ DEMO ENVIRONMENT !!
 """
 
 INVALID_ACTION = """
@@ -41,7 +43,7 @@ INVALID_ACTION = """
 """
 
 DELAY = """
-*Hold on a moment ...*
+*Hold, just a moment ...*
 """
 
 BALANCE = """
@@ -55,6 +57,8 @@ BALANCE = """
 
 *CREDEX ASSETS*
   Credex Assets : *{netCredexAssetsInDefaultDenom}*
+  
+⚠️ DEMO ENVIRONMENT !!
 """
 
 BALANCE_FAILED = """
@@ -64,6 +68,8 @@ Failed to perform balance
 enquiry at the moment.
   
 Send *'Menu'* to go back to Menu
+
+⚠️ DEMO ENVIRONMENT !!
 """
 
 CREDEX = """
@@ -78,6 +84,8 @@ CREDEX = """
  Type : {type}
 
 Send *'Menu'* to go back to Menu
+
+⚠️ DEMO ENVIRONMENT !!
 """
 
 REGISTER = """
@@ -91,6 +99,8 @@ REGISTER = """
    fields and click submit.
 
 Send *'Menu'* to go back to Menu
+
+⚠️ DEMO ENVIRONMENT !!
 """
 
 COMPANY_REGISTRATION = """
@@ -104,6 +114,7 @@ COMPANY_REGISTRATION = """
    fields and click submit.
 
 {message}
+⚠️ DEMO ENVIRONMENT !!
 """
 
 OFFER_CREDEX = """
@@ -122,6 +133,7 @@ from your account
 _*CpHandle = CounterPartyHandle*_
 
 {message}
+⚠️ DEMO ENVIRONMENT !!
 """
 
 REGISTRATION_COMPLETE = """
@@ -135,6 +147,8 @@ excited to have you on board.
 Send *'Menu'* and start 
 exploring all the features 
 we offer.
+
+⚠️ DEMO ENVIRONMENT !!
 """
 
 CONFIRM_SECURED_CREDEX = """
@@ -145,7 +159,7 @@ Offer unsecured credex:
 
 Make offer from:
 {accounts}
-
+⚠️ DEMO ENVIRONMENT !!
 """
 
 CONFIRM_UNSECURED_CREDEX = """
@@ -157,6 +171,7 @@ Offer unsecured credex:
 
 Make offer from:
 {accounts}
+⚠️ DEMO ENVIRONMENT !!
 """
 
 ACCEPT_CREDEX = """
@@ -166,6 +181,7 @@ ACCEPT_CREDEX = """
 
   {type} credex from
 - {party} 
+⚠️ DEMO ENVIRONMENT !!
 """
 
 OUTGOING_CREDEX = """
@@ -175,6 +191,7 @@ OUTGOING_CREDEX = """
 
   {type} credex to
 - {party} 
+⚠️ DEMO ENVIRONMENT !!
 """
 
 OFFER_SUCCESSFUL = """
@@ -185,6 +202,7 @@ Amount: {amount} {currency}
 Secured: {secured}
 
 Send *'Menu'* to go back to Menu
+⚠️ DEMO ENVIRONMENT !!
 """
 
 OFFER_FAILED = """
@@ -196,6 +214,8 @@ at the moment.
 {message}
 
 Send *'Menu'* to go back to Menu
+
+⚠️ DEMO ENVIRONMENT !!
 """
 
 ADD_MERMBER = """
@@ -207,6 +227,7 @@ authorize transactions for
 *{company}*
 
 {message}
+⚠️ DEMO ENVIRONMENT !!
 """
 
 CONFIRM_AUTHORIZATION = """
@@ -221,6 +242,8 @@ to perform transactions for
 
 *1. ✅ Authorize*
 *2. ❌ Cancel*
+
+⚠️ DEMO ENVIRONMENT !!
 """
 
 AUTHORIZATION_SUCCESSFUL = """
@@ -230,12 +253,15 @@ Member authorization complete!
 
 - *{member}*
 
-can now transact onbehalf of 
+can now transact on behalf of 
 *{company}*
+⚠️ DEMO ENVIRONMENT !!
 """
 
 AUTHORIZATION_FAILED = """
 > *❌ Failed*
 
 Member authorization failed!
+
+⚠️ DEMO ENVIRONMENT !!
 """

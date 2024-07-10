@@ -6,10 +6,10 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY')
+SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', False)
+DEBUG = config('DEBUG', False)
 
 ALLOWED_HOSTS = ["*"]
 
@@ -73,7 +73,7 @@ DATABASES = {
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": os.getenv("REDIS_URL", "redis://localhost:6379/"),
+        "LOCATION": config("REDIS_URL", "redis://localhost:6379/"),
         "KEY_PREFIX": "imdb",
         "TIMEOUT": 60 * 15,  # in seconds: 60 * 15 (15 minutes)
     }
@@ -90,7 +90,7 @@ RQ_QUEUES = {
         "DEFAULT_TIMEOUT": 360
     }
 }
-CELERY_BROKER_REDIS_URL=os.getenv("REDIS_URL", "redis://localhost:6379/"),
+CELERY_BROKER_REDIS_URL=config("REDIS_URL", "redis://localhost:6379/"),
 DEBUG=True
 CACHE_TTL = 60 * 15
 
