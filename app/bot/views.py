@@ -5,7 +5,7 @@ from django.http import JsonResponse, HttpResponse
 from rest_framework import status
 from rest_framework.parsers import JSONParser
 from decouple import config
-from datetime import datetime, timedelta
+from datetime import datetime
 from bot.constants import CachedUser
 from bot.services import CredexBotService
 from bot.utils import CredexWhatsappService

@@ -7,7 +7,7 @@ from bot.views import CredexCloudApiWebhook, CredexSendMessageWebhook
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/v1/webhook', CredexCloudApiWebhook.as_view(), name="webhook"),
+    path('bot/webhook', CredexCloudApiWebhook.as_view(), name="webhook"),
     path('bot/message', CredexSendMessageWebhook.as_view(), name="message"),
 ]
 
