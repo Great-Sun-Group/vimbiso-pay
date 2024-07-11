@@ -8,11 +8,12 @@
 # database or a cache. For examples, see the Awesome Compose repository:
 # https://github.com/docker/awesome-compose
 services:
-  server:
+  demo-server:
+    restart: always
     build:
       context: .
     ports:
-      - 8000:8000
+      - 7000:7000
     environment:
       - SECRET_KEY=${SECRET_KEY}
       - PLATFORM_NAME=${PLATFORM_NAME}
@@ -31,7 +32,7 @@ services:
       - CREDEX_API_CREDENTIALS=${CREDEX_API_CREDENTIALS}
       - REDIS_URL=${REDIS_URL}
 
-  redis:
+  demo-redis:
     restart: always
     image: redis:7.0.8-alpine
     expose:

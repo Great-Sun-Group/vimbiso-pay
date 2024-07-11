@@ -53,7 +53,7 @@ USER appuser
 COPY . /app/
 
 # Expose the port that the application listens on.
-EXPOSE 8000
+EXPOSE 7000
 
 # Run the application.
 
