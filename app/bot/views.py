@@ -19,6 +19,8 @@ class CredexCloudApiWebhook(APIView):
     def post(request):
         payload = request.data.get('entry')[0].get('changes')[0].get('value')
         # print("INCOMING >> ", request.data)
+        if payload['metadata']['phone_number_id'] != config('WHATSAPP_PHONE_NUMBER_ID'):
+            return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
         if payload.get('messages'):
             phone_number_id = payload['metadata'].get('phone_number_id')
             message = payload['messages'][0]
