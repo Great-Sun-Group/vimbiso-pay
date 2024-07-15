@@ -27,7 +27,6 @@ jobs:
             docker compose up --build -d
 
   post:
-    needs: build
     name: Slack Notification Sender
     runs-on: ubuntu-latest
     steps:
