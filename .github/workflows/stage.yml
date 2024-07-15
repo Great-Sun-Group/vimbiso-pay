@@ -1,41 +1,27 @@
-name: Deploy Credex-Bot to EC2
-run-name: ${{ github.actor }} pushed to auto-deploy-setup with commit message '${{ github.event.head_commit.message }}'
-
+# Documentation https://github.com/appleboy/ssh-action
+name: Credex Staging Deployment
 on:
   push:
-    branches:
-      - auto-deploy-staging
+    branches: [auto-deploy-staging]
   pull_request:
-    branches:
-      - auto-deploy-staging
+    branches: [auto-deploy-staging]
 
 jobs:
-  deploy:
+  build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v2
-
-      - name: Set up Python
-        uses: actions/setup-python@v2
+      - uses: actions/checkout@v2
+      - name: Executing remote ssh commands using key
+        uses: appleboy/ssh-action@master
         with:
-          python-version: "3.x"
-
-      - name: Set up SSH deploy keys
-        uses: webfactory/ssh-agent@v0.5.3
-        with:
-          ssh-private-key: ${{ secrets.SSH_KEY }}
-
-      - name: Add EC2 Host to Known Hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.EC2_IP }} >> ~/.ssh/known_hosts
-
-      - name: Build and Deploy
-        run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
-            cd credex-bot-staging/app &&
-            git checkout auto-deploy-staging &&
-            git pull origin auto-deploy-staging &&
-            docker-compose up --build
-          "
+          host: ${{ secrets.DEMO_SERVER_HOST }}
+          username: ${{ secrets.DEMO_SERVER_USER }}
+          password: ${{ secrets.DEMO_SERVER_SSH_PASSWORD }}
+          port: ${{ secrets.SSH_PORT }}
+          command_timeout: 25m
+          script: |
+            cd credex-bot/app
+            git checkout auto-deploy-staging
+            git pull
+            docker-compose up --build -d
