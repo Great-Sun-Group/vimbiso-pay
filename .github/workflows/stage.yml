@@ -24,4 +24,4 @@ jobs:
             cd credex-bot/app
             git checkout auto-deploy-staging
             git pull
-            docker-compose up --build -d
+            docker compose up --build -d
