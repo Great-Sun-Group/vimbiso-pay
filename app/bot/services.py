@@ -664,7 +664,7 @@ class CredexBotService:
                 if 'Next' in txn.get('formattedInitialAmount'):
                     continue
 
-                menu_string += f"{count}. {txn.get('formattedInitialAmount')}\n        {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName').replace('Personal', '').rstrip()}\n\n"
+                menu_string += f"{count}. {txn.get('formattedInitialAmount')}{'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName').replace('Personal', '').rstrip()}\n\n"
                 rows.append({
                     "id": txn.get('credexID'),
                     "title": f"{txn.get('formattedInitialAmount').replace('-', '')} {'DEBIT ' if '-' in txn.get('formattedInitialAmount') else 'CREDIT '}",
@@ -905,7 +905,7 @@ class CredexBotService:
             data = current_state['member'].get('defaultAccountData', {}).get('pendingInData') if current_state[
                 'member'].get('defaultAccountData', {}).get('pendingInData') else []
             for item in data[:10]:
-                menu_string += f"{count}. {item.get('formattedInitialAmount')}\n        from {item.get('counterpartyAccountName').replace('Personal', '').rstrip()}\n"
+                menu_string += f"{count}. {item.get('formattedInitialAmount')} from {item.get('counterpartyAccountName').replace('Personal', '').rstrip()}\n"
                 rows.append(
                     {
                         "id": item.get('credexID'),
