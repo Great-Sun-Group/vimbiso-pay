@@ -133,7 +133,7 @@ class CredexBotService:
                 }
             }).send_message()
         response = requests.request("GET", url, headers=headers, data=payload)
-        print(response.content, )
+        # print(response.content, )
         if response.status_code == 200:
             default = {}
             if not reset:
@@ -148,7 +148,7 @@ class CredexBotService:
                         current_state['member']['defaultAccountData'] = default
                         break
 
-            print("REFERESHED")
+            # print("REFERESHED")
 
 
             
@@ -209,7 +209,7 @@ class CredexBotService:
         """HANDLING CLIENT REGISTRATIONS"""
 
         if self.message['type'] == "nfm_reply":
-            print("PAYLOAD : ", self.body)
+            # print("PAYLOAD : ", self.body)
             payload = {
                 "first_name": self.body.get('firstName'),
                 "last_name": self.body.get('lastName'),
@@ -220,16 +220,16 @@ class CredexBotService:
             }
             message = ""
             serializer = MemberDetailsSerializer(data=payload)
-            print(serializer.is_valid(), serializer.errors)
+            # print(serializer.is_valid(), serializer.errors)
             if serializer.is_valid():
                 url = f"{config('CREDEX')}/onboardMember"
                 headers = {
                     'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                     'Content-Type': 'application/json'
                 }
-                print(payload)
+                # print(payload)
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
-                print("########### ", response.content)
+                # print("########### ", response.content)
                 if response.status_code == 200:
 
                     return self.wrap_text(
@@ -249,7 +249,7 @@ class CredexBotService:
 
                     except Exception as e:
                         pass
-                    print(response.content)
+                    # print(response.content)
 
             return {
                 "messaging_product": "whatsapp",
@@ -305,7 +305,6 @@ class CredexBotService:
                     'Content-Type': 'application/json'
                 }
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
-                print("RESPONSE ", response.status_code, response.content)
                 if response.status_code == 200:
                     self.refresh()
                     return self.wrap_text(
@@ -324,7 +323,6 @@ class CredexBotService:
                             message = response.json().get('error')
                     except Exception as e:
                         pass
-                    print(response.content)
             else:
                 print(serializer.errors)
         state.update_state(
@@ -366,7 +364,7 @@ class CredexBotService:
         state = self.user.state
         current_state = state.get_state(self.user)
 
-        print("STATE : ", state.stage, state.option)
+        # print("STATE : ", state.stage, state.option)
 
         if not isinstance(current_state, dict):
             current_state = current_state.state
@@ -470,9 +468,9 @@ class CredexBotService:
                 count += 1
             if f"{self.body}".lower() in GREETINGS:
                     self.body = '1'
-            print("#####", current_state['member'].get('accountDashboards'), self.body)
+            # print("#####", current_state['member'].get('accountDashboards'), self.body)
             if options.get(self.body) is not None:
-                print("OPTIONS : ", options)
+                # print("OPTIONS : ", options)
                 current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][options.get(self.body)]
                 state.update_state(
                     state=current_state,
@@ -480,7 +478,7 @@ class CredexBotService:
                     update_from="handle_action_menu",
                     option="handle_action_menu"
                 )
-                print("SAVED : ", current_state['member']['accountDashboards'][options.get(self.body)])
+                # print("SAVED : ", current_state['member']['accountDashboards'][options.get(self.body)])
                 self.body = "Hi"
                 self.message['message'] = "Hi"
                 return self.handle_action_menu
@@ -578,7 +576,7 @@ class CredexBotService:
         else:
             if self.body.isdigit():
                 if 0 < int(self.body) <= len(current_state.get('current_page', [])):
-                    print(current_state['current_page'][int(self.body) - 1])
+                    # print(current_state['current_page'][int(self.body) - 1])
                     self.body = current_state['current_page'][int(self.body) - 1]['id']
                 
             url = f"{config('CREDEX')}/getCredex"
@@ -812,7 +810,7 @@ class CredexBotService:
             'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/cancelCredex", headers=headers, data=payload)
-        print(response.content, response.status_code)
+        # print(response.content, response.status_code)
         if response.status_code == 200:
             self.refresh(reset=False)
             return self.wrap_text("> *🥳 Success*\n\n You have successfully cancelled an offer!", x_is_menu=True,
@@ -835,7 +833,7 @@ class CredexBotService:
             'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/acceptCredexBulk", headers=headers, data=payload)
-        print(response.content)
+        # print(response.content)
         if response.status_code == 200:
             self.refresh(reset=False)
             return self.wrap_text("> *🥳 Success*\n\n You have successfully accepted all offers!", x_is_menu=True, back_is_cancel=False)
@@ -853,7 +851,7 @@ class CredexBotService:
             # data = current_state.get('pending') if current_state.get('pending') else []
             data = current_state['member'].get('defaultAccountData', {}).get('pendingInData') if current_state[
                 'member'].get('defaultAccountData', {}).get('pendingInData') else []
-            print(data)
+            # print(data)
             if self.body in [str(i) for i in range(1, len(data) + 1)] or self.message['type'] == 'interactive':
                 if data:
                     item = None
@@ -1143,7 +1141,7 @@ class CredexBotService:
 
             if serializer.is_valid():
                 accounts = []
-                print(serializer.validated_data)
+                # print(serializer.validated_data)
                 count = 1
                 account_string = f""
 
@@ -1194,7 +1192,7 @@ class CredexBotService:
                         "title": f"❌ Cancel"
                     }
                 )
-                print(accounts)
+                # print(accounts)
                 count += 1
                 response = CONFIRM_SECURED_CREDEX.format(
                     party=serializer.validated_data.get('full_name').replace('Personal', '').rstrip(),
@@ -1286,7 +1284,7 @@ class CredexBotService:
                     to_credex['issuerAccountID'] = self.body
                     to_credex.pop("handle", None)
                     payload = json.dumps(current_state.get('confirm_offer_payload'))
-                    print(to_credex)
+                    # print(to_credex)
                     headers = {
                         'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                         'Content-Type': 'application/json',
@@ -1294,7 +1292,7 @@ class CredexBotService:
                     }
                     message = ''
                     response = requests.request("POST", url, headers=headers, data=payload)
-                    print(response.content, response.status_code)
+                    # print(response.content, response.status_code)
                     if response.status_code == 200:
 
                         response = response.json()
@@ -1603,12 +1601,12 @@ class CredexBotService:
                     'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                     'Content-Type': 'application/json'
                 }
-                print(payload)
+                # print(payload)
                 response = requests.request("POST", url, headers=headers, data=payload)
-                print(response.content)
+                # print(response.content)
                 if response.status_code == 200:
                     data = response.json()
-                    print(data)
+                    # print(data)
                     if not data.get('Error'):
                         return self.wrap_text(AUTHORIZATION_SUCCESSFUL.format(member=current_state[
                             f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}"].get(
