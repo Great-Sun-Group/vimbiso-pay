@@ -10,9 +10,9 @@ ACCOUNT_SELECTION = """
 """
 
 HOME = """
-> *🏦 {account}*
+> *👤 {account}*
 {balance}
-*👤 Account: _{handle}_*
+*👤 Handle: _{handle}_*
  *1. 📥 Pending Offers ({pending_in})*
  *2. 🔀 Switch Account*
  *3. 📒 Review Ledger*
@@ -130,6 +130,7 @@ OFFER_CREDEX = """
 > *💰 Offer Credex*
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
 To offer a secured credex, send a 
 message:
 
