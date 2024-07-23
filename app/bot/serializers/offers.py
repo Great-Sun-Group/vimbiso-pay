@@ -1,5 +1,6 @@
 from rest_framework import serializers 
 import json, os, requests, re
+from decouple import config
 
 from bot.utils import convert_timestamp_to_date
 
@@ -17,14 +18,11 @@ class OfferCredexSerializer(serializers.Serializer):
         if not re.match(r'(?i)(?:[a-zA-Z])+(?:\s[a-zA-Z]+)*(?:\s[a-zA-Z]+)?$', attrs.get('full_name')):
             raise serializers.ValidationError({"full_name": "Invalid name(s)"})
         
-        # phone_number = attrs.get('recipient_phone_number').replace("+", "")
-        # if not phone_number.isdigit():
-        #     raise serializers.ValidationError({"recipient_phone_number": "Invalid phone number"})
 
-        url = f"{os.getenv('CREDEX')}/getMemberByHandle"
+        url = f"{config('CREDEX')}/getAccountByHandle"
 
         payload = json.dumps({
-            "handle": attrs.get('handle')
+            "accountHandle": attrs.get('handle')
         })
         headers = {
             'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
@@ -37,17 +35,17 @@ class OfferCredexSerializer(serializers.Serializer):
             if response.status_code == 200:
                 data = response.json()
                 if not data.get('Error'):
-                    data = data['memberData']
+                    data = data['accountData']
                     return {
-                        "authorizerMemberID": attrs.get('authorizer_member_id'),
-                        "issuerMemberID": attrs.get('issuer_member_id'),
-                        "receiverMemberID": data['memberID'],
+                        "issuerAccountID": attrs.get('authorizer_member_id'),
+                        "memberID": attrs.get('issuer_member_id'),
+                        "receiverAccountID": data['accountID'],
                         "Denomination": attrs.get('currency'),
                         "InitialAmount": attrs.get('amount'),
                         "dueDate": convert_timestamp_to_date(attrs.get('dueDate')),
                         "securedCredex": attrs.get('securedCredex'),
                         "handle": attrs.get('handle'),
-                        "full_name": f"{data.get('displayName')}"
+                        "full_name": f"{data.get('accountName')}"
                     }
             print("EROR : ", response.content)
         except Exception as e:

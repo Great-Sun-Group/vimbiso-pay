@@ -159,7 +159,7 @@ class CredexCloudApiWebhook(APIView):
             message_stamp = datetime.fromtimestamp(int(message['timestamp']))
 
             # Calculate the time difference in seconds
-            if (datetime.now() - message_stamp).total_seconds() > 7:
+            if (datetime.now() - message_stamp).total_seconds() > 20:
                 print("IGNORING OLD HOOK ", message_stamp)
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
@@ -176,6 +176,7 @@ class CredexCloudApiWebhook(APIView):
         return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
     def get(self, request, *args, **kwargs):
+        print(request.query_params)
         return HttpResponse(request.query_params.get('hub.challenge'), 200)
 
 class CredexSendMessageWebhook(APIView):

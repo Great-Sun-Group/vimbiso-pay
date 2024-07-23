@@ -53,7 +53,8 @@ class CredexWhatsappService:
         """Send message"""
         try:
             # print("BOT.REQ ", self.payload)
-            # print(self.payload)
+            # print(self.payload) 
+
             response = requests.post(
                 url=self.url,
                 headers=self.headers,

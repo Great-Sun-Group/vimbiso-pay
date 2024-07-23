@@ -48,15 +48,14 @@ DELAY = """
 
 BALANCE = """
 *SECURED BALANCE*
-  Balance : *{securedNetBalancesByDenom}*
-
+{securedNetBalancesByDenom}
 *USECURED BALANCE*
-  Payables : *{totalPayables}*
-  Receivables : *{totalReceivables}*
-  PayRec : *{netPayRec}*
+  Payables : {totalPayables}
+  Receivables : {totalReceivables}
+  PayRec : {netPayRec}
 
 *CREDEX ASSETS*
-  Credex Assets : *{netCredexAssetsInDefaultDenom}*
+  Credex Assets : {netCredexAssetsInDefaultDenom}
   
 ⚠️ DEMO ENVIRONMENT !!
 """
@@ -120,17 +119,9 @@ COMPANY_REGISTRATION = """
 OFFER_CREDEX = """
 > *💰 Offer Credex*
 
-*1.25=>CpHandle*
+1.25=>CounterPartyHandle
 to offer *secured* credex 
 from your account
-
-  *OR*
-
-*1.25->CpHandle=2024-06-03*
-to offer *unsecured* credex 
-from your account
-
-_*CpHandle = CounterPartyHandle*_
 
 {message}
 ⚠️ DEMO ENVIRONMENT !!
@@ -154,7 +145,7 @@ we offer.
 CONFIRM_SECURED_CREDEX = """
 > *💰 Confirm*
 
-Offer unsecured credex:
+Offer {secured} credex:
   ${amount} {currency} to {party}
 
 Make offer from:
@@ -165,7 +156,7 @@ Make offer from:
 CONFIRM_UNSECURED_CREDEX = """
 > *💰 Confirm*
 
-Offer unsecured credex:
+Offer {secured} credex:
   ${amount} {currency} to {party}
   due {date}
 
@@ -181,7 +172,7 @@ ACCEPT_CREDEX = """
 
   {type} credex from
 - {party} 
-⚠️ DEMO ENVIRONMENT !!
+⚠️ DEMO !!
 """
 
 OUTGOING_CREDEX = """
@@ -191,13 +182,15 @@ OUTGOING_CREDEX = """
 
   {type} credex to
 - {party} 
-⚠️ DEMO ENVIRONMENT !!
+⚠️ DEMO !!
 """
 
 OFFER_SUCCESSFUL = """
 > *✅ Success!*
 
-Offered to: {recipient}
+*Offered*
+
+{recipient}
 Amount: {amount} {currency}
 Secured: {secured}
 
@@ -262,6 +255,19 @@ AUTHORIZATION_FAILED = """
 > *❌ Failed*
 
 Member authorization failed!
+
+⚠️ DEMO ENVIRONMENT !!
+"""
+
+AGENTS = """
+> *👤 Agents*
+
+Agents
+1. Hre (+263 77 369 6227)
+2. Byo (+263 77 369 6227)
+3. Kwe (+263 77 369 6227)
+4. Kdm (+263 77 369 6227)
+5. Rspe (+263 77 369 6227)
 
 ⚠️ DEMO ENVIRONMENT !!
 """

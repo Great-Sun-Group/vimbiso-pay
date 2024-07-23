@@ -40,6 +40,15 @@ class CredexBotService:
             response = self.refresh()
             if response and state.stage != "handle_action_register":
                 return response
+            
+        if "=>" in f"{self.body}":
+            state.update_state(
+                state=current_state,
+                stage='handle_action_offer_credex',
+                update_from="handle_action_offer_credex",
+                option="handle_action_offer_credex"
+            )
+            return self.handle_action_offer_credex
 
         # OVERRIDE FLOW IF USER WANTS TO ACCEPT, DECLINE OR CANCEL CREDEXES AND ROUTE TO THE APPROPRIATE METHOD
         if f"{self.body}".startswith("accept_") or f"{self.body}".startswith("cancel_") or f"{self.body}".startswith(
@@ -94,7 +103,7 @@ class CredexBotService:
             state = self.user.state
             return getattr(self, state.stage)
 
-    def refresh(self):
+    def refresh(self, reset=True):
         """THIS METHOD REFRESHES MEMBER INFO BY MAKING AN API CALL TO CREDEX CALL"""
         state = self.user.state
         current_state = state.get_state(self.user)
@@ -102,7 +111,7 @@ class CredexBotService:
         if not isinstance(current_state, dict):
             current_state = current_state.state
 
-        url = f"{config('CREDEX')}/whatsAppLogin"
+        url = f"{config('CREDEX')}/getMemberDashboardByPhone"
 
         payload = json.dumps({
             "phone": self.message['from']
@@ -112,20 +121,37 @@ class CredexBotService:
             'Content-Type': 'application/json',
             'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
-        CredexWhatsappService(payload={
-            "messaging_product": "whatsapp",
-            "preview_url": False,
-            "recipient_type": "individual",
-            "to": self.user.mobile_number,
-            "type": "text",
-            "text": {
-                "body": DELAY
-            }
-        }).send_message()
+        if reset:
+            CredexWhatsappService(payload={
+                "messaging_product": "whatsapp",
+                "preview_url": False,
+                "recipient_type": "individual",
+                "to": self.user.mobile_number,
+                "type": "text",
+                "text": {
+                    "body": DELAY
+                }
+            }).send_message()
         response = requests.request("GET", url, headers=headers, data=payload)
+        print(response.content, )
         if response.status_code == 200:
+            default = {}
+            if not reset:
+                default = current_state.get('member', {}).pop('defaultAccountData', {})
             current_state['member'] = response.json()
-            current_state['member'].pop('defaultAccountData', None)
+            if default:
+                for acc in current_state['member']['accountDashboards']:
+                    if acc.get('accountID') == default.get('accountID'):
+                        default['pendingInData'] = acc['pendingInData']
+                        default['pendingOutData'] = acc['pendingOutData']
+                        default['balanceData'] = acc['balanceData']
+                        current_state['member']['defaultAccountData'] = default
+                        break
+
+            print("REFERESHED")
+
+
+            
             state.update_state(
                 state=current_state,
                 stage='handle_action_select_profile',
@@ -175,7 +201,7 @@ class CredexBotService:
 
         self.body = "Hi"
         self.message['message'] = "Hi"
-        self.refresh()
+        self.refresh(reset=True)
         return self.handle_action_menu
 
     @property
@@ -183,18 +209,20 @@ class CredexBotService:
         """HANDLING CLIENT REGISTRATIONS"""
 
         if self.message['type'] == "nfm_reply":
+            print("PAYLOAD : ", self.body)
             payload = {
                 "first_name": self.body.get('firstName'),
                 "last_name": self.body.get('lastName'),
                 "phone_number": self.message['from'],
                 "email": self.body.get('email'),
+                "currency": self.body.get('currency'),
 
             }
             message = ""
             serializer = MemberDetailsSerializer(data=payload)
             print(serializer.is_valid(), serializer.errors)
             if serializer.is_valid():
-                url = f"{config('CREDEX')}/createMember"
+                url = f"{config('CREDEX')}/onboardMember"
                 headers = {
                     'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                     'Content-Type': 'application/json'
@@ -262,7 +290,7 @@ class CredexBotService:
         message = ""
         if self.message['type'] == "nfm_reply":
             payload = {
-                "ownerID": current_state['member']['loginData']['humanMemberData'].get('memberID'),
+                "ownerID": current_state['member']['memberDashboard']['memberID'],
                 "companyname": self.body.get('firstName'),
                 "defaultDenom": self.body.get('currency'),
                 "handle": self.body.get('email')
@@ -271,12 +299,13 @@ class CredexBotService:
             serializer = CompanyDetailsSerializer(data=payload)
 
             if serializer.is_valid():
-                url = f"{config('CREDEX')}/createCompany"
+                url = f"{config('CREDEX')}/createAccount"
                 headers = {
                     'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                     'Content-Type': 'application/json'
                 }
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
+                print("RESPONSE ", response.status_code, response.content)
                 if response.status_code == 200:
                     self.refresh()
                     return self.wrap_text(
@@ -337,11 +366,14 @@ class CredexBotService:
         state = self.user.state
         current_state = state.get_state(self.user)
 
+        print("STATE : ", state.stage, state.option)
+
         if not isinstance(current_state, dict):
             current_state = current_state.state
 
         if not current_state['member'].get('defaultAccountData'):
             return self.handle_action_select_profile
+        
 
         pending_in = 0
         if current_state['member']['defaultAccountData']['pendingInData']:
@@ -350,6 +382,12 @@ class CredexBotService:
         secured = ""
         for item in current_state['member']['defaultAccountData']['balanceData']['securedNetBalancesByDenom']:
             secured += f" *{item}* \n"
+
+        balances = ""
+        balance_lists = current_state['member']['defaultAccountData']['balanceData']['securedNetBalancesByDenom']
+        for bal in balance_lists:
+            balances += f"- {bal}\n"
+
         return {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -360,10 +398,7 @@ class CredexBotService:
                 "body": {
                     "text": HOME.format(
                         balance=BALANCE.format(
-                            securedNetBalancesByDenom=
-                            current_state['member']['defaultAccountData']['balanceData']['securedNetBalancesByDenom'][
-                                0] if current_state['member']['defaultAccountData']['balanceData'][
-                                'securedNetBalancesByDenom'] else "$0.00",
+                            securedNetBalancesByDenom=balances,
                             totalPayables=current_state['member']['defaultAccountData']['balanceData'][
                                 'unsecuredBalancesInDefaultDenom']['totalPayables'],
                             totalReceivables=current_state['member']['defaultAccountData']['balanceData'][
@@ -374,7 +409,7 @@ class CredexBotService:
                                 'netCredexAssetsInDefaultDenom']
                         ),
                         pending_in=pending_in,
-                        handle=current_state['member']['defaultAccountData']['handle']
+                        handle=current_state['member']['defaultAccountData']['accountHandle']
                     )
                 },
                 "action":
@@ -428,41 +463,41 @@ class CredexBotService:
         if state.option == "select_account_to_use":
             options = {}
             count = 1
-            for acc in current_state['member']['loginData']['dashboardData']:
+            for acc in current_state['member']['accountDashboards']:
                 options[str(count)] = int(count) - 1
-                options[acc.get('handle')] = int(count) - 1
+                options[acc.get('accountHandle')] = int(count) - 1
                 count += 1
-
+            if f"{self.body}".lower() in GREETINGS:
+                    self.body = '1'
+            print("#####", current_state['member'].get('accountDashboards'), self.body)
             if options.get(self.body) is not None:
-                current_state['member']['defaultAccountData'] = current_state['member']['loginData']['dashboardData'][
-                    options.get(self.body)]
+                print("OPTIONS : ", options)
+                current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][options.get(self.body)]
                 state.update_state(
                     state=current_state,
                     stage='handle_action_menu',
                     update_from="handle_action_menu",
                     option="handle_action_menu"
                 )
+                print("SAVED : ", current_state['member']['accountDashboards'][options.get(self.body)])
                 self.body = "Hi"
                 self.message['message'] = "Hi"
                 return self.handle_action_menu
             else:
                 if str(self.body).isdigit():
-                    if self.body in [str(len(current_state['member']['loginData']['dashboardData']) + 1),
-                                     "handle_action_create_business_account"]:
+                    if self.body in [str(len(current_state['member']['accountDashboards']) + 1),"handle_action_create_business_account"]:
                         return self.handle_action_create_business_account
-                    elif self.body in [str(len(current_state['member']['loginData']['dashboardData']) + 2),
-                                       "handle_action_find_agent"]:
-                        return self.wrap_text("Agents")
-
+                    elif self.body in [str(len(current_state['member']['accountDashboards']) + 2),"handle_action_find_agent"]:
+                        return self.wrap_text(AGENTS)
         accounts = []
         count = 1
         account_string = f""
-        for account in current_state['member']['loginData']['dashboardData']:
-            account_string += f" *{count}.* 👤 _{account.get('displayName')}_\n"
+        for account in current_state['member']['accountDashboards']:
+            account_string += f" *{count}.* 👤 _{account.get('accountName').replace('Personal', '').rstrip()}_\n"
             accounts.append(
                 {
-                    "id": account.get('handle'),
-                    "title": f"👤 {account.get('displayName')}"
+                    "id": account.get('accountHandle'),
+                    "title": f"👤 {account.get('accountName').replace('Personal', '')}"[:21] + "..." if len(f"👤 {account.get('accountName').replace('Personal', '')}") > 24 else f"👤 {account.get('accountName').replace('Personal', '')}"
                 }
             )
 
@@ -503,8 +538,7 @@ class CredexBotService:
                 "type": "list",
                 "body": {
                     "text": ACCOUNT_SELECTION.format(greeting=get_greeting(), accounts=account_string,
-                                                     first_name=current_state['member']['loginData'][
-                                                         'humanMemberData'].get('displayName'))
+                                                     first_name=f"{current_state['member']['memberDashboard']['firstname']} {current_state['member']['memberDashboard']['lastname']}")
                 },
                 "action":
                     {
@@ -518,6 +552,10 @@ class CredexBotService:
                     }
             }
         }
+    
+    @property
+    def handle_action_find_agent(self):
+        return self.wrap_text(AGENTS)
 
     @property
     def handle_action_transactions(self):
@@ -538,17 +576,16 @@ class CredexBotService:
         elif self.body in ['Prev', 'prev'] and page_number > 1:
             page_number -= 1
         else:
-
             if self.body.isdigit():
                 if 0 < int(self.body) <= len(current_state.get('current_page', [])):
                     print(current_state['current_page'][int(self.body) - 1])
                     self.body = current_state['current_page'][int(self.body) - 1]['id']
-
+                
             url = f"{config('CREDEX')}/getCredex"
 
             payload = json.dumps({
                 "credexID": self.body,
-                "memberID": current_state['member']['defaultAccountData'].get('memberID'),
+                "accountID": current_state['member']['defaultAccountData'].get('accountID'),
             })
             headers = {
                 'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
@@ -556,7 +593,6 @@ class CredexBotService:
             }
 
             response = requests.request("GET", url, headers=headers, data=payload)
-
             if response.status_code == 200:
                 credex = response.json()
                 if credex:
@@ -571,7 +607,7 @@ class CredexBotService:
                                 "text": CREDEX.format(
                                     formattedOutstandingAmount=credex['credexData'].get('formattedOutstandingAmount'),
                                     formattedInitialAmount=credex['credexData'].get('formattedInitialAmount'),
-                                    counterpartyDisplayname=credex['credexData'].get('counterpartyDisplayname'),
+                                    counterpartyDisplayname=credex['credexData'].get('counterpartyAccountName').replace('Personal', '').rstrip(),
                                     date=credex['credexData'].get('dateTime') if credex['credexData'].get(
                                         'dateTime') else 'N/A',
                                     type=credex['credexData'].get('transactionType')
@@ -579,7 +615,7 @@ class CredexBotService:
                             },
                             "action":
                                 {
-                                    "button": "🕹️ Choose",
+                                    "button": "🕹️ Menu",
                                     "sections": [
                                         {
                                             "title": "Options",
@@ -595,7 +631,7 @@ class CredexBotService:
                         }
                     }
 
-            menu_string = "*Empty*\n\n🪹 No transactions found!\n\n"
+            menu_string = "*Empty*\n\n🪹 No transaction(s) found!\n\n"
             rows = [
                 {
                     "id": "X",
@@ -607,7 +643,7 @@ class CredexBotService:
         url = f"{config('CREDEX')}/getLedger"
 
         payload = json.dumps({
-            "memberID": current_state['member']['defaultAccountData'].get('memberID'),
+            "accountID": current_state['member']['defaultAccountData'].get('accountID'),
             "numRows": 8,
             "startRow": (page_number * 7) - 7
         })
@@ -628,11 +664,11 @@ class CredexBotService:
                 if 'Next' in txn.get('formattedInitialAmount'):
                     continue
 
-                menu_string += f"{count}. *{txn.get('formattedInitialAmount')}*\n        {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyDisplayname')}\n\n"
+                menu_string += f"{count}. {txn.get('formattedInitialAmount')}\n        {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName').replace('Personal', '').rstrip()}\n\n"
                 rows.append({
                     "id": txn.get('credexID'),
                     "title": f"{txn.get('formattedInitialAmount').replace('-', '')} {'DEBIT ' if '-' in txn.get('formattedInitialAmount') else 'CREDIT '}",
-                    "description": f"{txn.get('formattedInitialAmount')} {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyDisplayname')}"
+                    "description": f"{txn.get('formattedInitialAmount')} {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName').replace('Personal', '').rstrip()}"
                 })
                 count += 1
             current_state['page_number'] = page_number
@@ -710,9 +746,7 @@ class CredexBotService:
         if not isinstance(current_state, dict):
             current_state = current_state.state
         payload = json.dumps({
-            "credexID": self.body.split("_")[-1],
-            "memberID": current_state['member']['loginData']['humanMemberData'].get('memberID'),
-            "accountID": current_state['member']['defaultAccountData'].get('memberID')
+            "credexID": self.body.split("_")[-1]
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
@@ -722,14 +756,16 @@ class CredexBotService:
         response = requests.request("PUT", f"{config('CREDEX')}/acceptCredex", headers=headers, data=payload)
         if response.status_code == 200:
             try:
-                current_state['member']['defaultAccountData']['pendingInData'] = response.get("dashboardData", {}).get(
-                    "pendingInData", {})
-                current_state['member']['defaultAccountData']['pendingOutData'] = response.get("dashboardData", {}).get(
-                    "pendingOutData", {})
-                current_state['member']['defaultAccountData']['balanceData'] = response.get("dashboardData", {}).get(
-                    "balanceData", {})
+                self.refresh(reset=False)
+                # current_state['member']['defaultAccountData']['pendingInData'] = response.get("accountDashboards", {}).get(
+                #     "pendingInData", {})
+                # current_state['member']['defaultAccountData']['pendingOutData'] = response.get("accountDashboards", {}).get(
+                #     "pendingOutData", {})
+                # current_state['member']['defaultAccountData']['balanceData'] = response.get("accountDashboards", {}).get(
+                #     "balanceData", {})
             except Exception as e:
                 print("ERROR FETCHING ", e)
+            
             return self.wrap_text("> *🥳 Success*\n\n Offer successfully accepted!", x_is_menu=True,
                                   back_is_cancel=False)
         return self.wrap_text("> *😞 Failed*\n\n Failed to accept offer!", x_is_menu=True, back_is_cancel=False)
@@ -744,8 +780,7 @@ class CredexBotService:
             current_state = current_state.state
 
         payload = json.dumps({
-            "credexID": self.body.split("_")[-1],
-            "memberID": current_state['member']['defaultAccountData'].get('memberID')
+            "credexID": self.body.split("_")[-1]
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
@@ -754,7 +789,7 @@ class CredexBotService:
         }
         response = requests.request("PUT", f"{config('CREDEX')}/declineCredex", headers=headers, data=payload)
         if response.status_code == 200:
-            self.refresh()
+            self.refresh(reset=False)
             return self.wrap_text("> *🥳 Success*\n\n Offer successfully declined!", x_is_menu=True,
                                   back_is_cancel=False)
         return self.wrap_text("> *😞 Failed*\n\n Failed to decline offer!", x_is_menu=True, back_is_cancel=False)
@@ -769,8 +804,7 @@ class CredexBotService:
             current_state = current_state.state
 
         payload = json.dumps({
-            "credexID": self.body.split("_")[-1],
-            "memberID": current_state['member']['defaultAccountData'].get('memberID')
+            "credexID": self.body.split("_")[-1]
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
@@ -778,8 +812,9 @@ class CredexBotService:
             'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/cancelCredex", headers=headers, data=payload)
+        print(response.content, response.status_code)
         if response.status_code == 200:
-            self.refresh()
+            self.refresh(reset=False)
             return self.wrap_text("> *🥳 Success*\n\n Offer successfully cancelled!", x_is_menu=True,
                                   back_is_cancel=False)
         return self.wrap_text("> *😞 Failed*\n\n Failed to cancel offer!", x_is_menu=True, back_is_cancel=False)
@@ -790,18 +825,19 @@ class CredexBotService:
         state = self.user.state
         current_state = state.get_state(self.user)
 
-        payload = json.dumps({
-            "credexID": self.body.split("_")[-1],
-            "memberID": current_state['member']['defaultAccountData'].get('memberID')
-        })
+        data = current_state['member'].get('defaultAccountData', {}).get('pendingInData') if current_state[
+                'member'].get('defaultAccountData', {}).get('pendingInData') else []
+
+        payload = json.dumps([i.get('credexID') for i in data])
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
             'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/acceptCredexBulk", headers=headers, data=payload)
+        print(response.content)
         if response.status_code == 200:
-            self.refresh()
+            self.refresh(reset=False)
             return self.wrap_text("> *🥳 Success*\n\n Accepted all successfully!", x_is_menu=True, back_is_cancel=False)
         return self.wrap_text("> *😞 Failed*\n\n Failed to accept all!", x_is_menu=True, back_is_cancel=False)
 
@@ -817,7 +853,7 @@ class CredexBotService:
             # data = current_state.get('pending') if current_state.get('pending') else []
             data = current_state['member'].get('defaultAccountData', {}).get('pendingInData') if current_state[
                 'member'].get('defaultAccountData', {}).get('pendingInData') else []
-
+            print(data)
             if self.body in [str(i) for i in range(1, len(data) + 1)] or self.message['type'] == 'interactive':
                 if data:
                     item = None
@@ -838,7 +874,7 @@ class CredexBotService:
                             "type": "button",
                             "body": {
                                 "text": ACCEPT_CREDEX.format(amount=item.get('formattedInitialAmount'),
-                                                             party=item.get('counterpartyDisplayname'),
+                                                             party=item.get('counterpartyAccountName').replace('Personal', '').rstrip(),
                                                              type='Secured' if item.get('secured') else 'Unsecured')
                             },
                             "action": {
@@ -869,12 +905,12 @@ class CredexBotService:
             data = current_state['member'].get('defaultAccountData', {}).get('pendingInData') if current_state[
                 'member'].get('defaultAccountData', {}).get('pendingInData') else []
             for item in data[:10]:
-                menu_string += f"{count}. *{item.get('formattedInitialAmount')}*\n        from {item.get('counterpartyDisplayname')}\n"
+                menu_string += f"{count}. {item.get('formattedInitialAmount')}\n        from {item.get('counterpartyAccountName').replace('Personal', '').rstrip()}\n"
                 rows.append(
                     {
                         "id": item.get('credexID'),
                         "title": f"{item.get('formattedInitialAmount')}",
-                        "description": f"from {item.get('counterpartyDisplayname')}"
+                        "description": f"from {item.get('counterpartyAccountName').replace('Personal', '').rstrip()}"
                     }
                 )
                 count += 1
@@ -957,7 +993,7 @@ class CredexBotService:
                             "type": "button",
                             "body": {
                                 "text": OUTGOING_CREDEX.format(amount=item.get('formattedInitialAmount'),
-                                                               party=item.get('counterpartyDisplayname'),
+                                                               party=item.get('counterpartyAccountName'),
                                                                type='Secured' if item.get('secured') else 'Unsecured')
                             },
                             "action": {
@@ -981,13 +1017,13 @@ class CredexBotService:
             data = current_state['member'].get('defaultAccountData', {}).get('pendingOutData') if current_state[
                 'member'].get('defaultAccountData', {}).get('pendingOutData') else []
             for item in data[:10]:
-                counterparty = item.get('counterpartyDisplayname').replace(' ', '\n         ', 1)
-                menu_string += f"{count}. *{item.get('formattedInitialAmount')}* to {counterparty}\n"
+                counterparty = item.get('counterpartyAccountName').replace(' ', '\n         ', 1)
+                menu_string += f"{count}. {item.get('formattedInitialAmount')} to {counterparty}\n"
                 rows.append(
                     {
                         "id": item.get('credexID'),
                         "title": f"{item.get('formattedInitialAmount')}",
-                        "description": f"to {item.get('counterpartyDisplayname')}"
+                        "description": f"to {item.get('counterpartyAccountName')}"
                     }
                 )
                 count += 1
@@ -1053,8 +1089,8 @@ class CredexBotService:
         if "=>" in f"{self.body}" or "->" f"{self.body}" or self.message['type'] == "nfm_reply":
             if self.message['type'] == "nfm_reply":
                 payload = {
-                    "authorizer_member_id": current_state['member']['loginData']['humanMemberData'].get('memberID'),
-                    "issuer_member_id": current_state['member']['defaultAccountData'].get('memberID'),
+                    "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
+                    "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard']['accountIDS'][-1],
                     "recipient_phone_number": self.body.get('recipent_phone_number'),
                     "amount": self.body.get('amount'),
                     "dueDate": self.body.get('dueDate'),
@@ -1069,12 +1105,12 @@ class CredexBotService:
                         user, _ = user.split("=")
                     from datetime import datetime, timedelta
                     payload = {
-                        "authorizer_member_id": current_state['member']['loginData']['humanMemberData'].get('memberID'),
-                        "issuer_member_id": current_state['member']['defaultAccountData'].get('memberID'),
+                        "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
+                        "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard']['accountIDS'][-1],
                         "handle": user,
                         "amount": amount,
                         "dueDate": (datetime.now() + timedelta(weeks=4)).timestamp() * 1000,
-                        "currency": current_state['member']['defaultAccountData']['defaultDenom'],
+                        "currency": current_state['member']['defaultAccountData']['defaultDenom'] if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard'].get('defaultDenom'),
                         "securedCredex": True
                     }
 
@@ -1094,12 +1130,12 @@ class CredexBotService:
                 else:
                     return self.wrap_text(OFFER_CREDEX.format(message='*Missing Due Date❗*'), x_is_menu=True)
                 payload = {
-                    "authorizer_member_id": current_state['member']['loginData']['humanMemberData'].get('memberID'),
-                    "issuer_member_id": current_state['member']['defaultAccountData'].get('memberID'),
+                    "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
+                    "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard']['accountIDS'][-1],
                     "handle": user,
                     "amount": amount,
                     "dueDate": datetime.strptime(date, '%Y-%m-%d').timestamp() * 1000,
-                    "currency": current_state['member']['defaultAccountData']['defaultDenom'],
+                    "currency": current_state['member']['defaultAccountData']['defaultDenom'] if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard'].get('defaultDenom'),
                     "securedCredex": False
                 }
 
@@ -1107,15 +1143,43 @@ class CredexBotService:
 
             if serializer.is_valid():
                 accounts = []
+                print(serializer.validated_data)
                 count = 1
-
                 account_string = f""
-                for account in current_state['member']['loginData']['dashboardData']:
-                    account_string += f" *{count}.*  _{account.get('displayName')}_\n"
+
+                if current_state.get('member', {}).get('defaultAccountData', {}):
+                    account_string  += f" *{count}.*  _{current_state['member']['defaultAccountData'].get('accountName').replace('Personal', '').rstrip()}_\n"
                     accounts.append(
                         {
-                            "id": account.get('handle'),
-                            "title": f"👤 {account.get('handle')}"
+                            "id": current_state['member']['defaultAccountData'].get('accountID'),
+                            "title": f"👤 {current_state['member']['defaultAccountData'].get('accountHandle')}"
+                        }
+                    )
+                    count += 1
+                
+                if current_state.get('member', {}).get('defaultAccountData', {}).get('accountID') != current_state['member']['accountDashboards'][-1].get('accountID'):
+                    account_string  += f" *{count}.*  _{current_state['member']['accountDashboards'][-1].get('accountName').replace('Personal', '').rstrip()}_\n"
+                    accounts.append(
+                        {
+                            "id": current_state['member']['accountDashboards'][-1].get('accountID'),
+                            "title": f"👤 {current_state['member']['accountDashboards'][-1].get('accountHandle')}"
+                        }
+                    )
+                    count += 1
+
+
+                for account in current_state['member']['accountDashboards']:
+                    if current_state.get('member', {}).get('defaultAccountData', {}).get('accountID') == account.get('accountID'):
+                        continue
+
+                    if current_state['member']['accountDashboards'][-1].get('accountID') == account.get('accountID'):
+                        continue
+
+                    account_string += f" *{count}.*  _{account.get('accountName').replace('Personal', '').rstrip()}_\n"
+                    accounts.append(
+                        {
+                            "id": account.get('accountID'),
+                            "title": f"👤 {account.get('accountHandle').replace('Personal', '').rstrip()}"
                         }
                     )
 
@@ -1130,9 +1194,10 @@ class CredexBotService:
                         "title": f"❌ Cancel"
                     }
                 )
+                print(accounts)
                 count += 1
                 response = CONFIRM_SECURED_CREDEX.format(
-                    party=serializer.validated_data.get('full_name'),
+                    party=serializer.validated_data.get('full_name').replace('Personal', '').rstrip(),
                     amount=serializer.validated_data.get('InitialAmount'),
                     currency=serializer.validated_data.get('Denomination'),
                     handle=serializer.validated_data.pop('handle'),
@@ -1140,7 +1205,7 @@ class CredexBotService:
                     accounts=account_string
 
                 ) if serializer.validated_data.get('securedCredex') else CONFIRM_UNSECURED_CREDEX.format(
-                    party=serializer.validated_data.get('full_name'),
+                    party=serializer.validated_data.get('full_name').replace('Personal', '').rstrip(),
                     amount=serializer.validated_data.get('InitialAmount'),
                     currency=serializer.validated_data.get('Denomination'),
                     handle=serializer.validated_data.pop('handle'),
@@ -1164,15 +1229,44 @@ class CredexBotService:
                         break
 
         if current_state.get('confirm_offer_payload'):
+
             accounts = []
             count = 1
-            for account in current_state['member']['loginData']['dashboardData']:
-                accounts.append(account.get('memberID'))
+            if current_state.get('member', {}).get('defaultAccountData', {}):
+                accounts.append(current_state['member']['defaultAccountData'].get('accountID'))
+                count += 1
+
+            if current_state.get('member', {}).get('defaultAccountData', {}).get('accountHandle') != current_state['member']['accountDashboards'][-1].get('accountHandle'):
+                accounts.append(current_state['member']['accountDashboards'][-1].get('accountID'))
+                count += 1
+
+
+            for account in current_state['member']['accountDashboards']:
+                if current_state.get('member', {}).get('defaultAccountData', {}).get('accountID') == account.get('accountID'):
+                    continue
+
+                if current_state['member']['accountDashboards'][-1].get('accountID') == account.get('accountID'):
+                    continue
+                accounts.append(account.get('accountID'))
+
+                if count > 9:
+                    break
                 count += 1
             accounts.append("Cancel")
 
             if str(self.body).isdigit():
                 self.body = accounts[int(self.body) - 1] if int(self.body) <= len(accounts) else "out_of_range"
+                if self.body == "out_of_range":
+                    return self.wrap_text(INVALID_ACTION, plain=True)
+                for account in current_state['member']['accountDashboards']:
+                    if account.get('accountID') == self.body:
+                        current_state['member']['defaultAccountData'] = account
+                        state.update_state(
+                            state=current_state,
+                            update_from="handle_action_offer_credex"
+                        )
+
+                
             if self.body in accounts:
                 if self.body in ['CANCEL', 'Cancel', 'cancel']:
                     current_state.pop('confirm_offer_payload')
@@ -1189,8 +1283,10 @@ class CredexBotService:
                         current_state['confirm_offer_payload'].pop('secured', None)
 
                     to_credex = current_state.get('confirm_offer_payload')
+                    to_credex['issuerAccountID'] = self.body
                     to_credex.pop("handle", None)
                     payload = json.dumps(current_state.get('confirm_offer_payload'))
+                    print(to_credex)
                     headers = {
                         'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                         'Content-Type': 'application/json',
@@ -1198,27 +1294,30 @@ class CredexBotService:
                     }
                     message = ''
                     response = requests.request("POST", url, headers=headers, data=payload)
+                    print(response.content, response.status_code)
                     if response.status_code == 200:
 
                         response = response.json()
                         try:
-                            current_state['member']['defaultAccountData']['pendingInData'] = response.get(
-                                "dashboardData", {}).get("pendingInData", {})
-                            current_state['member']['defaultAccountData']['pendingOutData'] = response.get(
-                                "dashboardData", {}).get("pendingOutData", {})
-                            current_state['member']['defaultAccountData']['balanceData'] = response.get("dashboardData",
-                                                                                                        {}).get(
-                                "balanceData", {})
+                            self.refresh(reset=False)
+                            # current_state['member']['defaultAccountData']['pendingInData'] = response.get(
+                            #     "accountDashboards", {}).get("pendingInData", {})
+                            # current_state['member']['defaultAccountData']['pendingOutData'] = response.get(
+                            #     "accountDashboards", {}).get("pendingOutData", {})
+                            # current_state['member']['defaultAccountData']['balanceData'] = response.get("accountDashboards",
+                            #                                                                             {}).get(
+                            #     "balanceData", {})
                         except Exception as e:
                             print("ERROR FETCHING ", e)
 
                         if response.get("offerCredexData", {}).get("credex"):
+                            response = response.get("offerCredexData", {})
                             current_state.pop('confirm_offer_payload', {})
                             return self.wrap_text(OFFER_SUCCESSFUL.format(
                                 type='Secured Credex' if response['credex']['secured'] else 'Unsecured Credex',
                                 amount=response['credex']['formattedInitialAmount'],
                                 currency=current_state['member']['defaultAccountData']['defaultDenom'],
-                                recipient=response['credex']['counterpartyDisplayname'],
+                                recipient=response['credex']['counterpartyAccountName'],
                                 secured='yes' if response['credex']['secured'] else 'no'
                             ), x_is_menu=True, back_is_cancel=False)
                         else:
@@ -1264,7 +1363,7 @@ class CredexBotService:
         return formatted_synopsis.strip()
 
     def wrap_text(self, message, proceed_option=False, x_is_menu=False, include_back=False, navigate_is="Navigate",
-                  extra_rows=[], number=None, back_is_cancel=False, use_buttons=False, yes_or_no=False, custom={}):
+                  extra_rows=[], number=None, back_is_cancel=False, use_buttons=False, yes_or_no=False, custom={}, plain=False):
         """THIS METHOD HANDLES ABSTRACTS CLOUDAPI MESSAGE DETAILS"""
         if use_buttons:
             rows = [
@@ -1307,7 +1406,7 @@ class CredexBotService:
                 }
             }
 
-        if len(message) > 1024:
+        if len(message) > 1024 or plain:
             return {
                 "messaging_product": "whatsapp",
                 "recipient_type": "individual",
@@ -1449,7 +1548,7 @@ class CredexBotService:
             url = f"{config('CREDEX')}/getMemberByHandle"
 
             payload = json.dumps({
-                "handle": self.body.lower()
+                "accountHandle": self.body.lower()
             })
             headers = {
                 'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
@@ -1490,17 +1589,14 @@ class CredexBotService:
                 }
 
             if self.body == '1':
-                url = f"{config('CREDEX')}/authorizeForCompany"
+                url = f"{config('CREDEX')}/authorizeForAccount"
 
                 payload = json.dumps({
-                    "MemberIDtoBeAuthorized": current_state[
-                        f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}"].get(
-                        'memberID'),
-                    "MemberHandleToBeAuthorized": current_state[
+                    "AccountHandleToBeAuthorized": current_state[
                         f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('displayName')}"].get(
                         'handle'),
-                    "companyID": current_state['member'].get('defaultAccountData', {}).get('memberID'),
-                    "ownerID": current_state['member']['loginData']['humanMemberData'].get('memberID')
+                    "accountID": current_state['member'].get('defaultAccountData', {}).get('memberID'),
+                    "ownerID": current_state['member']['memberDashboard'].get('memberID')
                 })
 
                 headers = {
