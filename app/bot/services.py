@@ -398,7 +398,7 @@ class CredexBotService:
                 "body": {
                     "text": HOME.format(
                         balance=BALANCE.format(
-                            securedNetBalancesByDenom=balances,
+                            securedNetBalancesByDenom=balances if balances else "$0.00",
                             totalPayables=current_state['member']['defaultAccountData']['balanceData'][
                                 'unsecuredBalancesInDefaultDenom']['totalPayables'],
                             totalReceivables=current_state['member']['defaultAccountData']['balanceData'][
@@ -514,7 +514,7 @@ class CredexBotService:
         )
         count += 1
 
-        account_string += f" *{count}.* 🏦 _Cash in/out with VimbisoPay_\n"
+        account_string += f" *{count}.* 🏦 _Cash In/Out with VimbisoPay_\n"
         accounts.append(
             {
                 "id": "handle_action_find_agent",

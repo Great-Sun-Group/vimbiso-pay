@@ -41,9 +41,9 @@ INVALID_ACTION = """
 """
 
 DELAY = """
-Welcome to credex. Please hold 
-a moment while we fetch your 
-account data.
+Welcome to credex. Please 
+hold a moment while we fetch 
+your account data.
 """
 
 BALANCE = """
