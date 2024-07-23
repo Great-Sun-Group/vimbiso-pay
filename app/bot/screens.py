@@ -12,7 +12,7 @@ ACCOUNT_SELECTION = """
 HOME = """
 > *👤 {account}*
 {balance}
-*👤 Handle: _{handle}_*
+*_{handle}_*
  *1. 📥 Pending Offers ({pending_in})*
  *2. 🔀 Switch Account*
  *3. 📒 Review Ledger*
@@ -286,15 +286,29 @@ Member authorization failed!
 """
 
 AGENTS = """
-> *👤 Agents*
+> *👤 VimbisoPay*
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
-Agents
-1. Hre (+263 77 369 6227)
-2. Byo (+263 77 369 6227)
-3. Kwe (+263 77 369 6227)
-4. Kdm (+263 77 369 6227)
-5. Rspe (+263 77 369 6227)
+
+*Cash in:* cash can be used to 
+purchase a secured credex from 
+VimbisoPay at no cost.
+
+Secured credex can also be 
+purchased from anyone who has a 
+secured balance, at the market 
+rate agreed between you.
+
+*Cash out:* if you have a secured 
+balance, you can cash out with 
+VimbisoPay for a 2% fee. 
+
+You can also sell secured credex 
+to other members for cash, at the 
+market rate agreed between you.
+
+Cash in/out with VimbisoPay in Mbare at <shop name and address coming soon>.
+
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
