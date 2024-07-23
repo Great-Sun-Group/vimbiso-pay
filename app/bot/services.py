@@ -350,7 +350,7 @@ class CredexBotService:
                         "flow_action": "navigate",
                         "flow_token": "not-used",
                         "flow_id": config('WHATSAPP_COMPANY_REGISTRATION_FLOW_ID'),
-                        "flow_cta": "Create",
+                        "flow_cta": "Create Account",
                         "flow_action_payload": {
                             "screen": "COMPANY"
                         }
@@ -409,7 +409,7 @@ class CredexBotService:
                                 'netCredexAssetsInDefaultDenom']
                         ),
                         pending_in=pending_in,
-                        handle=current_state['member']['defaultAccountData']['accountHandle']
+                        handle=current_state['member']['defaultAccountData']['accountName']
                     )
                 },
                 "action":
@@ -505,7 +505,7 @@ class CredexBotService:
                 break
             count += 1
 
-        account_string += f" *{count}.* 💼 _Create Business Account_\n"
+        account_string += f" *{count}.* 💼 _Create New Account_\n"
         accounts.append(
             {
                 "id": "handle_action_create_business_account",
@@ -514,11 +514,11 @@ class CredexBotService:
         )
         count += 1
 
-        account_string += f" *{count}.* 🏦 _Find VimbisoPay Agents_\n"
+        account_string += f" *{count}.* 🏦 _Cash in/out with VimbisoPay_\n"
         accounts.append(
             {
                 "id": "handle_action_find_agent",
-                "title": f"🏦 Find Agent"
+                "title": f"🏦 Cash In/Out"
             }
         )
 
