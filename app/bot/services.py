@@ -537,8 +537,7 @@ class CredexBotService:
             "interactive": {
                 "type": "list",
                 "body": {
-                    "text": ACCOUNT_SELECTION.format(greeting=get_greeting(), accounts=account_string,
-                                                     first_name=f"{current_state['member']['memberDashboard']['firstname']} {current_state['member']['memberDashboard']['lastname']}")
+                    "text": ACCOUNT_SELECTION.format(greeting=get_greeting(name=current_state['member']['memberDashboard']['firstname']), accounts=account_string)
                 },
                 "action":
                     {

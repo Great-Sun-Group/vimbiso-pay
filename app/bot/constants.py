@@ -26,18 +26,18 @@ GREETINGS = [
 import datetime
 
 
-def get_greeting():
+def get_greeting(name):
     current_time = datetime.datetime.now() + timedelta(hours=2)
     hour = current_time.hour
 
     if 5 <= hour < 12:
-        return f"Good Morning 🌅"
+        return f"Good Morning {name} 🌅"
     elif 12 <= hour < 18:
-        return f"Good Afternoon ☀️"
+        return f"Good Afternoon {name} ☀️"
     elif 18 <= hour < 22:
-        return f"Good Evening 🌆"
+        return f"Good Evening {name} 🌆"
     else:
-        return f"Hello There 🌙"
+        return f"Hello There {name} 🌙"
 
 
 class CachedUserState:
