@@ -1,10 +1,12 @@
 ACCOUNT_SELECTION = """
-*{greeting} {first_name}*
+⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+*{greeting}*
 
-*_Which account would you like_*
-*_to view and manage?_*
+*_Which account would you like to_* 
+*_view and manage?_*
 
 {accounts}
+ ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
 HOME = """
@@ -42,9 +44,10 @@ INVALID_ACTION = """
 """
 
 DELAY = """
-Welcome to credex. Please 
-hold a moment while we 
-fetch your account data.
+Welcome to credex. 
+
+Please hold a moment while 
+we fetch your account data.
 """
 
 BALANCE = """

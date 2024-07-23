@@ -71,7 +71,7 @@ class CredexBotService:
                 current_state = current_state.state
             current_state = {"state": {}, 'member': current_state.get('member')}
             state.update_state(current_state, update_from='menu')
-            return self.handle_action_menu
+            return self.handle_action_select_profile
 
             # IF USER IS AT MENU STAGE FIND THE NEXT ROUTE BASED ON MESSAGE
         if self.user.state.stage == "handle_action_menu":
@@ -460,7 +460,7 @@ class CredexBotService:
             self.refresh()
             # print(response.text)
 
-        if state.option == "select_account_to_use":
+        if state.option == "select_account_to_use" and f"{self.body}".lower() not in GREETINGS:
             options = {}
             count = 1
             for acc in current_state['member']['accountDashboards']:
