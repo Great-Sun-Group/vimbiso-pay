@@ -398,7 +398,7 @@ class CredexBotService:
                 "body": {
                     "text": HOME.format(
                         balance=BALANCE.format(
-                            securedNetBalancesByDenom=balances if balances else "- $0.00",
+                            securedNetBalancesByDenom=balances if balances else "- $0.00\n",
                             totalPayables=current_state['member']['defaultAccountData']['balanceData'][
                                 'unsecuredBalancesInDefaultDenom']['totalPayables'],
                             totalReceivables=current_state['member']['defaultAccountData']['balanceData'][
