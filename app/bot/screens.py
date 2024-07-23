@@ -37,6 +37,7 @@ Send *'Menu'* to go back to Menu
 
 INVALID_ACTION = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
 *Invalid option selected*
 """
 
@@ -48,6 +49,7 @@ your account data.
 
 BALANCE = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
 *SECURED BALANCES*
 {securedNetBalancesByDenom}
 *USECURED BALANCES*
@@ -75,6 +77,7 @@ Send *'Menu'* to go back to Menu
 CREDEX = """
 > *💰 Credex*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
 *Summary*
 
  Outstanding : {formattedOutstandingAmount}
@@ -152,8 +155,8 @@ we offer.
 
 CONFIRM_SECURED_CREDEX = """
 > *💰 Confirm*
-
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
 Offer {secured} credex:
   ${amount} {currency} to {party}
 
@@ -164,8 +167,8 @@ Make offer from:
 
 CONFIRM_UNSECURED_CREDEX = """
 > *💰 Confirm*
-
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
 Offer {secured} credex:
   ${amount} {currency} to {party}
   due {date}
@@ -177,8 +180,8 @@ Make offer from:
 
 ACCEPT_CREDEX = """
 > *💰 Accept Offer*
-
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
 *Accept {amount} offer*
 
   {type} credex from
@@ -188,8 +191,8 @@ ACCEPT_CREDEX = """
 
 OUTGOING_CREDEX = """
 > *💰 Cancel Offer*
-
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
 *Cancel {amount} offer*
 
   {type} credex to
@@ -199,14 +202,12 @@ OUTGOING_CREDEX = """
 
 OFFER_SUCCESSFUL = """
 > *✅ Success!*
-
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 *Offered*
 
+{amount} {currency} {secured} to
 {recipient}
-Amount: {amount} {currency}
-Secured: {secured}
 
 Send *'Menu'* to go back to Menu
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️

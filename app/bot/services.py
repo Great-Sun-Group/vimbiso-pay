@@ -398,7 +398,7 @@ class CredexBotService:
                 "body": {
                     "text": HOME.format(
                         balance=BALANCE.format(
-                            securedNetBalancesByDenom=balances if balances else "$0.00",
+                            securedNetBalancesByDenom=balances if balances else "- $0.00",
                             totalPayables=current_state['member']['defaultAccountData']['balanceData'][
                                 'unsecuredBalancesInDefaultDenom']['totalPayables'],
                             totalReceivables=current_state['member']['defaultAccountData']['balanceData'][
@@ -1317,7 +1317,7 @@ class CredexBotService:
                                 amount=response['credex']['formattedInitialAmount'],
                                 currency=current_state['member']['defaultAccountData']['defaultDenom'],
                                 recipient=response['credex']['counterpartyAccountName'],
-                                secured='yes' if response['credex']['secured'] else 'no'
+                                secured='*secured* credex' if response['credex']['secured'] else '*unsecured* credex'
                             ), x_is_menu=True, back_is_cancel=False)
                         else:
                             current_state.pop('confirm_offer_payload', {})
