@@ -518,7 +518,7 @@ class CredexBotService:
         accounts.append(
             {
                 "id": "handle_action_find_agent",
-                "title": f"🏦 Cash In/Out"
+                "title": f"🏦 VimbisoPay"
             }
         )
 
