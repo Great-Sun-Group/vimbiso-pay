@@ -307,7 +307,8 @@ You can also sell secured credex
 to other members for cash, at the 
 market rate agreed between you.
 
-Cash in/out with VimbisoPay in Mbare at <shop name and address coming soon>.
+Cash in/out with VimbisoPay in 
+Mbare.
 
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
