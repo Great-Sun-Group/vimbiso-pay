@@ -397,6 +397,7 @@ class CredexBotService:
                 "type": "list",
                 "body": {
                     "text": HOME.format(
+                        account=current_state['member']['defaultAccountData']['accountName'].replace('Personal', '').rstrip(),
                         balance=BALANCE.format(
                             securedNetBalancesByDenom=balances if balances else "- $0.00\n",
                             totalPayables=current_state['member']['defaultAccountData']['balanceData'][
@@ -409,7 +410,7 @@ class CredexBotService:
                                 'netCredexAssetsInDefaultDenom']
                         ),
                         pending_in=pending_in,
-                        handle=current_state['member']['defaultAccountData']['accountName'].replace('Personal', '').rstrip()
+                        handle=current_state['member']['defaultAccountData']['accountHandle'].replace('Personal', '').rstrip()
                     )
                 },
                 "action":

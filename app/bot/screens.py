@@ -10,7 +10,7 @@ ACCOUNT_SELECTION = """
 """
 
 HOME = """
-> *🏦 Credex*
+> *🏦 {account}*
 {balance}
 *👤 Account: _{handle}_*
  *1. 📥 Pending Offers ({pending_in})*
