@@ -409,7 +409,7 @@ class CredexBotService:
                                 'netCredexAssetsInDefaultDenom']
                         ),
                         pending_in=pending_in,
-                        handle=current_state['member']['defaultAccountData']['accountName']
+                        handle=current_state['member']['defaultAccountData']['accountName'].replace('Personal', '').rstrip()
                     )
                 },
                 "action":
