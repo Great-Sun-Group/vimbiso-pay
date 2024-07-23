@@ -60,8 +60,8 @@ BALANCE = """
   Receivables : {totalReceivables}
   PayRec : {netPayRec}
 
-*CREDEX ASSETS*
-  Credex Assets : {netCredexAssetsInDefaultDenom}
+*NET ASSETS*
+  {netCredexAssetsInDefaultDenom}
 """
 
 BALANCE_FAILED = """
@@ -130,10 +130,10 @@ OFFER_CREDEX = """
 > *💰 Offer Credex*
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+To offer a secured credex, send a 
+message:
 
 1.25=>CounterPartyHandle
-to offer *secured* credex 
-from your account
 
 {message}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
