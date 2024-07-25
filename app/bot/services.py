@@ -133,7 +133,7 @@ class CredexBotService:
                     "to": self.user.mobile_number,
                     "type": "text",
                     "text": {
-                        "body": message.message
+                        "body": message.messsage
                     }
                 }).send_message()
 

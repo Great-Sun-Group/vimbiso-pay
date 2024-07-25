@@ -188,10 +188,10 @@ class WelcomeMessage(APIView):
     def post(request):
         if request.data.get('message'):
             if not Message.objects.all().first():
-                Message.objects.create(message=request.data.get('message'))
+                Message.objects.create(messsage=request.data.get('message'))
             else:
                 obj = Message.objects.all().first()
-                obj.message = request.data.get('message')
+                obj.messsage = request.data.get('message')
                 obj.save()
         return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
     
