@@ -187,8 +187,8 @@ class WelcomeMessage(APIView):
     @staticmethod
     def post(request):
         if request.data.get('message'):
-            if not Message.objects.all().filter():
-                obj = Message.objects.all().filter()
+            if not Message.objects.all().first():
+                obj = Message.objects.all().firsti()
                 obj.message = request.data.get('message')
                 obj.save()
         return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
