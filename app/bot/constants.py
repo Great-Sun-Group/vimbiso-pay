@@ -83,18 +83,37 @@ class CachedUser:
         self.state = CachedUserState(self)
 
 
-MENU_OPTIONS = {
-    '1': "handle_action_pending_offers_in",
+MENU_OPTIONS_1 = {
+     '1': "handle_action_pending_offers_in",
     'handle_action_pending_offers_in': "handle_action_pending_offers_in",
-    '2': "handle_action_switch_account",
-    'handle_action_switch_account': "handle_action_switch_account",
-    '3': "handle_action_transactions",
+    '2': "handle_action_transactions",
     'handle_action_transactions': "handle_action_transactions",
+    '3': "handle_action_pending_offers_out",
+    'handle_action_pending_offers_out': "handle_action_pending_offers_out",
     '4': "handle_action_offer_credex",
     'handle_action_offer_credex': "handle_action_offer_credex",
-    '5': "handle_action_more_options",
-    'handle_action_more_options': "handle_action_more_options"
+    '5': "handle_action_switch_account",
+    'handle_action_switch_account': "handle_action_switch_account",
 }
+
+MENU_OPTIONS_2 = {
+    '1': "handle_action_pending_offers_in",
+    'handle_action_pending_offers_in': "handle_action_pending_offers_in",
+    '2': "handle_action_transactions",
+    'handle_action_transactions': "handle_action_transactions",
+    '3': "handle_action_authorize_member",
+    'handle_action_authorize_member': "handle_action_authorize_member",
+    '4': "handle_action_notifications",
+    'handle_action_notifications': "handle_action_notifications",
+    '5': "handle_action_pending_offers_out",
+    'handle_action_pending_offers_out': "handle_action_pending_offers_out",
+    '6': "handle_action_offer_credex",
+    'handle_action_offer_credex': "handle_action_offer_credex",
+    '7': "handle_action_switch_account",
+    'handle_action_switch_account': "handle_action_switch_account",
+    
+}
+
 
 ABOUT = """
 Today credex is being used 

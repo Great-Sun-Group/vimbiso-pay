@@ -25,7 +25,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # Custom apps
-    'rest_framework'
+    'rest_framework',
+    'bot.apps.BotConfig'
 ]
 
 MIDDLEWARE = [

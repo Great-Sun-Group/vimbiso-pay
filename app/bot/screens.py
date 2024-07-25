@@ -9,15 +9,33 @@ ACCOUNT_SELECTION = """
  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
-HOME = """
+
+
+HOME_1 = """
 > *👤 {account}*
 {balance}
 *_{handle}_*
  *1. 📥 Pending Offers ({pending_in})*
- *2. 🔀 Switch Account*
- *3. 📒 Review Ledger*
+ *2. 📒 Review Ledger*
+ *3. 📤 Review Outgoing Offers ({pending_in})*
  *4. 💸 Offer Credex*
- *5. 💼 More Options*
+ *5. 👥 Return to Member Dashboard*
+
+ *What would you like to do ?*
+ ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+"""
+
+HOME_2 = """
+> *👤 {account}*
+{balance}
+*_{handle}_*
+ *1. 📥 Pending Offers ({pending_in})*
+ *2. 📒 Review Ledger*
+ *3. 👥 Add or remove members*
+ *4. 🛎️ Update notification recipient* 
+ *5. 📤 Review Outgoing Offers ({pending_out})*
+ *6. 💸 Offer Credex*
+ *7. 🏡 Return to Member Dashboard*
 
  *What would you like to do ?*
  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
@@ -55,7 +73,7 @@ BALANCE = """
 
 *SECURED BALANCES*
 {securedNetBalancesByDenom}
-*USECURED BALANCES*
+*UNSECURED BALANCES*
   Payables : {totalPayables}
   Receivables : {totalReceivables}
   PayRec : {netPayRec}
@@ -98,12 +116,9 @@ REGISTER = """
 > *👤  Registration*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-*ℹ️  INSTRUCTIONS*
- To sign up for an account:
-
- - Click the *'Register'* button
-   below and fill in the required
-   fields and click submit.
+To create a new account, tap *Create* 
+*Account* below and submit the linked 
+form.
 
 Send *'Menu'* to go back to Menu
 
@@ -115,12 +130,9 @@ COMPANY_REGISTRATION = """
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-*ℹ️  INSTRUCTIONS*
- To create a new account :
-
- - Click the *'Create Account'* 
-   button below and fill in the 
-   required fields and click submit.
+To create a new account, tap *Create* 
+*Account* below and submit the linked 
+form.
 
 {message}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
@@ -131,10 +143,41 @@ OFFER_CREDEX = """
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-To offer a secured credex, send a 
-message:
+You can offer payment through the 
+chatbot interface. All you need 
+to know is the account handle of 
+your counterparty, and the amount 
+to offer.
 
-1.25=>CounterPartyHandle
+When you purchase a secured credex 
+from VimbisoPay for $1 USD in cash, 
+the VimbisoPay agent enters in the 
+chatbot:
+
+1=>youraccounthandle
+
+You will be prompted to approve 
+the offer, and when you do it 
+will be entered into your ledger 
+as a secured credex balance. 
+When you want to send $0.50 to 
+a vendor, enter:
+
+0.5=>vendorhandle
+
+And if the vendor wants to 
+purchase the $1 cash back from 
+VimbisoPay, they would enter:
+
+1.02=>vimbisopay
+
+Yes, there is a 2% charge on cash 
+out for secured credex. But there’s 
+no charge for cash in, or for 
+transactions within the ecosystem. 
+
+So only cash out if your 
+counterparty won’t accept credex.
 
 {message}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
@@ -236,10 +279,10 @@ ADD_MERMBER = """
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-Send member *handle* of the 
-member you wish to allow to 
-authorize transactions for 
-*{company}*
+Send member *handle* of the member 
+you wish to allow to authorize 
+transactions for:
+- *{company}*
 
 {message}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
@@ -255,7 +298,7 @@ Do you wish to allow member:
 - *{member}*
 
 to perform transactions for
-*{company} ?*
+- *{company} ?*
 
 *1. ✅ Authorize*
 *2. ❌ Cancel*
@@ -268,10 +311,19 @@ AUTHORIZATION_SUCCESSFUL = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Member authorization complete!
-
 - *{member}*
-
 can now transact on behalf of 
+*{company}*
+⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+"""
+
+DEAUTHORIZATION_SUCCESSFUL = """
+> *✅ Success*
+⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
+Access has been revoked!
+- *{member}*
+can nolonger transact on behalf of 
 *{company}*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -282,6 +334,7 @@ AUTHORIZATION_FAILED = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 Member authorization failed!
 
+{message}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
@@ -312,4 +365,36 @@ Mbare.
 
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+"""
+
+MEMBERS = """
+> *👥 Members*
+
+*Add or remove members*
+
+You can authorize others to transact 
+on behalf of this account (max 5).
+
+1. Add new member
+{members}
+"""
+
+NOTIFICATIONS = """
+> *🛎️ Notifications*
+
+*Update notification recipient*
+
+*{name}* currently receives 
+notifications of incoming offers. 
+
+Change to:
+{members}
+"""
+
+NOTIFICATION = """
+> *🛎️ Notifications*
+
+Notifications of incoming offers now
+being sent to :
+- *{name}* 
 """

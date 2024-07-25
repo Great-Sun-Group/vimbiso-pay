@@ -9,7 +9,7 @@ from datetime import datetime
 from bot.constants import CachedUser
 from bot.services import CredexBotService
 from bot.utils import CredexWhatsappService
-
+from bot.models import Message
 
 class CredexCloudApiWebhook(APIView):
     """Cloud Api Webhook"""
@@ -19,6 +19,7 @@ class CredexCloudApiWebhook(APIView):
     def post(request):
         payload = request.data.get('entry')[0].get('changes')[0].get('value')
         # print("INCOMING >> ", request.data)
+        
         if payload['metadata']['phone_number_id'] != config('WHATSAPP_PHONE_NUMBER_ID'):
             return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
         if payload.get('messages'):
@@ -178,6 +179,22 @@ class CredexCloudApiWebhook(APIView):
     def get(self, request, *args, **kwargs):
         print(request.query_params)
         return HttpResponse(request.query_params.get('hub.challenge'), 200)
+    
+
+class WelcomeMessage(APIView):
+    """ Message"""
+    parser_classes = (JSONParser,)
+    @staticmethod
+    def post(request):
+        if request.data.get('message'):
+            if not Message.objects.all().filter():
+                obj = Message.objects.all().filter()
+                obj.message = request.data.get('message')
+                obj.save()
+        return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
+    
+
+
 
 class CredexSendMessageWebhook(APIView):
     """Cloud Api Webhook"""
