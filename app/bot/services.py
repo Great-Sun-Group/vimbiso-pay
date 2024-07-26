@@ -236,7 +236,8 @@ class CredexBotService:
                 url = f"{config('CREDEX')}/onboardMember"
                 headers = {
                     'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'API-KEY': config('CREDEX_API_CREDENTIALS'),
                 }
                 # print(payload)
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
@@ -312,7 +313,8 @@ class CredexBotService:
                 url = f"{config('CREDEX')}/createAccount"
                 headers = {
                     'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'API-KEY': config('CREDEX_API_CREDENTIALS'),
                 }
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
                 if response.status_code == 200:
@@ -755,9 +757,10 @@ class CredexBotService:
                 "accountID": current_state['member']['defaultAccountData'].get('accountID'),
             })
             headers = {
-                'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-                'Content-Type': 'application/json'
-            }
+                        'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
+                        'Content-Type': 'application/json',
+                        'API-KEY': config('CREDEX_API_CREDENTIALS'),
+                    }
 
             response = requests.request("GET", url, headers=headers, data=payload)
             if response.status_code == 200:
@@ -1475,7 +1478,6 @@ class CredexBotService:
                             #     "balanceData", {})
                         except Exception as e:
                             print("ERROR FETCHING ", e)
-
                         if response.get("offerCredexData", {}).get("credex"):
                             response = response.get("offerCredexData", {})
                             current_state.pop('confirm_offer_payload', {})
@@ -1757,9 +1759,10 @@ class CredexBotService:
                 "accountHandle": self.body.lower()
             })
             headers = {
-                'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-                'Content-Type': 'application/json'
-            }
+                        'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
+                        'Content-Type': 'application/json',
+                        'API-KEY': config('CREDEX_API_CREDENTIALS'),
+                    }
 
             response = requests.request("GET", url, headers=headers, data=payload)
             # print(response.content)
