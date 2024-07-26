@@ -39,7 +39,8 @@ class CredexBotService:
         # IF THERE IS NO MEMBER DETAILS IN STATE THE REFRESH MEMBER/FETCH INFO
         if not current_state.get('member'):
             response = self.refresh(reset=True, silent=False)
-            if response and state.stage != "handle_action_register":
+            print("#######",state.stage , response)
+            if response and state.stage == "handle_action_register" and self.message['type'] != 'nfm_reply':
                 return response
             
         if "=>" in f"{self.body}":
@@ -195,7 +196,7 @@ class CredexBotService:
                             "flow_id": config('WHATSAPP_REGISTRATION_FLOW_ID'),
                             "flow_cta": "Create Account",
                             "flow_action_payload": {
-                                "screen": "REGISTER"
+                                "screen": "REGISTRATION"
                             }
                         }
                     }
