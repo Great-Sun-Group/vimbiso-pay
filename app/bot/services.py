@@ -125,6 +125,18 @@ class CredexBotService:
             'API-KEY': config('CREDEX_API_CREDENTIALS'),
         }
         if reset and silent == False:
+            
+            CredexWhatsappService(payload={
+                "messaging_product": "whatsapp",
+                "preview_url": False,
+                "recipient_type": "individual",
+                "to": self.user.mobile_number,
+                "type": "text",
+                "text": {
+                    "body": DELAY
+                }
+            }).send_message()
+
             message =  Message.objects.all().first()
             if message:
                 CredexWhatsappService(payload={
@@ -138,16 +150,6 @@ class CredexBotService:
                     }
                 }).send_message()
 
-            CredexWhatsappService(payload={
-                "messaging_product": "whatsapp",
-                "preview_url": False,
-                "recipient_type": "individual",
-                "to": self.user.mobile_number,
-                "type": "text",
-                "text": {
-                    "body": DELAY
-                }
-            }).send_message()
 
         response = requests.request("GET", url, headers=headers, data=payload)
         if response.status_code == 200:
