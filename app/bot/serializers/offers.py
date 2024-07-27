@@ -27,7 +27,7 @@ class OfferCredexSerializer(serializers.Serializer):
         headers = {
             'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': os.getenv('CREDEX_API_CREDENTIALS'),
+            'x-api-key': os.getenv('CREDEX_API_CREDENTIALS'),
         }
 
         response = requests.request("GET", url, headers=headers, data=payload)
