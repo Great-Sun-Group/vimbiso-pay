@@ -122,7 +122,7 @@ class CredexBotService:
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': config('CREDEX_API_CREDENTIALS'),
+            'x-api-key': config('CREDEX_API_CREDENTIALS'),
         }
         if reset and silent == False:
             
@@ -240,7 +240,7 @@ class CredexBotService:
                 headers = {
                     'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                     'Content-Type': 'application/json',
-                    'API-KEY': config('CREDEX_API_CREDENTIALS'),
+                    'x-api-key': config('CREDEX_API_CREDENTIALS'),
                 }
                 # print(payload)
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
@@ -317,7 +317,7 @@ class CredexBotService:
                 headers = {
                     'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                     'Content-Type': 'application/json',
-                    'API-KEY': config('CREDEX_API_CREDENTIALS'),
+                    'x-api-key': config('CREDEX_API_CREDENTIALS'),
                 }
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
                 if response.status_code == 200:
@@ -762,7 +762,7 @@ class CredexBotService:
             headers = {
                         'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                         'Content-Type': 'application/json',
-                        'API-KEY': config('CREDEX_API_CREDENTIALS'),
+                        'x-api-key': config('CREDEX_API_CREDENTIALS'),
                     }
 
             response = requests.request("GET", url, headers=headers, data=payload)
@@ -823,7 +823,7 @@ class CredexBotService:
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': config('CREDEX_API_CREDENTIALS'),
+            'x-api-key': config('CREDEX_API_CREDENTIALS'),
         }
 
         response = requests.request("GET", url, headers=headers, data=payload)
@@ -924,7 +924,7 @@ class CredexBotService:
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': config('CREDEX_API_CREDENTIALS'),
+            'x-api-key': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/acceptCredex", headers=headers, data=payload)
         if response.status_code == 200:
@@ -958,7 +958,7 @@ class CredexBotService:
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': config('CREDEX_API_CREDENTIALS'),
+            'x-api-key': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/declineCredex", headers=headers, data=payload)
         if response.status_code == 200:
@@ -982,7 +982,7 @@ class CredexBotService:
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': config('CREDEX_API_CREDENTIALS'),
+            'x-api-key': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/cancelCredex", headers=headers, data=payload)
         # print(response.content, response.status_code)
@@ -1005,7 +1005,7 @@ class CredexBotService:
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'API-KEY': config('CREDEX_API_CREDENTIALS'),
+            'x-api-key': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/acceptCredexBulk", headers=headers, data=payload)
         # print(response.content)
@@ -1462,7 +1462,7 @@ class CredexBotService:
                     headers = {
                         'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                         'Content-Type': 'application/json',
-                        'API-KEY': config('CREDEX_API_CREDENTIALS'),
+                        'x-api-key': config('CREDEX_API_CREDENTIALS'),
                     }
                     message = ''
                     response = requests.request("POST", url, headers=headers, data=payload)
@@ -1764,7 +1764,7 @@ class CredexBotService:
             headers = {
                         'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                         'Content-Type': 'application/json',
-                        'API-KEY': config('CREDEX_API_CREDENTIALS'),
+                        'x-api-key': config('CREDEX_API_CREDENTIALS'),
                     }
 
             response = requests.request("GET", url, headers=headers, data=payload)
