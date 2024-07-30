@@ -116,11 +116,57 @@ REGISTER = """
 > *👤  Registration*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-To create a new account, tap *Create* 
-*Account* below and submit the linked 
-form.
+Welcome to the credex ecosystem. 
 
-Send *'Menu'* to go back to Menu
+Your phone number is not yet associated 
+with a credex member account. 
+
+Would you like to become a member?
+
+1. Become a member
+2. Tell me more about credex
+
+⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+"""
+
+MORE_ABOUT_CREDEX = """
+> *About Us*
+
+⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
+Credex is an accounting app that is helping Zimbabweans overcome the challenges of small change and payments. 
+
+VimbisoPay is a Zimbabwe company that facilitates and secures transactions in the credex ecosystem.
+
+A credex is a promise to provide value, and the credex ecosystem finds loops of value exchange. 
+
+If I owe you and you owe me, we can cancel our debts to each other without money changing hands. 
+
+If I owe you, and you owe Alice, and Alice owes Bob, and Bob owes me, we could cancel those debts in the same manner.
+
+*It's free to:*
+- Open a credex account.
+- Receive a secured credex from VimbisoPay or any other counterparty.
+- Issue a secured or unsecured credex.
+- Accept a credex.
+
+*Fees:*
+A fee of 2% will be charged when cashing out a secured credex with VimbisoPay for USD or ZIG. Third parties may add additional charges. So only cash out if your counterparty won’t accept a credex.
+
+Your account and transactions are managed easily within WhatsApp.
+
+1. Become a member
+2. Maybe later
+
+⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+"""
+
+REGISTER_FORM = """
+> *👤  Registration*
+⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
+To become a member of the credex ecosystem, tap *Become Member* 
+below and submit the linked form.
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """

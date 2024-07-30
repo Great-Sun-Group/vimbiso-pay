@@ -25,12 +25,14 @@ class OfferCredexSerializer(serializers.Serializer):
             "accountHandle": attrs.get('handle')
         })
         headers = {
-            'X-Github-Token': os.getenv('CREDEX_API_CREDENTIALS'),
+            'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'x-api-key': os.getenv('CREDEX_API_CREDENTIALS'),
+            'x-api-key': config('CREDEX_API_CREDENTIALS'),
         }
-
+        print(headers)
+        print(payload)
         response = requests.request("GET", url, headers=headers, data=payload)
+        print(response.content)
         try:
             if response.status_code == 200:
                 data = response.json()

@@ -18,7 +18,7 @@ class MemberDetailsSerializer(serializers.Serializer):
         if not phone_number.isdigit():
             raise serializers.ValidationError({"phone_number": "Invalid phone number"})
         return {
-            "memberType": "HUMAN",
+            # "memberType": "HUMAN",
             "defaultDenom": attrs.get('currency'),
             "phone": attrs.get('phone_number'),
             "firstname": attrs.get('first_name'),

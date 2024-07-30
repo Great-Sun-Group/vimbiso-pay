@@ -30,7 +30,6 @@ class CredexBotService:
 
     def handle(self):
         """ THIS METHOD HANDLES ALL REQUESTS DIRECTING THEM WHERE THEY NEED TO GO"""
-
         state = self.user.state
         current_state = state.get_state(self.user)
         if not isinstance(current_state, dict):
@@ -38,15 +37,15 @@ class CredexBotService:
 
         # IF THERE IS NO MEMBER DETAILS IN STATE THE REFRESH MEMBER/FETCH INFO
         if not current_state.get('member'):
-            response = self.refresh(reset=True, silent=False)
-            print("#######",state.stage , response)
+            response = self.refresh(reset=True, silent=True)
+            print(">>>>>>>>>>> ", self.body)
             if response and state.stage == "handle_action_register" and self.message['type'] != 'nfm_reply':
-                return response
+                return self.handle_action_register
             
-        if "=>" in f"{self.body}":
+        if "=>" in f"{self.body}" or "->" in f"{self.body}":
             state.update_state(
                 state=current_state,
-                stage='handle_action_offer_credex',
+                stage="handle_action_offer_credex",
                 update_from="handle_action_offer_credex",
                 option="handle_action_offer_credex"
             )
@@ -66,12 +65,15 @@ class CredexBotService:
 
         # IF PROMPT IS IN GREETINGS THEN CLEAR CACHE AND FETCH MENU
         if f"{self.body}".lower() in GREETINGS and f"{self.body}".lower() not in ["y", "yes", "retry", "n", "no"]:
+            # print("5")
             self.user.state.reset_state()
             state = self.user.state
             current_state = state.get_state(self.user)
+            # print("6")
             if not isinstance(current_state, dict):
                 current_state = current_state.state
             current_state = {"state": {}, 'member': current_state.get('member')}
+            # print("7")
             state.update_state(current_state, update_from='menu')
             return self.handle_action_select_profile
 
@@ -150,7 +152,6 @@ class CredexBotService:
                     }
                 }).send_message()
 
-
         response = requests.request("GET", url, headers=headers, data=payload)
         if response.status_code == 200:
             default = {}
@@ -159,6 +160,7 @@ class CredexBotService:
             current_state['member'] = response.json()
             if default:
                 for acc in current_state['member']['accountDashboards']:
+                    print(default.get('accountID'))
                     if acc.get('accountID') == default.get('accountID'):
                         default['pendingInData'] = acc['pendingInData']
                         default['pendingOutData'] = acc['pendingOutData']
@@ -179,32 +181,8 @@ class CredexBotService:
                 update_from="refresh",
                 option="handle_action_register"
             )
-            return {
-                "messaging_product": "whatsapp",
-                "to": self.user.mobile_number,
-                "recipient_type": "individual",
-                "type": "interactive",
-                "interactive": {
-                    "type": "flow",
-                    "body": {
-                        "text": REGISTER
-                    },
-                    "action": {
-                        "name": "flow",
-                        "parameters": {
-                            "flow_message_version": "3",
-                            "flow_action": "navigate",
-                            "flow_token": "not-used",
-                            "flow_id": config('WHATSAPP_REGISTRATION_FLOW_ID'),
-                            "flow_cta": "Create Account",
-                            "flow_action_payload": {
-                                "screen": "REGISTRATION"
-                            }
-                        }
-                    }
-                }
-            }
-
+            return self.wrap_text(REGISTER, extra_rows=[{"id": '1', "title": "Become a member"}, {"id": '2', "title": "Tell me more"}])
+            
     @property
     def handle_action_switch_account(self):
         state = self.user.state
@@ -242,9 +220,9 @@ class CredexBotService:
                     'Content-Type': 'application/json',
                     'x-api-key': config('CREDEX_API_CREDENTIALS'),
                 }
-                # print(payload)
+                print(serializer.validated_data)
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
-                # print("########### ", response.content)
+                print("########### ", response.content)
                 if response.status_code == 200:
                     return self.wrap_text(
                         REGISTRATION_COMPLETE.format(
@@ -265,6 +243,7 @@ class CredexBotService:
                         pass
                     # print(response.content)
 
+        if self.body == "1":
             return {
                 "messaging_product": "whatsapp",
                 "to": self.user.mobile_number,
@@ -273,7 +252,7 @@ class CredexBotService:
                 "interactive": {
                     "type": "flow",
                     "body": {
-                        "text": COMPANY_REGISTRATION.format(message=message)
+                        "text": REGISTER_FORM
                     },
                     "action": {
                         "name": "flow",
@@ -282,14 +261,20 @@ class CredexBotService:
                             "flow_action": "navigate",
                             "flow_token": "not-used",
                             "flow_id": config('WHATSAPP_REGISTRATION_FLOW_ID'),
-                            "flow_cta": "Register Account",
+                            "flow_cta": "Create Account",
                             "flow_action_payload": {
-                                "screen": "REGISTER"
+                                "screen": "REGISTRATION"
                             }
                         }
                     }
                 }
             }
+
+        if self.body == "2":
+            return self.wrap_text(MORE_ABOUT_CREDEX, extra_rows=[{"id": '1', "title": "Become a member"}, {"id": '2', "title": "Tell me more"}])
+
+        return self.wrap_text(REGISTER, extra_rows=[{"id": '1', "title": "Become a member"}, {"id": '2', "title": "Tell me more"}])
+
 
     @property
     def handle_action_create_business_account(self):
@@ -405,7 +390,6 @@ class CredexBotService:
         for bal in balance_lists:
             balances += f"- {bal}\n"
         
-        print(current_state['member']['defaultAccountData'])
         isOwnedAccount = current_state['member']['defaultAccountData'].get('isOwnedAccount')
 
         return {
@@ -549,9 +533,7 @@ class CredexBotService:
                         'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                         'Content-Type': 'application/json'
                     }
-                    print(payload)
                     response = requests.request("POST", url, headers=headers, data=payload)
-                    print(response.content)
                     if response.status_code == 200:
                         data = response.json()
                         # print(data)
@@ -629,9 +611,9 @@ class CredexBotService:
             current_state = current_state.state
 
         if not current_state.get('member'):
-            self.refresh()
-            # print(response.text)
-
+            response = self.refresh()
+            if response and state.stage:
+                return response
         if state.option == "select_account_to_use" and f"{self.body}".lower() not in GREETINGS:
             options = {}
             count = 1
@@ -643,7 +625,7 @@ class CredexBotService:
                     self.body = '1'
             # print("#####", current_state['member'].get('accountDashboards'), self.body)
             if options.get(self.body) is not None:
-                # print("OPTIONS : ", options)
+                print("OPTIONS : ", options)
                 current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][options.get(self.body)]
                 state.update_state(
                     state=current_state,
@@ -661,6 +643,7 @@ class CredexBotService:
                         return self.handle_action_create_business_account
                     elif self.body in [str(len(current_state['member']['accountDashboards']) + 2),"handle_action_find_agent"]:
                         return self.wrap_text(AGENTS)
+        
         accounts = []
         count = 1
         account_string = f""
