@@ -124,7 +124,7 @@ class CredexBotService:
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'whatsappBotAPIkey': config('WHATSAPP_BOT_API_KEY'),
+            'whatsappBotAPIkey': config('WHATSAPP_BOT_API_KEY')
         }
         if reset and silent == False or init:
             
@@ -151,9 +151,7 @@ class CredexBotService:
                         "body": message.messsage
                     }
                 }).send_message()
-
         response = requests.request("GET", url, headers=headers, data=payload)
-        print(response.content)
         if response.status_code == 200:
             default = {}
             if not reset:
