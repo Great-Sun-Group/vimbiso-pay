@@ -27,7 +27,7 @@ class OfferCredexSerializer(serializers.Serializer):
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
-            'x-api-key': config('CREDEX_API_CREDENTIALS'),
+            'whatsappBotAPIkey': config('WHATSAPP_BOT_API_KEY'),
         }
         print(headers)
         print(payload)
