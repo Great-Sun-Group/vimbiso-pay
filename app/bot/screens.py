@@ -320,8 +320,8 @@ Secured Credex
   0.5=>recipientHandle
 
 Unecured Credex
-  0.5->recipientHandle
-  
+  0.5->recipientHandle=2023-10-12
+
 Send *'Menu'* to go back to Menu
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
