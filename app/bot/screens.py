@@ -315,6 +315,13 @@ Failed to perform transaction
 at the moment.
 
 {message}
+
+Secured Credex
+  0.5=>recipientHandle
+
+Unecured Credex
+  0.5->recipientHandle
+  
 Send *'Menu'* to go back to Menu
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️

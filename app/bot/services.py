@@ -1431,6 +1431,7 @@ class CredexBotService:
                     message = '*Offer Cancelled By User❗*'
                 else:
                     current_state['confirm_offer_payload']['signerID'] = self.body
+                    current_state['confirm_offer_payload']['issuerMemberID'] = self.body
                     url = f"{config('CREDEX')}/offerCredex"
                     if current_state['confirm_offer_payload'].get('securedCredex'):
                         # secured = current_state['confirm_offer_payload'].pop('securedCredex')
