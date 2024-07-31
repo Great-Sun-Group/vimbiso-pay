@@ -37,7 +37,7 @@ class CredexBotService:
 
         # IF THERE IS NO MEMBER DETAILS IN STATE THE REFRESH MEMBER/FETCH INFO
         if not current_state.get('member'):
-            response = self.refresh(reset=True, silent=True)
+            response = self.refresh(reset=True, silent=True, init=True)
             print(">>>>>>>>>>> ", self.body)
             if response and state.stage == "handle_action_register" and self.message['type'] != 'nfm_reply':
                 return self.handle_action_register
@@ -108,7 +108,7 @@ class CredexBotService:
             state = self.user.state
             return getattr(self, state.stage)
 
-    def refresh(self, reset=True, silent=True):
+    def refresh(self, reset=True, silent=True, init=False):
         """THIS METHOD REFRESHES MEMBER INFO BY MAKING AN API CALL TO CREDEX CALL"""
         state = self.user.state
         current_state = state.get_state(self.user)
@@ -126,7 +126,7 @@ class CredexBotService:
             'Content-Type': 'application/json',
             'x-api-key': config('CREDEX_API_CREDENTIALS'),
         }
-        if reset and silent == False:
+        if reset and silent == False or init:
             
             CredexWhatsappService(payload={
                 "messaging_product": "whatsapp",
@@ -153,6 +153,7 @@ class CredexBotService:
                 }).send_message()
 
         response = requests.request("GET", url, headers=headers, data=payload)
+        print(response.content)
         if response.status_code == 200:
             default = {}
             if not reset:
@@ -531,7 +532,8 @@ class CredexBotService:
 
                     headers = {
                         'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'x-api-key': config('CREDEX_API_CREDENTIALS'),
                     }
                     response = requests.request("POST", url, headers=headers, data=payload)
                     if response.status_code == 200:
@@ -902,6 +904,7 @@ class CredexBotService:
         if not isinstance(current_state, dict):
             current_state = current_state.state
         payload = json.dumps({
+            "memberID": current_state['member']['memberDashboard'].get('memberID'),
             "credexID": self.body.split("_")[-1]
         })
         headers = {
@@ -984,14 +987,14 @@ class CredexBotService:
         data = current_state['member'].get('defaultAccountData', {}).get('pendingInData') if current_state[
                 'member'].get('defaultAccountData', {}).get('pendingInData') else []
 
-        payload = json.dumps([i.get('credexID') for i in data])
+        payload = json.dumps({"memberID": current_state['member']['memberDashboard'].get('memberID'),"ids":[i.get('credexID') for i in data]})
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
             'x-api-key': config('CREDEX_API_CREDENTIALS'),
         }
         response = requests.request("PUT", f"{config('CREDEX')}/acceptCredexBulk", headers=headers, data=payload)
-        # print(response.content)
+        print(response.content)
         if response.status_code == 200:
             self.refresh(reset=False)
             return self.wrap_text("> *🥳 Success*\n\n You have accepted all offers!", x_is_menu=True, back_is_cancel=False)
@@ -1723,14 +1726,15 @@ class CredexBotService:
 
                         headers = {
                             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-                            'Content-Type': 'application/json'
+                            'Content-Type': 'application/json',
+                            'x-api-key': config('CREDEX_API_CREDENTIALS'),
                         }
                         # print(payload)
                         response = requests.request("POST", url, headers=headers, data=payload)
-                        print(response.content)
+                        # print(response.content)
                         if response.status_code == 200:
                             data = response.json()
-                            print(data)
+                            # print(data)
                             if data:
                                 self.refresh(reset=False)
                                 return self.wrap_text(DEAUTHORIZATION_SUCCESSFUL.format(member=f"{current_state.get('member', {}).get('defaultAccountData', {}).get('authFor', [])[int(self.body)-2].get('firstname')}{current_state.get('member', {}).get('defaultAccountData', {}).get('authFor', [])[int(self.body)-2].get('lastname')}", company=current_state['member'].get('defaultAccountData', {}).get(
@@ -1739,23 +1743,23 @@ class CredexBotService:
         
         elif state.option == "get_handle":
             
-            url = f"{config('CREDEX')}/getAccountByHandle"
+            url = f"{config('CREDEX')}/getMemberByHandle"
 
             payload = json.dumps({
-                "accountHandle": self.body.lower()
+                "memberHandle": self.body.lower()
             })
             headers = {
-                        'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-                        'Content-Type': 'application/json',
-                        'x-api-key': config('CREDEX_API_CREDENTIALS'),
-                    }
+                'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
+                'Content-Type': 'application/json',
+                'x-api-key': config('CREDEX_API_CREDENTIALS'),
+            }
 
             response = requests.request("GET", url, headers=headers, data=payload)
             # print(response.content)
             data = response.json()
             # print(data)
             if not data.get('Error'):
-                data = data['accountData']
+                data = data['memberData']
                 data['handle'] = self.body.lower()
                 current_state[
                     f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('accountName')}"] = data
@@ -1765,7 +1769,7 @@ class CredexBotService:
                     update_from="handle_action_authorize_member",
                     option="confirm_authorization"
                 )
-                return self.wrap_text(CONFIRM_AUTHORIZATION.format(member=data.get('accountName'),
+                return self.wrap_text(CONFIRM_AUTHORIZATION.format(member=data.get('memberName'),
                                                                    company=current_state['member'].get(
                                                                        'defaultAccountData', {}).get('accountName')),
                                       x_is_menu=True, back_is_cancel=False, navigate_is="🏡 Menu")
@@ -1773,6 +1777,7 @@ class CredexBotService:
                 self.wrap_text(ADD_MERMBER.format(company=current_state['member'].get('defaultAccountData', {}).get('accountName'), message="Member not found!"))
 
         if state.option == "confirm_authorization":
+            # print("INSIDE CONFIRM")
             if self.body not in ['1', '2']:
                 return {
                     "messaging_product": "whatsapp",
@@ -1799,7 +1804,8 @@ class CredexBotService:
 
                 headers = {
                     'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'x-api-key': config('CREDEX_API_CREDENTIALS'),
                 }
                 # print(payload)
                 response = requests.request("POST", url, headers=headers, data=payload)
@@ -1810,7 +1816,7 @@ class CredexBotService:
                     if data.get('message') == "account authorized":
                         self.refresh(reset=False, silent=True)
                         return self.wrap_text(AUTHORIZATION_SUCCESSFUL.format(member=current_state[
-                            f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('accountName')}"].get(
+                            f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('memberName')}"].get(
                             'accountName'), company=current_state['member'].get('defaultAccountData', {}).get(
                             'accountName')), x_is_menu=True, back_is_cancel=False)
                     else:
