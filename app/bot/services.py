@@ -1430,7 +1430,7 @@ class CredexBotService:
                     current_state.pop('confirm_offer_payload')
                     message = '*Offer Cancelled By User❗*'
                 else:
-                    current_state['confirm_offer_payload']['issuerMemberID'] = self.body
+                    current_state['confirm_offer_payload']['signerID'] = self.body
                     url = f"{config('CREDEX')}/offerCredex"
                     if current_state['confirm_offer_payload'].get('securedCredex'):
                         # secured = current_state['confirm_offer_payload'].pop('securedCredex')
@@ -1444,7 +1444,7 @@ class CredexBotService:
                     to_credex['issuerAccountID'] = self.body
                     to_credex.pop("handle", None)
                     payload = json.dumps(current_state.get('confirm_offer_payload'))
-                    # print(to_credex)
+                    print(to_credex)
                     headers = {
                         'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                         'Content-Type': 'application/json',
@@ -1452,7 +1452,7 @@ class CredexBotService:
                     }
                     message = ''
                     response = requests.request("POST", url, headers=headers, data=payload)
-                    # print(response.content, response.status_code)
+                    print(response.content, response.status_code)
                     if response.status_code == 200:
 
                         response = response.json()
