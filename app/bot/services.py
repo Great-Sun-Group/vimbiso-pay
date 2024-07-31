@@ -904,7 +904,7 @@ class CredexBotService:
         if not isinstance(current_state, dict):
             current_state = current_state.state
         payload = json.dumps({
-            "memberID": current_state['member']['memberDashboard'].get('memberID'),
+            "signerID": current_state['member']['memberDashboard'].get('memberID'),
             "credexID": self.body.split("_")[-1]
         })
         headers = {
@@ -987,7 +987,7 @@ class CredexBotService:
         data = current_state['member'].get('defaultAccountData', {}).get('pendingInData') if current_state[
                 'member'].get('defaultAccountData', {}).get('pendingInData') else []
 
-        payload = json.dumps({"memberID": current_state['member']['memberDashboard'].get('memberID'),"ids":[i.get('credexID') for i in data]})
+        payload = json.dumps({"signerID": current_state['member']['memberDashboard'].get('memberID'),"credexIDs":[i.get('credexID') for i in data]})
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
