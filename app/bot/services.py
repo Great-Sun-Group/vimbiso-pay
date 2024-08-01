@@ -116,6 +116,7 @@ class CredexBotService:
         if not isinstance(current_state, dict):
             current_state = current_state.state
 
+
         url = f"{config('CREDEX')}/getMemberDashboardByPhone"
 
         payload = json.dumps({
@@ -127,17 +128,18 @@ class CredexBotService:
             'whatsappBotAPIkey': config('WHATSAPP_BOT_API_KEY')
         }
         if reset and silent == False or init:
-            
-            CredexWhatsappService(payload={
-                "messaging_product": "whatsapp",
-                "preview_url": False,
-                "recipient_type": "individual",
-                "to": self.user.mobile_number,
-                "type": "text",
-                "text": {
-                    "body": DELAY
-                }
-            }).send_message()
+            # current_state['sent'] = True
+            if state.stage != "handle_action_register":
+                CredexWhatsappService(payload={
+                    "messaging_product": "whatsapp",
+                    "preview_url": False,
+                    "recipient_type": "individual",
+                    "to": self.user.mobile_number,
+                    "type": "text",
+                    "text": {
+                        "body": DELAY
+                    }
+                }).send_message()
 
             message =  Message.objects.all().first()
             if message:
