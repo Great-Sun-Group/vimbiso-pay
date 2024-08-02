@@ -402,7 +402,7 @@ class CredexBotService:
                 "type": "list",
                 "body": {
                     "text": (HOME_2 if isOwnedAccount  else HOME_1).format(
-                        account=current_state['member']['defaultAccountData']['accountName'].replace('Personal', '').rstrip(),
+                        account=current_state['member']['defaultAccountData']['accountName'],
                         balance=BALANCE.format(
                             securedNetBalancesByDenom=balances if balances else "- $0.00\n",
                             totalPayables=current_state['member']['defaultAccountData']['balanceData'][
@@ -415,7 +415,7 @@ class CredexBotService:
                                 'netCredexAssetsInDefaultDenom']
                         ),
                         pending_in=pending_in,
-                        handle=current_state['member']['defaultAccountData']['accountHandle'].replace('Personal', '').rstrip(),
+                        handle=current_state['member']['defaultAccountData']['accountHandle'],
                         pending_out=pending_out
                     )
                 },
@@ -650,7 +650,7 @@ class CredexBotService:
         count = 1
         account_string = f""
         for account in current_state['member']['accountDashboards']:
-            account_string += f" *{count}.* 👤 _{account.get('accountName').replace('Personal', '').rstrip()}_\n"
+            account_string += f" *{count}.* 👤 _{account.get('accountName')}_\n"
             accounts.append(
                 {
                     "id": account.get('accountHandle'),
@@ -765,7 +765,7 @@ class CredexBotService:
                                 "text": CREDEX.format(
                                     formattedOutstandingAmount=credex['credexData'].get('formattedOutstandingAmount'),
                                     formattedInitialAmount=credex['credexData'].get('formattedInitialAmount'),
-                                    counterpartyDisplayname=credex['credexData'].get('counterpartyAccountName').replace('Personal', '').rstrip(),
+                                    counterpartyDisplayname=credex['credexData'].get('counterpartyAccountName'),
                                     date=credex['credexData'].get('dateTime') if credex['credexData'].get(
                                         'dateTime') else 'N/A',
                                     type=credex['credexData'].get('transactionType')
@@ -822,11 +822,11 @@ class CredexBotService:
                 if 'Next' in txn.get('formattedInitialAmount'):
                     continue
 
-                menu_string += f"{count}. {txn.get('formattedInitialAmount')} {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName').replace('Personal', '').rstrip()}\n\n"
+                menu_string += f"{count}. {txn.get('formattedInitialAmount')} {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName')}\n\n"
                 rows.append({
                     "id": txn.get('credexID'),
                     "title": f"{txn.get('formattedInitialAmount').replace('-', '')} {'DEBIT ' if '-' in txn.get('formattedInitialAmount') else 'CREDIT '}",
-                    "description": f"{txn.get('formattedInitialAmount')} {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName').replace('Personal', '').rstrip()}"
+                    "description": f"{txn.get('formattedInitialAmount')} {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName')}"
                 })
                 count += 1
             current_state['page_number'] = page_number
@@ -1033,7 +1033,7 @@ class CredexBotService:
                             "type": "button",
                             "body": {
                                 "text": ACCEPT_CREDEX.format(amount=item.get('formattedInitialAmount'),
-                                                             party=item.get('counterpartyAccountName').replace('Personal', '').rstrip(),
+                                                             party=item.get('counterpartyAccountName'),
                                                              type='Secured' if item.get('secured') else 'Unsecured')
                             },
                             "action": {
@@ -1064,12 +1064,12 @@ class CredexBotService:
             data = current_state['member'].get('defaultAccountData', {}).get('pendingInData') if current_state[
                 'member'].get('defaultAccountData', {}).get('pendingInData') else []
             for item in data[:10]:
-                menu_string += f"{count}. {item.get('formattedInitialAmount')}| {item.get('counterpartyAccountName').replace('Personal', '').rstrip()}\n"
+                menu_string += f"{count}. {item.get('formattedInitialAmount')}| {item.get('counterpartyAccountName')}\n"
                 rows.append(
                     {
                         "id": item.get('credexID'),
                         "title": f"{item.get('formattedInitialAmount')}",
-                        "description": f"from {item.get('counterpartyAccountName').replace('Personal', '').rstrip()}"
+                        "description": f"from {item.get('counterpartyAccountName')}"
                     }
                 )
                 count += 1
@@ -1306,7 +1306,7 @@ class CredexBotService:
                 account_string = f""
 
                 if current_state.get('member', {}).get('defaultAccountData', {}):
-                    account_string  += f" *{count}.*  _{current_state['member']['defaultAccountData'].get('accountName').replace('Personal', '').rstrip()}_\n"
+                    account_string  += f" *{count}.*  _{current_state['member']['defaultAccountData'].get('accountName')}_\n"
                     accounts.append(
                         {
                             "id": current_state['member']['defaultAccountData'].get('accountID'),
@@ -1316,7 +1316,7 @@ class CredexBotService:
                     count += 1
                 
                 if current_state.get('member', {}).get('defaultAccountData', {}).get('accountID') != current_state['member']['accountDashboards'][-1].get('accountID'):
-                    account_string  += f" *{count}.*  _{current_state['member']['accountDashboards'][-1].get('accountName').replace('Personal', '').rstrip()}_\n"
+                    account_string  += f" *{count}.*  _{current_state['member']['accountDashboards'][-1].get('accountName')}_\n"
                     accounts.append(
                         {
                             "id": current_state['member']['accountDashboards'][-1].get('accountID'),
@@ -1333,11 +1333,11 @@ class CredexBotService:
                     if current_state['member']['accountDashboards'][-1].get('accountID') == account.get('accountID'):
                         continue
 
-                    account_string += f" *{count}.*  _{account.get('accountName').replace('Personal', '').rstrip()}_\n"
+                    account_string += f" *{count}.*  _{account.get('accountName')}_\n"
                     accounts.append(
                         {
                             "id": account.get('accountID'),
-                            "title": f"👤 {account.get('accountHandle').replace('Personal', '').rstrip()}"
+                            "title": f"👤 {account.get('accountHandle')}"
                         }
                     )
 
@@ -1355,7 +1355,7 @@ class CredexBotService:
                 # print(accounts)
                 count += 1
                 response = CONFIRM_SECURED_CREDEX.format(
-                    party=serializer.validated_data.get('full_name').replace('Personal', '').rstrip(),
+                    party=serializer.validated_data.get('full_name'),
                     amount=serializer.validated_data.get('InitialAmount'),
                     currency=serializer.validated_data.get('Denomination'),
                     handle=serializer.validated_data.pop('handle'),
@@ -1363,7 +1363,7 @@ class CredexBotService:
                     accounts=account_string
 
                 ) if serializer.validated_data.get('securedCredex') else CONFIRM_UNSECURED_CREDEX.format(
-                    party=serializer.validated_data.get('full_name').replace('Personal', '').rstrip(),
+                    party=serializer.validated_data.get('full_name'),
                     amount=serializer.validated_data.get('InitialAmount'),
                     currency=serializer.validated_data.get('Denomination'),
                     handle=serializer.validated_data.pop('handle'),
@@ -1738,7 +1738,7 @@ class CredexBotService:
                             # print(data)
                             if data:
                                 self.refresh(reset=False)
-                                return self.wrap_text(DEAUTHORIZATION_SUCCESSFUL.format(member=f"{current_state.get('member', {}).get('defaultAccountData', {}).get('authFor', [])[int(self.body)-2].get('firstname')}{current_state.get('member', {}).get('defaultAccountData', {}).get('authFor', [])[int(self.body)-2].get('lastname')}", company=current_state['member'].get('defaultAccountData', {}).get(
+                                return self.wrap_text(DEAUTHORIZATION_SUCCESSFUL.format(member=f"{current_state.get('member', {}).get('defaultAccountData', {}).get('authFor', [])[int(self.body)-2].get('firstname')} {current_state.get('member', {}).get('defaultAccountData', {}).get('authFor', [])[int(self.body)-2].get('lastname')}", company=current_state['member'].get('defaultAccountData', {}).get(
                                     'accountName')), x_is_menu=True, back_is_cancel=False)
                 return self.wrap_text(INVALID_ACTION)
         
@@ -1773,7 +1773,7 @@ class CredexBotService:
                 return self.wrap_text(CONFIRM_AUTHORIZATION.format(member=data.get('memberName'),
                                                                    company=current_state['member'].get(
                                                                        'defaultAccountData', {}).get('accountName')),
-                                      x_is_menu=True, back_is_cancel=False, navigate_is="🏡 Menu")
+                                      x_is_menu=True, back_is_cancel=False, navigate_is="🏡 Menu", extra_rows=[{"id": '1', "title": "✅ Authorize"}, {"id": '2', "title": "❌ Cancel"}])
             else:
                 self.wrap_text(ADD_MERMBER.format(company=current_state['member'].get('defaultAccountData', {}).get('accountName'), message="Member not found!"))
 

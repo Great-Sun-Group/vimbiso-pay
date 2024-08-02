@@ -239,9 +239,8 @@ Hello {full_name}
 Welcome to Credex! We are 
 excited to have you on board.
 
-Send *'Menu'* and start 
-exploring all the features 
-we offer.
+Send 'Menu' to reload your dashboard with 
+your new account opened.
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -314,13 +313,13 @@ OFFER_FAILED = """
 Failed to perform transaction
 at the moment.
 
-{message}
-
 Secured Credex
   0.5=>recipientHandle
 
 Unecured Credex
   0.5->recipientHandle=2023-10-12
+
+{message}
 
 Send *'Menu'* to go back to Menu
 
