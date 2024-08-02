@@ -64,8 +64,8 @@ INVALID_ACTION = """
 DELAY = """
 Welcome to credex. 
 
-Please hold a moment while 
-we fetch your account data.
+Please hold a moment while we fetch 
+your account data.
 """
 
 BALANCE = """
@@ -236,11 +236,11 @@ REGISTRATION_COMPLETE = """
 
 Hello {full_name}
 
-Welcome to Credex! We are 
-excited to have you on board.
+Welcome to Credex! We are excited to 
+have you on board.
 
-Send 'Menu' to reload your dashboard with 
-your new account opened.
+Send 'Menu' to reload your dashboard 
+with your new account opened.
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
