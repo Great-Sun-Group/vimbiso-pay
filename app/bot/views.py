@@ -205,18 +205,37 @@ class CredexSendMessageWebhook(APIView):
     @staticmethod
     def post(request):
         print(">>>>>", request.headers)
-        if request.headers.get('apiKey') == "Key":
-            notification = {
-                "messaging_product": "whatsapp",
-                "preview_url": False,
-                "recipient_type": "individual",
-                "to": request.data.get("phone"),
-                "type": "text",
-                "text": {
-                    "body": request.data.get('message')
+        if request.headers.get('whatsappBotAPIkey') == config('WHATSAPP_BOT_API_KEY'):
+            if request.data.get('phone_number') and request.data.get('memberName') and request.data.get('message'):
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": request.data.get('phoneNumber'),
+                    "type": "template",
+                    "template": {
+                            "name": "notification",
+                            "language": {
+                            "code": "en_US"
+                        },
+                        "components": [
+                            {
+                                "type": "body",
+                                "parameters": [
+                                {
+                                    "type": "text",
+                                    "text": request.data.get('memberName')
+                                },
+                                {
+                                    "type": "text",
+                                    "text": request.data.get('message')
+                                }
+                                ]
+                            }
+                        ]
+                    }
                 }
-            }
-            response = CredexWhatsappService(payload=notification).notify()
-            print("RESPONSE : ", response)
-            return JsonResponse(response, status=status.HTTP_200_OK)
+
+                response = CredexWhatsappService(payload=payload).notify()
+                print("RESPONSE : ", response)
+                return JsonResponse(response, status=status.HTTP_200_OK)
         return JsonResponse({"status": "Successful", "message": "Missing API KEY"}, status=status.HTTP_400_BAD_REQUEST)
