@@ -7,6 +7,7 @@ from bot.constants import *
 import requests, json
 from decouple import config
 from bot.models import Message
+from django.core.cache import cache
 
 
 class CredexBotService:
@@ -129,7 +130,7 @@ class CredexBotService:
         }
         if reset and silent == False or init:
             # current_state['sent'] = True
-            if state.stage != "handle_action_register":
+            if state.stage != "handle_action_register" and not cache.get(f"{self.user.mobile_number}_interracted"):
                 CredexWhatsappService(payload={
                     "messaging_product": "whatsapp",
                     "preview_url": False,
@@ -140,6 +141,7 @@ class CredexBotService:
                         "body": DELAY
                     }
                 }).send_message()
+                cache.set(f"{self.user.mobile_number}_interracted", True, 60*60)
 
             message =  Message.objects.all().first()
             if message:
@@ -261,10 +263,10 @@ class CredexBotService:
                             "flow_message_version": "3",
                             "flow_action": "navigate",
                             "flow_token": "not-used",
-                            "flow_id": config('WHATSAPP_REGISTRATION_FLOW_ID'),
+                            "flow_id": "1048499583563106",
                             "flow_cta": "Create Account",
                             "flow_action_payload": {
-                                "screen": "REGISTRATION"
+                                "screen": "OPEN_ACCOUNT"
                             }
                         }
                     }
@@ -676,7 +678,7 @@ class CredexBotService:
         accounts.append(
             {
                 "id": "handle_action_find_agent",
-                "title": f"🏦 VimbisoPay"
+                "title": f"🏦 Cash In/Out"
             }
         )
 
@@ -1243,6 +1245,14 @@ class CredexBotService:
         if not current_state.get('member'):
             self.refresh()
 
+        if not  current_state.get('member', {}).get('defaultAccountData', {}):
+            for account in current_state['member']['accountDashboards']:
+                if current_state['member']['memberDashboard']['accountIDS'][-1] == account.get('accountID'):
+                    current_state['member']['defaultAccountData'] = account
+                    break
+
+                
+
         payload = {}
         if "=>" in f"{self.body}" or "->" f"{self.body}" or self.message['type'] == "nfm_reply":
             if self.message['type'] == "nfm_reply":
@@ -1301,38 +1311,21 @@ class CredexBotService:
 
             if serializer.is_valid():
                 accounts = []
-                # print(serializer.validated_data)
                 count = 1
                 account_string = f""
 
                 if current_state.get('member', {}).get('defaultAccountData', {}):
-                    account_string  += f" *{count}.*  _{current_state['member']['defaultAccountData'].get('accountName')}_\n"
+                    account_string  += f" *{count}.*  _Proceed with selected account_\n\n*Change account to offer from*:\n"
                     accounts.append(
                         {
                             "id": current_state['member']['defaultAccountData'].get('accountID'),
-                            "title": f"👤 {current_state['member']['defaultAccountData'].get('accountHandle')}"
+                            "title": f"✅ Proceed"
                         }
                     )
                     count += 1
                 
-                if current_state.get('member', {}).get('defaultAccountData', {}).get('accountID') != current_state['member']['accountDashboards'][-1].get('accountID'):
-                    account_string  += f" *{count}.*  _{current_state['member']['accountDashboards'][-1].get('accountName')}_\n"
-                    accounts.append(
-                        {
-                            "id": current_state['member']['accountDashboards'][-1].get('accountID'),
-                            "title": f"👤 {current_state['member']['accountDashboards'][-1].get('accountHandle')}"
-                        }
-                    )
-                    count += 1
-
 
                 for account in current_state['member']['accountDashboards']:
-                    if current_state.get('member', {}).get('defaultAccountData', {}).get('accountID') == account.get('accountID'):
-                        continue
-
-                    if current_state['member']['accountDashboards'][-1].get('accountID') == account.get('accountID'):
-                        continue
-
                     account_string += f" *{count}.*  _{account.get('accountName')}_\n"
                     accounts.append(
                         {
@@ -1341,7 +1334,7 @@ class CredexBotService:
                         }
                     )
 
-                    if count > 9:
+                    if count > 8:
                         break
                     count += 1
 
@@ -1358,6 +1351,7 @@ class CredexBotService:
                     party=serializer.validated_data.get('full_name'),
                     amount=serializer.validated_data.get('InitialAmount'),
                     currency=serializer.validated_data.get('Denomination'),
+                    source=current_state['member']['defaultAccountData'].get('accountName'),
                     handle=serializer.validated_data.pop('handle'),
                     secured='*secured*',
                     accounts=account_string
@@ -1366,6 +1360,7 @@ class CredexBotService:
                     party=serializer.validated_data.get('full_name'),
                     amount=serializer.validated_data.get('InitialAmount'),
                     currency=serializer.validated_data.get('Denomination'),
+                    source=current_state['member']['defaultAccountData'].get('accountName'),
                     handle=serializer.validated_data.pop('handle'),
                     secured='*unsecured*',
                     date=f"*Due Date :* {serializer.validated_data.get('dueDate')}",
@@ -1385,29 +1380,18 @@ class CredexBotService:
                     if "This field is required." != serializer.errors[err][0]:
                         message = f'*{serializer.errors[err][0]}❗*'
                         break
-
-        if current_state.get('confirm_offer_payload'):
-
+        
+        if state.option == "handle_action_confirm_offer_credex":
             accounts = []
             count = 1
             if current_state.get('member', {}).get('defaultAccountData', {}):
                 accounts.append(current_state['member']['defaultAccountData'].get('accountID'))
                 count += 1
 
-            if current_state.get('member', {}).get('defaultAccountData', {}).get('accountHandle') != current_state['member']['accountDashboards'][-1].get('accountHandle'):
-                accounts.append(current_state['member']['accountDashboards'][-1].get('accountID'))
-                count += 1
-
-
             for account in current_state['member']['accountDashboards']:
-                if current_state.get('member', {}).get('defaultAccountData', {}).get('accountID') == account.get('accountID'):
-                    continue
-
-                if current_state['member']['accountDashboards'][-1].get('accountID') == account.get('accountID'):
-                    continue
                 accounts.append(account.get('accountID'))
 
-                if count > 9:
+                if count > 8:
                     break
                 count += 1
             accounts.append("Cancel")
@@ -1432,68 +1416,89 @@ class CredexBotService:
                 else:
                     current_state['confirm_offer_payload']['signerID'] = self.body
                     current_state['confirm_offer_payload']['issuerMemberID'] = self.body
-                    url = f"{config('CREDEX')}/offerCredex"
+
                     if current_state['confirm_offer_payload'].get('securedCredex'):
                         # secured = current_state['confirm_offer_payload'].pop('securedCredex')
                         current_state['confirm_offer_payload'].pop('dueDate')
-                        current_state['confirm_offer_payload'].pop('full_name')
                     else:
-                        current_state['confirm_offer_payload'].pop('full_name', None)
-                        current_state['confirm_offer_payload'].pop('secured', None)
-
-                    to_credex = current_state.get('confirm_offer_payload')
-                    to_credex['issuerAccountID'] = self.body
-                    to_credex.pop("handle", None)
-                    payload = json.dumps(current_state.get('confirm_offer_payload'))
-                    print(to_credex)
-                    headers = {
-                        'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
-                        'Content-Type': 'application/json',
-                        'whatsappBotAPIkey': config('WHATSAPP_BOT_API_KEY'),
-                    }
-                    message = ''
-                    response = requests.request("POST", url, headers=headers, data=payload)
-                    print(response.content, response.status_code)
-                    if response.status_code == 200:
-
-                        response = response.json()
-                        try:
-                            self.refresh(reset=False)
-                            # current_state['member']['defaultAccountData']['pendingInData'] = response.get(
-                            #     "accountDashboards", {}).get("pendingInData", {})
-                            # current_state['member']['defaultAccountData']['pendingOutData'] = response.get(
-                            #     "accountDashboards", {}).get("pendingOutData", {})
-                            # current_state['member']['defaultAccountData']['balanceData'] = response.get("accountDashboards",
-                            #                                                                             {}).get(
-                            #     "balanceData", {})
-                        except Exception as e:
-                            print("ERROR FETCHING ", e)
-                        if response.get("offerCredexData", {}).get("credex"):
-                            response = response.get("offerCredexData", {})
-                            current_state.pop('confirm_offer_payload', {})
-                            return self.wrap_text(OFFER_SUCCESSFUL.format(
-                                type='Secured Credex' if response['credex']['secured'] else 'Unsecured Credex',
-                                amount=response['credex']['formattedInitialAmount'],
-                                currency=current_state['member']['defaultAccountData']['defaultDenom'],
-                                recipient=response['credex']['counterpartyAccountName'],
-                                secured='*secured* credex' if response['credex']['secured'] else '*unsecured* credex'
-                            ), x_is_menu=True, back_is_cancel=False)
-                        else:
-                            current_state.pop('confirm_offer_payload', {})
-                            message = self.format_synopsis(response.get("offerCredexData", {}).get('message'))
-                    try:
-                        current_state.pop('confirm_offer_payload', {})
-                        message = self.format_synopsis(response.get("offerCredexData", {}).get('message'))
-                        return self.wrap_text(OFFER_FAILED.format(message=message), x_is_menu=True,
-                                              back_is_cancel=False)
-                    except Exception as e:
-                        print("E : ", e)
                         pass
-
-                current_state.pop('confirm_offer_payload', {})
-                return self.wrap_text(OFFER_FAILED.format(message=message), x_is_menu=True, back_is_cancel=False)
+                    
+                    secured = True if current_state['confirm_offer_payload'].pop('secured', None) else False
+                    current_state['confirm_offer_payload']['securedCredex'] = secured
+                    full_name = current_state['confirm_offer_payload'].pop('full_name', None)
+                    state.update_state(
+                        state=current_state,
+                        update_from="handle_action_offer_credex",
+                        option="handle_action_process_offer_credex"
+                    )
+                    return self.wrap_text(CONFIRM_OFFER_CREDEX.format(
+                            party=full_name,
+                            amount=current_state['confirm_offer_payload'].get('InitialAmount'),
+                            currency=current_state['confirm_offer_payload'].get('Denomination'),
+                            source=current_state['member']['defaultAccountData'].get('accountName'),
+                            handle=current_state['confirm_offer_payload'].get('handle'),
+                            secured='*secured*' if secured else '*unsecured*'
+                        ), extra_rows=[{"id": "1", "title": "✅ Yes"}, {"id": "2", "title": "❌ No"}]
+                    )
             else:
                 message = 'Invalid option selected'
+
+        
+        if current_state.get('confirm_offer_payload') and state.option == "handle_action_process_offer_credex" and f"{self.body}".lower() in ["1", "yes", "2", "no"]:
+            if f"{self.body}".lower() in ["2", "no"]:
+                current_state.pop('confirm_offer_payload', {})
+                return self.wrap_text(OFFER_FAILED.format(message='*Offer Cancelled By User❗*'), x_is_menu=True, back_is_cancel=False)
+            
+            to_credex = current_state.get('confirm_offer_payload')
+            to_credex['issuerAccountID'] = current_state['member']['defaultAccountData'].get('accountID')
+            to_credex.pop("handle", None)
+            payload = json.dumps(current_state.get('confirm_offer_payload'))
+            print(to_credex)
+            headers = {
+                'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
+                'Content-Type': 'application/json',
+                'whatsappBotAPIkey': config('WHATSAPP_BOT_API_KEY'),
+            }
+            message = ''
+            response = requests.request("POST", f"{config('CREDEX')}/offerCredex", headers=headers, data=payload)
+            print(response.content, response.status_code)
+            if response.status_code == 200:
+
+                response = response.json()
+                try:
+                    self.refresh(reset=False)
+                    # current_state['member']['defaultAccountData']['pendingInData'] = response.get(
+                    #     "accountDashboards", {}).get("pendingInData", {})
+                    # current_state['member']['defaultAccountData']['pendingOutData'] = response.get(
+                    #     "accountDashboards", {}).get("pendingOutData", {})
+                    # current_state['member']['defaultAccountData']['balanceData'] = response.get("accountDashboards",
+                    #                                                                             {}).get(
+                    #     "balanceData", {})
+                except Exception as e:
+                    print("ERROR FETCHING ", e)
+
+                if response.get("offerCredexData", {}).get("credex"):
+                    response = response.get("offerCredexData", {})
+                    current_state.pop('confirm_offer_payload', {})
+                    return self.wrap_text(OFFER_SUCCESSFUL.format(
+                        type='Secured Credex' if response['credex']['secured'] else 'Unsecured Credex',
+                        amount=response['credex']['formattedInitialAmount'],
+                        currency=current_state['member']['defaultAccountData']['defaultDenom'],
+                        recipient=response['credex']['counterpartyAccountName'],
+                        secured='*secured* credex' if response['credex']['secured'] else '*unsecured* credex'
+                    ), x_is_menu=True, back_is_cancel=False)
+                else:
+                    current_state.pop('confirm_offer_payload', {})
+                    message = self.format_synopsis(response.get("offerCredexData", {}).get('message'))
+            try:
+                current_state.pop('confirm_offer_payload', {})
+                message = self.format_synopsis(response.get("offerCredexData", {}).get('message'))
+                return self.wrap_text(OFFER_FAILED.format(message=message), x_is_menu=True,
+                                    back_is_cancel=False)
+            except Exception as e:
+                print("E : ", e)
+                pass
+
         state.update_state(
             state=current_state,
             stage='handle_action_offer_credex',

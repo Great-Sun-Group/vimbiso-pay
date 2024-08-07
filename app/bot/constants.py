@@ -52,13 +52,13 @@ class CachedUserState:
     def update_state(self, state: dict, update_from, stage=None, option=None, direction=None):
         """Get wallets by user."""
         # pylint: disable=no-member
-        cache.set(f"{self.user.mobile_number}", state, timeout=60 * 5)
+        cache.set(f"{self.user.mobile_number}", state, timeout=60 * 60)
         if stage:
-            cache.set(f"{self.user.mobile_number}_stage", stage, timeout=60 * 5)
+            cache.set(f"{self.user.mobile_number}_stage", stage, timeout=60 * 60)
         if option:
-            cache.set(f"{self.user.mobile_number}_option", option, timeout=60 * 5)
+            cache.set(f"{self.user.mobile_number}_option", option, timeout=60 * 60)
         if direction:
-            cache.set(f"{self.user.mobile_number}_direction", direction, timeout=60 * 5)
+            cache.set(f"{self.user.mobile_number}_direction", direction, timeout=60 * 60)
 
     def get_state(self, user):
         self.state = cache.get(f"{user.mobile_number}", {})

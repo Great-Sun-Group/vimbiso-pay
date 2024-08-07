@@ -58,14 +58,21 @@ Send *'Menu'* to go back to Menu
 INVALID_ACTION = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-*Invalid option selected*
+Invalid option selected. 
+
+Your session may have expired. 
+Send your passphrase or “hi” to log 
+back in.
+
+⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
 DELAY = """
-Welcome to credex. 
+*Welcome to credex.*
 
-Please hold a moment while we fetch 
-your account data.
+No session found, please hold for a 
+moment while we fetch your account 
+data.
 """
 
 BALANCE = """
@@ -118,8 +125,9 @@ REGISTER = """
 
 Welcome to the credex ecosystem. 
 
-Your phone number is not yet associated 
-with a credex member account. 
+Your phone number is not yet 
+associated with a credex member 
+account. 
 
 Would you like to become a member?
 
@@ -165,8 +173,9 @@ REGISTER_FORM = """
 > *👤  Registration*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-To become a member of the credex ecosystem, tap *Become Member* 
-below and submit the linked form.
+To become a member of the credex ecosystem, 
+tap *Become Member* below and submit the 
+linked form.
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -218,19 +227,19 @@ VimbisoPay, they would enter:
 1.02=>vimbisopay
 
 Yes, there is a 2% charge on cash 
-out for secured credex. But there’s 
+out for secured credex. But there's 
 no charge for cash in, or for 
 transactions within the ecosystem. 
 
 So only cash out if your 
-counterparty won’t accept credex.
+counterparty won't accept credex.
 
 {message}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
 REGISTRATION_COMPLETE = """
-> *🎉 Registered!*
+> *🎉 Account Created!*
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
@@ -240,30 +249,45 @@ Welcome to Credex! We are excited to
 have you on board.
 
 Send 'Menu' to reload your dashboard 
-with your new account opened.
+with the account you've just opened 
+for {full_name}.
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
 CONFIRM_SECURED_CREDEX = """
-> *💰 Confirm*
+> *💰 Account Selection*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Offer {secured} credex:
-  ${amount} {currency} to {party}
+  ${amount} {currency} to *{party}*
+  from account *{source}*
 
-Make offer from:
 {accounts}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
+CONFIRM_OFFER_CREDEX = """
+> *💰 Offer Confirmation*
+⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
+Offer ${amount} {currency} {secured} credex 
+to *{party}*
+from account *{source}*
+
+1. ✅ Yes
+2. ❌ No
+
+⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+"""
+
 CONFIRM_UNSECURED_CREDEX = """
-> *💰 Confirm*
+> *💰 Account Selection*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Offer {secured} credex:
-  ${amount} {currency} to {party}
-  due {date}
+  ${amount} {currency} to *{party}*
+  due {date} from account *{source}*
 
 Make offer from:
 {accounts}
@@ -375,7 +399,7 @@ DEAUTHORIZATION_SUCCESSFUL = """
 
 Access has been revoked!
 - *{member}*
-can nolonger transact on behalf of 
+can no longer transact on behalf of 
 *{company}*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
