@@ -204,9 +204,8 @@ class CredexSendMessageWebhook(APIView):
 
     @staticmethod
     def post(request):
-        print(">>>>>", request.headers)
-        if request.headers.get('whatsappBotAPIkey') == config('WHATSAPP_BOT_API_KEY'):
-            if request.data.get('phone_number') and request.data.get('memberName') and request.data.get('message'):
+        if request.headers.get('whatsappBotAPIkey') == config('WHATSAPP_BOT_API_KEY') or request.headers.get('Whatsappbotapikey') == config('WHATSAPP_BOT_API_KEY') :
+            if request.data.get('phoneNumber') and request.data.get('memberName') and request.data.get('message'):
                 payload = {
                     "messaging_product": "whatsapp",
                     "recipient_type": "individual",
@@ -221,14 +220,14 @@ class CredexSendMessageWebhook(APIView):
                             {
                                 "type": "body",
                                 "parameters": [
-                                {
-                                    "type": "text",
-                                    "text": request.data.get('memberName')
-                                },
-                                {
-                                    "type": "text",
-                                    "text": request.data.get('message')
-                                }
+                                    {
+                                        "type": "text",
+                                        "text": request.data.get('memberName')
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": request.data.get('message')
+                                    }
                                 ]
                             }
                         ]

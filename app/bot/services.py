@@ -59,6 +59,7 @@ class CredexBotService:
             if f"{self.body}".startswith("accept_"):
                 return self.handle_action_accept_offer
             elif self.body == "View Pending":
+                self.body = "handle_action_pending_offers_in"
                 return self.handle_action_pending_offers_in
             elif f"{self.body}".startswith("decline_"):
                 return self.handle_action_decline_offer

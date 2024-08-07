@@ -71,11 +71,12 @@ class CredexWhatsappService:
     def notify(self):
         """Send message"""
         try:
-            requests.post(
+            resp = requests.post(
                 url=self.url,
                 headers=self.headers,
                 json=self.payload
             )
+            print(resp.content)
             return {"status": "Successful", "message": "Sent"}
         except Exception as e:
             # print("ERROR SENDING MESSAGE TO WHATSAPP", e)
