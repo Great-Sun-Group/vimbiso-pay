@@ -260,8 +260,8 @@ CONFIRM_SECURED_CREDEX = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Offer ${amount} {currency} {secured} credex
-to *{party}* from account 
-*{source}*
+to *{party}* from 
+account *{source}*
 
 {accounts}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
