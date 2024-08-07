@@ -54,9 +54,12 @@ class CredexBotService:
 
         # OVERRIDE FLOW IF USER WANTS TO ACCEPT, DECLINE OR CANCEL CREDEXES AND ROUTE TO THE APPROPRIATE METHOD
         if f"{self.body}".startswith("accept_") or f"{self.body}".startswith("cancel_") or f"{self.body}".startswith(
-                "decline_") or f"{self.body}" == "AcceptAllIncomingOffers":
+                "decline_") or f"{self.body}" == "AcceptAllIncomingOffers" or self.body == "View Pending":
+            
             if f"{self.body}".startswith("accept_"):
                 return self.handle_action_accept_offer
+            elif self.body == "View Pending":
+                return self.handle_action_pending_offers_in
             elif f"{self.body}".startswith("decline_"):
                 return self.handle_action_decline_offer
             elif f"{self.body}".startswith("cancel_"):
