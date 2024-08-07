@@ -259,9 +259,9 @@ CONFIRM_SECURED_CREDEX = """
 > *💰 Account Selection*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-Offer {secured} credex:
-${amount} {currency} to *{party}*
-from account *{source}*
+Offer ${amount} {currency} {secured} credex:
+to *{party}* from account 
+*{source}*
 
 {accounts}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
@@ -285,9 +285,9 @@ CONFIRM_UNSECURED_CREDEX = """
 > *💰 Account Selection*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-Offer {secured} credex:
-${amount} {currency} to *{party}*
-with {date} from 
+Offer ${amount} {currency} {secured} credex:
+to *{party}* 
+{date} from 
 account *{source}*
 
 Make offer from:
