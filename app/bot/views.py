@@ -213,7 +213,7 @@ class CredexSendMessageWebhook(APIView):
                     "to": request.data.get('phoneNumber'),
                     "type": "template",
                     "template": {
-                            "name": "notification",
+                            "name": "incoming_notification",
                             "language": {
                             "code": "en_US"
                         },
