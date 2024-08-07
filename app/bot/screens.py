@@ -272,8 +272,8 @@ CONFIRM_OFFER_CREDEX = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Offer ${amount} {currency} {secured} credex 
-to *{party}*
-from account *{source}*
+to *{party}* from 
+account *{source}*
 
 1. ✅ Yes
 2. ❌ No
