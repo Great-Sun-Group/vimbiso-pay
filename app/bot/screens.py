@@ -286,8 +286,8 @@ CONFIRM_UNSECURED_CREDEX = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Offer {secured} credex:
-  ${amount} {currency} to *{party}*
-  due {date} from account *{source}*
+${amount} {currency} to *{party}*
+with {date} from account *{source}*
 
 Make offer from:
 {accounts}
