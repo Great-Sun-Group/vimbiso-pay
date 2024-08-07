@@ -287,7 +287,8 @@ CONFIRM_UNSECURED_CREDEX = """
 
 Offer {secured} credex:
 ${amount} {currency} to *{party}*
-with {date} from account *{source}*
+with {date} from 
+account *{source}*
 
 Make offer from:
 {accounts}
