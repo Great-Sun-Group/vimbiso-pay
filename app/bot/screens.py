@@ -358,9 +358,7 @@ ADD_MERMBER = """
 
 Send member *handle* of the member 
 you wish to allow to authorize 
-transactions for:
-- *{company}*
-
+transactions for *{company}*
 {message}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -370,10 +368,9 @@ CONFIRM_AUTHORIZATION = """
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-Do you wish to allow member:
-*{member}*
-to perform transactions for
-*{company} ?*
+Do you wish to allow member
+*{member}* to perform transactions 
+for *{company} ?*
 
 *1. ✅ Authorize*
 *2. ❌ Cancel*
@@ -386,9 +383,8 @@ AUTHORIZATION_SUCCESSFUL = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Member authorization complete!
-*{member}*
-can now transact on behalf of 
-*{company}*
+*{member}* can now transact on 
+behalf of *{company}*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
@@ -397,9 +393,9 @@ DEAUTHORIZATION_SUCCESSFUL = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Access has been revoked!
-*{member}*
-can no longer transact on behalf of 
-*{company}*
+*{member}* can no longer 
+transact on behalf of *{company}*
+
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
