@@ -371,11 +371,9 @@ CONFIRM_AUTHORIZATION = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Do you wish to allow member:
-
-- *{member}*
-
+*{member}*
 to perform transactions for
-- *{company} ?*
+*{company} ?*
 
 *1. ✅ Authorize*
 *2. ❌ Cancel*
@@ -388,7 +386,7 @@ AUTHORIZATION_SUCCESSFUL = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Member authorization complete!
-- *{member}*
+*{member}*
 can now transact on behalf of 
 *{company}*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
@@ -399,7 +397,7 @@ DEAUTHORIZATION_SUCCESSFUL = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Access has been revoked!
-- *{member}*
+*{member}*
 can no longer transact on behalf of 
 *{company}*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️

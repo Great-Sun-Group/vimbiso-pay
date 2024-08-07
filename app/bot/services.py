@@ -1767,8 +1767,10 @@ class CredexBotService:
             if not data.get('Error'):
                 data = data['memberData']
                 data['handle'] = self.body.lower()
+                print("1...", f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('accountName')}")
                 current_state[
                     f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('accountName')}"] = data
+                print(data)
                 state.update_state(
                     state=current_state,
                     stage='handle_action_authorize_member',
@@ -1822,8 +1824,8 @@ class CredexBotService:
                     if data.get('message') == "account authorized":
                         self.refresh(reset=False, silent=True)
                         return self.wrap_text(AUTHORIZATION_SUCCESSFUL.format(member=current_state[
-                            f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('memberName')}"].get(
-                            'accountName'), company=current_state['member'].get('defaultAccountData', {}).get(
+                            f"authorize_for_{current_state['member'].get('defaultAccountData', {}).get('accountName')}"].get(
+                            'memberName'), company=current_state['member'].get('defaultAccountData', {}).get(
                             'accountName')), x_is_menu=True, back_is_cancel=False)
                     else:
                         return self.wrap_text(INVALID_ACTION)
