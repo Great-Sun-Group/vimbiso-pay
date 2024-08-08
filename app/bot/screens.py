@@ -173,9 +173,7 @@ REGISTER_FORM = """
 > *👤  Registration*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-To become a member of the credex ecosystem, 
-tap *Become Member* below and submit the 
-linked form.
+To become a member of the credex ecosystem, tap *Become Member* below and submit the linked form.
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
