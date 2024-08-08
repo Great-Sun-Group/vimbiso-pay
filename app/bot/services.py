@@ -267,10 +267,10 @@ class CredexBotService:
                             "flow_message_version": "3",
                             "flow_action": "navigate",
                             "flow_token": "not-used",
-                            "flow_id": "1048499583563106",
+                            "flow_id": "1153987899171090",
                             "flow_cta": "Create Account",
                             "flow_action_payload": {
-                                "screen": "OPEN_ACCOUNT"
+                                "screen": "REGISTER"
                             }
                         }
                     }
@@ -338,31 +338,32 @@ class CredexBotService:
             update_from="handle_action_create_business_account",
             option="handle_action_create_business_account"
         )
-        return {
-            "messaging_product": "whatsapp",
-            "to": self.user.mobile_number,
-            "recipient_type": "individual",
-            "type": "interactive",
-            "interactive": {
-                "type": "flow",
-                "body": {
-                    "text": COMPANY_REGISTRATION.format(message=message)
-                },
-                "action": {
-                    "name": "flow",
-                    "parameters": {
-                        "flow_message_version": "3",
-                        "flow_action": "navigate",
-                        "flow_token": "not-used",
-                        "flow_id": config('WHATSAPP_COMPANY_REGISTRATION_FLOW_ID'),
-                        "flow_cta": "Create Account",
-                        "flow_action_payload": {
-                            "screen": "REGISTER_ACCOUNT"
+        return  {
+                "messaging_product": "whatsapp",
+                "to": self.user.mobile_number,
+                "recipient_type": "individual",
+                "type": "interactive",
+                "interactive": {
+                    "type": "flow",
+                    "body": {
+                        "text": COMPANY_REGISTRATION.format(message=message)
+                    },
+                    "action": {
+                        "name": "flow",
+                        "parameters": {
+                            "flow_message_version": "3",
+                            "flow_action": "navigate",
+                            "flow_token": "not-used",
+                            "flow_id": "1048499583563106",
+                            "flow_cta": "Create Account",
+                            "flow_action_payload": {
+                                "screen": "OPEN_ACCOUNT"
+                            }
                         }
                     }
                 }
+            
             }
-        }
 
     @property
     def handle_action_menu(self):
