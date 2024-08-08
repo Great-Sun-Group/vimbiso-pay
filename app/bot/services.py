@@ -270,7 +270,7 @@ class CredexBotService:
                             "flow_id": "1153987899171090",
                             "flow_cta": "Create Account",
                             "flow_action_payload": {
-                                "screen": "REGISTER"
+                                "screen": "REGISTRATION"
                             }
                         }
                     }
