@@ -10,6 +10,7 @@ from bot.models import Message
 from django.core.cache import cache
 
 
+
 class CredexBotService:
     def __init__(self, payload, methods: dict = dict, user: object = None) -> None:
         self.message = payload
@@ -1003,7 +1004,7 @@ class CredexBotService:
         response = requests.request("PUT", f"{config('CREDEX')}/acceptCredexBulk", headers=headers, data=payload)
         print(response.content)
         if response.status_code == 200:
-            self.refresh(reset=False)
+            self.refresh(reset=True)
             return self.wrap_text("> *🥳 Success*\n\n You have accepted all offers!", x_is_menu=True, back_is_cancel=False)
         return self.wrap_text("> *😞 Failed*\n\n Failed to accept all!", x_is_menu=True, back_is_cancel=False)
 

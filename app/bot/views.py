@@ -196,6 +196,17 @@ class WelcomeMessage(APIView):
         return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
     
 
+class WipeCache(APIView):
+    """ Message"""
+    parser_classes = (JSONParser,)
+    @staticmethod
+    def post(request):
+        from django.core.cache import cache
+
+        cache.delete("*")
+        return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
+    
+
 
 
 class CredexSendMessageWebhook(APIView):

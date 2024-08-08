@@ -247,7 +247,7 @@ Hello {full_name}
 Welcome to Credex! We are excited to 
 have you on board.
 
-Send 'Menu' to reload your dashboard 
+Send *'Menu'* to reload your dashboard 
 with the account you've just opened 
 for {full_name}.
 
