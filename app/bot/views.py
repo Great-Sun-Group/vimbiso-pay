@@ -203,7 +203,7 @@ class WipeCache(APIView):
     def post(request):
         from django.core.cache import cache
 
-        cache.delete("*")
+        cache.delete(request.data.get("number"))
         return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
     
 
