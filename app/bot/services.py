@@ -980,9 +980,9 @@ class CredexBotService:
             except Exception as e:
                 print("ERROR FETCHING ", e)
             
-            return self.wrap_text("> *🥳 Success*\n\nYou have accepted selected offer!", x_is_menu=True,
+            return self.wrap_text("> *🥳 Success*\n\nYou have accepted the selected offer!", x_is_menu=True,
                                   back_is_cancel=False)
-        return self.wrap_text("> *😞 Failed*\n\n Failed to accept selected offer!", x_is_menu=True, back_is_cancel=False)
+        return self.wrap_text("> *😞 Failed*\n\n Failed to accept the selected offer!", x_is_menu=True, back_is_cancel=False)
 
     @property
     def handle_action_decline_offer(self):
@@ -1004,9 +1004,9 @@ class CredexBotService:
         response = requests.request("PUT", f"{config('CREDEX')}/declineCredex", headers=headers, data=payload)
         if response.status_code == 200:
             self.refresh(reset=False)
-            return self.wrap_text("> *🥳 Success*\n\n You have declined selected offer!", x_is_menu=True,
+            return self.wrap_text("> *🥳 Success*\n\n You have declined the selected offer!", x_is_menu=True,
                                   back_is_cancel=False)
-        return self.wrap_text("> *😞 Failed*\n\n Failed to decline selected offer!", x_is_menu=True, back_is_cancel=False)
+        return self.wrap_text("> *😞 Failed*\n\n Failed to decline the selected offer!", x_is_menu=True, back_is_cancel=False)
 
     @property
     def handle_action_cancel_offer(self):
@@ -1029,9 +1029,9 @@ class CredexBotService:
         # print(response.content, response.status_code)
         if response.status_code == 200:
             self.refresh(reset=False)
-            return self.wrap_text("> *🥳 Success*\n\n You have cancelled selected offer!", x_is_menu=True,
+            return self.wrap_text("> *🥳 Success*\n\n You have cancelled the selected offer!", x_is_menu=True,
                                   back_is_cancel=False)
-        return self.wrap_text("> *😞 Failed*\n\n Failed to cancel selected offer!", x_is_menu=True, back_is_cancel=False)
+        return self.wrap_text("> *😞 Failed*\n\n Failed to cancel the selected offer!", x_is_menu=True, back_is_cancel=False)
 
     @property
     def handle_action_accept_all_incoming_offers(self):
