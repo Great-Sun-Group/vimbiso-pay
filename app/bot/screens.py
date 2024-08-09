@@ -68,7 +68,7 @@ Send “hi” to log back in.
 DELAY = """
 *Welcome to credex.*
 
-No session found, please hold for a 
+No session found, please hold a 
 moment while we fetch your account 
 data.
 """
