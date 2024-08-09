@@ -417,6 +417,7 @@ class CredexBotService:
         if not current_state['member'].get('defaultAccountData'):
             return self.handle_action_select_profile
         
+        print(current_state['member']['defaultAccountData']['pendingOutData'])
         pending_in = 0
         if current_state['member']['defaultAccountData']['pendingInData']:
             pending_in = len(current_state['member']['defaultAccountData']['pendingInData'])
@@ -1112,12 +1113,13 @@ class CredexBotService:
 
         if self.body == 'handle_action_pending_offers_in':
             rows = []
-            menu_string = "> *📥 Pending Incoming*\n\n"
+            menu_string = "> *📥 Pending Incoming*\n"
             count = 1
             data = current_state['member'].get('defaultAccountData', {}).get('pendingInData') if current_state[
                 'member'].get('defaultAccountData', {}).get('pendingInData') else []
+            print(data)
             for item in data[:10]:
-                menu_string += f"{count}. {item.get('formattedInitialAmount')}| {item.get('counterpartyAccountName')}\n"
+                menu_string += f"\n{count}. *{item.get('formattedInitialAmount')}* from {item.get('counterpartyAccountName')}       {'' if 'Invalid date' == item.get('dueDate') else '\n        Due ' + item.get('dueDate')}"
                 rows.append(
                     {
                         "id": item.get('credexID'),
@@ -1229,7 +1231,7 @@ class CredexBotService:
             data = current_state['member'].get('defaultAccountData', {}).get('pendingOutData') if current_state['member'].get('defaultAccountData', {}).get('pendingOutData') else []
             for item in data[:10]:
                 counterparty = item.get('counterpartyAccountName')
-                menu_string += f"{count}. {item.get('formattedInitialAmount')}|{counterparty}\n"
+                menu_string += f"{count}. {item.get('formattedInitialAmount')} {'Secured' if 'Invalid date' == item.get('dueDate') else ' Due ' + item.get('dueDate')} offered to\n        {counterparty}\n"
                 rows.append(
                     {
                         "id": item.get('credexID'),

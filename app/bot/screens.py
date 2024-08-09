@@ -17,7 +17,7 @@ HOME_1 = """
 *_{handle}_*
  *1. 📥 Pending Offers ({pending_in})*
  *2. 📒 Review Transactions*
- *3. 📤 Review Outgoing Offers ({pending_in})*
+ *3. 📤 Review Outgoing Offers ({pending_out})*
  *4. 💸 Make Credex Offer*
  *5. 👥 Return to Member Dashboard*
 
