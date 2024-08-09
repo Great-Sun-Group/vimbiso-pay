@@ -1119,7 +1119,8 @@ class CredexBotService:
                 'member'].get('defaultAccountData', {}).get('pendingInData') else []
             print(data)
             for item in data[:10]:
-                menu_string += f"\n{count}. *{item.get('formattedInitialAmount')}* from {item.get('counterpartyAccountName')}       {'' if 'Invalid date' == item.get('dueDate') else '\n        Due ' + item.get('dueDate')}"
+                due =  '' if 'Invalid date' == item.get('dueDate') else '\n        Due ' + item.get('dueDate')
+                menu_string += f"\n{count}. *{item.get('formattedInitialAmount')}* from {item.get('counterpartyAccountName')}       {due}"
                 rows.append(
                     {
                         "id": item.get('credexID'),
@@ -1231,7 +1232,8 @@ class CredexBotService:
             data = current_state['member'].get('defaultAccountData', {}).get('pendingOutData') if current_state['member'].get('defaultAccountData', {}).get('pendingOutData') else []
             for item in data[:10]:
                 counterparty = item.get('counterpartyAccountName')
-                menu_string += f"{count}. {item.get('formattedInitialAmount')} {'Secured' if 'Invalid date' == item.get('dueDate') else ' Due ' + item.get('dueDate')} offered to\n        {counterparty}\n"
+                due = '' if 'Invalid date' == item.get('dueDate') else ' Due ' + item.get('dueDate')
+                menu_string += f"{count}. {item.get('formattedInitialAmount')} {due} offered to\n        {counterparty}\n"
                 rows.append(
                     {
                         "id": item.get('credexID'),
