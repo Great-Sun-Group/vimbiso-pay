@@ -1311,13 +1311,13 @@ class CredexBotService:
                 
             if self.message['type'] == "nfm_reply":
                 print("Incoming", self.body)
-                from datetime import datetime
+                from datetime import datetime, timedelta
                 payload = {
                     "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
                     "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard']['accountIDS'][-1],
                     "handle": self.body.get('handle'),
                     "amount": self.body.get('amount'),
-                    "dueDate": self.body.get('due_date') if self.body.get('due_date') else (datetime.now()).timestamp() * 1000,
+                    "dueDate": self.body.get('due_date') if self.body.get('due_date') else (datetime.now() + timedelta(weeks=4)).timestamp() * 1000,
                     "currency": self.body.get('currency'),
                     "securedCredex": True if self.body.get('secured') else False,
                 }
@@ -1356,13 +1356,13 @@ class CredexBotService:
                     amount, user = f"{self.body}".split('->')
                     date = None
 
-                from datetime import datetime
+                from datetime import datetime, timedelta
                 payload = {
                     "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
                     "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard']['accountIDS'][-1],
                     "handle": user,
                     "amount": amount,
-                    "dueDate": datetime.strptime(date, '%Y-%m-%d').timestamp() * 1000 if date else (datetime.now()).timestamp() * 1000,
+                    "dueDate": datetime.strptime(date, '%Y-%m-%d').timestamp() * 1000 if date else (datetime.now() + timedelta(weeks=4)).timestamp() * 1000,
                     "currency": current_state['member']['defaultAccountData']['defaultDenom'] if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard'].get('defaultDenom'),
                     "securedCredex": False
                 }
