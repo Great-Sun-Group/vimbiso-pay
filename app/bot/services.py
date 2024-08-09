@@ -79,7 +79,7 @@ class CredexBotService:
             # print("6")
             if not isinstance(current_state, dict):
                 current_state = current_state.state
-            # current_state = {"state": {}, 'member': current_state.get('member')}
+            current_state = {"state": {}, 'member': {}}
             # print("7")
             self.body = "Hi"
             self.message['message'] = "Hi"
