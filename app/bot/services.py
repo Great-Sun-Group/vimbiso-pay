@@ -189,7 +189,8 @@ class CredexBotService:
                 update_from="handle_action_select_profile",
                 option="select_account_to_use"
             )
-            self.body = "select_account_to_use"
+            self.body = "Hi"
+            return self.handle_action_select_profile
         else:
             state.update_state(
                 state=current_state,
