@@ -563,7 +563,7 @@ class CredexBotService:
         elif state.option == 'select_option':
             if self.body.isdigit():
                 if int(self.body) in range(1, len(current_state.get('member', {}).get('defaultAccountData', {}).get('authFor', []))+1):
-                    print("Assign > ", current_state.get('member', {}).get('defaultAccountData', {}).get('authFor', [])[int(self.body)-1])
+                    # print("Assign > ", current_state.get('member', {}).get('defaultAccountData', {}).get('authFor', [])[int(self.body)-1])
                     url = f"{config('CREDEX')}/updateSendOffersTo"
                     payload = json.dumps({
                         "humanIDtoSendOffers": current_state.get('member', {}).get('defaultAccountData', {}).get('authFor', [])[int(self.body)-1]['memberID'],
@@ -669,7 +669,7 @@ class CredexBotService:
                     self.body = '1'
             # print("#####", current_state['member'].get('accountDashboards'), self.body)
             if options.get(self.body) is not None:
-                print("OPTIONS : ", options)
+                # print("OPTIONS : ", options)
                 current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][options.get(self.body)]
                 state.update_state(
                     state=current_state,
@@ -1310,7 +1310,6 @@ class CredexBotService:
                 current_state = current_state.state
                 
             if self.message['type'] == "nfm_reply":
-                print("Incoming", self.body)
                 from datetime import datetime, timedelta
                 payload = {
                     "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
@@ -1321,7 +1320,6 @@ class CredexBotService:
                     "currency": self.body.get('currency'),
                     "securedCredex": True if self.body.get('secured') else False,
                 }
-                print("NFM ", payload)
 
             if "=>" in f"{self.body}" or "->" f"{self.body}":
                 if "=>" in f"{self.body}":
@@ -1367,10 +1365,8 @@ class CredexBotService:
                     "securedCredex": False
                 }
 
-            print(payload)
 
             serializer = OfferCredexSerializer(data=payload)
-            print(serializer.is_valid(), serializer.errors)
             if serializer.is_valid():
                 accounts = []
                 count = 1
@@ -1511,7 +1507,7 @@ class CredexBotService:
             to_credex['issuerAccountID'] = current_state['member']['defaultAccountData'].get('accountID')
             to_credex.pop("handle", None)
             payload = json.dumps(current_state.get('confirm_offer_payload'))
-            print(to_credex)
+            # print(to_credex)
             headers = {
                 'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
                 'Content-Type': 'application/json',
@@ -1519,7 +1515,7 @@ class CredexBotService:
             }
             message = ''
             response = requests.request("POST", f"{config('CREDEX')}/offerCredex", headers=headers, data=payload)
-            print(response.content, response.status_code)
+            # print(response.content, response.status_code)
             if response.status_code == 200:
 
                 response = response.json()
