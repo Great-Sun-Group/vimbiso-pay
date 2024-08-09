@@ -60,8 +60,7 @@ INVALID_ACTION = """
 Invalid option selected. 
 
 Your session may have expired. 
-Send your passphrase or “hi” to log 
-back in.
+Send “hi” to log back in.
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
