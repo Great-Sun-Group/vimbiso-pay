@@ -79,10 +79,11 @@ class CredexBotService:
             # print("6")
             if not isinstance(current_state, dict):
                 current_state = current_state.state
-            current_state = {"state": {}, 'member': current_state.get('member')}
+            # current_state = {"state": {}, 'member': current_state.get('member')}
             # print("7")
+            self.body = "Hi"
+            self.message['message'] = "Hi"
             self.refresh(reset=True)
-            state.update_state(current_state, update_from='menu')
             return self.handle_action_select_profile
 
             # IF USER IS AT MENU STAGE FIND THE NEXT ROUTE BASED ON MESSAGE
