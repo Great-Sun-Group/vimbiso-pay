@@ -16,9 +16,9 @@ HOME_1 = """
 {balance}
 *_{handle}_*
  *1. 📥 Pending Offers ({pending_in})*
- *2. 📒 Review Ledger*
+ *2. 📒 Review Transactions*
  *3. 📤 Review Outgoing Offers ({pending_in})*
- *4. 💸 Offer Credex*
+ *4. 💸 Make Credex Offer*
  *5. 👥 Return to Member Dashboard*
 
  *What would you like to do ?*
@@ -30,14 +30,13 @@ HOME_2 = """
 {balance}
 *_{handle}_*
  *1. 📥 Pending Offers ({pending_in})*
- *2. 📒 Review Ledger*
+ *2. 📒 Review Transactions*
  *3. 👥 Add or remove members*
  *4. 🛎️ Update notification recipient* 
  *5. 📤 Review Outgoing Offers ({pending_out})*
- *6. 💸 Offer Credex*
+ *6. 💸 Make Credex Offer*
  *7. 🏡 Return to Member Dashboard*
 
- *What would you like to do ?*
  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
@@ -50,7 +49,7 @@ MANAGE_ACCOUNTS = """
  *2. 🗝️ Authorize Member*
  *3. 📤 Pending Outgoing ({pending_out})*
 
-Send *'Menu'* to go back to Menu
+Type *'Menu'* to return to dashboard
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -97,7 +96,7 @@ BALANCE_FAILED = """
 Failed to perform balance
 enquiry at the moment.
   
-Send *'Menu'* to go back to Menu
+Type *'Menu'* to return to dashboard
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -114,7 +113,7 @@ CREDEX = """
  Date : {date}
  Type : {type}
 
-Send *'Menu'* to go back to Menu
+Type *'Menu'* to return to dashboard
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -123,16 +122,15 @@ REGISTER = """
 > *👤  Registration*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-Welcome to the credex ecosystem. 
+Welcome to the credex ecosystem,
+we did not recognize your phone 
+number. 
 
-Your phone number is not yet 
-associated with a credex member 
-account. 
+Would you like to create a credex 
+account?
 
-Would you like to become a member?
-
-1. Become a member
-2. Tell me more about credex
+1. Create account
+2. Cancel
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -163,7 +161,7 @@ A fee of 2% will be charged when cashing out a secured credex with VimbisoPay fo
 
 Your account and transactions are managed easily within WhatsApp.
 
-1. Become a member
+1. Create account
 2. Maybe later
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
@@ -173,10 +171,11 @@ REGISTER_FORM = """
 > *👤  Registration*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-To become a member of the credex ecosystem, tap *Become Member* below 
-and submit the linked form.
+To become a member of the credex 
+ecosystem, tap *Create account* 
+below and submit the linked form.
 
-⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+{message}
 """
 
 COMPANY_REGISTRATION = """
@@ -197,44 +196,20 @@ OFFER_CREDEX = """
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-You can offer payment through the 
-chatbot interface. All you need 
-to know is the account handle of 
-your counterparty, and the amount 
-to offer.
+To make a payment offer click the
+*'Make Offer'* button below and fill
+in the form then submit the details.
 
-When you purchase a secured credex 
-from VimbisoPay for $1 USD in cash, 
-the VimbisoPay agent enters in the 
-chatbot:
+Alternatively you can use the short
+commands below:
 
-1=>youraccounthandle
+*To issue a secured credex, send*
+  0.5=>recipientHandle
 
-You will be prompted to approve 
-the offer, and when you do it 
-will be entered into your ledger 
-as a secured credex balance. 
-When you want to send $0.50 to 
-a vendor, enter:
-
-0.5=>vendorhandle
-
-And if the vendor wants to 
-purchase the $1 cash back from 
-VimbisoPay, they would enter:
-
-1.02=>vimbisopay
-
-Yes, there is a 2% charge on cash 
-out for secured credex. But there's 
-no charge for cash in, or for 
-transactions within the ecosystem. 
-
-So only cash out if your 
-counterparty won't accept credex.
+*To issue an unecured credex, send*
+  0.5->recipientHandle
 
 {message}
-⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
 REGISTRATION_COMPLETE = """
@@ -244,10 +219,16 @@ REGISTRATION_COMPLETE = """
 
 Hello {full_name}
 
-Welcome to Credex! We are excited to 
-have you on board.
+Welcome. This unverified credex 
+account can issue and accept 
+transactions under $5 USD / 75 ZiG. 
+ 
+Its daily limit on transactions is 
+$100 USD / 1,500 ZiG, and its 
+daily cash out limit is 
+$25 USD / 325 ZiG.
 
-Send *'Menu'* to reload your dashboard 
+Type *'Menu'* to reload your dashboard 
 with the account you've just opened 
 for {full_name}.
 
@@ -259,9 +240,9 @@ CONFIRM_SECURED_CREDEX = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Offer ${amount} {currency} {secured} credex
-to *{party}* from 
-account *{source}*
+to *{party}*
 
+*Make Offer From*
 {accounts}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -285,9 +266,10 @@ CONFIRM_UNSECURED_CREDEX = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Offer ${amount} {currency} {secured} credex
-to *{party}* 
-{date} from 
+to *{party}* from 
 account *{source}*
+
+{date}
 
 Make offer from:
 {accounts}
@@ -317,15 +299,15 @@ OUTGOING_CREDEX = """
 """
 
 OFFER_SUCCESSFUL = """
-> *✅ Success!*
+> *💰 Complete!*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-*Offered*
+*Transaction Complete!!*
+You have successfully offered 
+{amount} {currency} {secured} to 
+{recipient}.
 
-{amount} {currency} {secured} to
-{recipient}
-
-Send *'Menu'* to go back to Menu
+Type *'Menu'* to return to dashboard
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
@@ -333,19 +315,15 @@ OFFER_FAILED = """
 > *😞 Failed*
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
-
-Failed to perform transaction
-at the moment.
-
-Secured Credex
-  0.5=>recipientHandle
-
-Unecured Credex
-  0.5->recipientHandle=2023-10-12
-
 {message}
 
-Send *'Menu'* to go back to Menu
+*To issue a secured credex, send*
+  0.5=>recipientHandle
+
+*To issue an unecured credex, send*
+  0.5->recipientHandle
+
+Type *'Menu'* to return to dashboard
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """

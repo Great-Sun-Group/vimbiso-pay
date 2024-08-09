@@ -1,4 +1,4 @@
-from bot.utils import CredexWhatsappService
+from bot.utils import CredexWhatsappService, convert_timestamp_to_date
 from bot.serializers.company import CompanyDetailsSerializer
 from bot.serializers.offers import OfferCredexSerializer
 from bot.serializers.members import MemberDetailsSerializer
@@ -8,6 +8,7 @@ import requests, json
 from decouple import config
 from bot.models import Message
 from django.core.cache import cache
+from datetime import datetime
 
 
 
@@ -80,6 +81,7 @@ class CredexBotService:
                 current_state = current_state.state
             current_state = {"state": {}, 'member': current_state.get('member')}
             # print("7")
+            self.refresh(reset=True)
             state.update_state(current_state, update_from='menu')
             return self.handle_action_select_profile
 
@@ -161,11 +163,16 @@ class CredexBotService:
                     }
                 }).send_message()
         response = requests.request("GET", url, headers=headers, data=payload)
+        print(response.content)
         if response.status_code == 200:
             default = {}
             if not reset:
                 default = current_state.get('member', {}).pop('defaultAccountData', {})
-            current_state['member'] = response.json()
+            try:
+                current_state['member'] = response.json()
+                current_state['member']['accountDashboards'][-1]["isOwnedAccount"] = False
+            except Exception as e:
+                pass
             if default:
                 for acc in current_state['member']['accountDashboards']:
                     print(default.get('accountID'))
@@ -182,6 +189,7 @@ class CredexBotService:
                 update_from="handle_action_select_profile",
                 option="select_account_to_use"
             )
+            self.body = "select_account_to_use"
         else:
             state.update_state(
                 state=current_state,
@@ -189,7 +197,7 @@ class CredexBotService:
                 update_from="refresh",
                 option="handle_action_register"
             )
-            return self.wrap_text(REGISTER, extra_rows=[{"id": '1', "title": "Become a member"}, {"id": '2', "title": "Tell me more"}])
+            return self.wrap_text(REGISTER.format(message=response.json().get('message')), extra_rows=[{"id": '1', "title": "Become a member"}, {"id": '2', "title": "Tell me more"}])
             
     @property
     def handle_action_switch_account(self):
@@ -202,7 +210,7 @@ class CredexBotService:
         self.body = "Hi"
         self.message['message'] = "Hi"
         self.refresh(reset=True)
-        return self.handle_action_menu
+        return self.handle_action_select_profile
 
     @property
     def handle_action_register(self):
@@ -232,20 +240,46 @@ class CredexBotService:
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
                 print("########### ", response.content)
                 if response.status_code == 200:
-                    return self.wrap_text(
-                        REGISTRATION_COMPLETE.format(
-                            full_name=f"{self.body.get('firstName')} {self.body.get('lastName')}",
-                            username=self.body.get('email'),
-                            phone=self.message['from']
-                        ),
-                        x_is_menu=True, back_is_cancel=False
-                    )
+                    return self.handle_action_switch_account
+                    # return self.wrap_text(
+                    #     REGISTRATION_COMPLETE.format(
+                    #         full_name=f"{self.body.get('firstName')} {self.body.get('lastName')}",
+                    #         username=self.body.get('email'),
+                    #         phone=self.message['from']
+                    #     ),
+                    #     x_is_menu=True, back_is_cancel=False
+                    # )
                 else:
                     try:
                         if "Internal Server Error" in response.json().get('error'):
                             message = "Failed to perform action"
                         else:
                             message = response.json().get('error')
+                        return {
+                            "messaging_product": "whatsapp",
+                            "to": self.user.mobile_number,
+                            "recipient_type": "individual",
+                            "type": "interactive",
+                            "interactive": {
+                                "type": "flow",
+                                "body": {
+                                    "text": REGISTER_FORM.format(message=message)
+                                },
+                                "action": {
+                                    "name": "flow",
+                                    "parameters": {
+                                        "flow_message_version": "3",
+                                        "flow_action": "navigate",
+                                        "flow_token": "not-used",
+                                        "flow_id": "732848782277037",
+                                        "flow_cta": "Create Account",
+                                        "flow_action_payload": {
+                                            "screen": "REGISTRATION"
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                     except Exception as e:
                         pass
@@ -260,7 +294,7 @@ class CredexBotService:
                 "interactive": {
                     "type": "flow",
                     "body": {
-                        "text": REGISTER_FORM
+                        "text": REGISTER_FORM.format(message='')
                     },
                     "action": {
                         "name": "flow",
@@ -268,7 +302,7 @@ class CredexBotService:
                             "flow_message_version": "3",
                             "flow_action": "navigate",
                             "flow_token": "not-used",
-                            "flow_id": "1153987899171090",
+                            "flow_id": "732848782277037",
                             "flow_cta": "Create Account",
                             "flow_action_payload": {
                                 "screen": "REGISTRATION"
@@ -281,7 +315,7 @@ class CredexBotService:
         if self.body == "2":
             return self.wrap_text(MORE_ABOUT_CREDEX, extra_rows=[{"id": '1', "title": "Become a member"}, {"id": '2', "title": "Tell me more"}])
 
-        return self.wrap_text(REGISTER, extra_rows=[{"id": '1', "title": "Become a member"}, {"id": '2', "title": "Tell me more"}])
+        return self.wrap_text(REGISTER.format(message=''), extra_rows=[{"id": '1', "title": "Become a member"}, {"id": '2', "title": "Tell me more"}])
 
 
     @property
@@ -328,7 +362,8 @@ class CredexBotService:
                         if "Internal Server Error" in response.json().get('error'):
                             message = "Failed to perform action"
                         else:
-                            message = response.json().get('error')
+                            message = response.json().get('error') 
+
                     except Exception as e:
                         pass
             else:
@@ -381,7 +416,6 @@ class CredexBotService:
         if not current_state['member'].get('defaultAccountData'):
             return self.handle_action_select_profile
         
-
         pending_in = 0
         if current_state['member']['defaultAccountData']['pendingInData']:
             pending_in = len(current_state['member']['defaultAccountData']['pendingInData'])
@@ -649,9 +683,11 @@ class CredexBotService:
                 return self.handle_action_menu
             else:
                 if str(self.body).isdigit():
-                    if self.body in [str(len(current_state['member']['accountDashboards']) + 1),"handle_action_create_business_account"]:
+                    if self.body in [str(len(current_state['member']['accountDashboards']) + 1),"handle_action_offer_credex"]:
+                        return self.handle_action_offer_credex
+                    elif self.body in [str(len(current_state['member']['accountDashboards']) + 2),"handle_action_create_business_account"]:
                         return self.handle_action_create_business_account
-                    elif self.body in [str(len(current_state['member']['accountDashboards']) + 2),"handle_action_find_agent"]:
+                    elif self.body in [str(len(current_state['member']['accountDashboards']) + 3),"handle_action_find_agent"]:
                         return self.wrap_text(AGENTS)
         
         accounts = []
@@ -671,7 +707,15 @@ class CredexBotService:
                 break
             count += 1
 
-        account_string += f" *{count}.* 💼 _Create New Account_\n"
+        account_string += f" *{count}.* 💸 _Make Credex Offer_\n"
+        accounts.append(
+            {
+                "id": "handle_action_offer_credex",
+                "title": f"💸 Offer Credex"
+            }
+        )
+        count += 1
+        account_string += f" *{count}.* 💼 _Create Another Account_\n"
         accounts.append(
             {
                 "id": "handle_action_create_business_account",
@@ -1261,29 +1305,36 @@ class CredexBotService:
 
         payload = {}
         if "=>" in f"{self.body}" or "->" f"{self.body}" or self.message['type'] == "nfm_reply":
+
+            if not isinstance(current_state, dict):
+                current_state = current_state.state
+                
             if self.message['type'] == "nfm_reply":
+                print("Incoming", self.body)
+                from datetime import datetime
                 payload = {
                     "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
                     "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard']['accountIDS'][-1],
-                    "recipient_phone_number": self.body.get('recipent_phone_number'),
+                    "handle": self.body.get('handle'),
                     "amount": self.body.get('amount'),
-                    "dueDate": self.body.get('dueDate'),
+                    "dueDate": self.body.get('due_date') if self.body.get('due_date') else (datetime.now()).timestamp() * 1000,
                     "currency": self.body.get('currency'),
-                    "securedCredex": True if self.body.get('securedCredex') else False,
+                    "securedCredex": True if self.body.get('secured') else False,
                 }
+                print("NFM ", payload)
 
             if "=>" in f"{self.body}" or "->" f"{self.body}":
                 if "=>" in f"{self.body}":
                     amount, user = f"{self.body}".split('=>')
                     if "=" in user:
                         user, _ = user.split("=")
-                    from datetime import datetime, timedelta
+                    from datetime import datetime
                     payload = {
                         "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
                         "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard']['accountIDS'][-1],
                         "handle": user,
                         "amount": amount,
-                        "dueDate": (datetime.now() + timedelta(weeks=4)).timestamp() * 1000,
+                        "dueDate": (datetime.now()).timestamp() * 1000,
                         "currency": current_state['member']['defaultAccountData']['defaultDenom'] if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard'].get('defaultDenom'),
                         "securedCredex": True
                     }
@@ -1302,33 +1353,38 @@ class CredexBotService:
                         # If a ValueError is raised, the date string is not in the correct format
                         return self.wrap_text(OFFER_CREDEX.format(message='*Invalid Due Date❗*'), x_is_menu=True)
                 else:
-                    return self.wrap_text(OFFER_CREDEX.format(message='*Missing Due Date❗*'), x_is_menu=True)
+                    amount, user = f"{self.body}".split('->')
+                    date = None
+
+                from datetime import datetime
                 payload = {
                     "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
                     "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard']['accountIDS'][-1],
                     "handle": user,
                     "amount": amount,
-                    "dueDate": datetime.strptime(date, '%Y-%m-%d').timestamp() * 1000,
+                    "dueDate": datetime.strptime(date, '%Y-%m-%d').timestamp() * 1000 if date else (datetime.now()).timestamp() * 1000,
                     "currency": current_state['member']['defaultAccountData']['defaultDenom'] if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard'].get('defaultDenom'),
                     "securedCredex": False
                 }
 
-            serializer = OfferCredexSerializer(data=payload)
+            print(payload)
 
+            serializer = OfferCredexSerializer(data=payload)
+            print(serializer.is_valid(), serializer.errors)
             if serializer.is_valid():
                 accounts = []
                 count = 1
                 account_string = f""
 
-                if current_state.get('member', {}).get('defaultAccountData', {}):
-                    account_string  += f" *{count}.*  _Proceed with selected account_\n\n*Change account to offer from*:\n"
-                    accounts.append(
-                        {
-                            "id": current_state['member']['defaultAccountData'].get('accountID'),
-                            "title": f"✅ Proceed"
-                        }
-                    )
-                    count += 1
+                # if current_state.get('member', {}).get('defaultAccountData', {}):
+                #     account_string  += f" *{count}.*  _Proceed with selected account_\n\n*Change account to offer from*:\n"
+                #     accounts.append(
+                #         {
+                #             "id": current_state['member']['defaultAccountData'].get('accountID'),
+                #             "title": f"✅ Proceed"
+                #         }
+                #     )
+                #     count += 1
                 
 
                 for account in current_state['member']['accountDashboards']:
@@ -1389,11 +1445,7 @@ class CredexBotService:
         
         if state.option == "handle_action_confirm_offer_credex":
             accounts = []
-            count = 1
-            if current_state.get('member', {}).get('defaultAccountData', {}):
-                accounts.append(current_state['member']['defaultAccountData'].get('accountID'))
-                count += 1
-
+            count = 0
             for account in current_state['member']['accountDashboards']:
                 accounts.append(account.get('accountID'))
 
@@ -1486,19 +1538,21 @@ class CredexBotService:
                 if response.get("offerCredexData", {}).get("credex"):
                     response = response.get("offerCredexData", {})
                     current_state.pop('confirm_offer_payload', {})
+                    denom = current_state['member']['defaultAccountData']['defaultDenom']
+                    current_state.pop('defaultAccountData', {})
                     return self.wrap_text(OFFER_SUCCESSFUL.format(
                         type='Secured Credex' if response['credex']['secured'] else 'Unsecured Credex',
                         amount=response['credex']['formattedInitialAmount'],
-                        currency=current_state['member']['defaultAccountData']['defaultDenom'],
+                        currency=denom,
                         recipient=response['credex']['counterpartyAccountName'],
-                        secured='*secured* credex' if response['credex']['secured'] else '*unsecured* credex'
+                        secured='*secured* credex' if response['credex']['secured'] else '*unsecured* credex',
                     ), x_is_menu=True, back_is_cancel=False)
                 else:
                     current_state.pop('confirm_offer_payload', {})
-                    message = self.format_synopsis(response.get("offerCredexData", {}).get('message'))
+                    message = self.format_synopsis(response.get("offerCredexData", {}).get('message').replace("Error:", ""))
             try:
                 current_state.pop('confirm_offer_payload', {})
-                message = self.format_synopsis(response.get("offerCredexData", {}).get('message'))
+                message = self.format_synopsis(response.get("offerCredexData", {}).get('message').replace("Error:", ""))
                 return self.wrap_text(OFFER_FAILED.format(message=message), x_is_menu=True,
                                     back_is_cancel=False)
             except Exception as e:
@@ -1511,8 +1565,38 @@ class CredexBotService:
             update_from="handle_action_offer_credex",
             option="handle_action_offer_credex"
         )
+        from datetime import datetime, timedelta
+        return {
+                "messaging_product": "whatsapp",
+                "to": self.user.mobile_number,
+                "recipient_type": "individual",
+                "type": "interactive",
+                "interactive": {
+                    "type": "flow",
+                    "body": {
+                        "text": OFFER_CREDEX.format(message=message)
+                    },
+                    "action": {
+                        "name": "flow",
+                        "parameters": {
+                            "flow_message_version": "3",
+                            "flow_action": "navigate",
+                            "flow_token": "not-used",
+                            "flow_id": "511317068492824",
+                            "flow_cta": "Make Offer",
+                            "flow_action_payload": {
+                                "screen": "MAKE_OFFER",
+                                "data": {
+                                    "min_date": str((datetime.now() +timedelta(days=1)).timestamp()* 1000),
+                                    "max_date": str((datetime.now() +timedelta(weeks=5)).timestamp()* 1000)
 
-        return self.wrap_text(OFFER_CREDEX.format(message=message))
+                                }
+                            }
+                        }
+                    }
+                }
+            
+            }
 
     def format_synopsis(self, synopsis, style=None):
         formatted_synopsis = ""
@@ -1521,7 +1605,7 @@ class CredexBotService:
 
         for word in words:
             # If adding the word exceeds the line length, start a new line
-            if line_length + len(word) + 1 > 30:
+            if line_length + len(word) + 1 > 34:
                 formatted_synopsis += "\n"
                 line_length = 0
             if style:

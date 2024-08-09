@@ -22,7 +22,7 @@ class OfferCredexSerializer(serializers.Serializer):
         url = f"{config('CREDEX')}/getAccountByHandle"
 
         payload = json.dumps({
-            "accountHandle": attrs.get('handle')
+            "accountHandle": attrs.get('handle').lower()
         })
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
@@ -46,7 +46,7 @@ class OfferCredexSerializer(serializers.Serializer):
                         "InitialAmount": attrs.get('amount'),
                         "dueDate": convert_timestamp_to_date(attrs.get('dueDate')),
                         "securedCredex": attrs.get('securedCredex'),
-                        "handle": attrs.get('handle'),
+                        "handle": attrs.get('handle').lower(),
                         "full_name": f"{data.get('accountName')}"
                     }
             print("EROR : ", response.content)
@@ -54,7 +54,7 @@ class OfferCredexSerializer(serializers.Serializer):
             print("EROR : ", response.content, e)
             pass
             
-        raise serializers.ValidationError({"recipient": "Handle Not Found"})
+        raise serializers.ValidationError({"recipient": "Recipient Account Not Found"})
         
 
 

@@ -2,9 +2,11 @@ from functools import wraps
 import json
 import requests
 from decouple import config
+from datetime import timedelta
 import datetime
 
-def convert_timestamp_to_date(timestamp_ms):
+
+def convert_timestamp_to_date(timestamp_ms, offset=0):
     """
     Convert a timestamp in milliseconds to a formatted date string.
     
@@ -18,7 +20,7 @@ def convert_timestamp_to_date(timestamp_ms):
     timestamp_s = timestamp_ms / 1000
 
     # Convert to datetime
-    date = datetime.datetime.fromtimestamp(timestamp_s)
+    date = datetime.datetime.fromtimestamp(timestamp_s) + timedelta(weeks=offset)
 
     # Format the date
     formatted_date = date.strftime('%Y-%m-%d')
