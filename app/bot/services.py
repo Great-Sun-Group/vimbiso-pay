@@ -1051,8 +1051,8 @@ class CredexBotService:
         print(response.content)
         if response.status_code == 200:
             self.refresh(reset=True)
-            return self.wrap_text("> *🥳 Success*\n\n You have accepted all offers!", x_is_menu=True, back_is_cancel=False)
-        return self.wrap_text("> *😞 Failed*\n\n Failed to accept all!", x_is_menu=True, back_is_cancel=False)
+            return self.wrap_text("> *🥳 Success*\n\n You have accepted all pending offers!", x_is_menu=True, back_is_cancel=False)
+        return self.wrap_text("> *😞 Failed*\n\n Failed to accept all pending offers!", x_is_menu=True, back_is_cancel=False)
 
     @property
     def handle_action_pending_offers_in(self):
