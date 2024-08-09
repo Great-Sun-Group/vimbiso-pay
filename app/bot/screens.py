@@ -21,7 +21,6 @@ HOME_1 = """
  *4. 💸 Make Credex Offer*
  *5. 👥 Return to Member Dashboard*
 
- *What would you like to do ?*
  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
