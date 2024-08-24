@@ -23,7 +23,8 @@ jobs:
           script: |
             cd credex-bot/app
             git checkout auto-deploy-staging
-            printf "DEBUG=True\n
+            printf "WHATSAPP_PHONE_NUMBER_ID=${{ secrets.DEMO_WHATSAPP_PHONE_NUMBER_ID }}\n
+            DEBUG=True\n
             WHATSAPP_REGISTRATION_FLOW_ID=${{ secrets.DEMO_WHATSAPP_REGISTRATION_FLOW_ID }}\n
             WHATSAPP_COMPANY_REGISTRATION_FLOW_ID=${{ secrets.DEMO_WHATSAPP_COMPANY_REGISTRATION_FLOW_ID }}\n
             WHATSAPP_ACCESS_TOKEN=${{ secrets.DEMO_WHATSAPP_ACCESS_TOKEN }}\n
