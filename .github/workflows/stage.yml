@@ -23,7 +23,8 @@ jobs:
           script: |
             cd credex-bot/app
             git checkout auto-deploy-staging
-            printf "REDIS_URL=${{ secrets.DEMO_REDIS_URL }}\n
+            printf "CREDEX_API_CREDENTIALS=${{ secrets.DEMO_CREDEX_API_CREDENTIALS }}\n
+            REDIS_URL=${{ secrets.DEMO_REDIS_URL }}\n
             WHATSAPP_BOT_API_KEY=${{ secrets.DEMO_WHATSAPP_BOT_API_KEY }}\n" >> .env
             git pull
             docker compose up --build -d
