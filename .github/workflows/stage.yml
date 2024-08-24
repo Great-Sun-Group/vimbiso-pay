@@ -23,7 +23,8 @@ jobs:
           script: |
             cd credex-bot/app
             git checkout auto-deploy-staging
-            printf "PLATFORM_NAME=${{ secrets.DEMO_PLATFORM_NAME }}\n
+            printf "SECRET_KEY=${{ secrets.DEMO_SECRET_KEY }}\n
+            PLATFORM_NAME=${{ secrets.DEMO_PLATFORM_NAME }}\n
             DEFAULT_DATABASE=${{ secrets.DEMO_DEFAULT_DATABASE }}\n
             DATABASE_USER=${{ secrets.DEMO_DATABASE_USER }}\n
             DATABASE_PASSWORD=${{ secrets.DEMO_DATABASE_PASSWORD }}\n
