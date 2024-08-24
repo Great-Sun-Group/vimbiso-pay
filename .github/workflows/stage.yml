@@ -23,7 +23,8 @@ jobs:
           script: |
             cd credex-bot/app
             git checkout auto-deploy-staging
-            printf "DATABASE_HOST=${{ secrets.DEMO_DATABASE_HOST }}\n
+            printf "DATABASE_PASSWORD=${{ secrets.DEMO_DATABASE_PASSWORD }}\n
+            DATABASE_HOST=${{ secrets.DEMO_DATABASE_HOST }}\n
             WHATSAPP_BUSINESS_ID=${{ secrets.DEMO_WHATSAPP_BUSINESS_ID }}\n
             WHATSAPP_PHONE_NUMBER_ID=${{ secrets.DEMO_WHATSAPP_PHONE_NUMBER_ID }}\n
             DEBUG=True\n
