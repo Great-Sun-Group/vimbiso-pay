@@ -31,7 +31,13 @@ jobs:
             DATABASE_HOST=${{ secrets.DEMO_DATABASE_HOST }}\n
             WHATSAPP_BUSINESS_ID=${{ secrets.DEMO_WHATSAPP_BUSINESS_ID }}\n
             WHATSAPP_PHONE_NUMBER_ID=${{ secrets.DEMO_WHATSAPP_PHONE_NUMBER_ID }}\n
-            DEBUG=True\n
+            WHATSAPP_REGISTRATION_FLOW_ID=${{ secrets.DEMO_WHATSAPP_REGISTRATION_FLOW_ID }}\n
+            WHATSAPP_COMPANY_REGISTRATION_FLOW_ID=${{ secrets.DEMO_WHATSAPP_COMPANY_REGISTRATION_FLOW_ID }}\n
+            WHATSAPP_ACCESS_TOKEN=${{ secrets.DEMO_WHATSAPP_ACCESS_TOKEN }}\n
+            CREDEX=${{ secrets.DEMO_CREDEX }}\n
+            CREDEX_API_CREDENTIALS=${{ secrets.DEMO_CREDEX_API_CREDENTIALS }}\n
+            REDIS_URL=${{ secrets.DEMO_REDIS_URL }}\n
+            WHATSAPP_BOT_API_KEY=${{ secrets.DEMO_WHATSAPP_BOT_API_KEY }}\n
             OPEN_EXCHANGE_RATES_API=${{ secrets.DEMO_OPEN_EXCHANGE_RATES_API }}\n" >> .env
             git pull
             docker compose up --build -d
