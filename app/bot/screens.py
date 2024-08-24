@@ -12,9 +12,9 @@ ACCOUNT_SELECTION = """
 
 
 HOME_1 = """
-> *👤 {account}*
+> *💳 {account}*
+> {handle}
 {balance}
-*_{handle}_*
  *1. 📥 Pending Offers ({pending_in})*
  *2. 📒 Review Transactions*
  *3. 📤 Review Outgoing Offers ({pending_out})*
@@ -25,9 +25,9 @@ HOME_1 = """
 """
 
 HOME_2 = """
-> *👤 {account}*
+> *💳 {account}*
+> {handle}
 {balance}
-*_{handle}_*
  *1. 📥 Pending Offers ({pending_in})*
  *2. 📒 Review Transactions*
  *3. 👥 Add or remove members*
@@ -65,11 +65,7 @@ Send “hi” to log back in.
 """
 
 DELAY = """
-*Welcome to credex.*
-
-No session found, please hold a 
-moment while we fetch your account 
-data.
+Welcome to the credex ecosystem. Please hold a moment.
 """
 
 BALANCE = """
@@ -120,15 +116,29 @@ REGISTER = """
 > *👤  Registration*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-Welcome to the credex ecosystem,
-we did not recognize your phone 
-number. 
+I'm VimbisoPay. 
 
-Would you like to create a credex 
-account?
+I'm a WhatsApp chatbot. It's my 
+job to connect you to the credex 
+ecosystem. 
 
-1. Create account
-2. Cancel
+I'll show you around, and you can 
+message me to interact with your 
+credex accounts.
+
+Credex solves the problem of making 
+small change and payments. 
+The first thing to do is to become 
+a member of the ecosystem. When you 
+become a member, I can create a 
+credex account for you and you can 
+start to do business in credex.
+
+Would you like to become a member 
+of the credex ecosystem?
+
+1. Join the credex ecosystem
+2. Find out more about credex
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -159,8 +169,8 @@ A fee of 2% will be charged when cashing out a secured credex with VimbisoPay fo
 
 Your account and transactions are managed easily within WhatsApp.
 
-1. Create account
-2. Maybe later
+1. Join the credex ecosystem
+2. Find out more about credex
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -169,9 +179,12 @@ REGISTER_FORM = """
 > *👤  Registration*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-To become a member of the credex 
-ecosystem, tap *Create account* 
-below and submit the linked form.
+That's great, I'll sign you right up. 
+I just need to know your name.
+
+Tap *Become a member* button below, 
+fill in your details and submit the linked 
+form.
 
 {message}
 """
@@ -190,12 +203,10 @@ form.
 """
 
 OFFER_CREDEX = """
-> *💰 Offer Credex*
-
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 To make a payment offer click the
-*'Make Offer'* button below and fill
+*'Send'* button below and fill
 in the form then submit the details.
 
 Alternatively you can use the short
@@ -215,33 +226,37 @@ REGISTRATION_COMPLETE = """
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-Hello {full_name}
+Ok, firstName, we've got you registered. 
+The free tier of the credex ecosystem 
+gives you one credex account, which has 
+been automatically created for you. 
 
-Welcome. This unverified credex 
-account can issue and accept 
-transactions under $5 USD / 75 ZiG. 
- 
-Its daily limit on transactions is 
-$100 USD / 1,500 ZiG, and its 
-daily cash out limit is 
-$25 USD / 325 ZiG.
+This is your personal account. You can 
+use it for anything you like, including 
+business purposes for now, but later on 
+you will be able to open dedicated 
+accounts for different businesses.
 
-Type *'Menu'* to reload your dashboard 
-with the account you've just opened 
-for {full_name}.
+Your credex member handle and the account 
+handle of your personal credex account 
+have both been set to your phone number.
+
+These handles identify you as a member, 
+and identify accounts for others to send 
+payments to. When you make a payment, 
+you'll need to enter an account handle 
+so the credex goes to the right place.
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
 CONFIRM_SECURED_CREDEX = """
-> *💰 Account Selection*
+> *💰 Account to Send From*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Offer ${amount} {currency} {secured} credex
 to *{party}*
 
-*Make Offer From*
-{accounts}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
@@ -260,7 +275,7 @@ account *{source}*
 """
 
 CONFIRM_UNSECURED_CREDEX = """
-> *💰 Account Selection*
+> *💰 Account to Send From*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 Offer ${amount} {currency} {secured} credex
@@ -268,9 +283,6 @@ to *{party}* from
 account *{source}*
 
 {date}
-
-Make offer from:
-{accounts}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
@@ -299,13 +311,17 @@ OUTGOING_CREDEX = """
 OFFER_SUCCESSFUL = """
 > *💰 Complete!*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+{secured} offer signed 
+and sent:
 
 *Transaction Complete!!*
 You have successfully offered 
 {amount} {currency} {secured} to 
 {recipient}.
 
-Type *'Menu'* to return to dashboard
+From: {source}
+
+
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 

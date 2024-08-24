@@ -5,8 +5,8 @@ class MemberDetailsSerializer(serializers.Serializer):
     first_name = serializers.CharField(required=True)
     last_name = serializers.CharField(required=True)
     phone_number = serializers.CharField(required=True)
-    currency = serializers.CharField(required=True)
-    email = serializers.CharField(required=True)
+    # currency = serializers.CharField(required=True)
+    # email = serializers.CharField(required=True)
 
 
     def validate(self, attrs):
@@ -19,11 +19,11 @@ class MemberDetailsSerializer(serializers.Serializer):
             raise serializers.ValidationError({"phone_number": "Invalid phone number"})
         return {
             # "memberType": "HUMAN",
-            "defaultDenom": attrs.get('currency'),
+            "defaultDenom": 'USD',
             "phone": attrs.get('phone_number'),
             "firstname": attrs.get('first_name'),
             "lastname": attrs.get('last_name'),
-            "memberHandle": attrs.get('email')
+            "memberHandle": attrs.get('phone_number')
         }
 
 
