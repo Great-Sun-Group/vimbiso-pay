@@ -23,7 +23,8 @@ jobs:
           script: |
             cd credex-bot/app
             git checkout auto-deploy-staging
-            printf "WHATSAPP_ACCESS_TOKEN=${{ secrets.DEMO_WHATSAPP_ACCESS_TOKEN }}\n
+            printf "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID=${{ secrets.DEMO_WHATSAPP_COMPANY_REGISTRATION_FLOW_ID }}\n
+            WHATSAPP_ACCESS_TOKEN=${{ secrets.DEMO_WHATSAPP_ACCESS_TOKEN }}\n
             CREDEX=${{ secrets.DEMO_CREDEX }}\n
             CREDEX_API_CREDENTIALS=${{ secrets.DEMO_CREDEX_API_CREDENTIALS }}\n
             REDIS_URL=${{ secrets.DEMO_REDIS_URL }}\n
