@@ -130,7 +130,6 @@ Would you like to become a member
 of the credex ecosystem?
 
 {message}
-
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 

@@ -89,8 +89,8 @@ class CredexBotService:
             if not isinstance(current_state, dict):
                 current_state = current_state.state
 
-            if current_state['member']['memberDashboard'].get('memberTier', 1) <= 2:
-                current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][-1]
+            if current_state.get('member', {}).get('memberDashboard', {}).get('memberTier', 1):
+                current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][-1]#
                 state.update_state(
                     state=current_state,
                     stage='handle_action_menu',
@@ -163,7 +163,7 @@ class CredexBotService:
                         "body": DELAY
                     }
                 }).send_message()
-                cache.set(f"{self.user.mobile_number}_interracted", True, 60*60)
+                cache.set(f"{self.user.mobile_number}_interracted", True, 60*15)
 
             message =  Message.objects.all().first()
             if message:
@@ -239,7 +239,7 @@ class CredexBotService:
         self.body = "Hi"
         self.message['message'] = "Hi"
         self.refresh(reset=True)
-        if current_state['member']['memberDashboard'].get('memberTier', 1) <= 2:
+        if current_state.get('member', {}).get('memberDashboard', {}).get('memberTier', 1) <= 2:
             current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][-1]
             state.update_state(
                 state=current_state,
@@ -256,18 +256,14 @@ class CredexBotService:
         """HANDLING CLIENT REGISTRATIONS"""
         message = ""
         if self.message['type'] == "nfm_reply":
-            # print("PAYLOAD : ", self.body)
             payload = {
                 "first_name": self.body.get('firstName'),
                 "last_name": self.body.get('lastName'),
-                "phone_number": self.message['from'],
-                # "email": self.body.get('email', ),
-                # "currency": self.body.get('currency'),
+                "phone_number": self.message['from']
 
             }
             message = ""
             serializer = MemberDetailsSerializer(data=payload)
-            # print(serializer.is_valid(), serializer.errors)
             if serializer.is_valid():
                 url = f"{config('CREDEX')}/onboardMember"
                 headers = {
@@ -275,9 +271,7 @@ class CredexBotService:
                     'Content-Type': 'application/json',
                     'whatsappBotAPIkey': config('WHATSAPP_BOT_API_KEY'),
                 }
-                print(serializer.validated_data)
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
-                print("########### ", response.content)
                 if response.status_code == 200:
                     CredexWhatsappService(payload={
                         "messaging_product": "whatsapp",
@@ -377,7 +371,6 @@ class CredexBotService:
                 "companyname": self.body.get('firstName'),
                 "defaultDenom": self.body.get('currency'),
                 "handle": self.body.get('email')
-
             }
             serializer = CompanyDetailsSerializer(data=payload)
 
@@ -403,7 +396,6 @@ class CredexBotService:
                             message = "Failed to perform action"
                         else:
                             message = response.json().get('error') 
-
                     except Exception as e:
                         pass
             else:
@@ -458,8 +450,6 @@ class CredexBotService:
             self.refresh(reset=True)
             state = self.user.state
             current_state = state.get_state(self.user)
-
-            # print("STATE : ", state.stage, state.option)
 
             if not isinstance(current_state, dict):
                 current_state = current_state.state
