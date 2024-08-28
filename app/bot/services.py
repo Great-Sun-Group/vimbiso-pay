@@ -207,7 +207,7 @@ class CredexBotService:
                 option="select_account_to_use"
             )
 
-            if current_state['member']['memberDashboard'].get('memberTier', 1) <= 2:
+            if current_state.get('member', {}).get('memberDashboard', {}).get('memberTier', 1) <= 2:
                 current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][-1]
                 state.update_state(
                     state=current_state,
@@ -453,23 +453,17 @@ class CredexBotService:
         if not isinstance(current_state, dict):
             current_state = current_state.state
 
-        
-        print(">>>>>> ITEMS ", current_state['member']['memberDashboard'].get('memberTier', 1) )
 
         if not current_state.get('member'):
-            self.refresh()
-        # if current_state['member']['memberDashboard'].get('memberTier', 1) <= 2:
-        #     current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][-1]
-        #     state.update_state(
-        #         state=current_state,
-        #         stage='handle_action_menu',
-        #         update_from="handle_action_menu",
-        #         option="handle_action_menu"
-        #     )
-        # else:
-        #     return self.handle_action_select_profile
+            self.refresh(reset=True)
+            state = self.user.state
+            current_state = state.get_state(self.user)
+
+            # print("STATE : ", state.stage, state.option)
+
+            if not isinstance(current_state, dict):
+                current_state = current_state.state
         
-        print(current_state['member']['defaultAccountData']['pendingOutData'])
         pending_in = 0
         if current_state['member']['defaultAccountData']['pendingInData']:
             pending_in = len(current_state['member']['defaultAccountData']['pendingInData'])

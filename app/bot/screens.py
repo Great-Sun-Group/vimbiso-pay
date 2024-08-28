@@ -62,7 +62,8 @@ Send “hi” to log back in.
 """
 
 DELAY = """
-Welcome to the credex ecosystem. Please hold a moment.
+Welcome to the credex ecosystem. 
+Please hold a moment.
 """
 
 BALANCE = """
