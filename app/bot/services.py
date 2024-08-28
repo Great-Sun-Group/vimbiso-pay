@@ -84,6 +84,20 @@ class CredexBotService:
             self.body = "Hi"
             self.message['message'] = "Hi"
             self.refresh(reset=True)
+            current_state = state.get_state(self.user)
+            # print("6")
+            if not isinstance(current_state, dict):
+                current_state = current_state.state
+
+            if current_state['member']['memberDashboard'].get('memberTier', 1) <= 2:
+                current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][-1]
+                state.update_state(
+                    state=current_state,
+                    stage='handle_action_menu',
+                    update_from="handle_action_menu",
+                    option="handle_action_menu"
+                )
+                return self.handle_action_menu
             return self.handle_action_select_profile
 
             # IF USER IS AT MENU STAGE FIND THE NEXT ROUTE BASED ON MESSAGE
@@ -125,7 +139,7 @@ class CredexBotService:
         if not isinstance(current_state, dict):
             current_state = current_state.state
 
-
+        # print("HIT CORE ")
         url = f"{config('CREDEX')}/getMemberDashboardByPhone"
 
         payload = json.dumps({
@@ -163,7 +177,9 @@ class CredexBotService:
                         "body": message.messsage
                     }
                 }).send_message()
+       
         response = requests.request("GET", url, headers=headers, data=payload)
+        # print(response.content)
         if response.status_code == 200:
             default = {}
             if reset == False:
@@ -183,13 +199,24 @@ class CredexBotService:
                         break
             else:
                 current_state['member']['defaultAccountData'] = {}
-
+            
             state.update_state(
                 state=current_state,
                 stage='handle_action_select_profile',
                 update_from="handle_action_select_profile",
                 option="select_account_to_use"
             )
+
+            if current_state['member']['memberDashboard'].get('memberTier', 1) <= 2:
+                current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][-1]
+                state.update_state(
+                    state=current_state,
+                    stage='handle_action_menu',
+                    update_from="handle_action_menu",
+                    option="handle_action_menu"
+                )
+                return self.handle_action_menu
+            
             self.body = "Hi"
             return self.handle_action_select_profile
         else:
@@ -212,12 +239,22 @@ class CredexBotService:
         self.body = "Hi"
         self.message['message'] = "Hi"
         self.refresh(reset=True)
+        if current_state['member']['memberDashboard'].get('memberTier', 1) <= 2:
+            current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][-1]
+            state.update_state(
+                state=current_state,
+                stage='handle_action_menu',
+                update_from="handle_action_menu",
+                option="handle_action_menu"
+            )
+            return self.handle_action_menu
+            
         return self.handle_action_select_profile
 
     @property
     def handle_action_register(self):
         """HANDLING CLIENT REGISTRATIONS"""
-
+        message = ""
         if self.message['type'] == "nfm_reply":
             # print("PAYLOAD : ", self.body)
             payload = {
@@ -249,7 +286,7 @@ class CredexBotService:
                         "to": self.user.mobile_number,
                         "type": "text",
                         "text": {
-                            "body": REGISTRATION_COMPLETE
+                            "body": REGISTRATION_COMPLETE.format(firstName=serializer.validated_data.get('firstname'))
                         }
                     }).send_message()
                     return self.handle_action_switch_account
@@ -259,7 +296,7 @@ class CredexBotService:
                         if "Internal Server Error" in response.json().get('error'):
                             message = "Failed to perform action"
                         else:
-                            message = response.json().get('error', 'message')
+                            message = response.json().get('message', 'error')
                         return {
                             "messaging_product": "whatsapp",
                             "to": self.user.mobile_number,
@@ -276,10 +313,10 @@ class CredexBotService:
                                         "flow_message_version": "3",
                                         "flow_action": "navigate",
                                         "flow_token": "not-used",
-                                        "flow_id": "1418114938870041",
+                                        "flow_id": "3686836301579704",
                                         "flow_cta": "Become a member",
                                         "flow_action_payload": {
-                                            "screen": "SECURED_JOIN"
+                                            "screen": "MEMBER_SIGNUP"
                                         }
                                     }
                                 }
@@ -299,7 +336,7 @@ class CredexBotService:
                 "interactive": {
                     "type": "flow",
                     "body": {
-                        "text": REGISTER_FORM.format(message='')
+                        "text": REGISTER_FORM.format(message=message)
                     },
                     "action": {
                         "name": "flow",
@@ -307,10 +344,10 @@ class CredexBotService:
                             "flow_message_version": "3",
                             "flow_action": "navigate",
                             "flow_token": "not-used",
-                            "flow_id": "1418114938870041",
+                            "flow_id": "3686836301579704",
                             "flow_cta": "Become a member",
                             "flow_action_payload": {
-                                "screen": "SECURED_JOIN"
+                                "screen": "MEMBER_SIGNUP"
                             }
                         }
                     }
@@ -320,7 +357,7 @@ class CredexBotService:
         if self.body == "2":
             return self.wrap_text(MORE_ABOUT_CREDEX, extra_rows=[{"id": '1', "title": "Become a member"}], include_menu=False)
 
-        return self.wrap_text(REGISTER.format(message=''), extra_rows=[{"id": '1', "title": "Become a member"}], include_menu=False)
+        return self.wrap_text(REGISTER.format(message=message), extra_rows=[{"id": '1', "title": "Become a member"}], include_menu=False)
 
 
     @property
@@ -355,10 +392,8 @@ class CredexBotService:
                 if response.status_code == 200:
                     self.refresh()
                     return self.wrap_text(
-                        REGISTRATION_COMPLETE.format(
-                            full_name=f"{self.body.get('firstName')}",
-                            username=self.body.get('email'),
-                            phone=self.message['from']
+                        ACCOUNT_REGISTRATION_COMPLETE.format(
+                            first_name=f"{self.body.get('firstName')}"
                         ),
                         x_is_menu=True, back_is_cancel=False, navigate_is='🏡 Menu'
                     )
@@ -418,8 +453,21 @@ class CredexBotService:
         if not isinstance(current_state, dict):
             current_state = current_state.state
 
-        if not current_state['member'].get('defaultAccountData'):
-            return self.handle_action_select_profile
+        
+        print(">>>>>> ITEMS ", current_state['member']['memberDashboard'].get('memberTier', 1) )
+
+        if not current_state.get('member'):
+            self.refresh()
+        # if current_state['member']['memberDashboard'].get('memberTier', 1) <= 2:
+        #     current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][-1]
+        #     state.update_state(
+        #         state=current_state,
+        #         stage='handle_action_menu',
+        #         update_from="handle_action_menu",
+        #         option="handle_action_menu"
+        #     )
+        # else:
+        #     return self.handle_action_select_profile
         
         print(current_state['member']['defaultAccountData']['pendingOutData'])
         pending_in = 0
@@ -440,6 +488,8 @@ class CredexBotService:
             balances += f"- {bal}\n"
         
         isOwnedAccount = current_state['member']['defaultAccountData'].get('isOwnedAccount')
+        memberTier = current_state['member']['memberDashboard'].get('memberTier')
+
 
         return {
             "messaging_product": "whatsapp",
@@ -453,12 +503,14 @@ class CredexBotService:
                         account=current_state['member']['defaultAccountData']['accountName'],
                         balance=BALANCE.format(
                             securedNetBalancesByDenom=balances if balances else "- $0.00\n",
-                            totalPayables=current_state['member']['defaultAccountData']['balanceData'][
+                            unsecured_balance=UNSERCURED_BALANCES.format(
+                                totalPayables=current_state['member']['defaultAccountData']['balanceData'][
                                 'unsecuredBalancesInDefaultDenom']['totalPayables'],
                             totalReceivables=current_state['member']['defaultAccountData']['balanceData'][
                                 'unsecuredBalancesInDefaultDenom']['totalReceivables'],
                             netPayRec=current_state['member']['defaultAccountData']['balanceData'][
                                 'unsecuredBalancesInDefaultDenom']['netPayRec'],
+                            )  if memberTier > 2 else f"You can issue another *{current_state['member']['memberDashboard'].get('remainingAvailableUSD', 0)} USD* worth \nof secured credex today",
                             netCredexAssetsInDefaultDenom=current_state['member']['defaultAccountData']['balanceData'][
                                 'netCredexAssetsInDefaultDenom']
                         ),
@@ -476,33 +528,37 @@ class CredexBotService:
                                 "rows":
                                     [
                                         {
-                                            "id": "handle_action_pending_offers_in",
-                                            "title": f"📥 Pending Offers"
+                                            "id": "handle_action_offer_credex",
+                                            "title": f"💸 Offer Credex",
                                         },
                                         {
-                                            "id": "handle_action_transactions",
-                                            "title": f"📒 Review Ledger",
+                                            "id": "handle_action_pending_offers_in",
+                                            "title": f"📥 Pending Offers"
                                         },
                                         {
                                             "id": "handle_action_pending_offers_out",
                                             "title": f"📤 Review Outgoing Offers"
                                         },
                                         {
+                                            "id": "handle_action_transactions",
+                                            "title": f"📒 Review Transactions",
+                                        }
+                                    ] if not isOwnedAccount else [
+                                        {
                                             "id": "handle_action_offer_credex",
                                             "title": f"💸 Offer Credex",
                                         },
-                                        {
-                                            "id": "handle_action_switch_account",
-                                            "title": f"👥 Return To Dashboard",
-                                        }
-                                    ] if not isOwnedAccount else [
                                         {
                                             "id": "handle_action_pending_offers_in",
                                             "title": f"📥 Pending Offers"
                                         },
                                         {
+                                            "id": "handle_action_pending_offers_out",
+                                            "title": f"📤 Review Outgoing Offers"
+                                        },
+                                        {
                                             "id": "handle_action_transactions",
-                                            "title": f"📒 Review Ledger",
+                                            "title": f"📒 Review Transactions",
                                         },
                                         {
                                             "id": "handle_action_authorize_member",
@@ -512,16 +568,8 @@ class CredexBotService:
                                             "title": f"🛎️ Notifications"
                                         },
                                         {
-                                            "id": "handle_action_pending_offers_out",
-                                            "title": f"📤 Review Outgoing Offers"
-                                        },
-                                        {
-                                            "id": "handle_action_offer_credex",
-                                            "title": f"💸 Offer Credex",
-                                        },
-                                        {
                                             "id": "handle_action_switch_account",
-                                            "title": f"🏡 Return To Dashboard",
+                                            "title": f"🏡 Member Dashboard",
                                         }
                                     ]
                             }

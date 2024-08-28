@@ -21,6 +21,7 @@ class CredexCloudApiWebhook(APIView):
         # print("INCOMING >> ", request.data)
         
         if payload['metadata']['phone_number_id'] != config('WHATSAPP_PHONE_NUMBER_ID'):
+            print(payload['metadata']['phone_number_id'])
             return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
         if payload.get('messages'):
             phone_number_id = payload['metadata'].get('phone_number_id')
@@ -138,6 +139,8 @@ class CredexCloudApiWebhook(APIView):
             if not contact:
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
             
+
+            print("||||||||>>>>>>")
             # Format the message
             formatted_message = {
                 "to": payload['metadata']['display_phone_number'],
@@ -150,8 +153,9 @@ class CredexCloudApiWebhook(APIView):
                 "fileid": payload.get('file_id', None),
                 "caption": payload.get('caption', None),
             }
-
+            print(formatted_message)
             user = CachedUser(formatted_message.get('from'))
+            print(user)
                 
             state = user.state
             current_state = state.get_state(user)
@@ -168,7 +172,7 @@ class CredexCloudApiWebhook(APIView):
 
             try:
                 service = CredexBotService(payload=formatted_message, user=user)
-                CredexWhatsappService(payload=service.response).send_message()
+                CredexWhatsappService(payload=service.response, phone_number_id=payload['metadata']['phone_number_id']).send_message()
             except Exception as e:
                 print(e)
             print(f"TOOK  {(datetime.now() - message_stamp).total_seconds()} s")

@@ -41,8 +41,8 @@ def add_method(cls):
 class CredexWhatsappService:
     """Whatsapp client"""
 
-    def __init__(self, payload: dict, message="hi"):
-        self.phone_number_id = config('WHATSAPP_PHONE_NUMBER_ID')
+    def __init__(self, payload: dict, message="hi", phone_number_id=config('WHATSAPP_PHONE_NUMBER_ID')):
+        self.phone_number_id = phone_number_id
         self.url = f"https://graph.facebook.com/v18.0/{self.phone_number_id}/messages"
         self.headers = {
             'Content-Type': "application/json",
@@ -55,7 +55,7 @@ class CredexWhatsappService:
         """Send message"""
         try:
             # print("BOT.REQ ", self.payload)
-            # print(self.payload) 
+            print(self.payload) 
 
             response = requests.post(
                 url=self.url,

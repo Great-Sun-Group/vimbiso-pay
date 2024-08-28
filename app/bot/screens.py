@@ -10,31 +10,28 @@ ACCOUNT_SELECTION = """
 """
 
 
-
 HOME_1 = """
 > *💳 {account}*
-> {handle}
 {balance}
- *1. 📥 Pending Offers ({pending_in})*
- *2. 📒 Review Transactions*
- *3. 📤 Review Outgoing Offers ({pending_out})*
- *4. 💸 Make Credex Offer*
- *5. 👥 Return to Member Dashboard*
+- *💸 Make Credex Offer* 
+- *📥 Pending Offers ({pending_in})*
+- *📤 Review Outgoing Offers ({pending_out})*
+- *📒 Review Transactions*
 
  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
 HOME_2 = """
 > *💳 {account}*
-> {handle}
+
 {balance}
- *1. 📥 Pending Offers ({pending_in})*
- *2. 📒 Review Transactions*
- *3. 👥 Add or remove members*
- *4. 🛎️ Update notification recipient* 
- *5. 📤 Review Outgoing Offers ({pending_out})*
- *6. 💸 Make Credex Offer*
- *7. 🏡 Return to Member Dashboard*
+- *💸 Make Credex Offer*
+- *📥 Pending Offers ({pending_in})*
+- *📤 Review Outgoing Offers ({pending_out})*
+- *📒 Review Transactions*
+- *👥 Add or remove members*
+- *🛎️ Update notification recipient* 
+- *🏡 Return to Member Dashboard*
 
  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -73,13 +70,17 @@ BALANCE = """
 
 *SECURED BALANCES*
 {securedNetBalancesByDenom}
+{unsecured_balance}
+
+*NET ASSETS*
+  {netCredexAssetsInDefaultDenom}
+"""
+
+UNSERCURED_BALANCES = """
 *UNSECURED BALANCES*
   Payables : {totalPayables}
   Receivables : {totalReceivables}
   PayRec : {netPayRec}
-
-*NET ASSETS*
-  {netCredexAssetsInDefaultDenom}
 """
 
 BALANCE_FAILED = """
@@ -116,29 +117,18 @@ REGISTER = """
 > *👤  Registration*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-I'm VimbisoPay. 
-
-I'm a WhatsApp chatbot. It's my 
-job to connect you to the credex 
-ecosystem. 
+I'm VimbisoPay. I'm a WhatsApp 
+chatbot. It's my job to connect 
+you to the credex ecosystem. 
 
 I'll show you around, and you can 
 message me to interact with your 
 credex accounts.
 
-Credex solves the problem of making 
-small change and payments. 
-The first thing to do is to become 
-a member of the ecosystem. When you 
-become a member, I can create a 
-credex account for you and you can 
-start to do business in credex.
-
 Would you like to become a member 
 of the credex ecosystem?
 
-1. Join the credex ecosystem
-2. Find out more about credex
+{message}
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -182,10 +172,6 @@ REGISTER_FORM = """
 That's great, I'll sign you right up. 
 I just need to know your name.
 
-Tap *Become a member* button below, 
-fill in your details and submit the linked 
-form.
-
 {message}
 """
 
@@ -221,31 +207,45 @@ commands below:
 {message}
 """
 
+ACCOUNT_REGISTRATION_COMPLETE = """
+> *🎉 Account Created!*
+
+⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
+Ok, {first_name}, we've got your
+new account registered
+"""
 REGISTRATION_COMPLETE = """
 > *🎉 Account Created!*
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-Ok, firstName, we've got you registered. 
-The free tier of the credex ecosystem 
-gives you one credex account, which has 
-been automatically created for you. 
+Ok, {firstName}, we've got you 
+registered. The free tier of the 
+credex ecosystem gives you one 
+credex account, which has been 
+automatically created for you. 
 
-This is your personal account. You can 
-use it for anything you like, including 
-business purposes for now, but later on 
-you will be able to open dedicated 
-accounts for different businesses.
+This is your personal account. 
+You can use it for anything you 
+like, including business purposes 
+for now, but later on you will 
+be able to open dedicated accounts 
+for different businesses.
 
-Your credex member handle and the account 
-handle of your personal credex account 
-have both been set to your phone number.
+Your credex member handle and the 
+account handle of your personal 
+credex account have both been 
+set to your phone number.
 
-These handles identify you as a member, 
-and identify accounts for others to send 
-payments to. When you make a payment, 
-you'll need to enter an account handle 
-so the credex goes to the right place.
+These handles identify you as a 
+member, and identify accounts for 
+others to send payments to. 
+
+When you make a payment, you'll 
+need to enter an account handle 
+so the credex goes to the right 
+place.
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -329,7 +329,7 @@ OFFER_FAILED = """
 > *😞 Failed*
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
-{message}
+{message}‼️
 
 *To issue a secured credex, send*
   0.5=>recipientHandle
