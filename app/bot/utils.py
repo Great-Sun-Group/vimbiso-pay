@@ -55,16 +55,16 @@ class CredexWhatsappService:
         """Send message"""
         try:
             # print("BOT.REQ ", self.payload)
-            print(self.payload) 
+            # print(self.payload) 
 
-            response = requests.post(
+            requests.post(
                 url=self.url,
                 headers=self.headers,
                 data=json.dumps(self.payload)
             )
-            data = response.json()
-            print('Credex', " REPLIED TO ", self.payload.get('to'))
-            print("BOT.RESP ", data)
+            # data = response.json()
+            # print('Credex', " REPLIED TO ", self.payload.get('to'))
+            # print("BOT.RESP ", data)
                 
         except Exception as e:
             print("ERROR SENDING MESSAGE TO WHATSAPP", e)
@@ -73,12 +73,12 @@ class CredexWhatsappService:
     def notify(self):
         """Send message"""
         try:
-            resp = requests.post(
+            requests.post(
                 url=self.url,
                 headers=self.headers,
                 json=self.payload
             )
-            print(resp.content)
+            # print(resp.content)
             return {"status": "Successful", "message": "Sent"}
         except Exception as e:
             # print("ERROR SENDING MESSAGE TO WHATSAPP", e)

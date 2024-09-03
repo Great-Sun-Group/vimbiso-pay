@@ -21,7 +21,7 @@ class CredexCloudApiWebhook(APIView):
         # print("INCOMING >> ", request.data)
         
         if payload['metadata']['phone_number_id'] != config('WHATSAPP_PHONE_NUMBER_ID'):
-            print(payload['metadata']['phone_number_id'])
+            # print(payload['metadata']['phone_number_id'])
             return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
         if payload.get('messages'):
             phone_number_id = payload['metadata'].get('phone_number_id')
@@ -140,7 +140,7 @@ class CredexCloudApiWebhook(APIView):
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
             
 
-            print("||||||||>>>>>>")
+            # print("||||||||>>>>>>")
             # Format the message
             formatted_message = {
                 "to": payload['metadata']['display_phone_number'],
@@ -153,7 +153,7 @@ class CredexCloudApiWebhook(APIView):
                 "fileid": payload.get('file_id', None),
                 "caption": payload.get('caption', None),
             }
-            print(formatted_message)
+            # print(formatted_message)
             user = CachedUser(formatted_message.get('from'))
             print(user)
                 

@@ -41,7 +41,7 @@ class CredexBotService:
         # IF THERE IS NO MEMBER DETAILS IN STATE THE REFRESH MEMBER/FETCH INFO
         if not current_state.get('member'):
             response = self.refresh(reset=True, silent=True, init=True)
-            print(">>>>>>>>>>> ", self.body)
+            # print(">>>>>>>>>>> ", self.body)
             if response and state.stage == "handle_action_register" and self.message['type'] != 'nfm_reply':
                 return self.handle_action_register
             
@@ -242,6 +242,12 @@ class CredexBotService:
         self.body = "Hi"
         self.message['message'] = "Hi"
         self.refresh(reset=True)
+        current_state = state.get_state(self.user)
+
+        if not isinstance(current_state, dict):
+            current_state = current_state.state
+
+        # print("Straight out of refres",  current_state.get('member', {}) )
 
         if current_state.get('member', {}).get('memberDashboard', {}).get('memberTier'):
             if current_state.get('member', {}).get('memberDashboard', {}).get('memberTier', 1) <= 2:
@@ -277,6 +283,7 @@ class CredexBotService:
                     'whatsappBotAPIkey': config('WHATSAPP_BOT_API_KEY'),
                 }
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
+                # print('SERVER RESPONSE : ', response.content)
                 if response.status_code == 200:
                     CredexWhatsappService(payload={
                         "messaging_product": "whatsapp",
@@ -292,10 +299,10 @@ class CredexBotService:
                     
                 else:
                     try:
-                        if "Internal Server Error" in response.json().get('error'):
+                        if "Internal Server Error" in response.json().get('error', ''):
                             message = "Failed to perform action"
                         else:
-                            message = response.json().get('message', 'error')
+                            message = response.json().get('message', '')
                         return {
                             "messaging_product": "whatsapp",
                             "to": self.user.mobile_number,
@@ -304,7 +311,7 @@ class CredexBotService:
                             "interactive": {
                                 "type": "flow",
                                 "body": {
-                                    "text": REGISTER_FORM.format(message=message)
+                                    "text": REGISTER_FORM.format(message=self.format_synopsis(message))
                                 },
                                 "action": {
                                     "name": "flow",
@@ -335,7 +342,7 @@ class CredexBotService:
                 "interactive": {
                     "type": "flow",
                     "body": {
-                        "text": REGISTER_FORM.format(message=message)
+                        "text": REGISTER_FORM.format(message=self.format_synopsis(message))
                     },
                     "action": {
                         "name": "flow",
@@ -387,6 +394,7 @@ class CredexBotService:
                     'whatsappBotAPIkey': config('WHATSAPP_BOT_API_KEY'),
                 }
                 response = requests.request("POST", url, headers=headers, json=serializer.validated_data)
+                # print(response.content, response.status_code)
                 if response.status_code == 200:
                     self.refresh()
                     return self.wrap_text(
@@ -397,10 +405,11 @@ class CredexBotService:
                     )
                 else:
                     try:
-                        if "Internal Server Error" in response.json().get('error'):
+                        if "Internal Server Error" in response.json().get('error', ""):
                             message = "Failed to perform action"
                         else:
-                            message = response.json().get('error') 
+                            message = response.json().get('message') 
+
                     except Exception as e:
                         pass
             else:
@@ -419,7 +428,7 @@ class CredexBotService:
                 "interactive": {
                     "type": "flow",
                     "body": {
-                        "text": COMPANY_REGISTRATION.format(message=message)
+                        "text": COMPANY_REGISTRATION.format(message=self.format_synopsis(message))
                     },
                     "action": {
                         "name": "flow",
@@ -1360,7 +1369,7 @@ class CredexBotService:
                     "amount": self.body.get('amount'),
                     "dueDate": self.body.get('due_date') if self.body.get('due_date') else (datetime.now() + timedelta(weeks=4)).timestamp() * 1000,
                     "currency": self.body.get('currency'),
-                    "securedCredex": True if self.body.get('secured') else False,
+                    "securedCredex": True #if self.body.get('secured') else False,
                 }
 
             if "=>" in f"{self.body}" or "->" f"{self.body}":
@@ -1471,10 +1480,10 @@ class CredexBotService:
                                 "flow_message_version": "3",
                                 "flow_action": "navigate",
                                 "flow_token": "not-used",
-                                "flow_id": "1556719845277624",
+                                "flow_id": "382339094914403",
                                 "flow_cta": "Sign & Send",
                                 "flow_action_payload": {
-                                    "screen": "SIGN",
+                                    "screen": "OFFER_SECURED_CREDEX",
                                     "data": {
                                         "source_account": accounts
                                     }
@@ -1583,7 +1592,7 @@ class CredexBotService:
                 "interactive": {
                     "type": "flow",
                     "body": {
-                        "text": OFFER_CREDEX.format(message=message)
+                        "text": OFFER_CREDEX.format(message=self.format_synopsis(message))
                     },
                     "action": {
                         "name": "flow",
@@ -1591,10 +1600,10 @@ class CredexBotService:
                             "flow_message_version": "3",
                             "flow_action": "navigate",
                             "flow_token": "not-used",
-                            "flow_id": "504603268824440",
+                            "flow_id": "3435593326740751",
                             "flow_cta": "Send Credex",
                             "flow_action_payload": {
-                                "screen": "SEND_OFFER",
+                                "screen": "MAKE_SECURE_OFFER",
                                 "data": {
                                     "min_date": str((datetime.now() +timedelta(days=1)).timestamp()* 1000),
                                     "max_date": str((datetime.now() +timedelta(weeks=5)).timestamp()* 1000)
@@ -1614,7 +1623,7 @@ class CredexBotService:
 
         for word in words:
             # If adding the word exceeds the line length, start a new line
-            if line_length + len(word) + 1 > 34:
+            if line_length + len(word) + 1 > 38:
                 formatted_synopsis += "\n"
                 line_length = 0
             if style:

@@ -122,13 +122,12 @@ I'm VimbisoPay. I'm a WhatsApp
 chatbot. It's my job to connect 
 you to the credex ecosystem. 
 
-I'll show you around, and you can 
-message me to interact with your 
-credex accounts.
+I'll show you around, and you 
+can message me to interact with 
+your credex accounts.
 
-Would you like to become a member 
-of the credex ecosystem?
-
+Would you like to become a 
+member of the credex ecosystem?
 {message}
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
@@ -200,12 +199,28 @@ commands below:
 
 *To issue a secured credex, send*
   0.5=>recipientHandle
-
-*To issue an unecured credex, send*
-  0.5->recipientHandle
-
+  
 {message}
 """
+
+# OFFER_CREDEX = """
+# ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+
+# To make a payment offer click the
+# *'Send'* button below and fill
+# in the form then submit the details.
+
+# Alternatively you can use the short
+# commands below:
+
+# *To issue a secured credex, send*
+#   0.5=>recipientHandle
+
+# *To issue an unecured credex, send*
+#   0.5->recipientHandle
+
+# {message}
+# """
 
 ACCOUNT_REGISTRATION_COMPLETE = """
 > *🎉 Account Created!*
