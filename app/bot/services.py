@@ -1623,7 +1623,7 @@ class CredexBotService:
 
         for word in words:
             # If adding the word exceeds the line length, start a new line
-            if line_length + len(word) + 1 > 38:
+            if line_length + len(word) + 1 > 35:
                 formatted_synopsis += "\n"
                 line_length = 0
             if style:
