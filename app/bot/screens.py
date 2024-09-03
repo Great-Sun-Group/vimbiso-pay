@@ -191,15 +191,15 @@ OFFER_CREDEX = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 To make a payment offer click the
-*'Send'* button below and fill
-in the form then submit the details.
+*'Send'* button below and fill in the 
+form then submit the details.
 
 Alternatively you can use the short
 commands below:
 
 *To issue a secured credex, send*
   0.5=>recipientHandle
-  
+
 {message}
 """
 
