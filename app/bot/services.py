@@ -508,7 +508,7 @@ class CredexBotService:
                                 'unsecuredBalancesInDefaultDenom']['totalReceivables'],
                             netPayRec=current_state['member']['defaultAccountData']['balanceData'][
                                 'unsecuredBalancesInDefaultDenom']['netPayRec'],
-                            )  if memberTier > 2 else f"You can issue another *{current_state['member']['memberDashboard'].get('remainingAvailableUSD', 0)} USD* worth \nof secured credex today",
+                            )  if memberTier > 2 else f"Free tier daily limit: *{current_state['member']['memberDashboard'].get('remainingAvailableUSD', 0)} USD*",
                             netCredexAssetsInDefaultDenom=current_state['member']['defaultAccountData']['balanceData'][
                                 'netCredexAssetsInDefaultDenom']
                         ),
