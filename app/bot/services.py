@@ -533,7 +533,7 @@ class CredexBotService:
                                         },
                                         {
                                             "id": "handle_action_pending_offers_out",
-                                            "title": f"📤 Review Outgoing Offers ({pending_out})"
+                                            "title": f"📤 Review Outgoing ({pending_out})"
                                         },
                                         {
                                             "id": "handle_action_transactions",
@@ -550,7 +550,7 @@ class CredexBotService:
                                         },
                                         {
                                             "id": "handle_action_pending_offers_out",
-                                            "title": f"📤 Review Outgoing Offers ({pending_out})"
+                                            "title": f"📤 Review Outgoing ({pending_out})"
                                         },
                                         {
                                             "id": "handle_action_transactions",
