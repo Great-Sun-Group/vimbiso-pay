@@ -12,29 +12,49 @@ ACCOUNT_SELECTION = """
 
 HOME_1 = """
 > *💳 {account}*
+accountHandle: {handle}
+
 {balance}
-- *💸 Make Credex Offer* 
-- *📥 Pending Offers ({pending_in})*
-- *📤 Review Outgoing Offers ({pending_out})*
-- *📒 Review Transactions*
 
  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
+
+
+# HOME_1 = """
+# > *💳 {account}*
+# {balance}
+# - *💸 Make Credex Offer* 
+# - *📥 Pending Offers ({pending_in})*
+# - *📤 Review Outgoing Offers ({pending_out})*
+# - *📒 Review Transactions*
+
+#  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+# """
 
 HOME_2 = """
 > *💳 {account}*
+accountHandle: {handle}
 
 {balance}
-- *💸 Make Credex Offer*
-- *📥 Pending Offers ({pending_in})*
-- *📤 Review Outgoing Offers ({pending_out})*
-- *📒 Review Transactions*
-- *👥 Add or remove members*
-- *🛎️ Update notification recipient* 
-- *🏡 Return to Member Dashboard*
 
  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
+
+# HOME_2 = """
+# > *💳 {account}*
+# accountHandle: {handle}
+
+# {balance}
+# - *💸 Make Credex Offer*
+# - *📥 Pending Offers ({pending_in})*
+# - *📤 Review Outgoing Offers ({pending_out})*
+# - *📒 Review Transactions*
+# - *👥 Add or remove members*
+# - *🛎️ Update notification recipient* 
+# - *🏡 Return to Member Dashboard*
+
+#  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
+# """
 
 MANAGE_ACCOUNTS = """
 > *💼 Manage Accounts*
@@ -190,15 +210,9 @@ form.
 OFFER_CREDEX = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-To make a payment offer click the
-*'Send'* button below and fill in the 
-form then submit the details.
+To issue a secured credex, enter the 
+details into this form.
 
-Alternatively you can use the short
-command below:
-
-*To issue a secured credex, send*
-  0.5=>recipientHandle
 
 {message}
 """

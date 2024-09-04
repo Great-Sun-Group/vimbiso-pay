@@ -512,9 +512,7 @@ class CredexBotService:
                             netCredexAssetsInDefaultDenom=current_state['member']['defaultAccountData']['balanceData'][
                                 'netCredexAssetsInDefaultDenom']
                         ),
-                        pending_in=pending_in,
                         handle=current_state['member']['defaultAccountData']['accountHandle'],
-                        pending_out=pending_out
                     )
                 },
                 "action":
@@ -527,15 +525,15 @@ class CredexBotService:
                                     [
                                         {
                                             "id": "handle_action_offer_credex",
-                                            "title": f"💸 Offer Credex",
+                                            "title": f"💸 Offer Secured Credex",
                                         },
                                         {
                                             "id": "handle_action_pending_offers_in",
-                                            "title": f"📥 Pending Offers"
+                                            "title": f"📥 Pending Offers ({pending_in})"
                                         },
                                         {
                                             "id": "handle_action_pending_offers_out",
-                                            "title": f"📤 Review Outgoing Offers"
+                                            "title": f"📤 Review Outgoing Offers ({pending_out})"
                                         },
                                         {
                                             "id": "handle_action_transactions",
@@ -544,15 +542,15 @@ class CredexBotService:
                                     ] if not isOwnedAccount else [
                                         {
                                             "id": "handle_action_offer_credex",
-                                            "title": f"💸 Offer Credex",
+                                            "title": f"💸 Offer Secured Credex",
                                         },
                                         {
                                             "id": "handle_action_pending_offers_in",
-                                            "title": f"📥 Pending Offers"
+                                            "title": f"📥 Pending Offers ({pending_in})"
                                         },
                                         {
                                             "id": "handle_action_pending_offers_out",
-                                            "title": f"📤 Review Outgoing Offers"
+                                            "title": f"📤 Review Outgoing Offers ({pending_out})"
                                         },
                                         {
                                             "id": "handle_action_transactions",
@@ -1603,7 +1601,7 @@ class CredexBotService:
                             "flow_action": "navigate",
                             "flow_token": "not-used",
                             "flow_id": "3435593326740751",
-                            "flow_cta": "Send Credex",
+                            "flow_cta": " Offer Secured Credex",
                             "flow_action_payload": {
                                 "screen": "MAKE_SECURE_OFFER",
                                 "data": {
