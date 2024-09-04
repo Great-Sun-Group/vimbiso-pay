@@ -170,11 +170,12 @@ class CredexCloudApiWebhook(APIView):
 
             print(f"Credex {state.stage}<|>{state.option}] RECEIVED - > ", payload['body']," FROM ",  formatted_message.get('from'), " @ ", message_stamp, f"({(datetime.now() - message_stamp).total_seconds()} sec ago)" )
 
-            try:
-                service = CredexBotService(payload=formatted_message, user=user)
-                CredexWhatsappService(payload=service.response, phone_number_id=payload['metadata']['phone_number_id']).send_message()
-            except Exception as e:
-                print(e)
+            service = CredexBotService(payload=formatted_message, user=user)
+            CredexWhatsappService(payload=service.response, phone_number_id=payload['metadata']['phone_number_id']).send_message()
+            # try:
+                
+            # except Exception as e:
+            #     print(e)
             print(f"TOOK  {(datetime.now() - message_stamp).total_seconds()} s")
                 
             return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)

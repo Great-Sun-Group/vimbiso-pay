@@ -195,7 +195,7 @@ To make a payment offer click the
 form then submit the details.
 
 Alternatively you can use the short
-commands below:
+command below:
 
 *To issue a secured credex, send*
   0.5=>recipientHandle
