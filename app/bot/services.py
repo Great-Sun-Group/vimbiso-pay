@@ -467,10 +467,11 @@ class CredexBotService:
 
             if not isinstance(current_state, dict):
                 current_state = current_state.state
-        
+        pending = ''
         pending_in = 0
         if current_state['member']['defaultAccountData']['pendingInData']:
             pending_in = len(current_state['member']['defaultAccountData']['pendingInData'])
+            pending = f"    Pending Offers ({pending_in})"
         
         pending_out = 0
         if current_state['member']['defaultAccountData']['pendingOutData']:
@@ -500,7 +501,7 @@ class CredexBotService:
                     "text": (HOME_2 if isOwnedAccount  else HOME_1).format(
                         account=current_state['member']['defaultAccountData']['accountName'],
                         balance=BALANCE.format(
-                            securedNetBalancesByDenom=balances if balances else "- $0.00\n",
+                            securedNetBalancesByDenom=balances if balances else "    $0.00\n",
                             unsecured_balance=UNSERCURED_BALANCES.format(
                                 totalPayables=current_state['member']['defaultAccountData']['balanceData'][
                                 'unsecuredBalancesInDefaultDenom']['totalPayables'],
@@ -508,7 +509,7 @@ class CredexBotService:
                                 'unsecuredBalancesInDefaultDenom']['totalReceivables'],
                             netPayRec=current_state['member']['defaultAccountData']['balanceData'][
                                 'unsecuredBalancesInDefaultDenom']['netPayRec'],
-                            )  if memberTier > 2 else f"Free tier daily limit: *{current_state['member']['memberDashboard'].get('remainingAvailableUSD', 0)} USD*",
+                            )  if memberTier > 2 else f"Free tier remaining daily spend limit\n    *{current_state['member']['memberDashboard'].get('remainingAvailableUSD', 0)} USD*\n{pending}",
                             netCredexAssetsInDefaultDenom=current_state['member']['defaultAccountData']['balanceData'][
                                 'netCredexAssetsInDefaultDenom']
                         ),
@@ -1023,9 +1024,9 @@ class CredexBotService:
             except Exception as e:
                 print("ERROR FETCHING ", e)
             
-            return self.wrap_text("> *🥳 Success*\n\nYou have accepted the selected offer!", x_is_menu=True,
+            return self.wrap_text("> *🥳 Success*\n\nYou have accepted the selected offer", x_is_menu=True,
                                   back_is_cancel=False)
-        return self.wrap_text("> *😞 Failed*\n\n Failed to accept the selected offer!", x_is_menu=True, back_is_cancel=False)
+        return self.wrap_text("> *😞 Failed*\n\n Failed to accept the selected offer", x_is_menu=True, back_is_cancel=False)
 
     @property
     def handle_action_decline_offer(self):
@@ -1047,9 +1048,9 @@ class CredexBotService:
         response = requests.request("PUT", f"{config('CREDEX')}/declineCredex", headers=headers, data=payload)
         if response.status_code == 200:
             self.refresh(reset=False)
-            return self.wrap_text("> *🥳 Success*\n\n You have declined the selected offer!", x_is_menu=True,
+            return self.wrap_text("> *🥳 Success*\n\n You have declined the selected offer", x_is_menu=True,
                                   back_is_cancel=False)
-        return self.wrap_text("> *😞 Failed*\n\n Failed to decline the selected offer!", x_is_menu=True, back_is_cancel=False)
+        return self.wrap_text("> *😞 Failed*\n\n Failed to decline the selected offer", x_is_menu=True, back_is_cancel=False)
 
     @property
     def handle_action_cancel_offer(self):
@@ -1072,9 +1073,9 @@ class CredexBotService:
         # print(response.content, response.status_code)
         if response.status_code == 200:
             self.refresh(reset=False)
-            return self.wrap_text("> *🥳 Success*\n\n You have cancelled the selected offer!", x_is_menu=True,
+            return self.wrap_text("> *🥳 Success*\n\n You have cancelled the selected offer", x_is_menu=True,
                                   back_is_cancel=False)
-        return self.wrap_text("> *😞 Failed*\n\n Failed to cancel the selected offer!", x_is_menu=True, back_is_cancel=False)
+        return self.wrap_text("> *😞 Failed*\n\n Failed to cancel the selected offer", x_is_menu=True, back_is_cancel=False)
 
     @property
     def handle_action_accept_all_incoming_offers(self):
@@ -1502,6 +1503,12 @@ class CredexBotService:
         if state.option == "handle_action_confirm_offer_credex":    
             to_credex = current_state.get('confirm_offer_payload')
             to_credex['issuerAccountID'] = current_state['member']['defaultAccountData'].get('accountID')
+            if self.message['type'] == "nfm_reply":
+                print(self.message)
+                to_credex['issuerAccountID'] = self.message['message']['source_account']
+
+            
+            to_credex['memberID'] =  current_state['member']['memberDashboard'].get('memberID')
             to_credex.pop("handle", None)
             if to_credex.get('securedCredex'):
                 to_credex.pop('dueDate', None)
@@ -1514,7 +1521,9 @@ class CredexBotService:
                 'whatsappBotAPIkey': config('WHATSAPP_BOT_API_KEY'),
             }
             message = ''
+            print("PAYLOAD : ", payload)
             response = requests.request("POST", f"{config('CREDEX')}/offerCredex", headers=headers, data=payload)
+            print("RESPONSE : ", response.content)
             if response.status_code == 200:
 
                 response = response.json()

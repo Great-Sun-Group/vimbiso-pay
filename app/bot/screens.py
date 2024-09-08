@@ -293,8 +293,8 @@ CONFIRM_OFFER_CREDEX = """
 > *💰 Offer Confirmation*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-Offer ${amount} {currency} {secured} credex 
-to *{party}* from 
+Offer ${amount} {currency} {secured} credex to 
+*{party}* from 
 account *{source}*
 
 1. ✅ Yes
@@ -307,8 +307,8 @@ CONFIRM_UNSECURED_CREDEX = """
 > *💰 Account to Send From*
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-Offer ${amount} {currency} {secured} credex
-to *{party}* from 
+Offer ${amount} {currency} {secured} credex to 
+*{party}* from 
 account *{source}*
 
 {date}
