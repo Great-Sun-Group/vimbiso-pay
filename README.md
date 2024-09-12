@@ -1,10 +1,10 @@
-# Credex WhatsApp Bot
+# VimbisoPay chatbot
 
-Credex WhatsApp Bot is a Django-based application that integrates with WhatsApp Cloud API to provide automated messaging services. This bot is designed to handle various types of messages and interactions, making it a versatile tool for business communications.
+The VimbisoPay chatbot is a Django-based application that integrates with WhatsApp Cloud API and the Credex Core API to provide members of the credex ecosystem access to their accounts.
 
 ## Features
 
-- Webhook for handling incoming WhatsApp messages
+- Webhook for handling incoming WhatsApp messages from members
 - Support for various message types (text, button, interactive, location, image, document, video, audio, order)
 - Welcome message management
 - Cache management for user states
@@ -151,3 +151,19 @@ The project uses Django's settings module for configuration. Key settings includ
 - REST Framework settings
 - CORS configuration
 - Logging (commented out in the provided settings)
+
+## Contributing
+
+1. Create a branch from the 'dev' branch.
+2. Make your changes and commit them with clear, concise commit messages.
+3. Push your changes and create a pull request against the 'dev' branch.
+4. Follow the [Logging Best Practices](docs/logging_best_practices.md) when adding or modifying code.
+
+## Deployment
+
+1. Contributors branch from `dev` and complete work and testing on an issue, fix, or feature.
+2. Contributor requests review from reviewer on merge to `dev` .
+3. Reviewer tests and merges.
+4. Dev is regularly merged with all recent commits to `stage`, which is auto-deployed to demo deployment.
+5. Demo deployment is tested thoroughly in CI/CD pipeline.
+6. When tests are passed, stage is merged to `prod`, which is auto-deployed to our production branch.

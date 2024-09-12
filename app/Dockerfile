@@ -1,16 +1,10 @@
 # syntax=docker/dockerfile:1
 
-# Comments are provided throughout this file to help you get started.
-# If you need more help, visit the Dockerfile reference guide at
-# https://docs.docker.com/go/dockerfile-reference/
-
-# Want to help us make this template better? Share your feedback here: https://forms.gle/ybq9Krt8jtBL3iCk7
-
 ARG PYTHON_VERSION=3.10.12
-FROM python:3.9-slim
+FROM python:${PYTHON_VERSION}-slim
 
 RUN apt-get update && apt-get install -y locales && \
-    locale-gen en_US.UTF-8 \
+    locale-gen en_US.UTF-8 && \
     update-locale
 
 ENV LANG en_US.UTF-8
@@ -27,7 +21,6 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Create a non-privileged user that the app will run under.
-# See https://docs.docker.com/go/dockerfile-user-best-practices/
 ARG UID=10001
 RUN adduser \
     --disabled-password \
@@ -42,19 +35,18 @@ RUN adduser \
 # Leverage a cache mount to /root/.cache/pip to speed up subsequent builds.
 # Leverage a bind mount to requirements.txt to avoid having to copy them into
 # into this layer.
+COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=bind,source=requirements.txt,target=requirements.txt \
     python -m pip install -r requirements.txt
 
-# # Switch to the non-privileged user to run the application.
-# USER appuser
-
 # Copy the source code into the container.
-COPY . /app/
+COPY . .
+
+# Switch to the non-privileged user to run the application.
+USER appuser
 
 # Expose the port that the application listens on.
-EXPOSE 7000
+EXPOSE 8000
 
 # Run the application.
-
-CMD ./start_app.sh
+CMD ["./start_app.sh"]
