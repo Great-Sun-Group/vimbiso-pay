@@ -1,86 +1,92 @@
-# Work Plan for Updating Dev Environment
+## CredexBot Simulation Task
 
-## 1. Review and Update Docker Configuration
-- [x] Check existing Dockerfile and compose.yaml
-- [x] Update Dockerfile if necessary
-- [x] Update compose.yaml if necessary
-- [ ] Rebuild container and test
+### End Goal
+Create a simulation script that allows testing of the CredexBot functionality in the development environment, without relying on WhatsApp on a phone. This script should:
 
-## 2. Set Up Environment Variables
-- [ ] Create a .env file for local development
-- [ ] Update .gitignore to exclude .env file
-- [ ] Add environment variables as mentioned in README
-  - [ ] SECRET_KEY
-  - [ ] DEBUG
-  - [ ] REDIS_URL
-  - [ ] WHATSAPP_ACCESS_TOKEN
-  - [ ] WHATSAPP_PHONE_NUMBER_ID
-  - [ ] WHATSAPP_BOT_API_KEY
-- [x] Update Docker configuration to use .env file
-- [ ] Rebuild container and test
+1. Simulate sending a "Hi" message to start the conversation.
+2. Allow interaction with the bot through text inputs and menu selections.
+3. Connect to the dev instance of credex-core for API interactions.
+4. Display bot responses, including text messages and interactive elements (like forms and menus).
 
-## 3. Set Up Redis
-- [x] Ensure Redis is properly configured in Docker setup
-- [ ] Update Django settings to use Redis for caching
-- [ ] Rebuild container and test Redis connection
+### Next Step
+To continue towards the goal, we need to recreate and resolve the last encountered error:
 
-## 4. Update Python Dependencies
-- [ ] Review and update requirements.txt
-- [ ] Ensure Django 4.2.13 is specified
-- [ ] Add any missing dependencies
-- [ ] Rebuild container and test
+```
+ERROR :   expected 2 arguments got 3
+User: Hi
+Bot: No response
+```
 
-## 5. Configure Django Settings
-- [ ] Review and update config/settings.py
-- [ ] Ensure database settings are correct (SQLite for dev)
-- [ ] Configure Redis caching
-- [ ] Set up REST Framework settings
-- [ ] Configure CORS settings
-- [ ] Set up logging (if not already configured)
-- [ ] Rebuild container and test
+This error suggests that the `CredexBotService` class is expecting a different number of arguments than what we're providing. To resolve this:
 
-## 6. Set Up Development Tools
-- [ ] Ensure .devcontainer/devcontainer.json is properly configured
-- [ ] Add any necessary VS Code extensions to devcontainer.json
-- [ ] Rebuild container and test
+1. Review the `CredexBotService` class definition in `app/bot/services.py` to understand its expected input.
+2. Modify the `send_message` method in `app/test_scripts/simulate_user.py` to match the expected input of `CredexBotService`.
+3. Ensure all necessary environment variables are correctly set.
+4. Run the simulation script again and debug any new errors that arise.
 
-## 7. Update Project Structure
-- [ ] Ensure project structure matches the one in README
-- [ ] Create any missing directories or files
-- [ ] Rebuild container and test
+By resolving this error, we'll be one step closer to a functioning simulation environment for testing the CredexBot.
 
-## 8. Set Up and Test API Endpoints
-- [ ] Ensure all mentioned API endpoints are properly set up
-  - [ ] /bot/webhook
-  - [ ] /bot/notify
-  - [ ] /bot/welcome/message
-  - [ ] /bot/wipe
-- [ ] Create basic tests for each endpoint
-- [ ] Run tests and fix any issues
+## Project Outline: Modifying CredexBotService Class
 
-## 9. Documentation
-- [ ] Update README.md if any changes to setup process
-- [ ] Ensure all setup instructions are clear and accurate
-- [ ] Add or update any necessary documentation files
+### 1. Overview of the Current Issue
+- The CredexBotService class is logging an error about expecting 2 arguments but receiving 3.
+- The class continues to function despite this error, which may lead to unexpected behavior.
+- The class's __init__ method signature suggests 3 parameters, but it expects 2 in practice.
 
-## 10. Final Testing
-- [ ] Perform a clean build of the container
-- [ ] Go through the entire setup process as a new user
-- [ ] Test all features and endpoints
-- [ ] Address any remaining issues
+### 2. Steps to Modify CredexBotService Class
+a. Review and update the __init__ method:
+   - Clarify the required and optional parameters.
+   - Implement proper argument handling and validation.
+   - Raise appropriate exceptions for invalid argument counts or types.
 
-## Notes:
-- After each step, rebuild the container if necessary and test to catch any bugs early.
-- Update this work plan as we progress, marking completed tasks and adding any new tasks that arise.
+b. Update error handling:
+   - Replace error logging with raised exceptions for critical issues.
+   - Implement more informative error messages.
 
-# Task parking lot (keep these)
+c. Refactor the class to handle different instantiation patterns:
+   - Consider using *args and **kwargs for flexibility.
+   - Implement clear documentation for expected arguments.
 
-1. Update the features section of the readme, and any other relevant sections, with the way that this chatbot interacts with the api endpoints of the credex ecosystem.
+### 3. Testing Procedures
+a. Update existing test cases:
+   - Modify app/test_scripts/test_credex_bot_service.py to cover all possible instantiation patterns.
+   - Include both positive and negative test cases.
 
-# New Tasks
+b. Create new unit tests:
+   - Test error handling and exception raising.
+   - Verify behavior with various argument combinations.
 
-1. Review and update start_app.sh script to ensure it's compatible with the new Docker setup.
-2. Check if any changes are needed in the .dockerignore file.
-3. Verify that the EXPOSE port in Dockerfile matches the port in compose.yaml.
-4. Consider adding a health check for the web service in compose.yaml.
-5. Implement a wait-for-it script or similar to ensure the web service waits for Redis to be ready before starting.
+c. Integration testing:
+   - Update and run the BotSimulator to ensure compatibility with changes.
+
+### 4. Potential Impacts on Existing Code
+- BotSimulator class may need updates to align with new CredexBotService instantiation requirements.
+- Any other parts of the codebase that use CredexBotService will need review and possible updates.
+- Existing error handling might need adjustment if it relies on the current error logging behavior.
+
+### 5. Rollout Plan
+a. Development:
+   - Implement changes in a new branch.
+   - Conduct code review with the team.
+
+b. Testing:
+   - Run all unit and integration tests.
+   - Perform manual testing of the BotSimulator.
+
+c. Documentation:
+   - Update any relevant documentation, including inline comments and README files.
+   - Create a changelog detailing the modifications and their implications.
+
+d. Deployment:
+   - Merge changes to the main branch after approval.
+   - Update any deployment scripts or configuration files as needed.
+
+e. Monitoring:
+   - Closely monitor the system after deployment for any unexpected behaviors.
+   - Be prepared to rollback changes if critical issues arise.
+
+### Next Actions
+1. Create a new branch for CredexBotService modifications.
+2. Begin with updating the __init__ method in app/bot/services.py.
+3. Update the test script in app/test_scripts/test_credex_bot_service.py to cover new scenarios.
+4. Run tests and iterate on changes as needed.

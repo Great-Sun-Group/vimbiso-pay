@@ -96,7 +96,7 @@ print(secrets.token_urlsafe(50))
 For `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`, follow these steps:
 1. Go to the [Meta Developer Portal](https://developers.facebook.com/).
 2. Create a new app or select an existing one.
-3. Add the WhatsApp product to your app.
+3. Add the WhatsApp product to your app. You can get a free test number that can send messaages to up to 5 accounts.
 4. Set up a Business Manager account if you haven't already.
 5. In the WhatsApp settings:
    - Find your `WHATSAPP_PHONE_NUMBER_ID`
