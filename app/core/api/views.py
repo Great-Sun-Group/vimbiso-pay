@@ -6,10 +6,12 @@ from rest_framework import status
 from rest_framework.parsers import JSONParser
 from decouple import config
 from datetime import datetime
-from ..config.constants import CachedUser
-from .services import CredexBotService
-from ..utils.utils import CredexWhatsappService
-from ..models import Message
+
+# Use absolute imports
+from core.config.constants import CachedUser
+from core.api.services import CredexBotService
+from core.utils.utils import CredexWhatsappService
+from core.models import Message
 
 class CredexCloudApiWebhook(APIView):
     """Cloud Api Webhook"""
@@ -210,8 +212,6 @@ class WipeCache(APIView):
         cache.delete(request.data.get("number"))
         return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
     
-
-
 
 class CredexSendMessageWebhook(APIView):
     """Cloud Api Webhook"""

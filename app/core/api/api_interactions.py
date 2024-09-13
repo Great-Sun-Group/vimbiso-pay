@@ -3,7 +3,6 @@ import requests
 import json
 from decouple import config
 from ..utils.utils import CredexWhatsappService
-from core.models import Message
 from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -58,16 +57,16 @@ class APIInteractions:
             cache.set(f"{self.bot_service.user.mobile_number}_interracted", True, 60*15)
 
     def _send_first_message(self):
-        message = Message.objects.all().first()
-        if message:
-            CredexWhatsappService(payload={
-                "messaging_product": "whatsapp",
-                "preview_url": False,
-                "recipient_type": "individual",
-                "to": self.bot_service.user.mobile_number,
-                "type": "text",
-                "text": {"body": message.messsage}
-            }).send_message()
+        # Instead of fetching from the database, we'll use a hardcoded message
+        first_message = "Welcome to CredEx! How can I assist you today?"
+        CredexWhatsappService(payload={
+            "messaging_product": "whatsapp",
+            "preview_url": False,
+            "recipient_type": "individual",
+            "to": self.bot_service.user.mobile_number,
+            "type": "text",
+            "text": {"body": first_message}
+        }).send_message()
 
     def _make_api_request(self, url, headers, payload):
         logger.info("Sending API request")

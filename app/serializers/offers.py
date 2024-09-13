@@ -2,7 +2,7 @@ from rest_framework import serializers
 import json, os, requests, re
 from decouple import config
 
-from bot.utils import convert_timestamp_to_date
+from core.utils.utils import convert_timestamp_to_date
 
 class OfferCredexSerializer(serializers.Serializer):
     authorizer_member_id = serializers.CharField(required=True)
@@ -55,7 +55,3 @@ class OfferCredexSerializer(serializers.Serializer):
             pass
             
         raise serializers.ValidationError({"recipient": "Recipient Account Not Found"})
-        
-
-
-

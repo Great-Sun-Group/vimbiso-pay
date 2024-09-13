@@ -3,8 +3,8 @@ from ..config.constants import *
 import requests
 import json
 from decouple import config
-from core.serializers.company import CompanyDetailsSerializer
-from core.serializers.members import MemberDetailsSerializer
+from serializers.company import CompanyDetailsSerializer
+from serializers.members import MemberDetailsSerializer
 
 class ActionHandler:
     def __init__(self, service):

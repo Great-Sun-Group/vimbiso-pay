@@ -1,16 +1,13 @@
 from ..utils.utils import CredexWhatsappService, convert_timestamp_to_date
-from core.serializers.company import CompanyDetailsSerializer
-from core.serializers.offers import OfferCredexSerializer
-from core.serializers.members import MemberDetailsSerializer
-from core.screens import *
+from serializers.company import CompanyDetailsSerializer
+from serializers.offers import OfferCredexSerializer
+from serializers.members import MemberDetailsSerializer
 from ..config.constants import *
 import requests, json
 from decouple import config
-from core.models import Message
 from django.core.cache import cache
 from datetime import datetime
 
-# The rest of the file content remains unchanged
 class CredexBotService:
     def __init__(self, payload, methods: dict = dict, user: object = None) -> None:
         self.message = payload
@@ -55,3 +52,9 @@ class CredexBotService:
         # ... (rest of the method implementation)
 
     # ... (rest of the class properties and methods)
+
+    def handle(self):
+        # Implement the handle method
+        pass  # Replace this with actual implementation
+
+# Add any other necessary functions or classes here

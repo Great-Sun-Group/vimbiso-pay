@@ -1,13 +1,13 @@
 import logging
-from core.exceptions import (
-    CredExBotException,
+from .exceptions import (
+    CredExCoreException as CredExBotException,
     InvalidInputException,
     APIException,
     StateException,
     ActionHandlerException,
     ConfigurationException
 )
-from core.utils import wrap_text
+from .utils import wrap_text
 
 logger = logging.getLogger(__name__)
 
