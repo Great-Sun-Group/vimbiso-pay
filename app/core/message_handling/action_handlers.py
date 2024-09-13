@@ -1,10 +1,10 @@
-from bot.utils import wrap_text, CredexWhatsappService, get_greeting
-from bot.constants import *
+from ..utils.utils import wrap_text, CredexWhatsappService, get_greeting
+from ..config.constants import *
 import requests
 import json
 from decouple import config
-from bot.serializers.company import CompanyDetailsSerializer
-from bot.serializers.members import MemberDetailsSerializer
+from core.serializers.company import CompanyDetailsSerializer
+from core.serializers.members import MemberDetailsSerializer
 
 class ActionHandler:
     def __init__(self, service):

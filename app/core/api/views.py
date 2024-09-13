@@ -6,10 +6,10 @@ from rest_framework import status
 from rest_framework.parsers import JSONParser
 from decouple import config
 from datetime import datetime
-from bot.constants import CachedUser
-from bot.services import CredexBotService
-from bot.utils import CredexWhatsappService
-from bot.models import Message
+from ..config.constants import CachedUser
+from .services import CredexBotService
+from ..utils.utils import CredexWhatsappService
+from ..models import Message
 
 class CredexCloudApiWebhook(APIView):
     """Cloud Api Webhook"""

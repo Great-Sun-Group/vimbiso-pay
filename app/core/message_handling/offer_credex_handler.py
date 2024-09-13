@@ -1,6 +1,6 @@
-from bot.utils import wrap_text, format_synopsis, CredexWhatsappService
-from bot.constants import *
-from bot.serializers.offers import OfferCredexSerializer
+from ..utils.utils import wrap_text, format_synopsis, CredexWhatsappService
+from ..config.constants import *
+from core.serializers.offers import OfferCredexSerializer
 import requests
 import json
 from decouple import config

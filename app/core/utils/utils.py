@@ -1,4 +1,4 @@
-from bot.constants import *
+from ..config.constants import *
 from datetime import datetime
 import requests
 from decouple import config
