@@ -1,7 +1,7 @@
 import sys
-import json
 import logging
 from pathlib import Path
+import os
 
 # Add the necessary directories to sys.path
 current_dir = Path(__file__).resolve().parent
@@ -12,6 +12,20 @@ sys.path.extend([str(core_dir), str(app_dir), str(project_dir)])
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Explicitly set variables for development
+MYCREDEX_APP_URL = 'https://cautious-space-sniffle-wpxj5grwjq2x5j-5000.app.github.dev/'
+X_GITHUB_TOKEN = None  # Set to None by default, can be overridden if needed
+JWT_AUTH = 'default_jwt_auth'
+
+# Determine the environment
+ENV = os.getenv('ENV', 'dev')  # Default to 'dev' if not set
+
+# Set environment variables
+os.environ['MYCREDEX_APP_URL'] = MYCREDEX_APP_URL
+os.environ['JWT_AUTH'] = JWT_AUTH
+if X_GITHUB_TOKEN:
+    os.environ['X_GITHUB_TOKEN'] = X_GITHUB_TOKEN
 
 def setup_django():
     logging.debug("Starting Django setup process")
@@ -86,9 +100,6 @@ class VimbisoPay_Terminal:
         Send a message to the bot and return the response.
         """
         try:
-            # Create a WhatsApp message in the format expected by the bot
-            whatsapp_message = wrap_text(message_text, self.user_phone_number, plain=True)
-            
             # Create the payload for CredexBotService
             payload = {
                 "message": message_text,
@@ -161,14 +172,13 @@ class VimbisoPay_Terminal:
         """
         Run the VimbisoPay Terminal simulator.
         """
-        print("Welcome to VimbisoPay Terminal Simulator")
+        print(f"Welcome to VimbisoPay Terminal Simulator (Environment: {ENV})")
         print("Type 'exit' to quit the simulator")
         
-        # Start the conversation with an initial message
+        # Start the conversation with initial messages
         initial_messages = [
             "Hello",
-            "I want to use Credex",
-            "Yes, I agree to the terms and conditions"
+            "I want to use Credex"
         ]
         
         for msg in initial_messages:
