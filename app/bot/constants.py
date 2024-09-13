@@ -137,7 +137,7 @@ charge to pay for goods and
 services.
 
 Combi drivers and owners can 
-use the charge they’ve received 
+use the charge they've received 
 to purchase goods and services
 within the credex ecosystem, 
 also at no charge. When an 
@@ -146,3 +146,7 @@ at aregistered agent, there
 is a 2% fee.
 """
 
+# Add the missing constants
+REGISTER = "You're not registered. Would you like to register? {message}"
+INVALID_ACTION = "I'm sorry, I didn't understand that. Can you please try again?"
+DELAY = "Please wait while I process your request..."
