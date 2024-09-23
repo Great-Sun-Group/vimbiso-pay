@@ -1,10 +1,8 @@
 # Documentation https://github.com/appleboy/ssh-action
-name: Credex Staging Deployment
+name: Vimbiso Pay Staging Deployment
 on:
   push:
-    branches: [auto-deploy-staging]
-  pull_request:
-    branches: [auto-deploy-staging]
+    branches: [stage]
 
 jobs:
   build:
@@ -21,8 +19,8 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           command_timeout: 25m
           script: |
-            cd credex-bot/app
-            git checkout auto-deploy-staging
+            cd vimbiso-pay/app
+            git checkout stage
             printf 'SECRET_KEY=${{ secrets.DEMO_SECRET_KEY }}\n
             DATABASE_PORT=${{ secrets.DEMO_DATABASE_PORT }}\n
             PLATFORM_NAME=${{ secrets.DEMO_PLATFORM_NAME }}\n
