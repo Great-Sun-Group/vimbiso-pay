@@ -3,7 +3,7 @@ from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
 
-from bot.views import CredexCloudApiWebhook, CredexSendMessageWebhook, WelcomeMessage, WipeCache 
+from core.api.views import CredexCloudApiWebhook, CredexSendMessageWebhook, WelcomeMessage, WipeCache 
 
 urlpatterns = [
     path('admin/', admin.site.urls),

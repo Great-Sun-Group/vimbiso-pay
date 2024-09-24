@@ -34,7 +34,7 @@ jobs:
       - name: Build and Deploy
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} "
-            cd credex-bot/app &&
+            cd vimbiso-pay/app &&
             git checkout auto-deployed &&
             git pull origin auto-deployed &&
             docker-compose up --build

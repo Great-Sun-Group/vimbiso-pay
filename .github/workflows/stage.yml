@@ -21,9 +21,9 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           command_timeout: 25m
           script: |
-            cd credex-bot/app
+            cd vimbiso-pay/app
             git checkout auto-deploy-staging
-            printf 'SECRET_KEY=${{ secrets.DEMO_SECRET_KEY }}\n
+            printf 'DJANGO_SECRET=${{ secrets.DEMO_DJANGO_SECRET }}\n
             DATABASE_PORT=${{ secrets.DEMO_DATABASE_PORT }}\n
             PLATFORM_NAME=${{ secrets.DEMO_PLATFORM_NAME }}\n
             DEFAULT_DATABASE=${{ secrets.DEMO_DEFAULT_DATABASE }}\n

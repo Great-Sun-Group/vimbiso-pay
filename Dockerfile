@@ -7,9 +7,9 @@ RUN apt-get update && apt-get install -y locales && \
     locale-gen en_US.UTF-8 && \
     update-locale
 
-ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en
-ENV LC_ALL en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
 
 # Prevents Python from writing pyc files.
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -40,9 +40,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install -r requirements.txt
 
 # Copy the source code into the container.
-COPY . .
+COPY ./app /app
 
 # Switch to the non-privileged user to run the application.
+RUN chown -R appuser:appuser /app
 USER appuser
 
 # Expose the port that the application listens on.
