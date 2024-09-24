@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/credex-bot.iml" filepath="$PROJECT_DIR$/.idea/credex-bot.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/vimbiso-pay.iml" filepath="$PROJECT_DIR$/.idea/vimbiso-pay.iml" />
     </modules>
   </component>
 </project>

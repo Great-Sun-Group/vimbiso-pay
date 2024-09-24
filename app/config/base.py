@@ -15,7 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 environ.Env.read_env(BASE_DIR / '.env')
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env('SECRET_KEY')
+SECRET_KEY = env('DJANGO_SECRET')
 
 # Application definition
 INSTALLED_APPS = [
@@ -29,7 +29,7 @@ INSTALLED_APPS = [
     # Custom apps
     'rest_framework',
     'rest_framework_simplejwt',
-    'bot.apps.BotConfig'
+    'core.config.apps.CoreConfig'
 ]
 
 MIDDLEWARE = [

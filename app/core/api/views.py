@@ -11,7 +11,7 @@ from datetime import datetime
 from core.config.constants import CachedUser
 from core.api.services import CredexBotService
 from core.utils.utils import CredexWhatsappService
-from core.models import Message
+from core.api.models import Message
 
 class CredexCloudApiWebhook(APIView):
     """Cloud Api Webhook"""

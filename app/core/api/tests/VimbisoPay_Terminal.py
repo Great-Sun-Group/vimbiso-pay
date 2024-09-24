@@ -56,7 +56,7 @@ def setup_django():
                         'NAME': ':memory:',
                     }
                 },
-                SECRET_KEY='dummy-secret-key-for-test',
+                DJANGO_SECRET='dummy-secret-key-for-test',
             )
             logging.debug("Django settings configured successfully")
         
