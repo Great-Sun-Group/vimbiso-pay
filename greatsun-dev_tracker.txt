@@ -1,5 +1,5 @@
-dev
+avatar-khaki-oriole
 
-both servers running again
+claude dev back in
 
-Commit-ID: 660728eb-bedd-4e84-95ce-f4fa07c33fa7
+Commit-ID: 33f4703c-69f4-451b-9f9b-7cee5b998d8e
