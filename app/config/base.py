@@ -157,7 +157,7 @@ from corsheaders.defaults import default_headers
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'apiKey'
 ]
-
+'''
 # Logging configuration
 LOGGING = {
     'version': 1,
@@ -213,6 +213,7 @@ LOGGING = {
         },
     },
 }
+'''
 
 # Security Settings
 SECURE_BROWSER_XSS_FILTER = True
