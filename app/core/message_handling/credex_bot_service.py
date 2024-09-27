@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 class CredexBotService:
     def __init__(self, payload, user: object = None) -> None:
+        print(user)
         if user is None:
             logger.error("User object is required")
             raise InvalidInputException("User object is required")

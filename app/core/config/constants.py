@@ -147,6 +147,8 @@ is a 2% fee.
 """
 
 # Add the missing constants
-REGISTER = "You're not registered. Would you like to register? {message}"
+REGISTER = """
+{message}
+"""
 INVALID_ACTION = "I'm sorry, I didn't understand that. Can you please try again?"
 DELAY = "Please wait while I process your request..."

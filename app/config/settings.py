@@ -1,18 +1,11 @@
-import environ
+from decouple import config as env
 from pathlib import Path
 import os
 from datetime import timedelta
 
-# Initialize environ
-env = environ.Env(
-    DEBUG=(bool, True)  # Set DEBUG to True by default for development
-)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Take environment variables from .env file
-environ.Env.read_env(BASE_DIR / '.env')
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env('DJANGO_SECRET')

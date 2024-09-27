@@ -62,7 +62,33 @@ class MessageHandler:
                 self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_register", "handle", "handle_greeting")
                 return wrap_text(REGISTER.format(message=message), self.bot_service.user.mobile_number, extra_rows=[{"id": '1', "title": "Become a member"}])
             else:
-                return wrap_text(f"Login failed: {message}\nPlease try again later or contact support.", self.bot_service.user.mobile_number)
+                return {
+                    "messaging_product": "whatsapp",
+                    "to": self.bot_service.user.mobile_number,
+                    "recipient_type": "individual",
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "flow",
+                        "body": {
+                            "text": REGISTER.format(message=message)
+                        },
+                        "action": {
+                            "name": "flow",
+                            "parameters": {
+                                "flow_message_version": "3",
+                                "flow_action": "navigate",
+                                "flow_token": "not-used",
+                                "flow_id": "1048499583563106",
+                                "flow_cta": "Create Account",
+                                "flow_action_payload": {
+                                    "screen": "OPEN_ACCOUNT"
+                                }
+                            }
+                        }
+                    }
+                
+                }
+            # wrap_text(f"Login failed: {message}\nPlease try again later or contact support.", )
 
     def handle_offer_credex(self):
         logger.info("Handling offer credex action")

@@ -65,7 +65,7 @@ class APIInteractions:
                     return False, "Login failed: No token received"
             elif response.status_code == 400:
                 logger.info("Login failed: New user or invalid phone")
-                return False, "Welcome! It looks like you're new here. Let's get you set up."
+                return False, "*Welcome!* \n\nIt looks like you're new here. Let's get you \nset up."
             elif response.status_code == 401:
                 logger.error(f"Login failed: Unauthorized. Response content: {response.text}")
                 return False, "Login failed: Unauthorized. Please check your credentials."
