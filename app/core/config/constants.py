@@ -52,6 +52,7 @@ class CachedUserState:
     def update_state(self, state: dict, update_from, stage=None, option=None, direction=None):
         """Get wallets by user."""
         # pylint: disable=no-member
+        print("UPDATING FROM ", update_from)
         cache.set(f"{self.user.mobile_number}", state, timeout=60*5)
         if stage:
             cache.set(f"{self.user.mobile_number}_stage", stage, timeout=60*5)

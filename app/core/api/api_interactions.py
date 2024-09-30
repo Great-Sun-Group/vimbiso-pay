@@ -2,7 +2,7 @@ import logging
 import requests
 import json
 from decouple import config
-from ..utils.utils import CredexWhatsappService
+from ..utils.utils import CredexWhatsappService, wrap_text
 from django.core.cache import cache
 import os
 import base64
@@ -171,7 +171,7 @@ class APIInteractions:
             update_from="refresh",
             option="handle_action_register"
         )
-        return self.bot_service.utils.wrap_text(f"An error occurred: {error_message}. Please try again.", 
+        return wrap_text(f"An error occurred: {error_message}. Please try again.", 
                                                 self.bot_service.user.mobile_number, 
                                                 extra_rows=[{"id": '1', "title": "Become a member"}], 
                                                 include_menu=False)

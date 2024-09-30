@@ -6,6 +6,7 @@ from ..utils.utils import wrap_text
 from ..config.constants import GREETINGS, REGISTER, INVALID_ACTION
 from .router import router
 from ..utils.exceptions import InvalidInputException
+from .whatsapp_forms import registration_form
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,11 @@ class MessageHandler:
 
     def is_greeting(self, message):
         return message.lower().strip() in GREETINGS
+    
+    def handle_action_register(self):
+        logger.info("Handling offer credex action")
+        print(self.bot_service.state.get_state())
+
 
     def handle_greeting(self):
         logger.info("Handling greeting")
@@ -62,32 +68,8 @@ class MessageHandler:
                 self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_register", "handle", "handle_greeting")
                 return wrap_text(REGISTER.format(message=message), self.bot_service.user.mobile_number, extra_rows=[{"id": '1', "title": "Become a member"}])
             else:
-                return {
-                    "messaging_product": "whatsapp",
-                    "to": self.bot_service.user.mobile_number,
-                    "recipient_type": "individual",
-                    "type": "interactive",
-                    "interactive": {
-                        "type": "flow",
-                        "body": {
-                            "text": REGISTER.format(message=message)
-                        },
-                        "action": {
-                            "name": "flow",
-                            "parameters": {
-                                "flow_message_version": "3",
-                                "flow_action": "navigate",
-                                "flow_token": "not-used",
-                                "flow_id": "1048499583563106",
-                                "flow_cta": "Create Account",
-                                "flow_action_payload": {
-                                    "screen": "OPEN_ACCOUNT"
-                                }
-                            }
-                        }
-                    }
-                
-                }
+                self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_register", "handle", "handle_greeting")
+                return registration_form(self.bot_service.user.mobile_number, message=message)
             # wrap_text(f"Login failed: {message}\nPlease try again later or contact support.", )
 
     def handle_offer_credex(self):
@@ -96,7 +78,14 @@ class MessageHandler:
         return self.bot_service.offer_credex_handler.handle_action_offer_credex()
 
     def handle_action(self):
+        if f"{self.bot_service.body.lower()}" in GREETINGS:
+            self.bot_service.body = "handle_action_menu"
+
+        if f"{self.bot_service.body}".startswith("handle_"):
+            pass
+
         action_method = getattr(self.bot_service.action_handler, self.bot_service.body, None)
+        print("Action ", action_method, self.bot_service.body)
         if action_method and callable(action_method):
             logger.info(f"Handling action: {self.bot_service.body}")
             self.bot_service.state.update_state(self.bot_service.current_state, self.bot_service.body, "handle", self.bot_service.body)
