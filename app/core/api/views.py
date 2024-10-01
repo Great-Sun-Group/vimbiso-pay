@@ -8,13 +8,14 @@ from decouple import config
 from datetime import datetime
 
 # Use absolute imports
+from core.message_handling.credex_bot_service import CredexBotService
 from core.config.constants import CachedUser
-from core.api.services import CredexBotService
 from core.utils.utils import CredexWhatsappService
 from core.api.models import Message
 
 class CredexCloudApiWebhook(APIView):
     """Cloud Api Webhook"""
+    permission_classes = []
     parser_classes = (JSONParser,)
 
     @staticmethod
@@ -142,7 +143,7 @@ class CredexCloudApiWebhook(APIView):
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
             
 
-            # print("||||||||>>>>>>")
+            print("||||||||>>>>>>")
             # Format the message
             formatted_message = {
                 "to": payload['metadata']['display_phone_number'],
@@ -157,7 +158,7 @@ class CredexCloudApiWebhook(APIView):
             }
             # print(formatted_message)
             user = CachedUser(formatted_message.get('from'))
-            print(user)
+            print("USER", user)
                 
             state = user.state
             current_state = state.get_state(user)
@@ -173,7 +174,9 @@ class CredexCloudApiWebhook(APIView):
             print(f"Credex {state.stage}<|>{state.option}] RECEIVED - > ", payload['body']," FROM ",  formatted_message.get('from'), " @ ", message_stamp, f"({(datetime.now() - message_stamp).total_seconds()} sec ago)" )
 
             try:
+                print("INN ", formatted_message)
                 service = CredexBotService(payload=formatted_message, user=user)
+                print(service.response)
                 CredexWhatsappService(payload=service.response, phone_number_id=payload['metadata']['phone_number_id']).send_message()
             except Exception as e:
                 print(e)

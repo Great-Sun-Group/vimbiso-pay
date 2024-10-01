@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 class CredexBotService:
     def __init__(self, payload, user: object = None) -> None:
+        print(user)
         if user is None:
             logger.error("User object is required")
             raise InvalidInputException("User object is required")
@@ -35,13 +36,12 @@ class CredexBotService:
         self.message_handler = MessageHandler(self)
         self.api_interactions = APIInteractions(self)
         self.state_manager = StateManager(self)
-
         self.response = self.handle()
 
     @error_decorator
     def handle(self):
-        logger.info(f"Initial state: {self.state.stage}")
-        return self.message_handler.handle_message()
+        logger.info(f"Entry point: {self.state.stage}")
+        return self.message_handler.handle_action()
 
     @error_decorator
     def refresh(self, reset=True, silent=True, init=False):

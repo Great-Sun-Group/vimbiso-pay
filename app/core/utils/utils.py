@@ -118,12 +118,13 @@ def wrap_text(message, user_mobile_number, proceed_option=False, x_is_menu=False
     }
 
 class CredexWhatsappService:
-    def __init__(self, payload):
+    def __init__(self, payload, phone_number_id=None):
+        self.phone_number_id = phone_number_id
         self.payload = payload
 
     def send_message(self):
         # Implementation for sending WhatsApp message
-        url = f"{config('WHATSAPP_API_URL')}/messages"
+        url = f"{config('WHATSAPP_API_URL')}{self.phone_number_id}/messages"
         headers = {
             'Authorization': f"Bearer {config('WHATSAPP_ACCESS_TOKEN')}",
             'Content-Type': 'application/json'

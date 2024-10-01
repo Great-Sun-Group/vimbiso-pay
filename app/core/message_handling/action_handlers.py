@@ -1,3 +1,4 @@
+from .screens import ACCOUNT_SELECTION, AGENTS, BALANCE, HOME_1, HOME_2, UNSERCURED_BALANCES
 from ..utils.utils import wrap_text, CredexWhatsappService, get_greeting
 from ..config.constants import *
 import requests
@@ -47,7 +48,117 @@ class ActionHandler:
 
     def handle_action_menu(self):
         # Implementation for handling menu actions
-        pass
+
+        self.service.refresh(reset=True)
+        current_state = self.service.current_state
+
+        pending = ''
+        pending_in = 0
+        if current_state['member']['defaultAccountData']['pendingInData']:
+            pending_in = len(current_state['member']['defaultAccountData']['pendingInData'])
+            pending = f"    Pending Offers ({pending_in})"
+
+        pending_out = 0
+        if current_state['member']['defaultAccountData']['pendingOutData']:
+            pending_out = len(current_state['member']['defaultAccountData']['pendingOutData'])
+
+        secured = ""
+        for item in current_state['member']['defaultAccountData']['balanceData']['securedNetBalancesByDenom']:
+            secured += f" *{item}* \n"
+
+        balances = ""
+        balance_lists = current_state['member']['defaultAccountData']['balanceData']['securedNetBalancesByDenom']
+        for bal in balance_lists:
+            balances += f"- {bal}\n"
+
+        isOwnedAccount = current_state['member']['defaultAccountData'].get('isOwnedAccount')
+        memberTier = current_state['member']['memberDashboard'].get('memberTier')
+
+        return {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": self.user.mobile_number,
+            "type": "interactive",
+            "interactive": {
+                "type": "list",
+                "body": {
+                    "text": (HOME_2 if isOwnedAccount else HOME_1).format(
+                        account=current_state['member']['defaultAccountData']['accountName'],
+                        balance=BALANCE.format(
+                            securedNetBalancesByDenom=balances if balances else "    $0.00\n",
+                            unsecured_balance=UNSERCURED_BALANCES.format(
+                                totalPayables=current_state['member']['defaultAccountData']['balanceData'][
+                                    'unsecuredBalancesInDefaultDenom']['totalPayables'],
+                                totalReceivables=current_state['member']['defaultAccountData']['balanceData'][
+                                    'unsecuredBalancesInDefaultDenom']['totalReceivables'],
+                                netPayRec=current_state['member']['defaultAccountData']['balanceData'][
+                                    'unsecuredBalancesInDefaultDenom']['netPayRec'],
+                            ) if memberTier > 2 else f"Free tier remaining daily spend limit\n    *{current_state['member']['memberDashboard'].get('remainingAvailableUSD', 0)} USD*\n{pending}",
+                            netCredexAssetsInDefaultDenom=current_state['member']['defaultAccountData']['balanceData'][
+                                'netCredexAssetsInDefaultDenom']
+                        ),
+                        handle=current_state['member']['defaultAccountData']['accountHandle'],
+                    )
+                },
+                "action":
+                    {
+                        "button": "🕹️ Options",
+                        "sections": [
+                            {
+                                "title": "Options",
+                                "rows":
+                                    [
+                                        {
+                                            "id": "handle_action_offer_credex",
+                                            "title": f"💸 Offer Secured Credex",
+                                        },
+                                        {
+                                            "id": "handle_action_pending_offers_in",
+                                            "title": f"📥 Pending Offers ({pending_in})"
+                                        },
+                                        {
+                                            "id": "handle_action_pending_offers_out",
+                                            "title": f"📤 Review Outgoing ({pending_out})"
+                                        },
+                                        {
+                                            "id": "handle_action_transactions",
+                                            "title": f"📒 Review Transactions",
+                                        }
+                                    ] if not isOwnedAccount else [
+                                    {
+                                        "id": "handle_action_offer_credex",
+                                        "title": f"💸 Offer Secured Credex",
+                                    },
+                                    {
+                                        "id": "handle_action_pending_offers_in",
+                                        "title": f"📥 Pending Offers ({pending_in})"
+                                    },
+                                    {
+                                        "id": "handle_action_pending_offers_out",
+                                        "title": f"📤 Review Outgoing ({pending_out})"
+                                    },
+                                    {
+                                        "id": "handle_action_transactions",
+                                        "title": f"📒 Review Transactions",
+                                    },
+                                    {
+                                        "id": "handle_action_authorize_member",
+                                        "title": f"👥 Manage Members"
+                                    }, {
+                                        "id": "handle_action_notifications",
+                                        "title": f"🛎️ Notifications"
+                                    },
+                                    {
+                                        "id": "handle_action_switch_account",
+                                        "title": f"🏡 Member Dashboard",
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+            }
+        }
+
 
     def handle_action_transactions(self):
         # Implementation for handling transactions
@@ -82,24 +193,60 @@ class ActionHandler:
         pass
 
     def handle_action_select_profile(self):
-        print("Handling select profile")
         state = self.service.state
         current_state = self.service.current_state
 
         if not current_state.get('member'):
-            response = self.service.refresh()
+            response = self.service.refresh(reset=True)
             if response and state.stage:
                 return response
-        
+
+        if state.option in ["select_account_to_use","handle_action_confirm_offer_credex"] and f"{self.body}".lower() not in GREETINGS:
+            options = {}
+            count = 1
+            for acc in current_state['member']['accountDashboards']:
+                options[str(count)] = int(count) - 1
+                options[acc.get('accountHandle')] = int(count) - 1
+                count += 1
+
+            print("OPTIONS : ", options, " SELECTED - ", self.body)
+            if f"{self.body}".lower() in GREETINGS:
+                self.body = '1'
+            if options.get(self.body) is not None:
+                # print("OPTIONS : ", options)
+                current_state['member']['defaultAccountData'] = current_state['member']['accountDashboards'][
+                    options.get(self.body)]
+                state.update_state(
+                    state=current_state,
+                    stage='handle_action_menu',
+                    update_from="handle_action_menu",
+                    option="handle_action_menu"
+                )
+                self.body = "Hi"
+                self.message['message'] = "Hi"
+                return self.handle_action_menu
+            else:
+                if str(self.body).isdigit():
+                    if self.body in [str(len(current_state['member']['accountDashboards']) + 1),
+                                     "handle_action_offer_credex"]:
+                        return self.handle_action_offer_credex
+                    elif self.body in [str(len(current_state['member']['accountDashboards']) + 2),
+                                       "handle_action_create_business_account"]:
+                        return self.handle_action_create_business_account
+                    elif self.body in [str(len(current_state['member']['accountDashboards']) + 3),
+                                       "handle_action_find_agent"]:
+                        return self.wrap_text(AGENTS)
+
         accounts = []
         count = 1
-        account_string = ""
+        account_string = f""
         for account in current_state['member']['accountDashboards']:
             account_string += f" *{count}.* 👤 _{account.get('accountName')}_\n"
             accounts.append(
                 {
                     "id": account.get('accountHandle'),
-                    "title": f"👤 {account.get('accountName').replace('Personal', '')}"[:21] + "..." if len(f"👤 {account.get('accountName').replace('Personal', '')}") > 24 else f"👤 {account.get('accountName').replace('Personal', '')}"
+                    "title": f"👤 {account.get('accountName').replace('Personal', '')}"[:21] + "..." if len(
+                        f"👤 {account.get('accountName').replace('Personal', '')}") > 24 else f"👤 {account.get('accountName').replace('Personal', '')}"
                 }
             )
 
@@ -143,12 +290,14 @@ class ActionHandler:
         return {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
-            "to": self.service.user.mobile_number,
+            "to": self.user.mobile_number,
             "type": "interactive",
             "interactive": {
                 "type": "list",
                 "body": {
-                    "text": ACCOUNT_SELECTION.format(greeting=get_greeting(name=current_state['member']['memberDashboard']['firstname']), accounts=account_string)
+                    "text": ACCOUNT_SELECTION.format(
+                        greeting=get_greeting(name=current_state['member']['memberDashboard']['firstname']),
+                        accounts=account_string)
                 },
                 "action":
                     {
@@ -162,6 +311,7 @@ class ActionHandler:
                     }
             }
         }
+
 
     def handle_default_action(self):
         # Implementation for handling default or unknown actions

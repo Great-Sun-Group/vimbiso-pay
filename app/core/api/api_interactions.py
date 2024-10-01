@@ -2,7 +2,7 @@ import logging
 import requests
 import json
 from decouple import config
-from ..utils.utils import CredexWhatsappService
+from ..utils.utils import CredexWhatsappService, wrap_text
 from django.core.cache import cache
 import os
 import base64
@@ -65,7 +65,7 @@ class APIInteractions:
                     return False, "Login failed: No token received"
             elif response.status_code == 400:
                 logger.info("Login failed: New user or invalid phone")
-                return False, "Welcome! It looks like you're new here. Let's get you set up."
+                return False, "*Welcome!* \n\nIt looks like you're new here. Let's get you \nset up."
             elif response.status_code == 401:
                 logger.error(f"Login failed: Unauthorized. Response content: {response.text}")
                 return False, "Login failed: Unauthorized. Please check your credentials."
@@ -171,7 +171,7 @@ class APIInteractions:
             update_from="refresh",
             option="handle_action_register"
         )
-        return self.bot_service.utils.wrap_text(f"An error occurred: {error_message}. Please try again.", 
+        return wrap_text(f"An error occurred: {error_message}. Please try again.", 
                                                 self.bot_service.user.mobile_number, 
                                                 extra_rows=[{"id": '1', "title": "Become a member"}], 
                                                 include_menu=False)

@@ -52,6 +52,7 @@ class CachedUserState:
     def update_state(self, state: dict, update_from, stage=None, option=None, direction=None):
         """Get wallets by user."""
         # pylint: disable=no-member
+        print("UPDATING FROM ", update_from)
         cache.set(f"{self.user.mobile_number}", state, timeout=60*5)
         if stage:
             cache.set(f"{self.user.mobile_number}_stage", stage, timeout=60*5)
@@ -147,6 +148,8 @@ is a 2% fee.
 """
 
 # Add the missing constants
-REGISTER = "You're not registered. Would you like to register? {message}"
+REGISTER = """
+{message}
+"""
 INVALID_ACTION = "I'm sorry, I didn't understand that. Can you please try again?"
 DELAY = "Please wait while I process your request..."
