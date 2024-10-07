@@ -1,7 +1,7 @@
 ACCOUNT_SELECTION = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 *{greeting}*
-
+{message}
 *_Which account would you like to_* 
 *_view and manage?_*
 
@@ -488,4 +488,9 @@ NOTIFICATION = """
 Notifications of incoming offers now
 being sent to :
 - *{name}* 
+"""
+
+PROFILE_SELECTION = """
+> *👤 Profile*
+{message}
 """

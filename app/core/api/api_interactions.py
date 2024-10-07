@@ -2,18 +2,22 @@ import logging
 import requests
 import json
 from decouple import config
+
+from core.api.services import CredexBotService
 from ..utils.utils import CredexWhatsappService, wrap_text
 from django.core.cache import cache
 import os
 import base64
+from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
+
 class APIInteractions:
-    def __init__(self, bot_service):
+    def __init__(self, bot_service: CredexBotService):
         self.bot_service = bot_service
         self.env = os.getenv('ENV', 'dev')  # Default to 'dev' if not set
-        self.base_url = f"{config('MYCREDEX_APP_URL')}api/v1"
+        self.base_url = f"{config('MYCREDEX_APP_URL_2')}api/v1"
         logger.info(f"Base URL: {self.base_url}")
 
     def refresh_member_info(self, reset=True, silent=True, init=False):
@@ -25,7 +29,7 @@ class APIInteractions:
         if not isinstance(current_state, dict):
             current_state = current_state.state
 
-        url = f"{self.base_url}/getMemberDashboardByPhone"
+        url = f"{self.base_url}/member/getMemberDashboardByPhone"
         payload = json.dumps({"phone": self.bot_service.message['from']})
         headers = self._get_headers()
 
@@ -33,8 +37,16 @@ class APIInteractions:
             self._handle_reset_and_init(reset, silent, init)
             response = self._make_api_request(url, headers, payload)
             response_data = self._process_api_response(response)
-            self._update_current_state(response_data, current_state, reset)
-            return self._handle_successful_refresh(current_state, state)
+            
+            if "Authentication required" in response_data.get('message', ""):
+                success, message = self.login()
+                if success:
+                    response = self._make_api_request(url, headers, payload)
+                    response_data = self._process_api_response(response)
+                else:
+                    if "Member not found" in response_data.get("message", ""):
+                        return self.bot_service.action_handler.handle_action_register(register=True)
+            return self._handle_successful_refresh(current_state, state, member_info=response_data)
         except Exception as e:
             logger.exception(f"Error during refresh: {str(e)}")
             return self._handle_failed_refresh(current_state, state, str(e))
@@ -56,9 +68,8 @@ class APIInteractions:
                 response_data = response.json()
                 token = response_data.get('token')
                 if token:
-                    self.bot_service.user.jwt_token = token
-                    self.bot_service.user.save()
-                    logger.info("Login successful")
+                    self.bot_service.user.state.set_jwt_token(token)
+                    logger.info(f"Login successful {token}")
                     return True, "Login successful"
                 else:
                     logger.error("Login response didn't contain a token")
@@ -76,7 +87,75 @@ class APIInteractions:
             logger.exception(f"Error during login: {str(e)}")
             return False, f"Login failed: {str(e)}"
 
-    def _get_basic_auth_header(self, phone_number):
+    def register_member(self, payload):
+        """Sends a registration request to the CredEx API"""
+        logger.info("Attempting to register member")
+
+        url = f"{self.base_url}/member/onboardMember"
+        logger.info(f"Register URL: {url}")
+
+        headers = self._get_headers()
+        try:
+            response = self._make_api_request(url, headers, payload)
+            if response.status_code == 200:
+                response_data = response.json()
+                if response_data.get('token'):
+                    self.bot_service.user.state.set_jwt_token(response_data.get('token'))
+                    logger.info("Registration successful")
+                    return True, "Registration successful"
+                else:
+                    logger.error("Registration response didn't contain a token")
+                    return False, "Registration failed: No token received"
+            elif response.status_code == 400:
+                logger.error(f"Registration failed: Bad request. Response content: {response.json().get('message')}")
+                return False, f"*Registration failed (400)*:\n\n{response.json().get('message')}"
+            elif response.status_code == 401:
+                logger.error(f"Registration failed: Unauthorized. Response content: {response.text}")
+                return False, f"Registration failed: Unauthorized. {response.text}"
+            else:
+                logger.error(f"Unexpected status code: {response.status_code}. Response content: {response.text}")
+                return False, f"Registration failed: Unexpected error (status code: {response.status_code})"
+        except Exception as e:
+            logger.exception(f"Error during registration: {str(e)}")
+            return False, f"Registration failed: {str(e)}"
+
+    def get_dashboard(self) -> Tuple[bool, str]:
+        """Fetches the member's dashboard from the CredEx API"""
+        self.refresh_member_info(reset=True, silent=True, init=False)
+
+        logger.info("Fetching member dashboard")
+        logger.info(f"User: {self.bot_service.state.jwt_token}")
+
+        url = f"{self.base_url}/getMemberDashboardByPhone"
+        logger.info(f"Dashboard URL: {url}")
+
+        payload = json.dumps({"phone": self.bot_service.user.mobile_number})
+        headers = self._get_headers()
+
+        try:
+            response = self._make_api_request(url, headers, payload)
+            if response.status_code == 200:
+                response_data = response.json()
+                logger.info("Dashboard fetched successfully")
+                return True, response_data
+            elif response.status_code == 401:
+                self.login()
+                response = self._make_api_request(url, headers, payload)
+                if response.status_code == 200:
+                    response_data = response.json()
+                    logger.info("Dashboard fetched successfully")
+                    return True, response_data
+                logger.error(f"Dashboard fetch failed: Unauthorized. Response content: {response.text}")
+                return False, "Dashboard fetch failed: Unauthorized"
+            else:
+                logger.error(f"Unexpected status code: {response.status_code}. Response content: {response.text}")
+                return False, f"Dashboard fetch failed: Unexpected error (status code: {response.status_code})"
+        except Exception as e:
+            logger.exception(f"Error during dashboard fetch: {str(e)}")
+            return False, f"Dashboard fetch failed: {str(e)}"
+
+    @staticmethod
+    def _get_basic_auth_header(phone_number):
         credentials = f"{phone_number}:{phone_number}"
         encoded_credentials = base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
         return f"Basic {encoded_credentials}"
@@ -86,10 +165,10 @@ class APIInteractions:
             'Content-Type': 'application/json',
             'WHATSAPP_BOT_API_KEY': config('WHATSAPP_BOT_API_KEY'),
         }
-        
+
         # Add JWT token if available
-        if hasattr(self.bot_service.user, 'jwt_token') and self.bot_service.user.jwt_token:
-            headers['Authorization'] = f"Bearer {self.bot_service.user.jwt_token}"
+        if self.bot_service.state.jwt_token:
+            headers['Authorization'] = f"Bearer {self.bot_service.user.state.jwt_token}"
 
         # Add X-Github-Token only for dev environment and if it's set
         if self.env == 'dev' and config('X_GITHUB_TOKEN', default=None):
@@ -103,7 +182,8 @@ class APIInteractions:
             self._send_first_message()
 
     def _send_delay_message(self):
-        if self.bot_service.state.stage != "handle_action_register" and not cache.get(f"{self.bot_service.user.mobile_number}_interracted"):
+        if self.bot_service.state.stage != "handle_action_register" and not cache.get(
+                f"{self.bot_service.user.mobile_number}_interracted"):
             CredexWhatsappService(payload={
                 "messaging_product": "whatsapp",
                 "preview_url": False,
@@ -112,7 +192,7 @@ class APIInteractions:
                 "type": "text",
                 "text": {"body": "Please wait while we process your request..."}
             }).send_message()
-            cache.set(f"{self.bot_service.user.mobile_number}_interracted", True, 60*15)
+            cache.set(f"{self.bot_service.user.mobile_number}_interracted", True, 60 * 15)
 
     def _send_first_message(self):
         # Instead of fetching from the database, we'll use a hardcoded message
@@ -126,7 +206,8 @@ class APIInteractions:
             "text": {"body": first_message}
         }).send_message()
 
-    def _make_api_request(self, url, headers, payload):
+    @staticmethod
+    def _make_api_request(url, headers, payload):
         logger.info(f"Sending API request to: {url}")
         logger.info(f"Headers: {headers}")
         logger.info(f"Payload: {payload}")
@@ -136,9 +217,10 @@ class APIInteractions:
         logger.info(f"API Response Content: {response.text[:500]}...")  # Log only the first 500 characters
         return response
 
-    def _process_api_response(self, response):
-        if response.status_code != 200:
-            raise requests.exceptions.RequestException(f"API returned status code {response.status_code}")
+    @staticmethod
+    def _process_api_response(response):
+        # if response.status_code != 200:
+        #     raise requests.exceptions.RequestException(f"API returned status code {response.status_code}")
 
         content_type = response.headers.get('Content-Type', '')
         if 'application/json' not in content_type:
@@ -153,8 +235,11 @@ class APIInteractions:
             current_state['member'].update(response_data)
         logger.info("Current state updated")
 
-    def _handle_successful_refresh(self, current_state, state):
+    def _handle_successful_refresh(self, current_state, state, member_info=dict):
         logger.info("Refresh successful")
+        if member_info:
+            current_state['member'] = member_info
+
         state.update_state(
             state=current_state,
             stage='handle_action_select_profile',
@@ -171,7 +256,7 @@ class APIInteractions:
             update_from="refresh",
             option="handle_action_register"
         )
-        return wrap_text(f"An error occurred: {error_message}. Please try again.", 
-                                                self.bot_service.user.mobile_number, 
-                                                extra_rows=[{"id": '1', "title": "Become a member"}], 
-                                                include_menu=False)
+        return wrap_text(f"An error occurred: {error_message}. Please try again.",
+                         self.bot_service.user.mobile_number,
+                         extra_rows=[{"id": '1', "title": "Become a member"}],
+                         include_menu=False)

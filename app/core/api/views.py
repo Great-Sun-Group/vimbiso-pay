@@ -13,6 +13,7 @@ from core.config.constants import CachedUser
 from core.utils.utils import CredexWhatsappService
 from core.api.models import Message
 
+
 class CredexCloudApiWebhook(APIView):
     """Cloud Api Webhook"""
     permission_classes = []
@@ -22,7 +23,7 @@ class CredexCloudApiWebhook(APIView):
     def post(request):
         payload = request.data.get('entry')[0].get('changes')[0].get('value')
         # print("INCOMING >> ", request.data)
-        
+
         if payload['metadata']['phone_number_id'] != config('WHATSAPP_PHONE_NUMBER_ID'):
             # print(payload['metadata']['phone_number_id'])
             return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
@@ -30,17 +31,18 @@ class CredexCloudApiWebhook(APIView):
             phone_number_id = payload['metadata'].get('phone_number_id')
             message = payload['messages'][0]
             message_type = message['type']
-            contact = payload['contacts'][0] if message_type != "system" else  payload['messages'][0].get("wa_id")
-            
-            if message_type == "system" or message.get('system') or phone_number_id != config('WHATSAPP_PHONE_NUMBER_ID'):
+            contact = payload['contacts'][0] if message_type != "system" else payload['messages'][0].get("wa_id")
+
+            if message_type == "system" or message.get('system') or phone_number_id != config(
+                    'WHATSAPP_PHONE_NUMBER_ID'):
                 JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-            
+
             if message_type == "text":
                 payload['body'] = message['text']['body']
-                
+
             elif message_type == "button":
                 payload['body'] = message['button']['payload']
-                
+
             elif message_type == "interactive":
                 if message.get('interactive'):
                     if message['interactive']['type'] == "button_reply":
@@ -85,7 +87,7 @@ class CredexCloudApiWebhook(APIView):
             elif message_type == "video":
                 video_id = message['video']['id']
                 headers = {
-                    'Authorization': 'Bearer ' +config('WHATSAPP_ACCESS_TOKEN')
+                    'Authorization': 'Bearer ' + config('WHATSAPP_ACCESS_TOKEN')
                 }
                 file = requests.request(
                     "GET", url=f"https://graph.facebook.com/v18.0/{video_id}", headers=headers, data={}).json()
@@ -98,20 +100,19 @@ class CredexCloudApiWebhook(APIView):
             elif message_type == "audio":
                 audio_id = message['audio']['id']
                 headers = {
-                    'Authorization': 'Bearer ' +config('WHATSAPP_ACCESS_TOKEN')
+                    'Authorization': 'Bearer ' + config('WHATSAPP_ACCESS_TOKEN')
                 }
                 file = requests.request(
                     "GET", url=f"https://graph.facebook.com/v18.0/{audio_id}", headers=headers, data={}).json()
                 payload['body'] = file.get('url')
                 payload['file_name'] = file.get('name')
-            
+
             elif message_type == "order":
                 payload['body'] = message['order']['product_items']
-            
+
             elif message_type == "nfm_reply":
                 payload['body'] = message['nfm_reply']['response_json']
-            
-            
+
             if f"{payload['body']}".lower() in ["ok", "thanks", "thank you"]:
                 CredexWhatsappService(payload={
                     "messaging_product": "whatsapp",
@@ -119,12 +120,12 @@ class CredexCloudApiWebhook(APIView):
                     "to": contact['wa_id'],
                     "type": "text",
                     "text": {
-                        "body":  '🙏'
+                        "body": '🙏'
                     }
-                },phone_number_id=payload['metadata']['phone_number_id']).notify()
-                
+                }, phone_number_id=payload['metadata']['phone_number_id']).notify()
+
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-            
+
             elif message_type == "reaction":
                 payload['body'] = message['reaction'].get('emoji')
                 if f"{payload['body']}".lower() in ["👍", "🙏", "❤️", "ok", "thanks", "thank you"]:
@@ -134,14 +135,13 @@ class CredexCloudApiWebhook(APIView):
                         "to": contact['wa_id'],
                         "type": "text",
                         "text": {
-                            "body":  '🙏'
+                            "body": '🙏'
                         }
-                    },phone_number_id=payload['metadata']['phone_number_id']).notify()
+                    }, phone_number_id=payload['metadata']['phone_number_id']).notify()
                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             if not contact:
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-            
 
             print("||||||||>>>>>>")
             # Format the message
@@ -156,43 +156,41 @@ class CredexCloudApiWebhook(APIView):
                 "fileid": payload.get('file_id', None),
                 "caption": payload.get('caption', None),
             }
-            # print(formatted_message)
             user = CachedUser(formatted_message.get('from'))
-            print("USER", user)
-                
             state = user.state
-            current_state = state.get_state(user)
-            if not isinstance(current_state, dict):
-                current_state = current_state.state
-            message_stamp = datetime.fromtimestamp(int(message['timestamp']))
-
+            
             # Calculate the time difference in seconds
+            message_stamp = datetime.fromtimestamp(int(message['timestamp']))
             if (datetime.now() - message_stamp).total_seconds() > 20:
                 print("IGNORING OLD HOOK ", message_stamp)
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            print(f"Credex {state.stage}<|>{state.option}] RECEIVED - > ", payload['body']," FROM ",  formatted_message.get('from'), " @ ", message_stamp, f"({(datetime.now() - message_stamp).total_seconds()} sec ago)" )
+            print(f"Credex {state.stage}<|>{state.option}] RECEIVED - > ", payload['body'], " FROM ",
+                  formatted_message.get('from'), " @ ", message_stamp,
+                  f"({(datetime.now() - message_stamp).total_seconds()} sec ago)")
 
             try:
                 print("INN ", formatted_message)
                 service = CredexBotService(payload=formatted_message, user=user)
                 print(service.response)
-                CredexWhatsappService(payload=service.response, phone_number_id=payload['metadata']['phone_number_id']).send_message()
+                CredexWhatsappService(payload=service.response,
+                                      phone_number_id=payload['metadata']['phone_number_id']).send_message()
             except Exception as e:
                 print(e)
             print(f"TOOK  {(datetime.now() - message_stamp).total_seconds()} s")
-                
+
             return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
         return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
     def get(self, request, *args, **kwargs):
         print(request.query_params)
         return HttpResponse(request.query_params.get('hub.challenge'), 200)
-    
+
 
 class WelcomeMessage(APIView):
     """ Message"""
     parser_classes = (JSONParser,)
+
     @staticmethod
     def post(request):
         if request.data.get('message'):
@@ -203,18 +201,19 @@ class WelcomeMessage(APIView):
                 obj.messsage = request.data.get('message')
                 obj.save()
         return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
-    
+
 
 class WipeCache(APIView):
     """ Message"""
     parser_classes = (JSONParser,)
+
     @staticmethod
     def post(request):
         from django.core.cache import cache
 
         cache.delete(request.data.get("number"))
         return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
-    
+
 
 class CredexSendMessageWebhook(APIView):
     """Cloud Api Webhook"""
@@ -222,7 +221,8 @@ class CredexSendMessageWebhook(APIView):
 
     @staticmethod
     def post(request):
-        if request.headers.get('whatsappBotAPIkey') == config('WHATSAPP_BOT_API_KEY') or request.headers.get('Whatsappbotapikey') == config('WHATSAPP_BOT_API_KEY') :
+        if request.headers.get('whatsappBotAPIkey') == config('WHATSAPP_BOT_API_KEY') or request.headers.get(
+                'Whatsappbotapikey') == config('WHATSAPP_BOT_API_KEY'):
             if request.data.get('phoneNumber') and request.data.get('memberName') and request.data.get('message'):
                 payload = {
                     "messaging_product": "whatsapp",
@@ -230,8 +230,8 @@ class CredexSendMessageWebhook(APIView):
                     "to": request.data.get('phoneNumber'),
                     "type": "template",
                     "template": {
-                            "name": "incoming_notification",
-                            "language": {
+                        "name": "incoming_notification",
+                        "language": {
                             "code": "en_US"
                         },
                         "components": [

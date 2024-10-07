@@ -10,6 +10,26 @@ from .whatsapp_forms import registration_form
 
 logger = logging.getLogger(__name__)
 
+
+def validate_input(input_text):
+    if len(input_text) > 1000:
+        raise InvalidInputException("Input is too long. Please limit your message to 1000 characters.")
+
+    if '@' in input_text:
+        try:
+            validate_email(input_text)
+        except ValidationError:
+            raise InvalidInputException("Invalid email format.")
+
+    disallowed_chars = ['<', '>', '{', '}', '[', ']']
+    if any(char in input_text for char in disallowed_chars):
+        raise InvalidInputException("Input contains disallowed characters.")
+
+
+def sanitize_input(input_text):
+    return escape(input_text)
+
+
 class MessageHandler:
     def __init__(self, bot_service):
         self.bot_service = bot_service
@@ -20,75 +40,69 @@ class MessageHandler:
             return self.bot_service.action_handler.handle_default_action()
 
         try:
-            sanitized_body = self.sanitize_input(self.bot_service.body)
-            self.validate_input(sanitized_body)
-            
+            sanitized_body = sanitize_input(self.bot_service.body)
+            validate_input(sanitized_body)
+
             if self.is_greeting(sanitized_body):
                 return self.handle_greeting()
-            
+
             return router.handle(sanitized_body, self.bot_service)
         except InvalidInputException as e:
             logger.error(f"Input validation failed: {str(e)}")
             return wrap_text(f"Invalid input: {str(e)}", self.bot_service.user.mobile_number)
 
-    def sanitize_input(self, input_text):
-        return escape(input_text)
-
-    def validate_input(self, input_text):
-        if len(input_text) > 1000:
-            raise InvalidInputException("Input is too long. Please limit your message to 1000 characters.")
-
-        if '@' in input_text:
-            try:
-                validate_email(input_text)
-            except ValidationError:
-                raise InvalidInputException("Invalid email format.")
-
-        disallowed_chars = ['<', '>', '{', '}', '[', ']']
-        if any(char in input_text for char in disallowed_chars):
-            raise InvalidInputException("Input contains disallowed characters.")
-
-    def is_greeting(self, message):
+    @staticmethod
+    def is_greeting(message):
         return message.lower().strip() in GREETINGS
-    
+
     def handle_action_register(self):
         logger.info("Handling offer credex action")
         print(self.bot_service.state.get_state())
 
-
     def handle_greeting(self):
         logger.info("Handling greeting")
         success, message = self.bot_service.api_interactions.login()
-        
+
         if success:
-            self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_select_profile", "handle", "handle_greeting")
-            return wrap_text(f"Welcome back! {message}\nHow can I assist you today?", self.bot_service.user.mobile_number)
+            self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_select_profile",
+                                                "handle", "handle_greeting")
+            return wrap_text(f"Welcome back! {message}\nHow can I assist you today?",
+                             self.bot_service.user.mobile_number)
         else:
             if "new user" in message.lower() or "invalid phone" in message.lower():
-                self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_register", "handle", "handle_greeting")
-                return wrap_text(REGISTER.format(message=message), self.bot_service.user.mobile_number, extra_rows=[{"id": '1', "title": "Become a member"}])
+                self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_register", "handle",
+                                                    "handle_greeting")
+                return wrap_text(REGISTER.format(message=message), self.bot_service.user.mobile_number,
+                                 extra_rows=[{"id": '1', "title": "Become a member"}])
             else:
-                self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_register", "handle", "handle_greeting")
+                self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_register", "handle",
+                                                    "handle_greeting")
                 return registration_form(self.bot_service.user.mobile_number, message=message)
             # wrap_text(f"Login failed: {message}\nPlease try again later or contact support.", )
 
     def handle_offer_credex(self):
         logger.info("Handling offer credex action")
-        self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_offer_credex", "handle", "handle_action_offer_credex")
+        self.bot_service.state.update_state(
+            self.bot_service.current_state,
+            "handle_action_offer_credex",
+            "handle",
+            "handle_action_offer_credex"
+        )
         return self.bot_service.offer_credex_handler.handle_action_offer_credex()
 
     def handle_action(self):
-        if f"{self.bot_service.body.lower()}" in GREETINGS:
+        if f"{self.bot_service.body}".lower() in GREETINGS:
             self.bot_service.body = "handle_action_menu"
+            self.bot_service.state.reset_state()
 
         if f"{self.bot_service.body}".startswith("handle_"):
-            pass
-
-        action_method = getattr(self.bot_service.action_handler, self.bot_service.body, None)
-        print("Action ", action_method, self.bot_service.body)
+            action = self.bot_service.body
+        else:
+            action = f"{self.bot_service.user.state.stage}"
+        print("ACTION TO EXECUTE : ", action)
+        action_method = getattr(self.bot_service.action_handler, action, None)
         if action_method and callable(action_method):
             logger.info(f"Handling action: {self.bot_service.body}")
-            self.bot_service.state.update_state(self.bot_service.current_state, self.bot_service.body, "handle", self.bot_service.body)
             return action_method()
         else:
             logger.warning(f"Action method {self.bot_service.body} not found")

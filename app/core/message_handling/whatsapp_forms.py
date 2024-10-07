@@ -19,10 +19,10 @@ def registration_form(mobile_number, message):
                     "flow_message_version": "3",
                     "flow_action": "navigate",
                     "flow_token": "not-used",
-                    "flow_id": "1048499583563106",
+                    "flow_id": "3686836301579704",
                     "flow_cta": "Create Account",
                     "flow_action_payload": {
-                        "screen": "OPEN_ACCOUNT"
+                        "screen": "MEMBER_SIGNUP"
                     }
                 }
             }
