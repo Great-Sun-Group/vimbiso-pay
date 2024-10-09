@@ -53,7 +53,7 @@ class CachedUserState:
     def update_state(self, state: dict, update_from, stage=None, option=None, direction=None):
         """Get wallets by user."""
         # pylint: disable=no-member
-        print("UPDATING FROM ", update_from, stage, option, direction, state)
+        # print("UPDATING FROM ", update_from, stage, option, direction, state)
         cache.set(f"{self.user.mobile_number}", state, timeout=60 * 5)
         if stage:
             cache.set(f"{self.user.mobile_number}_stage", stage, timeout=60 * 5)
@@ -72,7 +72,7 @@ class CachedUserState:
     
     def set_jwt_token(self, jwt_token):
         cache.set(f"{self.user.mobile_number}_jwt_token", jwt_token, timeout=60 * 5)
-        print("SETTING JWT TOKEN", jwt_token)
+        # print("SETTING JWT TOKEN", jwt_token)
         self.jwt_token = cache.get(f"{self.user.mobile_number}_jwt_token")
 
     def reset_state(self):

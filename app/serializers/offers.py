@@ -1,8 +1,9 @@
-from rest_framework import serializers 
+from rest_framework import serializers
 import json, os, requests, re
 from decouple import config
 
 from core.utils.utils import convert_timestamp_to_date
+
 
 class OfferCredexSerializer(serializers.Serializer):
     authorizer_member_id = serializers.CharField(required=True)
@@ -17,9 +18,8 @@ class OfferCredexSerializer(serializers.Serializer):
         attrs['full_name'] = f"{attrs.get('first_name')} {attrs.get('last_name')}"
         if not re.match(r'(?i)(?:[a-zA-Z])+(?:\s[a-zA-Z]+)*(?:\s[a-zA-Z]+)?$', attrs.get('full_name')):
             raise serializers.ValidationError({"full_name": "Invalid name(s)"})
-        
 
-        url = f"{config('CREDEX')}/getAccountByHandle"
+        url = f"{config('MYCREDEX_APP_URL_2')}api/v1getAccountByHandle"
 
         payload = json.dumps({
             "accountHandle": attrs.get('handle').lower()
@@ -53,5 +53,5 @@ class OfferCredexSerializer(serializers.Serializer):
         except Exception as e:
             print("EROR : ", response.content, e)
             pass
-            
+
         raise serializers.ValidationError({"recipient": "Recipient Account Not Found"})

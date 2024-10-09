@@ -12,7 +12,7 @@ ACCOUNT_SELECTION = """
 
 HOME_1 = """
 > *💳 {account}*
-accountHandle: {handle}
+*Account Handle:* {handle}
 
 {balance}
 
@@ -33,7 +33,7 @@ accountHandle: {handle}
 
 HOME_2 = """
 > *💳 {account}*
-accountHandle: {handle}
+*Account Handle:* {handle}
 
 {balance}
 
@@ -210,10 +210,8 @@ form.
 OFFER_CREDEX = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-To issue a secured credex, enter the 
-details into this form.
-
-
+ To issue a secured credex, enter the 
+ details of the transfer into this form.
 {message}
 """
 

@@ -9,6 +9,7 @@ from django.core.cache import cache
 import os
 import base64
 from typing import Tuple
+from ..config.constants import *
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +24,9 @@ class APIInteractions:
     def refresh_member_info(self, reset=True, silent=True, init=False):
         """Refreshes member info by making an API call to CredEx"""
         logger.info("Refreshing member info")
-        state = self.bot_service.state
-        current_state = state.get_state(self.bot_service.user)
+        user = CachedUser(self.bot_service.user.mobile_number)
+        state = user.state
+        current_state = state.get_state(user)
 
         if not isinstance(current_state, dict):
             current_state = current_state.state
@@ -37,7 +39,7 @@ class APIInteractions:
             self._handle_reset_and_init(reset, silent, init)
             response = self._make_api_request(url, headers, payload)
             response_data = self._process_api_response(response)
-            
+
             if "Authentication required" in response_data.get('message', ""):
                 success, message = self.login()
                 if success:
@@ -45,6 +47,7 @@ class APIInteractions:
                     response_data = self._process_api_response(response)
                 else:
                     if "Member not found" in response_data.get("message", ""):
+                        print("Member not found ======>>>>>> ", response_data)
                         return self.bot_service.action_handler.handle_action_register(register=True)
             return self._handle_successful_refresh(current_state, state, member_info=response_data)
         except Exception as e:
@@ -154,6 +157,36 @@ class APIInteractions:
             logger.exception(f"Error during dashboard fetch: {str(e)}")
             return False, f"Dashboard fetch failed: {str(e)}"
 
+    def offer_credex(self, payload):
+        """Sends an offer to the CredEx API"""
+        logger.info("Attempting to offer CredEx")
+
+        url = f"{self.base_url}/offerCredex"
+        logger.info(f"Offer URL: {url}")
+
+        headers = self._get_headers()
+        try:
+            response = self._make_api_request(url, headers, payload)
+            if response.status_code == 200:
+                response_data = response.json()
+                if response_data.get('status') == 'success':
+                    logger.info("Offer successful")
+                    return True, "Offer successful"
+                else:
+                    logger.error("Offer failed")
+                    return False, "Offer failed"
+            elif response.status_code == 400:
+                logger.error(f"Offer failed: Bad request. Response content: {response.json().get('message')}")
+                return False, f"Offer failed: {response.json().get('message')}"
+            elif response.status_code == 401:
+                logger.error(f"Offer failed: Unauthorized. Response content: {response.text}")
+                return False, f"Offer failed: Unauthorized. {response.text}"
+            else:
+                logger.error(f"Unexpected status code: {response.status_code}. Response content: {response.text}")
+                return False, f"Offer failed: Unexpected error (status code: {response.status_code})"
+        except Exception as e:
+            logger.exception(f"Error during offer: {str(e)}")
+            return False, f"Offer failed: {str(e)}"
     @staticmethod
     def _get_basic_auth_header(phone_number):
         credentials = f"{phone_number}:{phone_number}"
@@ -228,25 +261,42 @@ class APIInteractions:
 
         return response.json()
 
-    def _update_current_state(self, response_data, current_state, reset):
+    @staticmethod
+    def _update_current_state(response_data, current_state, reset):
         if reset:
             current_state['member'] = response_data
         else:
             current_state['member'].update(response_data)
         logger.info("Current state updated")
 
-    def _handle_successful_refresh(self, current_state, state, member_info=dict):
+    @staticmethod
+    def _handle_successful_refresh(current_state, state, member_info=dict):
         logger.info("Refresh successful")
         if member_info:
-            current_state['member'] = member_info
-
+            if current_state.get('member'):
+                current_state['member'].update(member_info)
+            else:
+                current_state['member'] = member_info
+                if not current_state.get('default_profile', {}):
+                    if current_state.get('member', {}).get('memberDashboard', {}).get('memberTier', 1) < 2:
+                        print("SETTING DEFAULT PROFILE ", current_state.get('default_profile'))
+                        try:
+                            current_state.update({'default_profile': member_info['accountDashboards'][0]})
+                            print("SETTING DEFAULT PROFILE ", current_state.get('default_profile'))
+                        except Exception as e:
+                            print("ERROR SETTING DEFAULT PROFILE ", e)
+                            current_state['default_profile'] = {}
+                    else:
+                        current_state['default_profile'] = {}
+        # print("SAVING STATE ", current_state)
         state.update_state(
             state=current_state,
             stage='handle_action_select_profile',
             update_from="refresh",
             option="select_account_to_use"
         )
-        return self.bot_service.action_handler.handle_action_select_profile()
+        print("STATE UPDATED ", state.get_state(state.user))
+        return None
 
     def _handle_failed_refresh(self, current_state, state, error_message):
         logger.error(f"Refresh failed: {error_message}")

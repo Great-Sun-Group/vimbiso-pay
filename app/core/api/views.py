@@ -143,7 +143,7 @@ class CredexCloudApiWebhook(APIView):
             if not contact:
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            print("||||||||>>>>>>")
+            # print("||||||||>>>>>>")
             # Format the message
             formatted_message = {
                 "to": payload['metadata']['display_phone_number'],
@@ -158,7 +158,7 @@ class CredexCloudApiWebhook(APIView):
             }
             user = CachedUser(formatted_message.get('from'))
             state = user.state
-            
+
             # Calculate the time difference in seconds
             message_stamp = datetime.fromtimestamp(int(message['timestamp']))
             if (datetime.now() - message_stamp).total_seconds() > 20:
@@ -170,11 +170,11 @@ class CredexCloudApiWebhook(APIView):
                   f"({(datetime.now() - message_stamp).total_seconds()} sec ago)")
 
             try:
-                print("INN ", formatted_message)
                 service = CredexBotService(payload=formatted_message, user=user)
-                print(service.response)
-                CredexWhatsappService(payload=service.response,
-                                      phone_number_id=payload['metadata']['phone_number_id']).send_message()
+                CredexWhatsappService(
+                    payload=service.response,
+                    phone_number_id=payload['metadata']['phone_number_id']
+                ).send_message()
             except Exception as e:
                 print(e)
             print(f"TOOK  {(datetime.now() - message_stamp).total_seconds()} s")
