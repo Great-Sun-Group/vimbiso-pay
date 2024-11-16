@@ -1,45 +1,18 @@
-# Provider configuration
-provider "aws" {
-  region = var.aws_region
-}
+# ECS Cluster
+resource "aws_ecs_cluster" "main" {
+  name = "vimbiso-pay-cluster-${var.environment}"
 
-# ECS cluster
-resource "aws_ecs_cluster" "credex_cluster" {
-  name = "credex-cluster-${var.environment}"
-  
   setting {
     name  = "containerInsights"
     value = "enabled"
   }
-  
-  tags = merge(var.common_tags, {
-    Name = "credex-cluster-${var.environment}"
-  })
+
+  tags = var.common_tags
 }
 
-# Validate configurations
-resource "null_resource" "validations" {
-  lifecycle {
-    precondition {
-      condition     = var.ecs_task_cpu != null && tonumber(var.ecs_task_cpu) > 0
-      error_message = "Invalid ECS task CPU configuration"
-    }
-    
-    precondition {
-      condition     = var.ecs_task_memory != null && tonumber(var.ecs_task_memory) > 0
-      error_message = "Invalid ECS task memory configuration"
-    }
-    
-    precondition {
-      condition     = var.app_port > 0 && var.app_port < 65536
-      error_message = "Invalid application port. Must be between 1 and 65535"
-    }
-  }
-}
-
-# ECS task definition
-resource "aws_ecs_task_definition" "credex_core" {
-  family                   = "credex-core-${var.environment}"
+# ECS Task Definition
+resource "aws_ecs_task_definition" "app" {
+  family                   = "vimbiso-pay-${var.environment}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.ecs_task_cpu
@@ -49,26 +22,25 @@ resource "aws_ecs_task_definition" "credex_core" {
 
   container_definitions = jsonencode([
     {
-      name  = "credex-core"
-      image = var.docker_image
+      name         = "vimbiso-pay-${var.environment}"
+      image        = var.docker_image
+      essential    = true
+      environment  = [
+        { name = "DJANGO_ENV", value = var.environment },
+        { name = "DJANGO_SECRET", value = var.django_secret },
+        { name = "MYCREDEX_APP_URL", value = var.mycredex_app_url },
+        { name = "WHATSAPP_BOT_API_KEY", value = var.whatsapp_bot_api_key },
+        { name = "WHATSAPP_API_URL", value = var.whatsapp_api_url },
+        { name = "WHATSAPP_ACCESS_TOKEN", value = var.whatsapp_access_token },
+        { name = "WHATSAPP_PHONE_NUMBER_ID", value = var.whatsapp_phone_number_id }
+      ]
       portMappings = [
         {
-          containerPort = var.app_port
-          hostPort     = var.app_port
-          protocol     = "tcp"
+          containerPort = 8000
+          hostPort      = 8000
+          protocol      = "tcp"
         }
       ]
-      environment = [
-        { name = "NODE_ENV", value = var.environment },
-        { name = "PORT", value = tostring(var.app_port) }
-      ]
-      healthCheck = {
-        command     = ["CMD-SHELL", "node -e 'const http = require(\"http\"); const options = { hostname: \"localhost\", port: process.env.PORT, path: \"/health\", timeout: 2000 }; const req = http.get(options, (res) => process.exit(res.statusCode === 200 ? 0 : 1)); req.on(\"error\", () => process.exit(1));'"]
-        interval    = 60
-        timeout     = 30
-        retries     = 3
-        startPeriod = 180
-      }
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -77,54 +49,91 @@ resource "aws_ecs_task_definition" "credex_core" {
           awslogs-stream-prefix = "ecs"
         }
       }
-      essential = true
-      ulimits = [
-        {
-          name      = "nofile"
-          softLimit = 65536
-          hardLimit = 65536
-        }
-      ]
-      mountPoints = []
-      volumesFrom = []
+      healthCheck = {
+        command     = ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 60
+      }
     }
   ])
 
-  tags = merge(var.common_tags, {
-    Name = "credex-core-task-definition-${var.environment}"
-  })
+  tags = var.common_tags
 }
 
-# ECS service
-resource "aws_ecs_service" "credex_core" {
-  name            = "credex-core-service-${var.environment}"
-  cluster         = aws_ecs_cluster.credex_cluster.id
-  task_definition = aws_ecs_task_definition.credex_core.arn
-  desired_count   = 1
-  launch_type     = "FARGATE"
+# ECS Service
+resource "aws_ecs_service" "app" {
+  name                               = "vimbiso-pay-service-${var.environment}"
+  cluster                           = aws_ecs_cluster.main.id
+  task_definition                   = aws_ecs_task_definition.app.arn
+  desired_count                     = 2
+  deployment_minimum_healthy_percent = 50
+  deployment_maximum_percent        = 200
+  launch_type                       = "FARGATE"
+  scheduling_strategy               = "REPLICA"
+  platform_version                  = "LATEST"
 
   network_configuration {
-    subnets          = var.private_subnet_ids
     security_groups  = [var.ecs_tasks_security_group_id]
+    subnets         = var.private_subnet_ids
     assign_public_ip = false
   }
 
   load_balancer {
     target_group_arn = var.target_group_arn
-    container_name   = "credex-core"
-    container_port   = var.app_port
+    container_name   = "vimbiso-pay-${var.environment}"
+    container_port   = 8000
   }
 
-  health_check_grace_period_seconds = 300
-
-  enable_execute_command = true
-
-  deployment_circuit_breaker {
-    enable   = true
-    rollback = true
+  deployment_controller {
+    type = "ECS"
   }
 
-  tags = merge(var.common_tags, {
-    Name = "credex-core-service-${var.environment}"
-  })
+  lifecycle {
+    ignore_changes = [task_definition, desired_count]
+  }
+
+  tags = var.common_tags
+}
+
+# Auto Scaling
+resource "aws_appautoscaling_target" "app" {
+  max_capacity       = 4
+  min_capacity       = 2
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+# CPU Auto Scaling
+resource "aws_appautoscaling_policy" "cpu" {
+  name               = "vimbiso-pay-cpu-autoscaling-${var.environment}"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.app.resource_id
+  scalable_dimension = aws_appautoscaling_target.app.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.app.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value = 80
+  }
+}
+
+# Memory Auto Scaling
+resource "aws_appautoscaling_policy" "memory" {
+  name               = "vimbiso-pay-memory-autoscaling-${var.environment}"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.app.resource_id
+  scalable_dimension = aws_appautoscaling_target.app.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.app.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+    }
+    target_value = 80
+  }
 }

@@ -1,11 +1,11 @@
 # Required variables
 variable "environment" {
-  description = "The deployment environment (development, staging, production)"
+  description = "The deployment environment (staging, production)"
   type        = string
 
   validation {
-    condition     = contains(["production", "development", "staging"], var.environment)
-    error_message = "Environment must be one of: production, development, staging"
+    condition     = contains(["production", "staging"], var.environment)
+    error_message = "Environment must be one of: production, staging"
   }
 }
 
@@ -14,45 +14,38 @@ variable "docker_image" {
   type        = string
 }
 
-# Neo4j related variables needed by databases module
-variable "neo_4j_ledger_space_bolt_url" {
-  description = "The Neo4j Bolt URL for Ledger Space"
+# Django Environment Variables
+variable "django_secret" {
+  description = "Django secret key"
   type        = string
   sensitive   = true
 }
 
-variable "neo_4j_search_space_bolt_url" {
-  description = "The Neo4j Bolt URL for Search Space"
+variable "mycredex_app_url" {
+  description = "URL for the Credex Core API"
+  type        = string
+}
+
+# WhatsApp Integration Variables
+variable "whatsapp_bot_api_key" {
+  description = "API key for WhatsApp bot"
   type        = string
   sensitive   = true
 }
 
-variable "neo_4j_ledger_space_user" {
-  description = "The username for the Neo4j Ledger Space"
+variable "whatsapp_api_url" {
+  description = "WhatsApp API URL"
+  type        = string
+}
+
+variable "whatsapp_access_token" {
+  description = "WhatsApp access token"
   type        = string
   sensitive   = true
 }
 
-variable "neo_4j_search_space_user" {
-  description = "The username for the Neo4j Search Space"
-  type        = string
-  sensitive   = true
-}
-
-variable "neo_4j_ledger_space_password" {
-  description = "The password for the Neo4j Ledger Space"
-  type        = string
-  sensitive   = true
-}
-
-variable "neo_4j_search_space_password" {
-  description = "The password for the Neo4j Search Space"
-  type        = string
-  sensitive   = true
-}
-
-variable "neo4j_enterprise_license" {
-  description = "The Neo4j Enterprise License"
+variable "whatsapp_phone_number_id" {
+  description = "WhatsApp phone number ID"
   type        = string
   sensitive   = true
 }

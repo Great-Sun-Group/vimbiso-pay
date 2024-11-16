@@ -1,74 +1,66 @@
+# VPC
 output "vpc_id" {
-  value       = module.shared_resources.vpc_id
   description = "The ID of the VPC"
+  value       = aws_vpc.main.id
 }
 
 output "private_subnet_ids" {
-  value       = module.shared_resources.private_subnet_ids
-  description = "The IDs of the private subnets"
+  description = "List of private subnet IDs"
+  value       = aws_subnet.private[*].id
 }
 
 output "public_subnet_ids" {
-  value       = module.shared_resources.public_subnet_ids
-  description = "The IDs of the public subnets"
+  description = "List of public subnet IDs"
+  value       = aws_subnet.public[*].id
 }
 
-output "subnet_ids" {
-  value       = concat(module.shared_resources.private_subnet_ids, module.shared_resources.public_subnet_ids)
-  description = "The IDs of all subnets (private and public)"
-}
-
-output "neo4j_security_group_id" {
-  value       = module.shared_resources.neo4j_security_group_id
-  description = "The ID of the Neo4j security group"
-}
-
-output "key_pair_name" {
-  value       = module.shared_resources.key_pair_name
-  description = "The name of the key pair"
-}
-
+# Security Groups
 output "alb_security_group_id" {
-  value       = module.shared_resources.alb_security_group_id
-  description = "The ID of the ALB security group"
+  description = "Security group ID for the ALB"
+  value       = aws_security_group.alb.id
 }
 
 output "ecs_tasks_security_group_id" {
-  value       = module.shared_resources.ecs_tasks_security_group_id
-  description = "The ID of the ECS tasks security group"
+  description = "Security group ID for ECS tasks"
+  value       = aws_security_group.ecs_tasks.id
 }
 
-output "alb_dns_name" {
-  value       = module.shared_resources.alb_dns_name
-  description = "The DNS name of the Application Load Balancer"
-}
-
+# Load Balancer
 output "target_group_arn" {
-  value       = module.shared_resources.target_group_arn
-  description = "The ARN of the target group"
+  description = "ARN of the target group"
+  value       = aws_lb_target_group.app.arn
 }
 
 output "alb_listener" {
-  value       = module.shared_resources.alb_listener
-  description = "The ARN of the ALB listener"
+  description = "ARN of the ALB listener"
+  value       = aws_lb_listener.app.arn
 }
 
+# ECR
 output "ecr_repository_url" {
-  value       = module.shared_resources.ecr_repository_url
-  description = "The URL of the ECR repository"
+  description = "URL of the ECR repository"
+  value       = aws_ecr_repository.app.repository_url
 }
 
+# IAM Roles
 output "ecs_execution_role_arn" {
-  value       = module.shared_resources.ecs_execution_role_arn
-  description = "The ARN of the ECS execution role"
+  description = "ARN of the ECS execution role"
+  value       = aws_iam_role.ecs_execution_role.arn
 }
 
 output "ecs_task_role_arn" {
-  value       = module.shared_resources.ecs_task_role_arn
-  description = "The ARN of the ECS task role"
+  description = "ARN of the ECS task role"
+  value       = aws_iam_role.ecs_task_role.arn
 }
 
+# CloudWatch
 output "cloudwatch_log_group_name" {
-  value       = module.shared_resources.cloudwatch_log_group_name
-  description = "The name of the CloudWatch log group"
+  description = "Name of the CloudWatch log group"
+  value       = aws_cloudwatch_log_group.ecs_logs.name
+}
+
+# Domain
+output "domain" {
+  description = "The domain name for the environment"
+  value       = local.domain
 }

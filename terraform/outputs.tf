@@ -1,46 +1,59 @@
-# VPC outputs
+# Infrastructure Outputs
 output "vpc_id" {
-  value       = module.connectors.vpc_id
   description = "The ID of the VPC"
+  value       = module.connectors.vpc_id
 }
 
-output "subnet_ids" {
-  value       = module.connectors.subnet_ids
-  description = "The IDs of all subnets (private and public)"
+output "private_subnet_ids" {
+  description = "The IDs of the private subnets"
+  value       = module.connectors.private_subnet_ids
 }
 
-output "neo4j_security_group_id" {
-  value       = module.connectors.neo4j_security_group_id
-  description = "The ID of the Neo4j security group"
+output "public_subnet_ids" {
+  description = "The IDs of the public subnets"
+  value       = module.connectors.public_subnet_ids
 }
 
-output "key_pair_name" {
-  value       = module.connectors.key_pair_name
-  description = "The name of the key pair"
+output "ecr_repository_url" {
+  description = "The URL of the ECR repository"
+  value       = module.connectors.ecr_repository_url
 }
 
-output "alb_security_group_id" {
-  value       = module.connectors.alb_security_group_id
-  description = "The ID of the ALB security group"
+output "domain" {
+  description = "The domain name for the environment"
+  value       = module.connectors.domain
 }
 
-# ECS outputs
+# Application Outputs
 output "ecs_cluster_arn" {
-  value       = module.app.ecs_cluster_arn
   description = "The ARN of the ECS cluster"
+  value       = module.app.ecs_cluster_arn
 }
 
-output "ecs_task_definition_arn" {
-  value       = module.app.ecs_task_definition_arn
-  description = "The ARN of the ECS task definition"
+output "ecs_cluster_name" {
+  description = "The name of the ECS cluster"
+  value       = module.app.ecs_cluster_name
 }
 
 output "ecs_service_name" {
-  value       = module.app.ecs_service_name
   description = "The name of the ECS service"
+  value       = module.app.ecs_service_name
 }
 
 output "ecs_service_id" {
-  value       = module.app.ecs_service_id
   description = "The ID of the ECS service"
+  value       = module.app.ecs_service_id
+}
+
+output "ecs_task_definition_arn" {
+  description = "The ARN of the ECS task definition"
+  value       = module.app.ecs_task_definition_arn
+}
+
+output "autoscaling_config" {
+  description = "Auto scaling configuration"
+  value = {
+    min_capacity = module.app.autoscaling_target_min_capacity
+    max_capacity = module.app.autoscaling_target_max_capacity
+  }
 }

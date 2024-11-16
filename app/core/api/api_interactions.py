@@ -13,7 +13,7 @@ class APIInteractions:
     def __init__(self, bot_service):
         self.bot_service = bot_service
         self.env = os.getenv('ENV', 'dev')  # Default to 'dev' if not set
-        self.base_url = f"{config('MYCREDEX_APP_URL')}api/v1"
+        self.base_url = f"{config('MYCREDEX_APP_URL')}v1"
         logger.info(f"Base URL: {self.base_url}")
 
     def refresh_member_info(self, reset=True, silent=True, init=False):

@@ -3,22 +3,37 @@ version: '3.8'
 services:
   web:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile
+      target: development
     ports:
       - "8000:8000"
     environment:
       - DJANGO_SECRET=${DJANGO_SECRET}
-      - DEBUG=${DEBUG}
+      - DEBUG=1
       - REDIS_URL=redis://redis:6379/
+      # WhatsApp Integration
+      - WHATSAPP_API_URL=${WHATSAPP_API_URL}
       - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
       - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
       - WHATSAPP_BOT_API_KEY=${WHATSAPP_BOT_API_KEY}
+      # Credex Core API
+      - MYCREDEX_APP_URL=${MYCREDEX_APP_URL}
+      # Development Settings
+      - ENV=dev
+      - X_GITHUB_TOKEN=${X_GITHUB_TOKEN:-}
+    volumes:
+      - ..:/app
+      - python-packages:/usr/local/lib/python3.10/site-packages/
     depends_on:
       - redis
-    volumes:
-      - .:/app
-    command: ./start_app.sh
+    command: python manage.py runserver 0.0.0.0:8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   redis:
     image: redis:7-alpine
@@ -26,6 +41,13 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
   redis_data:
+  python-packages:
