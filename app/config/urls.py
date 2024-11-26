@@ -4,10 +4,10 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.http import HttpResponse
 from core.api.views import (
-    CredexCloudApiWebhook, 
-    CredexSendMessageWebhook, 
-    WelcomeMessage, 
-    WipeCache 
+    CredexCloudApiWebhook,
+    CredexSendMessageWebhook,
+    WelcomeMessage,
+    WipeCache
 )
 from core.api.tests import test_integrations
 
@@ -28,7 +28,8 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
-    import debug_toolbar # type: ignore
+    import debug_toolbar  # type: ignore
+
     urlpatterns += [
         path('__debug__/', include(debug_toolbar.urls)),
     ]

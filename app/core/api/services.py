@@ -15,8 +15,8 @@ class CredexBotService:
         self.body = self.message['message']
 
         # Load
-        state = self.user.state
-        current_state = state.get_state(self.user)
+        self.user = CachedUser(self.user)
+        current_state = user.state.get_state(user)
         if not isinstance(current_state, dict):
             current_state = current_state.state
 

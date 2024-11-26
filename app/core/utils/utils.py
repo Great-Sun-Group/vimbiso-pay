@@ -3,6 +3,7 @@ from datetime import datetime
 import requests
 from decouple import config
 
+
 def format_synopsis(synopsis, style=None, max_line_length=35):
     formatted_synopsis = ""
     words = synopsis.split()
@@ -19,8 +20,16 @@ def format_synopsis(synopsis, style=None, max_line_length=35):
 
     return formatted_synopsis.strip()
 
-def wrap_text(message, user_mobile_number, proceed_option=False, x_is_menu=False, include_back=False, navigate_is="Respond",
-              extra_rows=[], number=None, back_is_cancel=False, use_buttons=False, yes_or_no=False, custom={}, plain=False, include_menu=True):
+
+def wrap_text(
+        message, user_mobile_number, 
+        proceed_option=False, x_is_menu=False,
+        navigate_is="Respond",extra_rows=[],
+        number=None, use_buttons=False, 
+        yes_or_no=False, custom=dict,
+        plain=False, include_menu=True
+    ):
+    print("MESSAGE : ", message)
     if use_buttons:
         rows = [
             {
@@ -72,7 +81,7 @@ def wrap_text(message, user_mobile_number, proceed_option=False, x_is_menu=False
                 "body": message
             }
         }
-    
+
     rows = extra_rows
 
     if proceed_option:
@@ -80,20 +89,21 @@ def wrap_text(message, user_mobile_number, proceed_option=False, x_is_menu=False
             "id": "Y",
             "title": "✅ Continue"
         })
-    
+
     if include_menu:
         rows.append({
-            "id": "X",
-            "title": "🏡 Menu"
-        })
-    
+                "id": "X",
+                "title": "🏡 Menu"
+            }
+        )
+
     row_data = []
     keystore = []
     for row in rows:
         if row.get("id") not in keystore:
             row_data.append(row)
             keystore.append(row.get("id"))
-    
+
     return {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
@@ -117,6 +127,7 @@ def wrap_text(message, user_mobile_number, proceed_option=False, x_is_menu=False
         }
     }
 
+
 class CredexWhatsappService:
     def __init__(self, payload, phone_number_id=None):
         self.phone_number_id = phone_number_id
@@ -130,14 +141,17 @@ class CredexWhatsappService:
             'Content-Type': 'application/json'
         }
         response = requests.post(url, json=self.payload, headers=headers)
+        print(response.json())
         return response.json()
 
     def notify(self):
         # Implementation for sending notification
         return self.send_message()
 
+
 def convert_timestamp_to_date(timestamp):
     return datetime.fromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
 
 def get_greeting(name):
     current_hour = datetime.now().hour
@@ -148,15 +162,18 @@ def get_greeting(name):
     else:
         return f"Good evening, {name}"
 
+
 def format_currency(amount, currency):
     if currency.upper() == 'USD':
         return f"${amount:.2f}"
     else:
         return f"{amount:.2f} {currency}"
 
+
 def validate_phone_number(phone_number):
     # Basic validation, can be improved based on specific requirements
     return phone_number.startswith('+') and len(phone_number) >= 10 and phone_number[1:].isdigit()
+
 
 def mask_sensitive_info(text, mask_char='*'):
     # Example implementation, can be customized based on specific requirements
@@ -169,6 +186,7 @@ def mask_sensitive_info(text, mask_char='*'):
             masked_word = mask_char * len(word)
         masked_words.append(masked_word)
     return ' '.join(masked_words)
+
 
 def handle_api_error(response):
     if response.status_code >= 400:
