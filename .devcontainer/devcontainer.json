@@ -23,22 +23,20 @@
                 "python.linting.enabled": true,
                 "python.linting.flake8Enabled": true,
                 "python.linting.pylintEnabled": false,
-                "python.formatting.provider": "black",
-                "python.formatting.blackPath": "/usr/local/bin/black",
                 "python.linting.flake8Path": "/usr/local/bin/flake8",
                 "editor.formatOnSave": true,
                 "editor.codeActionsOnSave": {
-                    "source.organizeImports": true
+                    "source.organizeImports": "explicit"
                 },
                 "files.trimTrailingWhitespace": true,
                 "python.testing.pytestEnabled": true,
                 "python.testing.unittestEnabled": false,
                 "python.testing.nosetestsEnabled": false,
                 "[python]": {
-                    "editor.defaultFormatter": "ms-python.black-formatter",
+                    "editor.defaultFormatter": "ms-python.python",
                     "editor.formatOnSave": true,
                     "editor.codeActionsOnSave": {
-                        "source.organizeImports": true
+                        "source.organizeImports": "explicit"
                     }
                 }
             }
@@ -49,5 +47,5 @@
         "ghcr.io/devcontainers/features/docker-in-docker:2": {}
     },
     "forwardPorts": [8000, 6379],
-    "postCreateCommand": "pip install -r requirements.txt black flake8 isort pytest pytest-django mypy pre-commit watchdog django-browser-reload"
+    "postCreateCommand": "pip install -r requirements/dev.txt"
 }
