@@ -142,7 +142,7 @@ class OfferCredexHandler:
             to_credex.pop('dueDate', None)
 
         to_credex.pop('secured', None)
-        payload = json.dumps(current_state.get('confirm_offer_payload'))
+        payload = current_state.get('confirm_offer_payload')
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',

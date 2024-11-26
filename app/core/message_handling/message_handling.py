@@ -97,12 +97,20 @@ class MessageHandler:
 
         if f"{self.bot_service.body}".startswith("handle_"):
             action = self.bot_service.body
+        elif f"{self.bot_service.body}" == 'AcceptAllIncomingOffers':
+            action = "handle_action_accept_all_incoming_offers"
+        elif f"{self.bot_service.body}".startswith("accept_"):
+            action = "handle_action_accept_offer"
+        elif f"{self.bot_service.body}".startswith("reject_"):
+            action = "handle_action_reject_offer"
+        elif f"{self.bot_service.body}".startswith("cancel_"):
+            action = "handle_action_cancel_offer"
         else:
             action = f"{self.bot_service.user.state.stage}"
-        print("ACTION TO EXECUTE : ", action)
+
         action_method = getattr(self.bot_service.action_handler, action, None)
         if action_method and callable(action_method):
-            logger.info(f"Handling action: {self.bot_service.body}")
+            logger.info(f"Handling action: {action}")
             return action_method()
         else:
             logger.warning(f"Action method {self.bot_service.body} not found")

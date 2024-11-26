@@ -24,11 +24,12 @@ def format_synopsis(synopsis, style=None, max_line_length=35):
 def wrap_text(
         message, user_mobile_number, 
         proceed_option=False, x_is_menu=False,
-        navigate_is="Respond",extra_rows=list, 
+        navigate_is="Respond",extra_rows=[],
         number=None, use_buttons=False, 
         yes_or_no=False, custom=dict,
         plain=False, include_menu=True
     ):
+    print("MESSAGE : ", message)
     if use_buttons:
         rows = [
             {
@@ -91,9 +92,10 @@ def wrap_text(
 
     if include_menu:
         rows.append({
-            "id": "X",
-            "title": "🏡 Menu"
-        })
+                "id": "X",
+                "title": "🏡 Menu"
+            }
+        )
 
     row_data = []
     keystore = []
@@ -139,6 +141,7 @@ class CredexWhatsappService:
             'Content-Type': 'application/json'
         }
         response = requests.post(url, json=self.payload, headers=headers)
+        print(response.json())
         return response.json()
 
     def notify(self):
