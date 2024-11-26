@@ -20,20 +20,39 @@ services:
       # Credex Core API
       - MYCREDEX_APP_URL=${MYCREDEX_APP_URL}
       # Development Settings
-      - ENV=dev
+      - DJANGO_ENV=development
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DJANGO_DEBUG_TOOLBAR=1
+      - PYTHONPATH=/app
       - X_GITHUB_TOKEN=${X_GITHUB_TOKEN:-}
     volumes:
-      - ..:/app
+      - .:/app:cached
       - python-packages:/usr/local/lib/python3.10/site-packages/
+      - ./data:/app/data
     depends_on:
-      - redis
-    command: python manage.py runserver 0.0.0.0:8000
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+          ignore:
+            - .git/
+            - .venv/
+            - __pycache__/
+            - "*.pyc"
+        - action: rebuild
+          path: requirements/dev.txt
 
   redis:
     image: redis:7-alpine
@@ -47,6 +66,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    command: redis-server --appendonly yes
 
 volumes:
   redis_data:

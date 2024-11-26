@@ -26,11 +26,13 @@ FROM base as development
 # Install development dependencies
 RUN apt-get update && apt-get install -y \
     git \
+    build-essential \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
-COPY app/requirements.txt .
-RUN pip install -r requirements.txt
+COPY requirements /app/requirements
+RUN pip install -r requirements/dev.txt
 
 # Production stage
 FROM base as production
@@ -47,9 +49,8 @@ RUN adduser \
     appuser
 
 # Install production dependencies
-COPY app/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    gunicorn
+COPY requirements /app/requirements
+RUN pip install --no-cache-dir -r requirements/prod.txt
 
 # Copy application code
 COPY ./app /app
