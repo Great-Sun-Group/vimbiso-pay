@@ -2,6 +2,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class StateManager:
     def __init__(self, core_service):
         self.core_service = core_service
@@ -11,12 +12,16 @@ class StateManager:
 
     def update_state(self, new_state, stage, update_from, option):
         logger.info(f"Updating state: stage={stage}, update_from={update_from}, option={option}")
-        self.core_service.state.update_state(
+        print("INITIAL STAGE: ", self.core_service.user.state.stage)
+        self.core_service.user.state.update_state(
             state=new_state,
             stage=stage,
             update_from=update_from,
             option=option
         )
+        print("UPDATED STAGE: ", self.core_service.user.state.stage)
+
+        self.core_service.state = self.core_service.state.get_state(self.core_service.user)
 
     def reset_state(self):
         logger.info("Resetting state")

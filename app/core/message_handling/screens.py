@@ -1,7 +1,7 @@
 ACCOUNT_SELECTION = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 *{greeting}*
-
+{message}
 *_Which account would you like to_* 
 *_view and manage?_*
 
@@ -12,8 +12,8 @@ ACCOUNT_SELECTION = """
 
 HOME_1 = """
 > *💳 {account}*
-accountHandle: {handle}
-
+*Account Handle:* {handle}
+{message}
 {balance}
 
  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
@@ -33,8 +33,8 @@ accountHandle: {handle}
 
 HOME_2 = """
 > *💳 {account}*
-accountHandle: {handle}
-
+*Account Handle:* {handle}
+{message}
 {balance}
 
  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
@@ -87,12 +87,9 @@ Please hold a moment.
 """
 
 BALANCE = """
-⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
-
 *SECURED BALANCES*
 {securedNetBalancesByDenom}
 {unsecured_balance}
-
 *NET ASSETS*
   {netCredexAssetsInDefaultDenom}
 """
@@ -210,11 +207,10 @@ form.
 OFFER_CREDEX = """
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-To issue a secured credex, enter the 
-details into this form.
-
-
-{message}
+ To issue a secured credex, enter the 
+ details of the transfer into this form.
+ 
+ {message}
 """
 
 # OFFER_CREDEX = """
@@ -317,48 +313,39 @@ account *{source}*
 
 ACCEPT_CREDEX = """
 > *💰 Accept Offer*
-⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
-*Accept {amount} offer*
+*Accept ${amount} offer*
 
   {type} credex from
 - {party} 
-⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
 OUTGOING_CREDEX = """
 > *💰 Cancel Offer*
-⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 
 *Cancel {amount} offer*
 
   {type} credex to
 - {party} 
-⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
 OFFER_SUCCESSFUL = """
 > *💰 Complete!*
-⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
-{secured} offer signed 
-and sent:
 
 *Transaction Complete!!*
+
 You have successfully offered 
-{amount} {currency} {secured} to 
+${amount} {currency} {secured} to 
 {recipient}.
 
 From: {source}
-
-
-⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
 """
 
 OFFER_FAILED = """
 > *😞 Failed*
 
 ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
-{message}‼️
+ {message}‼️
 
 *To issue a secured credex, send*
   0.5=>recipientHandle
@@ -488,4 +475,9 @@ NOTIFICATION = """
 Notifications of incoming offers now
 being sent to :
 - *{name}* 
+"""
+
+PROFILE_SELECTION = """
+> *👤 Profile*
+{message}
 """

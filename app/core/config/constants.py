@@ -43,34 +43,47 @@ def get_greeting(name):
 class CachedUserState:
     def __init__(self, user) -> None:
         self.user = user
-        property("USER", user)
+        print("USER", user)
         self.direction = cache.get(f"{self.user.mobile_number}_direction", "OUT")
         self.stage = cache.get(f"{self.user.mobile_number}_stage", "handle_action_menu")
         self.option = cache.get(f"{self.user.mobile_number}_option")
         self.state = cache.get(f"{self.user.mobile_number}", {})
+        self.jwt_token = cache.get(f"{self.user.mobile_number}_jwt_token")
 
     def update_state(self, state: dict, update_from, stage=None, option=None, direction=None):
         """Get wallets by user."""
         # pylint: disable=no-member
-        print("UPDATING FROM ", update_from)
-        cache.set(f"{self.user.mobile_number}", state, timeout=60*5)
+        # print("UPDATING FROM ", update_from, stage, option, direction, state)
+        cache.set(f"{self.user.mobile_number}", state, timeout=60 * 5)
         if stage:
-            cache.set(f"{self.user.mobile_number}_stage", stage, timeout=60*5)
+            cache.set(f"{self.user.mobile_number}_stage", stage, timeout=60 * 5)
         if option:
-            cache.set(f"{self.user.mobile_number}_option", option, timeout=60*5)
+            cache.set(f"{self.user.mobile_number}_option", option, timeout=60 * 5)
         if direction:
-            cache.set(f"{self.user.mobile_number}_direction", direction, timeout=60*5)
+            cache.set(f"{self.user.mobile_number}_direction", direction, timeout=60 * 5)
+        self.state = cache.get(f"{self.user.mobile_number}")
+        self.stage = cache.get(f"{self.user.mobile_number}_stage")
+        self.option = cache.get(f"{self.user.mobile_number}_option")
+        self.direction = cache.get(f"{self.user.mobile_number}_direction")
 
     def get_state(self, user):
         self.state = cache.get(f"{user.mobile_number}", {})
         return self.state
+    
+    def set_jwt_token(self, jwt_token):
+        cache.set(f"{self.user.mobile_number}_jwt_token", jwt_token, timeout=60 * 5)
+        # print("SETTING JWT TOKEN", jwt_token)
+        self.jwt_token = cache.get(f"{self.user.mobile_number}_jwt_token")
 
     def reset_state(self):
         state = cache.get(f"{self.user.mobile_number}", {})
         state['state'] = {}
         cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu")
         cache.delete(f"{self.user.mobile_number}_option")
-        return cache.set(f"{self.user.mobile_number}", state)
+        cache.set(f"{self.user.mobile_number}", {}, timeout=60 * 5)
+        self.state = cache.get(f"{self.user.mobile_number}")
+        self.stage = cache.get(f"{self.user.mobile_number}_stage")
+        self.option = cache.get(f"{self.user.mobile_number}_option")
 
 
 class CachedUser:
@@ -82,6 +95,7 @@ class CachedUser:
         self.mobile_number = mobile_number
         self.registration_complete = False
         self.state = CachedUserState(self)
+        self.jwt_token = self.state.jwt_token
 
 
 MENU_OPTIONS_1 = {
@@ -112,9 +126,8 @@ MENU_OPTIONS_2 = {
     'handle_action_notifications': "handle_action_notifications",
     '7': "handle_action_switch_account",
     'handle_action_switch_account': "handle_action_switch_account",
-    
-}
 
+}
 
 ABOUT = """
 Today credex is being used 
@@ -149,6 +162,11 @@ is a 2% fee.
 
 # Add the missing constants
 REGISTER = """
+{message}
+"""
+
+PROFILE_SELECTION = """
+> *👤 Profile*
 {message}
 """
 INVALID_ACTION = "I'm sorry, I didn't understand that. Can you please try again?"

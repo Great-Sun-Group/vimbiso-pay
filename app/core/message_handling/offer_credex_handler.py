@@ -6,7 +6,9 @@ import json
 from decouple import config
 from datetime import datetime, timedelta
 
+
 class OfferCredexHandler:
+    """Offering Credex Handler"""
     def __init__(self, service):
         self.service = service
 
@@ -25,7 +27,8 @@ class OfferCredexHandler:
                     break
 
         payload = {}
-        if "=>" in f"{self.service.body}" or "->" in f"{self.service.body}" or self.service.message['type'] == "nfm_reply":
+        if "=>" in f"{self.service.body}" or "->" in f"{self.service.body}" or self.service.message[
+            'type'] == "nfm_reply":
             payload = self._create_payload(current_state)
 
             serializer = OfferCredexSerializer(data=payload)
@@ -52,10 +55,14 @@ class OfferCredexHandler:
     def _create_nfm_reply_payload(self, current_state):
         return {
             "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
-            "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard']['accountIDS'][-1],
+            "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get(
+                'member', {}).get('defaultAccountData', {}) else
+            current_state['member']['memberDashboard']['accountIDS'][-1],
             "handle": self.service.body.get('handle'),
             "amount": self.service.body.get('amount'),
-            "dueDate": self.service.body.get('due_date') if self.service.body.get('due_date') else (datetime.now() + timedelta(weeks=4)).timestamp() * 1000,
+            "dueDate": self.service.body.get('due_date') if self.service.body.get('due_date') else (
+                                                                                                               datetime.now() + timedelta(
+                                                                                                           weeks=4)).timestamp() * 1000,
             "currency": self.service.body.get('currency'),
             "securedCredex": True
         }
@@ -66,11 +73,15 @@ class OfferCredexHandler:
             user, _ = user.split("=")
         return {
             "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
-            "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard']['accountIDS'][-1],
+            "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get(
+                'member', {}).get('defaultAccountData', {}) else
+            current_state['member']['memberDashboard']['accountIDS'][-1],
             "handle": user,
             "amount": amount,
             "dueDate": (datetime.now()).timestamp() * 1000,
-            "currency": current_state['member']['defaultAccountData']['defaultDenom'] if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard'].get('defaultDenom'),
+            "currency": current_state['member']['defaultAccountData']['defaultDenom'] if current_state.get('member',
+                                                                                                           {}).get(
+                'defaultAccountData', {}) else current_state['member']['memberDashboard'].get('defaultDenom'),
             "securedCredex": True
         }
 
@@ -88,11 +99,15 @@ class OfferCredexHandler:
 
         return {
             "authorizer_member_id": current_state['member']['memberDashboard'].get('memberID'),
-            "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard']['accountIDS'][-1],
+            "issuer_member_id": current_state['member']['defaultAccountData'].get('accountID') if current_state.get(
+                'member', {}).get('defaultAccountData', {}) else
+            current_state['member']['memberDashboard']['accountIDS'][-1],
             "handle": user,
             "amount": amount,
             "dueDate": due_date,
-            "currency": current_state['member']['defaultAccountData']['defaultDenom'] if current_state.get('member', {}).get('defaultAccountData', {}) else current_state['member']['memberDashboard'].get('defaultDenom'),
+            "currency": current_state['member']['defaultAccountData']['defaultDenom'] if current_state.get('member',
+                                                                                                           {}).get(
+                'defaultAccountData', {}) else current_state['member']['memberDashboard'].get('defaultDenom'),
             "securedCredex": False
         }
 
@@ -125,16 +140,16 @@ class OfferCredexHandler:
         to_credex.pop("handle", None)
         if to_credex.get('securedCredex'):
             to_credex.pop('dueDate', None)
-        
+
         to_credex.pop('secured', None)
-        payload = json.dumps(current_state.get('confirm_offer_payload'))
+        payload = current_state.get('confirm_offer_payload')
         headers = {
             'X-Github-Token': config('CREDEX_API_CREDENTIALS'),
             'Content-Type': 'application/json',
             'whatsappBotAPIkey': config('WHATSAPP_BOT_API_KEY'),
         }
         response = requests.request("POST", f"{config('CREDEX')}/offerCredex", headers=headers, data=payload)
-        
+
         if response.status_code == 200:
             return self._handle_successful_offer(response, current_state, state)
         else:
@@ -184,7 +199,7 @@ class OfferCredexHandler:
         return accounts
 
     def _create_confirmation_message(self, serializer, current_state, accounts):
-        account_string = "\n".join([f" *{i+1}.*  _{acc['title']}_" for i, acc in enumerate(accounts)])
+        account_string = "\n".join([f" *{i + 1}.*  _{acc['title']}_" for i, acc in enumerate(accounts)])
         if serializer.validated_data.get('securedCredex'):
             return CONFIRM_SECURED_CREDEX.format(
                 party=serializer.validated_data.get('full_name'),
@@ -268,7 +283,7 @@ class OfferCredexHandler:
                 update_from="handle_action_menu",
                 option="handle_action_menu"
             )
-            
+
             self.service.refresh(reset=True)
             self.service.body = current_state['member']['defaultAccountData'].get('accountHandle')
             return self.service.action_handler.handle_action_select_profile()
@@ -280,10 +295,12 @@ class OfferCredexHandler:
     def _handle_failed_offer(self, response, current_state):
         current_state.pop('confirm_offer_payload', {})
         try:
-            message = format_synopsis(response.json().get("offerCredexData", {}).get('message', '').replace("Error:", ""))
+            message = format_synopsis(
+                response.json().get("offerCredexData", {}).get('message', '').replace("Error:", ""))
         except Exception:
             message = 'Failed to process the offer'
-        return wrap_text(OFFER_FAILED.format(message=message), self.service.user.mobile_number, x_is_menu=True, back_is_cancel=False)
+        return wrap_text(OFFER_FAILED.format(message=message), self.service.user.mobile_number, x_is_menu=True,
+                         back_is_cancel=False)
 
     def _update_current_state(self, current_state):
         default = current_state['member']['defaultAccountData'].get('accountID')
