@@ -1,8 +1,10 @@
 {
     "name": "Vimbiso Pay Development",
-    "dockerComposeFile": "../app/compose.yaml",
-    "service": "web",
-    "workspaceFolder": "/app",
+    "image": "mcr.microsoft.com/devcontainers/python:3",
+    // Comment out these lines that reference docker-compose
+    // "dockerComposeFile": "../app/compose.yaml",
+    // "service": "web",
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
     "customizations": {
         "vscode": {
             "extensions": [
@@ -25,8 +27,7 @@
         }
     },
     "features": {
-        "ghcr.io/devcontainers/features/terraform:1": {},
-        "ghcr.io/devcontainers/features/aws-cli:1": {}
+        "ghcr.io/devcontainers/features/terraform:1": {}
     },
     "forwardPorts": [8000],
     "postCreateCommand": "pip install -r requirements.txt"
