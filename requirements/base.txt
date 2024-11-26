@@ -21,7 +21,7 @@ python-decouple==3.8
 python-json-logger==2.0.7
 python-logstash==0.4.8
 requests==2.32.3
-urllib3==1.26.6
+urllib3>=2.0.0,<3.0.0
 watchtower==3.0.1
 PyJWT==2.8.0
 

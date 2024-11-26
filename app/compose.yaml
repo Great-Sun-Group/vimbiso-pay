@@ -26,7 +26,7 @@ services:
       - PYTHONPATH=/app
       - X_GITHUB_TOKEN=${X_GITHUB_TOKEN:-}
     volumes:
-      - ..:/app:cached
+      - .:/app:cached
       - python-packages:/usr/local/lib/python3.10/site-packages/
       - ./data:/app/data
     depends_on:
@@ -44,7 +44,7 @@ services:
     develop:
       watch:
         - action: sync
-          path: ..
+          path: .
           target: /app
           ignore:
             - .git/
