@@ -1,0 +1,17 @@
+{
+  "environment": "production",
+  "domain": "mycredex.app",
+  "aws_region": "af-south-1",
+  "vpc_cidr": "10.0.0.0/16",
+  "ecs_task": {
+    "cpu": "2048",
+    "memory": "4096"
+  },
+  "az_count": 2,
+  "autoscaling": {
+    "min_capacity": 2,
+    "max_capacity": 6,
+    "cpu_threshold": 75,
+    "memory_threshold": 75
+  }
+}

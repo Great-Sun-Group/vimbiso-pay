@@ -1,26 +1,41 @@
 # syntax=docker/dockerfile:1
 
-ARG PYTHON_VERSION=3.10.12
-FROM python:${PYTHON_VERSION}-slim
+# Base stage for shared configurations
+FROM python:3.10.12-slim as base
 
-RUN apt-get update && apt-get install -y locales && \
-    locale-gen en_US.UTF-8 && \
-    update-locale
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
 
-ENV LANG=en_US.UTF-8
-ENV LANGUAGE=en_US:en
-ENV LC_ALL=en_US.UTF-8
-
-# Prevents Python from writing pyc files.
-ENV PYTHONDONTWRITEBYTECODE=1
-
-# Keeps Python from buffering stdout and stderr to avoid situations where
-# the application crashes without emitting any logs due to buffering.
-ENV PYTHONUNBUFFERED=1
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    locales \
+    && locale-gen en_US.UTF-8 \
+    && update-locale \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Create a non-privileged user that the app will run under.
+# Development stage
+FROM base as development
+
+# Install development dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install dependencies
+COPY app/requirements.txt .
+RUN pip install -r requirements.txt
+
+# Production stage
+FROM base as production
+
+# Create non-privileged user
 ARG UID=10001
 RUN adduser \
     --disabled-password \
@@ -31,23 +46,26 @@ RUN adduser \
     --uid "${UID}" \
     appuser
 
-# Download dependencies as a separate step to take advantage of Docker's caching.
-# Leverage a cache mount to /root/.cache/pip to speed up subsequent builds.
-# Leverage a bind mount to requirements.txt to avoid having to copy them into
-# into this layer.
+# Install production dependencies
 COPY app/requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    gunicorn
 
-# Copy the source code into the container.
+# Copy application code
 COPY ./app /app
 
-# Switch to the non-privileged user to run the application.
+# Set permissions
 RUN chown -R appuser:appuser /app
+
+# Switch to non-privileged user
 USER appuser
 
-# Expose the port that the application listens on.
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health/ || exit 1
+
+# Expose port
 EXPOSE 8000
 
-# Run the application.
+# Start command
 CMD ["./start_app.sh"]
