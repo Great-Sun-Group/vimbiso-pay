@@ -1,0 +1,5 @@
+-r base.txt
+
+# Production-specific dependencies
+uvicorn[standard]==0.27.1
+gunicorn[gevent]==21.2.0
