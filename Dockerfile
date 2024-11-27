@@ -8,7 +8,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
-    LC_ALL=en_US.UTF-8
+    LC_ALL=en_US.UTF-8 \
+    DEBUG=false \
+    DJANGO_ENV=production \
+    DJANGO_SETTINGS_MODULE=config.settings
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
