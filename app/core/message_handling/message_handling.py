@@ -13,15 +13,17 @@ logger = logging.getLogger(__name__)
 
 def validate_input(input_text):
     if len(input_text) > 1000:
-        raise InvalidInputException("Input is too long. Please limit your message to 1000 characters.")
+        raise InvalidInputException(
+            "Input is too long. Please limit your message to 1000 characters."
+        )
 
-    if '@' in input_text:
+    if "@" in input_text:
         try:
             validate_email(input_text)
         except ValidationError:
             raise InvalidInputException("Invalid email format.")
 
-    disallowed_chars = ['<', '>', '{', '}', '[', ']']
+    disallowed_chars = ["<", ">", "{", "}", "[", "]"]
     if any(char in input_text for char in disallowed_chars):
         raise InvalidInputException("Input contains disallowed characters.")
 
@@ -49,7 +51,9 @@ class MessageHandler:
             return router.handle(sanitized_body, self.bot_service)
         except InvalidInputException as e:
             logger.error(f"Input validation failed: {str(e)}")
-            return wrap_text(f"Invalid input: {str(e)}", self.bot_service.user.mobile_number)
+            return wrap_text(
+                f"Invalid input: {str(e)}", self.bot_service.user.mobile_number
+            )
 
     @staticmethod
     def is_greeting(message):
@@ -64,20 +68,39 @@ class MessageHandler:
         success, message = self.bot_service.api_interactions.login()
 
         if success:
-            self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_select_profile",
-                                                "handle", "handle_greeting")
-            return wrap_text(f"Welcome back! {message}\nHow can I assist you today?",
-                             self.bot_service.user.mobile_number)
+            self.bot_service.state.update_state(
+                self.bot_service.current_state,
+                "handle_action_select_profile",
+                "handle",
+                "handle_greeting",
+            )
+            return wrap_text(
+                f"Welcome back! {message}\nHow can I assist you today?",
+                self.bot_service.user.mobile_number,
+            )
         else:
             if "new user" in message.lower() or "invalid phone" in message.lower():
-                self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_register", "handle",
-                                                    "handle_greeting")
-                return wrap_text(REGISTER.format(message=message), self.bot_service.user.mobile_number,
-                                 extra_rows=[{"id": '1', "title": "Become a member"}])
+                self.bot_service.state.update_state(
+                    self.bot_service.current_state,
+                    "handle_action_register",
+                    "handle",
+                    "handle_greeting",
+                )
+                return wrap_text(
+                    REGISTER.format(message=message),
+                    self.bot_service.user.mobile_number,
+                    extra_rows=[{"id": "1", "title": "Become a member"}],
+                )
             else:
-                self.bot_service.state.update_state(self.bot_service.current_state, "handle_action_register", "handle",
-                                                    "handle_greeting")
-                return registration_form(self.bot_service.user.mobile_number, message=message)
+                self.bot_service.state.update_state(
+                    self.bot_service.current_state,
+                    "handle_action_register",
+                    "handle",
+                    "handle_greeting",
+                )
+                return registration_form(
+                    self.bot_service.user.mobile_number, message=message
+                )
             # wrap_text(f"Login failed: {message}\nPlease try again later or contact support.", )
 
     def handle_offer_credex(self):
@@ -86,7 +109,7 @@ class MessageHandler:
             self.bot_service.current_state,
             "handle_action_offer_credex",
             "handle",
-            "handle_action_offer_credex"
+            "handle_action_offer_credex",
         )
         return self.bot_service.offer_credex_handler.handle_action_offer_credex()
 
@@ -97,7 +120,7 @@ class MessageHandler:
 
         if f"{self.bot_service.body}".startswith("handle_"):
             action = self.bot_service.body
-        elif f"{self.bot_service.body}" == 'AcceptAllIncomingOffers':
+        elif f"{self.bot_service.body}" == "AcceptAllIncomingOffers":
             action = "handle_action_accept_all_incoming_offers"
         elif f"{self.bot_service.body}".startswith("accept_"):
             action = "handle_action_accept_offer"

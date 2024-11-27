@@ -9,7 +9,9 @@ from ..utils.exceptions import InvalidInputException
 from ..utils.error_handler import error_decorator
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +24,7 @@ class CredexBotService:
 
         self.message = payload
         self.user = user
-        self.body = self.message.get('message', '')
+        self.body = self.message.get("message", "")
 
         self.state = self.user.state
         self.current_state = self.state.get_state(self.user)
@@ -34,6 +36,7 @@ class CredexBotService:
 
         # Initialize new modules
         from .message_handling import MessageHandler
+
         self.message_handler = MessageHandler(self)
         self.api_interactions = APIInteractions(self)
         self.state_manager = StateManager(self)
