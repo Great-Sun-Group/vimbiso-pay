@@ -16,7 +16,8 @@
                 "njpwerner.autodocstring",
                 "streetsidesoftware.code-spell-checker",
                 "eamodio.gitlens",
-                "visualstudioexptteam.vscodeintellicode"
+                "visualstudioexptteam.vscodeintellicode",
+                "saoudrizwan.claude-dev"
             ],
             "settings": {
                 "python.defaultInterpreterPath": "/usr/local/bin/python",
