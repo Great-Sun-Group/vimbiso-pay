@@ -14,6 +14,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y \
     curl \
     locales \
+    libpq-dev \
     && locale-gen en_US.UTF-8 \
     && update-locale \
     && rm -rf /var/lib/apt/lists/*

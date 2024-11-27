@@ -12,6 +12,12 @@ services:
       - DJANGO_SECRET=${DJANGO_SECRET}
       - DEBUG=1
       - REDIS_URL=redis://redis:6379/
+      # Database settings
+      - DEFAULT_DATABASE=credex
+      - DATABASE_USER=credex
+      - DATABASE_PASSWORD=CredexUser#
+      - DATABASE_HOST=db
+      - DATABASE_PORT=5432
       # WhatsApp Integration
       - WHATSAPP_API_URL=${WHATSAPP_API_URL}
       - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
@@ -31,6 +37,8 @@ services:
       - ./data:/app/data
     depends_on:
       redis:
+        condition: service_healthy
+      db:
         condition: service_healthy
     command: >
       sh -c "python manage.py migrate &&
@@ -54,6 +62,23 @@ services:
         - action: rebuild
           path: requirements/dev.txt
 
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=credex
+      - POSTGRES_USER=credex
+      - POSTGRES_PASSWORD=CredexUser#
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U credex"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   redis:
     image: redis:7-alpine
     ports:
@@ -71,3 +96,4 @@ services:
 volumes:
   redis_data:
   python-packages:
+  postgres_data:
