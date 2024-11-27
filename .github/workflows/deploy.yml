@@ -1,4 +1,4 @@
-name: Deploy Infrastructure and Application
+name: Deploy VimbisoPay
 
 on:
   workflow_dispatch:
