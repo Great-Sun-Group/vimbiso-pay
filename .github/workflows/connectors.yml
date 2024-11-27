@@ -71,7 +71,7 @@ jobs:
           # Add dummy values for required application variables
           TF_VAR_django_secret: "dummy"
           TF_VAR_mycredex_app_url: "dummy"
-          TF_VAR_whatsapp_bot_api_key: "dummy"
+          TF_VAR_client_api_key: "dummy"
           TF_VAR_whatsapp_api_url: "dummy"
           TF_VAR_whatsapp_access_token: "dummy"
           TF_VAR_whatsapp_phone_number_id: "dummy"
@@ -89,7 +89,7 @@ jobs:
           # Add dummy values for required application variables
           TF_VAR_django_secret: "dummy"
           TF_VAR_mycredex_app_url: "dummy"
-          TF_VAR_whatsapp_bot_api_key: "dummy"
+          TF_VAR_client_api_key: "dummy"
           TF_VAR_whatsapp_api_url: "dummy"
           TF_VAR_whatsapp_access_token: "dummy"
           TF_VAR_whatsapp_phone_number_id: "dummy"
