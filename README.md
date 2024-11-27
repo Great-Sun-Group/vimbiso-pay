@@ -7,7 +7,7 @@ A WhatsApp-based client application that interacts with the Credex Core API.
 ### Prerequisites
 - Docker and Docker Compose
 - VSCode with Remote Containers extension (for devcontainer usage)
-- Access to dev.mycredex.dev API
+- Access to an active deployment of the credex-core API
 - WhatsApp API credentials
 
 ### Environment Setup
@@ -21,7 +21,7 @@ A WhatsApp-based client application that interacts with the Credex Core API.
    Required environment variables:
    - `DJANGO_SECRET`: Django secret key
    - `MYCREDEX_APP_URL`: Set to `https://dev.mycredex.dev/` for development
-   - `WHATSAPP_BOT_API_KEY`: Must match the value used in credex-core
+   - `CLIENT_API_KEY`: Must match the value used in credex-core
    - `WHATSAPP_API_URL`: WhatsApp Graph API URL
    - `WHATSAPP_ACCESS_TOKEN`: Your WhatsApp API access token
    - `WHATSAPP_PHONE_NUMBER_ID`: Your WhatsApp phone number ID
@@ -132,7 +132,7 @@ When testing API endpoints in Codespaces, ensure:
    ```bash
    # Using curl
    curl -H "X-Github-Token: $X_GITHUB_TOKEN" http://localhost:8000/api/test-integrations/
-   
+
    # Using the test endpoint
    # The test endpoint automatically includes the token if ENV=dev
    ```
