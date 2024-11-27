@@ -15,6 +15,7 @@ gunicorn==22.0.0
 redis==5.0.5
 hiredis==2.3.2
 async-timeout==4.0.3
+psycopg2-binary==2.9.9
 
 # Utils
 python-decouple==3.8
