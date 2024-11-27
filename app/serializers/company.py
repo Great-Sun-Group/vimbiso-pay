@@ -11,10 +11,9 @@ class CompanyDetailsSerializer(serializers.Serializer):
     def validate(self, attrs):
         super().validate(attrs)
         return {
-            "ownerID": attrs['ownerID'],
+            "ownerID": attrs["ownerID"],
             "accountType": "BUSINESS",
             "accountName": attrs["companyname"],
             "accountHandle": attrs["handle"],
-            "defaultDenom": attrs["defaultDenom"]
+            "defaultDenom": attrs["defaultDenom"],
         }
-

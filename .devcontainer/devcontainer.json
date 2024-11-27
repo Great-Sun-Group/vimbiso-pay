@@ -1,0 +1,54 @@
+{
+    "name": "Vimbiso Pay Development",
+    "image": "mcr.microsoft.com/devcontainers/python:3",
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-python.black-formatter",
+                "ms-python.flake8",
+                "ms-python.isort",
+                "ms-azuretools.vscode-docker",
+                "hashicorp.terraform",
+                "redhat.vscode-yaml",
+                "njpwerner.autodocstring",
+                "streetsidesoftware.code-spell-checker",
+                "eamodio.gitlens",
+                "visualstudioexptteam.vscodeintellicode",
+                "saoudrizwan.claude-dev",
+                "github.vscode-github-actions"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.linting.enabled": true,
+                "python.linting.flake8Enabled": true,
+                "python.linting.pylintEnabled": false,
+                "python.linting.flake8Path": "/usr/local/bin/flake8",
+                "editor.formatOnSave": true,
+                "editor.codeActionsOnSave": {
+                    "source.organizeImports": "explicit"
+                },
+                "files.trimTrailingWhitespace": true,
+                "python.testing.pytestEnabled": true,
+                "python.testing.unittestEnabled": false,
+                "python.testing.nosetestsEnabled": false,
+                "[python]": {
+                    "editor.defaultFormatter": "ms-python.python",
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.organizeImports": "explicit"
+                    }
+                }
+            }
+        }
+    },
+    "features": {
+        "ghcr.io/devcontainers/features/terraform:1": {},
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {}
+    },
+    "forwardPorts": [8000, 6379],
+    "postCreateCommand": "pip install -r requirements/dev.txt"
+}
