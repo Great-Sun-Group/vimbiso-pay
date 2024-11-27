@@ -1,11 +1,5 @@
 # Local variables for environment configuration
 locals {
-  common_tags = {
-    Environment = var.environment
-    ManagedBy   = "terraform"
-    Project     = "vimbiso-pay"
-  }
-
   # Domain configuration
   is_production = var.environment == "production"
   domain = local.is_production ? local.current_env.domain : "${local.current_env.subdomain}.${local.current_env.dev_domain_base}"
