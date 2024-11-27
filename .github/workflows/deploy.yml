@@ -6,6 +6,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/prod' || github.ref == 'refs/heads/stage'
     environment: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
 
     env:
