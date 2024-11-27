@@ -65,12 +65,8 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': env('DEFAULT_DATABASE', default='credex'),
-        'USER': env('DATABASE_USER', default='credex'),
-        'PASSWORD': env('DATABASE_PASSWORD', default='CredexUser#'),
-        'HOST': env('DATABASE_HOST', default='localhost'),
-        'PORT': env('DATABASE_PORT', default=5432, cast=int),
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
