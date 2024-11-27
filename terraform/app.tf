@@ -38,7 +38,7 @@ module "app" {
   # Application Environment Variables
   django_secret            = var.django_secret
   mycredex_app_url        = var.mycredex_app_url
-  whatsapp_bot_api_key    = var.whatsapp_bot_api_key
+  client_api_key    = var.client_api_key
   whatsapp_api_url        = var.whatsapp_api_url
   whatsapp_access_token   = var.whatsapp_access_token
   whatsapp_phone_number_id = var.whatsapp_phone_number_id

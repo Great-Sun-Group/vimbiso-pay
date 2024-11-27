@@ -1,15 +1,14 @@
-import logging
-import requests
-import json
-from decouple import config
-
-from core.api.services import CredexBotService
-from ..utils.utils import CredexWhatsappService, wrap_text
-from django.core.cache import cache
-import os
 import base64
+import logging
 from typing import Tuple
+
+import requests
+from core.api.services import CredexBotService
+from decouple import config
+from django.core.cache import cache
+
 from ..config.constants import *
+from ..utils.utils import CredexWhatsappService, wrap_text
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +16,7 @@ logger = logging.getLogger(__name__)
 class APIInteractions:
     def __init__(self, bot_service: CredexBotService):
         self.bot_service = bot_service
-        self.env = config("ENV", "dev")  # Default to 'dev' if not set
-        self.base_url = f"{config('MYCREDEX_APP_URL_2')}"
+        self.base_url = f"{config('MYCREDEX_APP_URL')}"
         logger.info(f"Base URL: {self.base_url}")
 
     def refresh_dashboard(self):
@@ -85,7 +83,7 @@ class APIInteractions:
         payload = {"phone": self.bot_service.user.mobile_number}
         headers = {
             "Content-Type": "application/json",
-            "x-client-api-key": config("WHATSAPP_BOT_API_KEY"),
+            "x-client-api-key": config("CLIENT_API_KEY"),
         }
 
         try:
@@ -560,7 +558,7 @@ class APIInteractions:
         user = CachedUser(self.bot_service.user.mobile_number)
         headers = {
             "Content-Type": "application/json",
-            "x-client-api-key": config("WHATSAPP_BOT_API_KEY"),
+            "x-client-api-key": config("CLIENT_API_KEY"),
         }
 
         # Add JWT token if available

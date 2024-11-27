@@ -29,7 +29,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_secret },
         { name = "MYCREDEX_APP_URL", value = var.mycredex_app_url },
-        { name = "WHATSAPP_BOT_API_KEY", value = var.whatsapp_bot_api_key },
+        { name = "CLIENT_API_KEY", value = var.client_api_key },
         { name = "WHATSAPP_API_URL", value = var.whatsapp_api_url },
         { name = "WHATSAPP_ACCESS_TOKEN", value = var.whatsapp_access_token },
         { name = "WHATSAPP_PHONE_NUMBER_ID", value = var.whatsapp_phone_number_id }

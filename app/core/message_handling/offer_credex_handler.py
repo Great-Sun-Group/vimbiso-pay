@@ -1,10 +1,12 @@
-from ..utils.utils import wrap_text, format_synopsis, CredexWhatsappService
-from ..config.constants import *
-from serializers.offers import OfferCredexSerializer
-import requests
 import json
-from decouple import config
 from datetime import datetime, timedelta
+
+import requests
+from decouple import config
+from serializers.offers import OfferCredexSerializer
+
+from ..config.constants import *
+from ..utils.utils import CredexWhatsappService, format_synopsis, wrap_text
 
 
 class OfferCredexHandler:
@@ -180,7 +182,7 @@ class OfferCredexHandler:
         headers = {
             "X-Github-Token": config("CREDEX_API_CREDENTIALS"),
             "Content-Type": "application/json",
-            "whatsappBotAPIkey": config("WHATSAPP_BOT_API_KEY"),
+            "whatsappBotAPIkey": config("CLIENT_API_KEY"),
         }
         response = requests.request(
             "POST", f"{config('CREDEX')}/offerCredex", headers=headers, data=payload

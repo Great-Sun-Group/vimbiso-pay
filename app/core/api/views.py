@@ -1,17 +1,18 @@
 import json
-import requests
-from rest_framework.views import APIView
-from django.http import JsonResponse, HttpResponse
-from rest_framework import status
-from rest_framework.parsers import JSONParser
-from decouple import config
 from datetime import datetime
+
+import requests
+from core.api.models import Message
+from core.config.constants import CachedUser
 
 # Use absolute imports
 from core.message_handling.credex_bot_service import CredexBotService
-from core.config.constants import CachedUser
 from core.utils.utils import CredexWhatsappService
-from core.api.models import Message
+from decouple import config
+from django.http import HttpResponse, JsonResponse
+from rest_framework import status
+from rest_framework.parsers import JSONParser
+from rest_framework.views import APIView
 
 
 class CredexCloudApiWebhook(APIView):
@@ -263,9 +264,10 @@ class CredexSendMessageWebhook(APIView):
 
     @staticmethod
     def post(request):
-        if request.headers.get("whatsappBotAPIkey") == config(
-            "WHATSAPP_BOT_API_KEY"
-        ) or request.headers.get("Whatsappbotapikey") == config("WHATSAPP_BOT_API_KEY"):
+        if (
+            request.headers.get("whatsappBotAPIkey", "").lower()
+            == config("CLIENT_API_KEY").lower()
+        ):
             if (
                 request.data.get("phoneNumber")
                 and request.data.get("memberName")

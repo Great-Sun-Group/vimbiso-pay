@@ -66,7 +66,7 @@ jobs:
           TF_VAR_docker_image: ${{ env.IMAGE }}
           TF_VAR_django_secret: ${{ secrets.DJANGO_SECRET }}
           TF_VAR_mycredex_app_url: ${{ secrets.MYCREDEX_APP_URL }}
-          TF_VAR_whatsapp_bot_api_key: ${{ secrets.WHATSAPP_BOT_API_KEY }}
+          TF_VAR_client_api_key: ${{ secrets.CLIENT_API_KEY }}
           TF_VAR_whatsapp_api_url: ${{ secrets.WHATSAPP_API_URL }}
           TF_VAR_whatsapp_access_token: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
           TF_VAR_whatsapp_phone_number_id: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
@@ -82,7 +82,7 @@ jobs:
           TF_VAR_docker_image: ${{ env.IMAGE }}
           TF_VAR_django_secret: ${{ secrets.DJANGO_SECRET }}
           TF_VAR_mycredex_app_url: ${{ secrets.MYCREDEX_APP_URL }}
-          TF_VAR_whatsapp_bot_api_key: ${{ secrets.WHATSAPP_BOT_API_KEY }}
+          TF_VAR_client_api_key: ${{ secrets.CLIENT_API_KEY }}
           TF_VAR_whatsapp_api_url: ${{ secrets.WHATSAPP_API_URL }}
           TF_VAR_whatsapp_access_token: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
           TF_VAR_whatsapp_phone_number_id: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
@@ -105,18 +105,18 @@ jobs:
               --cluster vimbiso-pay-cluster-$ENVIRONMENT \
               --services vimbiso-pay-service-$ENVIRONMENT \
               --query 'services[0]')
-            
+
             # Get primary deployment status
             PRIMARY_DEPLOYMENT=$(echo $SERVICE_JSON | jq -r '.deployments[] | select(.status == "PRIMARY")')
             RUNNING_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.runningCount')
             DESIRED_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.desiredCount')
             FAILED_TASKS=$(echo $PRIMARY_DEPLOYMENT | jq -r '.failedTasks')
-            
+
             echo "Deployment Status:"
             echo "Running Count: $RUNNING_COUNT"
             echo "Desired Count: $DESIRED_COUNT"
             echo "Failed Tasks: $FAILED_TASKS"
-            
+
             if [[ "$RUNNING_COUNT" == "$DESIRED_COUNT" && "$DESIRED_COUNT" -gt 0 ]]; then
               echo "Deployment completed successfully!"
               DEPLOYMENT_DONE=true
@@ -128,14 +128,14 @@ jobs:
                 --service-name vimbiso-pay-service-$ENVIRONMENT \
                 --desired-status STOPPED \
                 --query 'taskArns[]' --output text)
-              
+
               for TASK in $TASKS; do
                 echo "Failed task details for $TASK:"
                 aws ecs describe-tasks \
                   --cluster vimbiso-pay-cluster-$ENVIRONMENT \
                   --tasks $TASK \
                   --query 'tasks[].{reason: stoppedReason, exitCode: containers[].exitCode}'
-                
+
                 # Try to get logs even if task failed
                 echo "Logs for failed task $TASK:"
                 aws logs get-log-events \
@@ -145,15 +145,15 @@ jobs:
                   --query 'events[].message' \
                   --output text || echo "No logs available"
               done
-              
+
               echo "Deployment failed due to task failures"
               exit 1
             fi
-            
+
             # Get recent service events
             echo "Recent Events:"
             echo $SERVICE_JSON | jq -r '.events[0:3][] | .message'
-            
+
             ATTEMPTS=$((ATTEMPTS + 1))
             if [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; then
               echo "Waiting 30 seconds before next check (Attempt $ATTEMPTS of $MAX_ATTEMPTS)..."

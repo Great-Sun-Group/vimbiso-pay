@@ -78,7 +78,7 @@ variable "mycredex_app_url" {
   type        = string
 }
 
-variable "whatsapp_bot_api_key" {
+variable "client_api_key" {
   description = "API key for WhatsApp bot"
   type        = string
   sensitive   = true
