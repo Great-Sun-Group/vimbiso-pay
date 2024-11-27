@@ -18,7 +18,7 @@ from .screens import (
     OFFER_SUCCESSFUL,
     ACCEPT_CREDEX,
     OUTGOING_CREDEX,
-    CREDEX
+    CREDEX,
 )
 from ..utils.utils import wrap_text, get_greeting
 from ..config.constants import *
@@ -27,35 +27,35 @@ from serializers.offers import OfferCredexSerializer
 from core.utils.utils import CredexWhatsappService
 
 
-
-
 class ActionHandler:
 
-    def __init__(self, service: 'CredexBotService'):
+    def __init__(self, service: "CredexBotService"):
         self.service = service
 
     def handle_action_register(self, register=False):
         if register:
             return registration_form(
                 self.service.user.mobile_number,
-                "*Welcome To Credex!*\n\nIt looks like you're new here. Let's get you \nset up."
+                "*Welcome To Credex!*\n\nIt looks like you're new here. Let's get you \nset up.",
             )
 
-        if self.service.message['type'] == "nfm_reply":
+        if self.service.message["type"] == "nfm_reply":
             payload = {
-                "first_name": self.service.body.get('firstName'),
-                "last_name": self.service.body.get('lastName'),
-                "phone_number": self.service.message['from']
+                "first_name": self.service.body.get("firstName"),
+                "last_name": self.service.body.get("lastName"),
+                "phone_number": self.service.message["from"],
             }
             serializer = MemberDetailsSerializer(data=payload)
             if serializer.is_valid():
-                successful, message = self.service.api_interactions.register_member(serializer.validated_data)
+                successful, message = self.service.api_interactions.register_member(
+                    serializer.validated_data
+                )
                 if successful:
                     self.service.state.update_state(
                         self.service.current_state,
                         stage="handle_action_menu",
                         update_from="handle_action_menu",
-                        option="handle_action_menu"
+                        option="handle_action_menu",
                     )
                     return self.handle_action_menu(message=f"\n{message}\n\n")
                 else:
@@ -72,15 +72,15 @@ class ActionHandler:
 
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(user)
-        if not current_state.get('profile') or login:
+        if not current_state.get("profile") or login:
             response = self.service.refresh(reset=True)
             current_state = user.state.get_state(user)
             if response:
                 self.service.state_manager.update_state(
                     new_state=self.service.current_state,
                     update_from="handle_action_menu",
-                    stage='handle_action_register',
-                    option="handle_action_register"
+                    stage="handle_action_register",
+                    option="handle_action_register",
                 )
                 return response
 
@@ -154,47 +154,54 @@ class ActionHandler:
         # }
 
         # Get the member tier & currently selected account to render the menu
-        member_tier = current_state.get('profile', {}).get('memberDashboard', {}).get('memberTier', {}).get('low', 1)
-        selected_account = current_state.get('current_account')
+        member_tier = (
+            current_state.get("profile", {})
+            .get("memberDashboard", {})
+            .get("memberTier", {})
+            .get("low", 1)
+        )
+        selected_account = current_state.get("current_account")
 
         if member_tier >= 2 and not selected_account:
             return self.handle_action_select_profile()
 
         if not selected_account:
-            selected_account = current_state['profile']['memberDashboard']['accounts'][0]
-            current_state['current_account'] = selected_account
+            selected_account = current_state["profile"]["memberDashboard"]["accounts"][
+                0
+            ]
+            current_state["current_account"] = selected_account
             try:
                 user.state.update_state(
                     state=current_state,
-                    stage='handle_action_menu',
+                    stage="handle_action_menu",
                     update_from="handle_action_menu",
-                    option="handle_action_menu"
+                    option="handle_action_menu",
                 )
                 self.service.state_manager.update_state(
                     new_state=current_state,
-                    stage='handle_action_menu',
+                    stage="handle_action_menu",
                     update_from="handle_action_menu",
-                    option="handle_action_menu"
+                    option="handle_action_menu",
                 )
             except Exception as e:
                 print("ERROR : ", e)
 
-        pending = ''
+        pending = ""
         pending_in = 0
-        if selected_account['data']['pendingInData']['data']:
-            pending_in = len(selected_account['data']['pendingInData']['data'])
+        if selected_account["data"]["pendingInData"]["data"]:
+            pending_in = len(selected_account["data"]["pendingInData"]["data"])
             pending = f"    Pending Offers ({pending_in})"
 
         pending_out = 0
-        if selected_account['data']['pendingOutData']['data']:
-            pending_out = len(selected_account['data']['pendingOutData']['data'])
+        if selected_account["data"]["pendingOutData"]["data"]:
+            pending_out = len(selected_account["data"]["pendingOutData"]["data"])
 
         balances = ""
         secured = ""
 
-        balance_data = selected_account['data']['balanceData']['data']
-        is_owned_account = selected_account['data'].get('isOwnedAccount')
-        for bal in balance_data['securedNetBalancesByDenom'] :
+        balance_data = selected_account["data"]["balanceData"]["data"]
+        is_owned_account = selected_account["data"].get("isOwnedAccount")
+        for bal in balance_data["securedNetBalancesByDenom"]:
             balances += f"- {bal}\n"
             secured += f" *{bal}* \n"
 
@@ -207,111 +214,132 @@ class ActionHandler:
                 "type": "list",
                 "body": {
                     "text": (HOME_2 if is_owned_account else HOME_1).format(
-                        message=message if message else '',
-                        account=current_state.get('current_account', {}).get('accountName',
-                                                                                       "Personal Account"),
-                        balance=BALANCE.format(
-                            securedNetBalancesByDenom=balances if balances else "    $0.00\n",
-                            unsecured_balance=UNSERCURED_BALANCES.format(
-                                totalPayables=balance_data[
-                                    'unsecuredBalancesInDefaultDenom']['totalPayables'],
-                                totalReceivables=balance_data[
-                                    'unsecuredBalancesInDefaultDenom']['totalReceivables'],
-                                netPayRec=balance_data[
-                                    'unsecuredBalancesInDefaultDenom']['netPayRec'],
-                            ) if member_tier > 2 else f"Free tier remaining daily spend limit\n    *{current_state['profile'].get('remainingAvailableUSD', '0.00')} USD*\n{pending}\n",
-                            netCredexAssetsInDefaultDenom=balance_data[
-                                'netCredexAssetsInDefaultDenom']
+                        message=message if message else "",
+                        account=current_state.get("current_account", {}).get(
+                            "accountName", "Personal Account"
                         ),
-                        handle=current_state['current_account']['data']['accountHandle'],
+                        balance=BALANCE.format(
+                            securedNetBalancesByDenom=(
+                                balances if balances else "    $0.00\n"
+                            ),
+                            unsecured_balance=(
+                                UNSERCURED_BALANCES.format(
+                                    totalPayables=balance_data[
+                                        "unsecuredBalancesInDefaultDenom"
+                                    ]["totalPayables"],
+                                    totalReceivables=balance_data[
+                                        "unsecuredBalancesInDefaultDenom"
+                                    ]["totalReceivables"],
+                                    netPayRec=balance_data[
+                                        "unsecuredBalancesInDefaultDenom"
+                                    ]["netPayRec"],
+                                )
+                                if member_tier > 2
+                                else f"Free tier remaining daily spend limit\n    *{current_state['profile'].get('remainingAvailableUSD', '0.00')} USD*\n{pending}\n"
+                            ),
+                            netCredexAssetsInDefaultDenom=balance_data[
+                                "netCredexAssetsInDefaultDenom"
+                            ],
+                        ),
+                        handle=current_state["current_account"]["data"][
+                            "accountHandle"
+                        ],
                     )
                 },
-                "action":
-                    {
-                        "button": "🕹️ Options",
-                        "sections": [
-                            {
-                                "title": "Options",
-                                "rows":
-                                    [
-                                        {
-                                            "id": "handle_action_offer_credex",
-                                            "title": f"💸 Offer Secured Credex",
-                                        },
-                                        {
-                                            "id": "handle_action_pending_offers_in",
-                                            "title": f"📥 Pending Offers ({pending_in})"
-                                        },
-                                        {
-                                            "id": "handle_action_pending_offers_out",
-                                            "title": f"📤 Review Outgoing ({pending_out})"
-                                        },
-                                        {
-                                            "id": "handle_action_transactions",
-                                            "title": f"📒 Review Transactions",
-                                        }
-                                    ] if not (is_owned_account and member_tier > 2)  else [
-                                        {
-                                            "id": "handle_action_offer_credex",
-                                            "title": f"💸 Offer Secured Credex",
-                                        },
-                                        {
-                                            "id": "handle_action_pending_offers_in",
-                                            "title": f"📥 Pending Offers ({pending_in})"
-                                        },
-                                        {
-                                            "id": "handle_action_pending_offers_out",
-                                            "title": f"📤 Review Outgoing ({pending_out})"
-                                        },
-                                        {
-                                            "id": "handle_action_transactions",
-                                            "title": f"📒 Review Transactions",
-                                        },
-                                        {
-                                            "id": "handle_action_authorize_member",
-                                            "title": f"👥 Manage Members"
-                                        }, {
-                                            "id": "handle_action_notifications",
-                                            "title": f"🛎️ Notifications"
-                                        },
-                                        {
-                                            "id": "handle_action_switch_account",
-                                            "title": f"🏡 Member Dashboard",
-                                        }
-                                    ]
-                            }
-                        ]
-                    }
-            }
+                "action": {
+                    "button": "🕹️ Options",
+                    "sections": [
+                        {
+                            "title": "Options",
+                            "rows": (
+                                [
+                                    {
+                                        "id": "handle_action_offer_credex",
+                                        "title": f"💸 Offer Secured Credex",
+                                    },
+                                    {
+                                        "id": "handle_action_pending_offers_in",
+                                        "title": f"📥 Pending Offers ({pending_in})",
+                                    },
+                                    {
+                                        "id": "handle_action_pending_offers_out",
+                                        "title": f"📤 Review Outgoing ({pending_out})",
+                                    },
+                                    {
+                                        "id": "handle_action_transactions",
+                                        "title": f"📒 Review Transactions",
+                                    },
+                                ]
+                                if not (is_owned_account and member_tier > 2)
+                                else [
+                                    {
+                                        "id": "handle_action_offer_credex",
+                                        "title": f"💸 Offer Secured Credex",
+                                    },
+                                    {
+                                        "id": "handle_action_pending_offers_in",
+                                        "title": f"📥 Pending Offers ({pending_in})",
+                                    },
+                                    {
+                                        "id": "handle_action_pending_offers_out",
+                                        "title": f"📤 Review Outgoing ({pending_out})",
+                                    },
+                                    {
+                                        "id": "handle_action_transactions",
+                                        "title": f"📒 Review Transactions",
+                                    },
+                                    {
+                                        "id": "handle_action_authorize_member",
+                                        "title": f"👥 Manage Members",
+                                    },
+                                    {
+                                        "id": "handle_action_notifications",
+                                        "title": f"🛎️ Notifications",
+                                    },
+                                    {
+                                        "id": "handle_action_switch_account",
+                                        "title": f"🏡 Member Dashboard",
+                                    },
+                                ]
+                            ),
+                        }
+                    ],
+                },
+            },
         }
 
     def handle_action_select_profile(self, message=None):
         # Implementation for selecting a profile
         pass
 
-
     def handle_action_pending_offers_in(self):
         """THIS METHOD HANDLES DISPLAYING INCOMING OFFERS"""
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(self.service.user)
 
-        if not current_state.get('profile'):
+        if not current_state.get("profile"):
             self.service.api_interactions.refresh_member_info()
             user = CachedUser(self.service.user.mobile_number)
             current_state = user.state.get_state(self.service.user)
 
-
         if user.state.option == "handle_action_display_offers":
-            data = current_state.get('current_account', {}).get('data', {}).get('pendingInData', {}).get('data', [])
-            if self.service.body in [str(i) for i in range(1, len(data) + 1)] or self.service.message[
-                'type'] == 'interactive':
+            data = (
+                current_state.get("current_account", {})
+                .get("data", {})
+                .get("pendingInData", {})
+                .get("data", [])
+            )
+            if (
+                self.service.body in [str(i) for i in range(1, len(data) + 1)]
+                or self.service.message["type"] == "interactive"
+            ):
                 if data:
                     item = None
                     if self.service.body.isdigit():
                         item = data[int(self.service.body) - 1]
                     else:
                         for row in data:
-                            if row.get('credexID') == self.service.body:
+                            if row.get("credexID") == self.service.body:
                                 item = row
                                 break
 
@@ -325,9 +353,13 @@ class ActionHandler:
                                 "type": "button",
                                 "body": {
                                     "text": ACCEPT_CREDEX.format(
-                                        amount=item.get('formattedInitialAmount'),
-                                        party=item.get('counterpartyAccountName'),
-                                        type='Secured' if item.get('secured') else 'Unsecured'
+                                        amount=item.get("formattedInitialAmount"),
+                                        party=item.get("counterpartyAccountName"),
+                                        type=(
+                                            "Secured"
+                                            if item.get("secured")
+                                            else "Unsecured"
+                                        ),
                                     )
                                 },
                                 "action": {
@@ -336,51 +368,55 @@ class ActionHandler:
                                             "type": "reply",
                                             "reply": {
                                                 "id": f"decline_{item.get('credexID')}",
-                                                "title": "❌ Decline"
-                                            }
+                                                "title": "❌ Decline",
+                                            },
                                         },
                                         {
                                             "type": "reply",
                                             "reply": {
                                                 "id": f"accept_{item.get('credexID')}",
-                                                "title": "✅ Accept"
-                                            }
-                                        }
+                                                "title": "✅ Accept",
+                                            },
+                                        },
                                     ]
-                                }
-                            }
+                                },
+                            },
                         }
 
-        if self.service.body == 'handle_action_pending_offers_in':
+        if self.service.body == "handle_action_pending_offers_in":
             rows = []
             menu_string = "> *📥 Pending Incoming*\n"
-            data = current_state.get('current_account', {}).get('data', {}).get('pendingInData', {}).get('data', [])
+            data = (
+                current_state.get("current_account", {})
+                .get("data", {})
+                .get("pendingInData", {})
+                .get("data", [])
+            )
             for count, item in enumerate(data[:10], start=1):
                 menu_string += f"\n{count}. *Total Credex Amount :* {item.get('formattedInitialAmount')}\n        *From :* {item.get('counterpartyAccountName')}\n"
                 rows.append(
                     {
-                        "id": item.get('credexID'),
+                        "id": item.get("credexID"),
                         "title": f"{item.get('formattedInitialAmount')}",
-                        "description": f"from {item.get('counterpartyAccountName')}"
+                        "description": f"from {item.get('counterpartyAccountName')}",
                     }
                 )
 
             user.state.update_state(
                 state=current_state,
-                stage='handle_action_pending_offers_in',
+                stage="handle_action_pending_offers_in",
                 update_from="handle_action_pending_offers_in",
-                option="handle_action_display_offers"
+                option="handle_action_display_offers",
             )
 
             if not rows:
                 menu_string = "*Empty*\n\n🪹 No pending offers to display!\n\n"
-                rows = [
-                    {
-                        "id": "X",
-                        "title": "🏡 Menu"
-                    }
-                ]
-                return wrap_text(user_mobile_number=self.service.user.mobile_number , message=menu_string, extra_rows=rows)
+                rows = [{"id": "X", "title": "🏡 Menu"}]
+                return wrap_text(
+                    user_mobile_number=self.service.user.mobile_number,
+                    message=menu_string,
+                    extra_rows=rows,
+                )
 
             return {
                 "messaging_product": "whatsapp",
@@ -389,9 +425,7 @@ class ActionHandler:
                 "type": "interactive",
                 "interactive": {
                     "type": "list",
-                    "body": {
-                        "text": menu_string
-                    },
+                    "body": {"text": menu_string},
                     "action": {
                         "button": "✅ Accept All",
                         "sections": [
@@ -400,16 +434,16 @@ class ActionHandler:
                                 "rows": [
                                     {
                                         "id": "AcceptAllIncomingOffers",
-                                        "title": "✅ Accept All"
+                                        "title": "✅ Accept All",
                                     }
-                                ]
+                                ],
                             }
-                        ]
-                    }
-                }
+                        ],
+                    },
+                },
             }
         else:
-            if self.service.body == 'AcceptAllIncomingOffers':
+            if self.service.body == "AcceptAllIncomingOffers":
                 return self.handle_action_accept_all_incoming_offers()
 
     def handle_action_accept_offer(self):
@@ -420,39 +454,42 @@ class ActionHandler:
 
         payload = {
             "credexID": self.service.body.split("_")[-1],
-            "signerID": current_state['profile']['member'].get('memberID')
+            "signerID": current_state["profile"]["member"].get("memberID"),
         }
         successful, message = self.service.api_interactions.accept_credex(payload)
 
-
         if successful:
             secured = ""
-            for item in message['data']['dashboard']['data']['balanceData']['data']['securedNetBalancesByDenom']:
+            for item in message["data"]["dashboard"]["data"]["balanceData"]["data"][
+                "securedNetBalancesByDenom"
+            ]:
                 secured += f" *{item}* \n"
 
             balances = ""
-            balance_lists = message['data']['dashboard']['data']['balanceData']['data'][
-                'unsecuredBalancesInDefaultDenom']
+            balance_lists = message["data"]["dashboard"]["data"]["balanceData"]["data"][
+                "unsecuredBalancesInDefaultDenom"
+            ]
             for bal in balance_lists.keys():
                 balances += f"- {bal} {balance_lists[bal]}\n"
 
             message = BALANCE.format(
                 securedNetBalancesByDenom=secured if secured else "    $0.00\n",
                 unsecured_balance=balances,
-                netCredexAssetsInDefaultDenom=message['data']['dashboard']['data']['balanceData']['data'][
-                    'netCredexAssetsInDefaultDenom']
+                netCredexAssetsInDefaultDenom=message["data"]["dashboard"]["data"][
+                    "balanceData"
+                ]["data"]["netCredexAssetsInDefaultDenom"],
             )
 
             return wrap_text(
                 message=f"> 💸 *SUCCESS* \n\n{message}\n*Successfully Accepted Credex*\n",
                 user_mobile_number=self.service.user.mobile_number,
-                extra_rows=[]
+                extra_rows=[],
             )
         else:
             return wrap_text(
                 message=message,
                 user_mobile_number=self.service.user.mobile_number,
-                extra_rows=[]
+                extra_rows=[],
             )
 
     def handle_action_decline_offer(self):
@@ -465,20 +502,20 @@ class ActionHandler:
 
         payload = {
             "credexID": self.service.body.split("_")[-1],
-            "signerID":current_state['profile']['member'].get('memberID')
+            "signerID": current_state["profile"]["member"].get("memberID"),
         }
         successful, _ = self.service.api_interactions.decline_credex(payload)
         if successful:
             return wrap_text(
                 message="*Offer declined successfully*",
                 user_mobile_number=self.service.user.mobile_number,
-                extra_rows=[]
+                extra_rows=[],
             )
         else:
             return wrap_text(
                 message="*Failed to decline offer*",
                 user_mobile_number=self.service.user.mobile_number,
-                extra_rows=[]
+                extra_rows=[],
             )
 
     def handle_action_cancel_offer(self):
@@ -491,20 +528,20 @@ class ActionHandler:
 
         payload = {
             "credexID": self.service.body.split("_")[-1],
-            "signerID": current_state['profile']['member'].get('memberID')
+            "signerID": current_state["profile"]["member"].get("memberID"),
         }
         successful, _ = self.service.api_interactions.cancel_credex(payload)
         if successful:
             return wrap_text(
                 message="> *Cancelled by issuer*\n\n*Credex has been cancelled successfully*",
                 user_mobile_number=self.service.user.mobile_number,
-                extra_rows=[]
+                extra_rows=[],
             )
         else:
             return wrap_text(
                 message="*Credex could not be cancelled*",
                 user_mobile_number=self.service.user.mobile_number,
-                extra_rows=[]
+                extra_rows=[],
             )
 
     def handle_action_accept_all_incoming_offers(self):
@@ -512,44 +549,54 @@ class ActionHandler:
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(self.service.user)
 
-        data = current_state.get('current_account', {}).get('pendingInData') if current_state.get('current_account', {}).get('pendingInData') else []
+        data = (
+            current_state.get("current_account", {}).get("pendingInData")
+            if current_state.get("current_account", {}).get("pendingInData")
+            else []
+        )
         payload = {
-            "signerID": current_state['profile']['member'].get('memberID'),
-            "credexIDs": [i.get('credexID') for i in data]
+            "signerID": current_state["profile"]["member"].get("memberID"),
+            "credexIDs": [i.get("credexID") for i in data],
         }
         status, message = self.service.api_interactions.accept_bulk_credex(payload)
         if status:
             secured = ""
-            for item in message['dashboardData']['balanceData']['securedNetBalancesByDenom']:
+            for item in message["dashboardData"]["balanceData"][
+                "securedNetBalancesByDenom"
+            ]:
                 secured += f" *{item}* \n"
 
             balances = ""
-            balance_lists = message['dashboardData']['balanceData']['securedNetBalancesByDenom']
+            balance_lists = message["dashboardData"]["balanceData"][
+                "securedNetBalancesByDenom"
+            ]
             for bal in balance_lists:
                 balances += f"- {bal}\n"
 
             message = BALANCE.format(
                 securedNetBalancesByDenom=balances if balances else "    $0.00\n",
                 unsecured_balance="",
-                netCredexAssetsInDefaultDenom=message['dashboardData']['balanceData']['netCredexAssetsInDefaultDenom']
+                netCredexAssetsInDefaultDenom=message["dashboardData"]["balanceData"][
+                    "netCredexAssetsInDefaultDenom"
+                ],
             )
 
             user.state.update_state(
                 state=current_state,
-                stage='handle_action_menu',
+                stage="handle_action_menu",
                 update_from="handle_action_accept_all_incoming_offers",
-                option="handle_action_menu"
+                option="handle_action_menu",
             )
             return wrap_text(
                 message=f"> 💸 *SUCCESS* \n\n{message}\n *All offers accepted successfully*",
                 user_mobile_number=self.service.user.mobile_number,
-                x_is_menu=True
+                x_is_menu=True,
             )
         else:
             return wrap_text(
                 message="*Failed to accept all offers*",
                 user_mobile_number=self.service.user.mobile_number,
-                x_is_menu=True
+                x_is_menu=True,
             )
 
     def handle_action_pending_offers_out(self):
@@ -678,18 +725,26 @@ class ActionHandler:
         #     "message": "Dashboard retrieved successfully"
         # }
         if user.state.option == "handle_action_display_offers":
-            data = current_state.get('current_account', {}).get('data', {}).get('pendingOutData', {}).get('data', [])
+            data = (
+                current_state.get("current_account", {})
+                .get("data", {})
+                .get("pendingOutData", {})
+                .get("data", [])
+            )
             print("DATA ", data)
-            if self.service.body  in [str(i) for i in range(1, len(data) + 1)] or self.service.message['type'] == 'interactive':
+            if (
+                self.service.body in [str(i) for i in range(1, len(data) + 1)]
+                or self.service.message["type"] == "interactive"
+            ):
                 print("DATA : ", data)
                 if data:
                     item = None
                     if self.service.body.isdigit():
-                        item = data[int(self.service.body ) - 1]
+                        item = data[int(self.service.body) - 1]
                     else:
                         for row in data:
                             print("ROW : ", row)
-                            if row.get('credexID') == self.service.body:
+                            if row.get("credexID") == self.service.body:
                                 item = row
                                 break
                     return {
@@ -701,9 +756,13 @@ class ActionHandler:
                             "type": "button",
                             "body": {
                                 "text": OUTGOING_CREDEX.format(
-                                    amount=item.get('formattedInitialAmount'),
-                                    party=item.get('counterpartyAccountName'),
-                                    type='Secured' if item.get('secured') else 'Unsecured'
+                                    amount=item.get("formattedInitialAmount"),
+                                    party=item.get("counterpartyAccountName"),
+                                    type=(
+                                        "Secured"
+                                        if item.get("secured")
+                                        else "Unsecured"
+                                    ),
                                 )
                             },
                             "action": {
@@ -712,37 +771,42 @@ class ActionHandler:
                                         "type": "reply",
                                         "reply": {
                                             "id": f"cancel_{item.get('credexID')}",
-                                            "title": "❌ Cancel"
-                                        }
+                                            "title": "❌ Cancel",
+                                        },
                                     }
                                 ]
-                            }
-                        }
+                            },
+                        },
                     }
 
-        if self.service.body == 'handle_action_pending_offers_out':
+        if self.service.body == "handle_action_pending_offers_out":
             rows = []
             menu_string = "> *📤 Pending Outgoing*\n\n*Offers*\n"
             count = 1
-            current_state.get('current_account', {}).get('pendingOutData')
-            data = current_state.get('current_account', {}).get('data', {}).get('pendingOutData', {}).get('data', [])
+            current_state.get("current_account", {}).get("pendingOutData")
+            data = (
+                current_state.get("current_account", {})
+                .get("data", {})
+                .get("pendingOutData", {})
+                .get("data", [])
+            )
             for item in data[:10]:
-                counterparty = item.get('counterpartyAccountName')
+                counterparty = item.get("counterpartyAccountName")
                 menu_string += f"{count}. *{item.get('formattedInitialAmount')}* outgoing offer sent to\n        {counterparty}\n"
                 rows.append(
                     {
-                        "id": item.get('credexID'),
+                        "id": item.get("credexID"),
                         "title": f"{item.get('formattedInitialAmount')}",
-                        "description": f"to {item.get('counterpartyAccountName')}"
+                        "description": f"to {item.get('counterpartyAccountName')}",
                     }
                 )
                 count += 1
 
             user.state.update_state(
                 state=current_state,
-                stage='handle_action_pending_offers_out',
+                stage="handle_action_pending_offers_out",
                 update_from="handle_action_pending_offers_out",
-                option="handle_action_display_offers"
+                option="handle_action_display_offers",
             )
 
             if not rows:
@@ -750,7 +814,7 @@ class ActionHandler:
                 return wrap_text(
                     message=menu_string,
                     user_mobile_number=self.service.user.mobile_number,
-                    x_is_menu=True
+                    x_is_menu=True,
                 )
 
             return {
@@ -760,19 +824,12 @@ class ActionHandler:
                 "type": "interactive",
                 "interactive": {
                     "type": "list",
-                    "body": {
-                        "text": menu_string
-                    },
-                    "action":{
+                    "body": {"text": menu_string},
+                    "action": {
                         "button": "🕹️ Options",
-                        "sections": [
-                            {
-                                "title": "Options",
-                                "rows": rows
-                            }
-                        ]
-                    }
-                }
+                        "sections": [{"title": "Options", "rows": rows}],
+                    },
+                },
             }
 
     def handle_action_transactions(self):
@@ -780,21 +837,26 @@ class ActionHandler:
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(self.service.user)
 
+        page_number = current_state.get("page_number", 0)
 
-        page_number = current_state.get('page_number', 0)
-
-        if self.service.body in ['Next', 'next', 'handle_action_transactions']:
+        if self.service.body in ["Next", "next", "handle_action_transactions"]:
             page_number += 1
-        elif self.service.body in ['Prev', 'prev'] and page_number > 1:
+        elif self.service.body in ["Prev", "prev"] and page_number > 1:
             page_number -= 1
         else:
             if self.service.body.isdigit():
-                if 0 < int(self.service.body) <= len(current_state.get('current_page', [])):
-                    self.service.body = current_state['current_page'][int(self.service.body) - 1]['id']
+                if (
+                    0
+                    < int(self.service.body)
+                    <= len(current_state.get("current_page", []))
+                ):
+                    self.service.body = current_state["current_page"][
+                        int(self.service.body) - 1
+                    ]["id"]
 
             payload = {
                 "credexID": self.service.body,
-                "accountID": current_state['profile']['member'].get('memberID'),
+                "accountID": current_state["profile"]["member"].get("memberID"),
             }
 
             done, response = self.service.api_interactions.get_credex(payload)
@@ -810,46 +872,48 @@ class ActionHandler:
                             "type": "list",
                             "body": {
                                 "text": CREDEX.format(
-                                    formattedOutstandingAmount=credex['credexData'].get('formattedOutstandingAmount'),
-                                    formattedInitialAmount=credex['credexData'].get('formattedInitialAmount'),
-                                    counterpartyDisplayname=credex['credexData'].get('counterpartyAccountName'),
-                                    date=credex['credexData'].get('dateTime') if credex['credexData'].get(
-                                        'dateTime') else 'N/A',
-                                    type=credex['credexData'].get('transactionType')
+                                    formattedOutstandingAmount=credex["credexData"].get(
+                                        "formattedOutstandingAmount"
+                                    ),
+                                    formattedInitialAmount=credex["credexData"].get(
+                                        "formattedInitialAmount"
+                                    ),
+                                    counterpartyDisplayname=credex["credexData"].get(
+                                        "counterpartyAccountName"
+                                    ),
+                                    date=(
+                                        credex["credexData"].get("dateTime")
+                                        if credex["credexData"].get("dateTime")
+                                        else "N/A"
+                                    ),
+                                    type=credex["credexData"].get("transactionType"),
                                 )
                             },
-                            "action":
-                                {
-                                    "button": "🕹️ Menu",
-                                    "sections": [
-                                        {
-                                            "title": "Options",
-                                            "rows": [
-                                                {
-                                                    "id": "X",
-                                                    "title": "🏡 Menu"
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                }
-                        }
+                            "action": {
+                                "button": "🕹️ Menu",
+                                "sections": [
+                                    {
+                                        "title": "Options",
+                                        "rows": [{"id": "X", "title": "🏡 Menu"}],
+                                    }
+                                ],
+                            },
+                        },
                     }
 
             menu_string = "*Empty*\n\n🪹 No transaction(s) found!\n\n"
             return wrap_text(
                 message=menu_string,
                 user_mobile_number=self.service.user.mobile_number,
-                x_is_menu=True
+                x_is_menu=True,
             )
         print(">>>>>>", page_number)
 
         payload = {
-            "accountID": current_state['current_account'].get('accountID'),
+            "accountID": current_state["current_account"].get("accountID"),
             "numRows": 8,
-            "startRow": (page_number * 7) - 7 if (page_number * 7) - 7  > 0 else 1
+            "startRow": (page_number * 7) - 7 if (page_number * 7) - 7 > 0 else 1,
         }
-
 
         done, transactions = self.service.api_interactions.get_ledger(payload)
         if done:
@@ -858,43 +922,33 @@ class ActionHandler:
             menu_string = f"> *💳 TRANSACTIONS*\n\n*PAGE #{page_number}*\n\n"
             count = 1
             for txn in transactions:
-                if 'Next' in txn.get('formattedInitialAmount'):
+                if "Next" in txn.get("formattedInitialAmount"):
                     continue
                 # if count > 8:
                 #     break
                 nl = "\n"
                 menu_string += f"*{count}.* *{txn.get('formattedInitialAmount')}* {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName').replace('Personal', f'{nl}     Personal')}\n\n"
-                rows.append({
-                    "id": txn.get('credexID'),
-                    "title": f"{txn.get('formattedInitialAmount').replace('-', '')} {'DEBIT ' if '-' in txn.get('formattedInitialAmount') else 'CREDIT '}",
-                    "description": f"{txn.get('formattedInitialAmount')} {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName')}"
-                })
+                rows.append(
+                    {
+                        "id": txn.get("credexID"),
+                        "title": f"{txn.get('formattedInitialAmount').replace('-', '')} {'DEBIT ' if '-' in txn.get('formattedInitialAmount') else 'CREDIT '}",
+                        "description": f"{txn.get('formattedInitialAmount')} {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName')}",
+                    }
+                )
                 count += 1
-            current_state['page_number'] = page_number
-            current_state['current_page'] = rows
+            current_state["page_number"] = page_number
+            current_state["current_page"] = rows
             user.state.update_state(
                 state=current_state,
-                stage='handle_action_transactions',
+                stage="handle_action_transactions",
                 update_from="handle_action_transactions",
-                option="handle_action_transactions"
+                option="handle_action_transactions",
             )
             if page_number > 1:
-                rows.append(
-                    {
-                        "id": "Prev",
-                        "title": "< Prev",
-                        "description": "< Prev"
-                    }
-                )
+                rows.append({"id": "Prev", "title": "< Prev", "description": "< Prev"})
 
             if has_next:
-                rows.append(
-                    {
-                        "id": "Next",
-                        "title": "Next >",
-                        "description": "Next >"
-                    }
-                )
+                rows.append({"id": "Next", "title": "Next >", "description": "Next >"})
 
             print(len(rows))
 
@@ -909,31 +963,25 @@ class ActionHandler:
                         "body": {
                             "text": menu_string + f"Send *'Menu'* to go back to Menu"
                         },
-                        "action":
-                            {
-                                "button": "🕹️ Options",
-                                "sections": [
-                                    {
-                                        "title": "Options",
-                                        "rows": rows
-                                    }
-                                ]
-                            }
-                    }
+                        "action": {
+                            "button": "🕹️ Options",
+                            "sections": [{"title": "Options", "rows": rows}],
+                        },
+                    },
                 }
             menu_string = "*Empty*\n\n🪹 No transactions found!\n\n"
 
             return wrap_text(
                 message=menu_string,
                 user_mobile_number=self.service.user.mobile_number,
-                x_is_menu=True
+                x_is_menu=True,
             )
         else:
             menu_string = "*Empty*\n\n🪹 No transactions found!\n\n"
             return wrap_text(
                 message=menu_string,
                 user_mobile_number=self.service.user.mobile_number,
-                x_is_menu=True
+                x_is_menu=True,
             )
 
     def handle_action_create_business_account(self):
@@ -947,7 +995,7 @@ class ActionHandler:
     def handle_action_offer_credex(self):
         """
             Handling credex offers
-        :return: 
+        :return:
         """
 
         # {
@@ -1024,161 +1072,209 @@ class ActionHandler:
         current_state = user.state.get_state(self.service.user)
 
         # Get the selected profile
-        selected_profile = current_state.get('current_account', {})
+        selected_profile = current_state.get("current_account", {})
 
         # Get the member dashboard
-        member_dashboard = current_state.get('memberDashboard', {})
+        member_dashboard = current_state.get("memberDashboard", {})
 
-        message = ''
-        if not current_state.get('profile'):
+        message = ""
+        if not current_state.get("profile"):
             # Refresh the user state
             response = self.service.api_interactions.refresh_member_info()
             if response:
                 self.service.state_manager.update_state(
                     new_state=self.service.current_state,
                     update_from="handle_action_offer_credex",
-                    stage='handle_action_register',
-                    option="handle_action_register"
+                    stage="handle_action_register",
+                    option="handle_action_register",
                 )
                 return response
 
-        member_tier = current_state.get('member', {}).get('memberDashboard', {}).get('memberTier', {}).get('low', 1)
+        member_tier = (
+            current_state.get("member", {})
+            .get("memberDashboard", {})
+            .get("memberTier", {})
+            .get("low", 1)
+        )
 
-        if not current_state.get('current_account', {}) and member_tier >= 2:
+        if not current_state.get("current_account", {}) and member_tier >= 2:
             # Select a default profile
             return self.handle_action_select_profile()
         else:
             if not selected_profile:
-                selected_profile = current_state['profile']['memberDashboard']['accounts'][0]
-                current_state['current_account'] = selected_profile
+                selected_profile = current_state["profile"]["memberDashboard"][
+                    "accounts"
+                ][0]
+                current_state["current_account"] = selected_profile
                 self.service.state_manager.update_state(
                     new_state=current_state,
-                    stage='handle_action_offer_credex',
+                    stage="handle_action_offer_credex",
                     update_from="handle_action_offer_credex",
-                    option="handle_action_offer_credex"
+                    option="handle_action_offer_credex",
                 )
 
         payload = {}
-        if "=>" in f"{self.service.body}" or "->" f"{self.service.body}" or self.service.message['type'] == "nfm_reply":
-            if self.service.message['type'] == "nfm_reply":
+        if (
+            "=>" in f"{self.service.body}"
+            or "->" f"{self.service.body}"
+            or self.service.message["type"] == "nfm_reply"
+        ):
+            if self.service.message["type"] == "nfm_reply":
                 from datetime import datetime, timedelta
+
                 payload = {
-                    "authorizer_member_id": current_state['profile'].get('member', {}).get('memberID'),
-                    "issuer_member_id": selected_profile['data']['accountID'],
-                    "handle": self.service.body.get('handle'),
-                    "amount": self.service.body.get('amount'),
-                    "dueDate": self.service.body.get(
-                        'due_date'
-                    ) if self.service.body.get('due_date') else (
-                        datetime.now() + timedelta(weeks=4)
-                    ).timestamp() * 1000,
-                    "currency": self.service.body.get('currency'),
-                    "securedCredex": True
+                    "authorizer_member_id": current_state["profile"]
+                    .get("member", {})
+                    .get("memberID"),
+                    "issuer_member_id": selected_profile["data"]["accountID"],
+                    "handle": self.service.body.get("handle"),
+                    "amount": self.service.body.get("amount"),
+                    "dueDate": (
+                        self.service.body.get("due_date")
+                        if self.service.body.get("due_date")
+                        else (datetime.now() + timedelta(weeks=4)).timestamp() * 1000
+                    ),
+                    "currency": self.service.body.get("currency"),
+                    "securedCredex": True,
                 }
 
             if "=>" in f"{self.service.body}" or "->" f"{self.service.body}":
                 if "=>" in f"{self.service.body}":
-                    amount, user = f"{self.service.body}".split('=>')
+                    amount, user = f"{self.service.body}".split("=>")
                     if "=" in user:
                         user, _ = user.split("=")
                     from datetime import datetime
+
                     payload = {
-                        "authorizer_member_id": current_state['profile']['member'].get('memberID'),
-                        "issuer_member_id": selected_profile['data']['accountID'],
+                        "authorizer_member_id": current_state["profile"]["member"].get(
+                            "memberID"
+                        ),
+                        "issuer_member_id": selected_profile["data"]["accountID"],
                         "handle": user,
                         "amount": amount,
                         "dueDate": (datetime.now()).timestamp() * 1000,
-                        "currency": selected_profile['defaultDenom'] if selected_profile else current_state['profile'].get('member', {}).get('defaultDenom'),
-                        "securedCredex": True
+                        "currency": (
+                            selected_profile["defaultDenom"]
+                            if selected_profile
+                            else current_state["profile"]
+                            .get("member", {})
+                            .get("defaultDenom")
+                        ),
+                        "securedCredex": True,
                     }
 
             if "->" in f"{self.service.body}":
-                if '=' in f"{self.service.body}":
-                    amount, user_date = f"{self.service.body}".split('->')
-                    user, date = user_date.split('=')
+                if "=" in f"{self.service.body}":
+                    amount, user_date = f"{self.service.body}".split("->")
+                    user, date = user_date.split("=")
 
                     try:
                         from datetime import datetime
+
                         # Try to parse the date string with the specified format
-                        datetime.strptime(date, '%Y-%m-%d')
+                        datetime.strptime(date, "%Y-%m-%d")
 
                     except ValueError:
                         # If a ValueError is raised, the date string is not in the correct format
-                        return self.wrap_text(OFFER_CREDEX.format(message='*Invalid Due Date❗*'), x_is_menu=True)
+                        return self.wrap_text(
+                            OFFER_CREDEX.format(message="*Invalid Due Date❗*"),
+                            x_is_menu=True,
+                        )
                 else:
-                    amount, user = f"{self.service.body}".split('->')
+                    amount, user = f"{self.service.body}".split("->")
                     date = None
 
                 from datetime import datetime, timedelta
+
                 payload = {
-                    "authorizer_member_id": current_state['profile'].get('member', {}).get('memberID'),
-                    "issuer_member_id": selected_profile['data']['accountID'],
+                    "authorizer_member_id": current_state["profile"]
+                    .get("member", {})
+                    .get("memberID"),
+                    "issuer_member_id": selected_profile["data"]["accountID"],
                     "handle": user,
                     "amount": amount,
-                    "dueDate": datetime.strptime(
-                        date,
-                        '%Y-%m-%d'
-                        ).timestamp() * 1000 if date else (
-                        datetime.now() + timedelta(weeks=4)).timestamp() * 1000,
-                    "currency": selected_profile['data']['defaultDenom'] if selected_profile else current_state['profile'].get('member', {}).get('defaultDenom'),
-                    "securedCredex": False
+                    "dueDate": (
+                        datetime.strptime(date, "%Y-%m-%d").timestamp() * 1000
+                        if date
+                        else (datetime.now() + timedelta(weeks=4)).timestamp() * 1000
+                    ),
+                    "currency": (
+                        selected_profile["data"]["defaultDenom"]
+                        if selected_profile
+                        else current_state["profile"]
+                        .get("member", {})
+                        .get("defaultDenom")
+                    ),
+                    "securedCredex": False,
                 }
 
-            serializer = OfferCredexSerializer(data=payload, context={"api_interactions": self.service.api_interactions})
+            serializer = OfferCredexSerializer(
+                data=payload,
+                context={"api_interactions": self.service.api_interactions},
+            )
             if serializer.is_valid():
                 accounts = []
                 available_accounts = []
                 count = 1
                 account_string = f""
-                print("PASSED VALIDATION : ", current_state['profile']['memberDashboard']['accounts'])
-                for account in current_state['profile']['memberDashboard']['accounts']:
+                print(
+                    "PASSED VALIDATION : ",
+                    current_state["profile"]["memberDashboard"]["accounts"],
+                )
+                for account in current_state["profile"]["memberDashboard"]["accounts"]:
                     print("ACCOUNT : ", account)
-                    account = account.get('data', {})
-                    if account.get('accountID') not in available_accounts:
+                    account = account.get("data", {})
+                    if account.get("accountID") not in available_accounts:
 
-                        account_string += f" *{count}.*  _{account.get('accountName')}_\n"
+                        account_string += (
+                            f" *{count}.*  _{account.get('accountName')}_\n"
+                        )
                         accounts.append(
                             {
-                                "id": account.get('accountID'),
-                                "title": f"👤{account.get('accountName')}"
+                                "id": account.get("accountID"),
+                                "title": f"👤{account.get('accountName')}",
                             }
                         )
-                        available_accounts.append(account.get('accountID'))
+                        available_accounts.append(account.get("accountID"))
 
                         if count > 8:
                             break
                         count += 1
 
-
                 count += 1
-                response = CONFIRM_SECURED_CREDEX.format(
-                    party=serializer.validated_data.get('full_name'),
-                    amount=serializer.validated_data.get('InitialAmount'),
-                    currency=serializer.validated_data.get('Denomination'),
-                    source=selected_profile.get('accountName'),
-                    handle=serializer.validated_data.pop('handle'),
-                    secured='*secured*',
-                    accounts=account_string
-
-                ) if serializer.validated_data.get('securedCredex') else CONFIRM_UNSECURED_CREDEX.format(
-                    party=serializer.validated_data.get('full_name'),
-                    amount=serializer.validated_data.get('InitialAmount'),
-                    currency=serializer.validated_data.get('Denomination'),
-                    source=selected_profile.get('accountName'),
-                    handle=serializer.validated_data.pop('handle'),
-                    secured='*unsecured*',
-                    date=f"*Due Date :* {serializer.validated_data.get('dueDate')}",
-                    accounts=account_string
+                response = (
+                    CONFIRM_SECURED_CREDEX.format(
+                        party=serializer.validated_data.get("full_name"),
+                        amount=serializer.validated_data.get("InitialAmount"),
+                        currency=serializer.validated_data.get("Denomination"),
+                        source=selected_profile.get("accountName"),
+                        handle=serializer.validated_data.pop("handle"),
+                        secured="*secured*",
+                        accounts=account_string,
+                    )
+                    if serializer.validated_data.get("securedCredex")
+                    else CONFIRM_UNSECURED_CREDEX.format(
+                        party=serializer.validated_data.get("full_name"),
+                        amount=serializer.validated_data.get("InitialAmount"),
+                        currency=serializer.validated_data.get("Denomination"),
+                        source=selected_profile.get("accountName"),
+                        handle=serializer.validated_data.pop("handle"),
+                        secured="*unsecured*",
+                        date=f"*Due Date :* {serializer.validated_data.get('dueDate')}",
+                        accounts=account_string,
+                    )
                 )
 
                 print("RESPONSE : ", response)
-                current_state['confirm_offer_payload'] = serializer.validated_data
-                current_state['confirm_offer_payload']['secured'] = serializer.validated_data['securedCredex']
+                current_state["confirm_offer_payload"] = serializer.validated_data
+                current_state["confirm_offer_payload"]["secured"] = (
+                    serializer.validated_data["securedCredex"]
+                )
                 self.service.state_manager.update_state(
                     new_state=current_state,
-                    stage='handle_action_offer_credex',
+                    stage="handle_action_offer_credex",
                     update_from="handle_action_offer_credex",
-                    option="handle_action_confirm_offer_credex"
+                    option="handle_action_confirm_offer_credex",
                 )
 
                 return {
@@ -1188,9 +1284,7 @@ class ActionHandler:
                     "type": "interactive",
                     "interactive": {
                         "type": "flow",
-                        "body": {
-                            "text": response
-                        },
+                        "body": {"text": response},
                         "action": {
                             "name": "flow",
                             "parameters": {
@@ -1201,33 +1295,32 @@ class ActionHandler:
                                 "flow_cta": "Sign & Send",
                                 "flow_action_payload": {
                                     "screen": "OFFER_SECURED_CREDEX",
-                                    "data": {
-                                        "source_account": accounts
-                                    }
-                                }
-                            }
-                        }
-                    }
-
+                                    "data": {"source_account": accounts},
+                                },
+                            },
+                        },
+                    },
                 }
             else:
                 print("ERROR : ", serializer.errors)
                 for err in serializer.errors.keys():
                     if "This field is required." != serializer.errors[err][0]:
-                        message = f'*{serializer.errors[err][0]}❗*'
+                        message = f"*{serializer.errors[err][0]}❗*"
                         break
 
         if user.state.option == "handle_action_confirm_offer_credex":
-            to_credex = current_state.get('confirm_offer_payload')
-            to_credex['issuerAccountID'] = selected_profile.get('accountID')
-            if self.service.message['type'] == "nfm_reply":
-                to_credex['issuerAccountID'] = self.service.message['message']['source_account']
+            to_credex = current_state.get("confirm_offer_payload")
+            to_credex["issuerAccountID"] = selected_profile.get("accountID")
+            if self.service.message["type"] == "nfm_reply":
+                to_credex["issuerAccountID"] = self.service.message["message"][
+                    "source_account"
+                ]
 
-            to_credex['memberID'] = member_dashboard.get('memberID')
+            to_credex["memberID"] = member_dashboard.get("memberID")
             to_credex.pop("handle", None)
-            if to_credex.get('securedCredex'):
-                to_credex.pop('dueDate', None)
-            to_credex.pop('secured', None)
+            if to_credex.get("securedCredex"):
+                to_credex.pop("dueDate", None)
+            to_credex.pop("secured", None)
 
             success, message = self.service.api_interactions.offer_credex(to_credex)
             # {
@@ -1326,61 +1419,78 @@ class ActionHandler:
             # }
             print(">>>>> ", message)
             if success:
-                if message['data'].get('action', {}).get('type') == 'CREDEX_CREATED':
+                if message["data"].get("action", {}).get("type") == "CREDEX_CREATED":
 
-                    response = message['data'].get("action", {}).get("details", {})
-                    current_state.pop('confirm_offer_payload', {})
-                    denomination = response.get('denomination', 'USD')
-                    current_state.pop('current_account', {})
+                    response = message["data"].get("action", {}).get("details", {})
+                    current_state.pop("confirm_offer_payload", {})
+                    denomination = response.get("denomination", "USD")
+                    current_state.pop("current_account", {})
 
                     success_message = OFFER_SUCCESSFUL.format(
-                        type='Secured Credex' if response.get('securedCredex') else 'Unsecured Credex',
-                        amount=response.get('amount'),
+                        type=(
+                            "Secured Credex"
+                            if response.get("securedCredex")
+                            else "Unsecured Credex"
+                        ),
+                        amount=response.get("amount"),
                         currency=denomination,
-                        recipient=response.get('receiverAccountName'),
-                        source=selected_profile['data']['accountName'],
-                        secured='*Secured* credex' if response.get('securedCredex') else '*Unsecured* credex',
+                        recipient=response.get("receiverAccountName"),
+                        source=selected_profile["data"]["accountName"],
+                        secured=(
+                            "*Secured* credex"
+                            if response.get("securedCredex")
+                            else "*Unsecured* credex"
+                        ),
                     )
 
                     secured = ""
-                    for item in message['data']['dashboard']['data']['balanceData']['data']['securedNetBalancesByDenom']:
+                    for item in message["data"]["dashboard"]["data"]["balanceData"][
+                        "data"
+                    ]["securedNetBalancesByDenom"]:
                         secured += f" *{item}* \n"
 
                     balances = ""
-                    balance_lists = message['data']['dashboard']['data']['balanceData']['data']['unsecuredBalancesInDefaultDenom']
+                    balance_lists = message["data"]["dashboard"]["data"]["balanceData"][
+                        "data"
+                    ]["unsecuredBalancesInDefaultDenom"]
                     for bal in balance_lists.keys():
                         balances += f"- {bal} {balance_lists[bal]}\n"
 
-                    balance_data = BALANCE.format( 
+                    balance_data = BALANCE.format(
                         securedNetBalancesByDenom=secured if secured else "    $0.00\n",
                         unsecured_balance=balances,
-                        netCredexAssetsInDefaultDenom=message['data']['dashboard']['data']['balanceData']['data']['netCredexAssetsInDefaultDenom']
+                        netCredexAssetsInDefaultDenom=message["data"]["dashboard"][
+                            "data"
+                        ]["balanceData"]["data"]["netCredexAssetsInDefaultDenom"],
                     )
 
                     return wrap_text(
                         message=f"{success_message}{balance_data}",
                         user_mobile_number=self.service.user.mobile_number,
-                        x_is_menu=True
+                        x_is_menu=True,
                     )
                 else:
-                    current_state.pop('confirm_offer_payload', {})
+                    current_state.pop("confirm_offer_payload", {})
                     message = self.format_synopsis(
-                        message.get("error", {}).replace("Error:", ""))
+                        message.get("error", {}).replace("Error:", "")
+                    )
             else:
                 try:
-                    current_state.pop('confirm_offer_payload', {})
+                    current_state.pop("confirm_offer_payload", {})
                     message = self.format_synopsis(message.replace("Error:", ""))
                 except Exception as e:
-                    message = 'Invalid option selected'
+                    message = "Invalid option selected"
                     print("ERROR : ", e)
 
         self.service.state_manager.update_state(
             new_state=current_state,
-            stage='handle_action_offer_credex',
+            stage="handle_action_offer_credex",
             update_from="handle_action_offer_credex",
-            option="handle_action_offer_credex"
+            option="handle_action_offer_credex",
         )
-        return offer_credex(self.service.user.mobile_number, message=self.format_synopsis(message))
+        return offer_credex(
+            self.service.user.mobile_number, message=self.format_synopsis(message)
+        )
 
     def handle_default_action(self):
         # Implementation for handling default or unknown actions
@@ -1403,5 +1513,6 @@ class ActionHandler:
             line_length += len(word) + 1
 
         return formatted_synopsis.strip()
+
 
 # Add other action handling methods as needed

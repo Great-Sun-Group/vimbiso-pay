@@ -23,7 +23,7 @@ HOME_1 = """
 # HOME_1 = """
 # > *💳 {account}*
 # {balance}
-# - *💸 Make Credex Offer* 
+# - *💸 Make Credex Offer*
 # - *📥 Pending Offers ({pending_in})*
 # - *📤 Review Outgoing Offers ({pending_out})*
 # - *📒 Review Transactions*
@@ -50,7 +50,7 @@ HOME_2 = """
 # - *📤 Review Outgoing Offers ({pending_out})*
 # - *📒 Review Transactions*
 # - *👥 Add or remove members*
-# - *🛎️ Update notification recipient* 
+# - *🛎️ Update notification recipient*
 # - *🏡 Return to Member Dashboard*
 
 #  ⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
