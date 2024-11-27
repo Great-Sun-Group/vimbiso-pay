@@ -3,9 +3,9 @@
 A WhatsApp bot service that facilitates financial transactions through the credex-core API, enabling users to manage their credex accounts and perform financial operations directly in a secure WhatsApp chat.
 
 ### Quick Start
-After cloning and seting up environment variables, or activation of a codespace, start development environment with:
+After cloning and setting up environment variables, or activation of a codespace, start development environment with:
 ```bash
-docker compose -f app/compose.yaml up --build
+make up
 ```
 
 The application will be available at http://localhost:8000
@@ -71,14 +71,6 @@ The application will be available at http://localhost:8000
 - Python 3.10+
 - Access to Credex Core API
 - WhatsApp Business API credentials
-
-### Quick Start
-After cloning and seting up environment variables, or activation of a codespace, start development environment with:
-```bash
-docker compose -f app/compose.yaml up --build
-```
-
-The application will be available at http://localhost:8000
 
 ### Development Features
 - Live code reloading

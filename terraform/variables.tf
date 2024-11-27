@@ -22,6 +22,12 @@ variable "django_secret" {
   sensitive   = true
 }
 
+variable "debug" {
+  description = "Django debug mode"
+  type        = bool
+  default     = false
+}
+
 variable "mycredex_app_url" {
   description = "URL for the Credex Core API"
   type        = string
@@ -51,9 +57,20 @@ variable "whatsapp_phone_number_id" {
   sensitive   = true
 }
 
-# Neo4j License
-variable "neo4j_enterprise_license" {
-  description = "Neo4j Enterprise Edition license key"
+variable "whatsapp_business_id" {
+  description = "WhatsApp business ID"
+  type        = string
+  sensitive   = true
+}
+
+variable "whatsapp_registration_flow_id" {
+  description = "WhatsApp registration flow ID"
+  type        = string
+  sensitive   = true
+}
+
+variable "whatsapp_company_registration_flow_id" {
+  description = "WhatsApp company registration flow ID"
   type        = string
   sensitive   = true
 }

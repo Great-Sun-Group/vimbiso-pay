@@ -9,21 +9,30 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # Django Configuration
       - DJANGO_SECRET=${DJANGO_SECRET}
-      - DEBUG=1
-      - REDIS_URL=redis://redis:6379/
+      - DEBUG=${DEBUG:-False}  # Default to False for security
+      - DJANGO_ENV=${DJANGO_ENV:-development}
+      - DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-config.settings}
+      - DJANGO_DEBUG_TOOLBAR=${DJANGO_DEBUG_TOOLBAR:-1}
+      - PYTHONPATH=${PYTHONPATH:-/app}
+
+      # Redis Configuration
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/}
+
+      # Credex Core API Configuration
+      - MYCREDEX_APP_URL=${MYCREDEX_APP_URL:-https://dev.mycredex.dev/}
+      - CLIENT_API_KEY=${CLIENT_API_KEY}
+
       # WhatsApp Integration
-      - WHATSAPP_API_URL=${WHATSAPP_API_URL}
+      - WHATSAPP_API_URL=${WHATSAPP_API_URL:-https://graph.facebook.com/v17.0/}
       - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
       - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
-      - CLIENT_API_KEY=${CLIENT_API_KEY}
-      # Credex Core API
-      - MYCREDEX_APP_URL=${MYCREDEX_APP_URL}
+      - WHATSAPP_BUSINESS_ID=${WHATSAPP_BUSINESS_ID}
+      - WHATSAPP_REGISTRATION_FLOW_ID=${WHATSAPP_REGISTRATION_FLOW_ID}
+      - WHATSAPP_COMPANY_REGISTRATION_FLOW_ID=${WHATSAPP_COMPANY_REGISTRATION_FLOW_ID}
+
       # Development Settings
-      - DJANGO_ENV=development
-      - DJANGO_SETTINGS_MODULE=config.settings
-      - DJANGO_DEBUG_TOOLBAR=1
-      - PYTHONPATH=/app
       - X_GITHUB_TOKEN=${X_GITHUB_TOKEN:-}
     volumes:
       - .:/app:cached

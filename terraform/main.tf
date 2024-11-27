@@ -372,11 +372,15 @@ resource "aws_ecs_task_definition" "app" {
       environment  = [
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_secret },
+        { name = "DEBUG", value = tostring(var.debug) },
         { name = "MYCREDEX_APP_URL", value = var.mycredex_app_url },
-        { name = "WHATSAPP_BOT_API_KEY", value = var.whatsapp_bot_api_key },
+        { name = "CLIENT_API_KEY", value = var.client_api_key },
         { name = "WHATSAPP_API_URL", value = var.whatsapp_api_url },
         { name = "WHATSAPP_ACCESS_TOKEN", value = var.whatsapp_access_token },
-        { name = "WHATSAPP_PHONE_NUMBER_ID", value = var.whatsapp_phone_number_id }
+        { name = "WHATSAPP_PHONE_NUMBER_ID", value = var.whatsapp_phone_number_id },
+        { name = "WHATSAPP_BUSINESS_ID", value = var.whatsapp_business_id },
+        { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.whatsapp_registration_flow_id },
+        { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.whatsapp_company_registration_flow_id }
       ]
       portMappings = [
         {
@@ -443,8 +447,8 @@ resource "aws_ecs_service" "app" {
 
 # Auto Scaling
 resource "aws_appautoscaling_target" "app" {
-  max_capacity       = 4
-  min_capacity       = 2
+  max_capacity       = local.current_env.autoscaling.max_capacity
+  min_capacity       = local.current_env.autoscaling.min_capacity
   resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
@@ -461,7 +465,7 @@ resource "aws_appautoscaling_policy" "cpu" {
     predefined_metric_specification {
       predefined_metric_type = "ECSServiceAverageCPUUtilization"
     }
-    target_value = 80
+    target_value = local.current_env.autoscaling.cpu_threshold
   }
 }
 
@@ -476,6 +480,6 @@ resource "aws_appautoscaling_policy" "memory" {
     predefined_metric_specification {
       predefined_metric_type = "ECSServiceAverageMemoryUtilization"
     }
-    target_value = 80
+    target_value = local.current_env.autoscaling.memory_threshold
   }
 }
