@@ -11,7 +11,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     LC_ALL=en_US.UTF-8 \
     DEBUG=false \
     DJANGO_ENV=production \
-    DJANGO_SETTINGS_MODULE=config.settings
+    DJANGO_SETTINGS_MODULE=config.settings \
+    PORT=8000
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -58,18 +59,20 @@ RUN pip install --no-cache-dir -r requirements/prod.txt
 # Copy application code
 COPY ./app /app
 
-# Set permissions
-RUN chown -R appuser:appuser /app
+# Create required directories with proper permissions
+RUN mkdir -p /app/data && \
+    chown -R appuser:appuser /app && \
+    chmod +x /app/start_app.sh
 
 # Switch to non-privileged user
 USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health/ || exit 1
+    CMD curl -f http://localhost:${PORT}/health/ || exit 1
 
 # Expose port
-EXPOSE 8000
+EXPOSE ${PORT}
 
 # Start command
 CMD ["./start_app.sh"]
