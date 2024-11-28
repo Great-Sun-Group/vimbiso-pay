@@ -39,7 +39,12 @@ output "target_group_arn" {
 # Domain
 output "domain" {
   description = "The domain name for the environment"
-  value       = local.domain
+  value       = local.current_domain.domain
+}
+
+output "load_balancer_dns" {
+  description = "DNS name of the load balancer"
+  value       = aws_lb.main.dns_name
 }
 
 # Container Registry

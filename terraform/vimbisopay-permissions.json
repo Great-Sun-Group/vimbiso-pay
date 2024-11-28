@@ -106,7 +106,11 @@
 				"route53:GetHostedZone",
 				"route53:ListHostedZones",
 				"route53:ChangeResourceRecordSets",
-				"route53:ListResourceRecordSets"
+				"route53:ListResourceRecordSets",
+				"route53:GetChange",
+				"route53:CreateHealthCheck",
+				"route53:DeleteHealthCheck",
+				"route53:GetHealthCheck"
 			],
 			"Resource": "*"
 		},

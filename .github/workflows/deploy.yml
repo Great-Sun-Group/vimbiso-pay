@@ -12,7 +12,7 @@ jobs:
     env:
       ENVIRONMENT: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
       BUILD_TARGET: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
-      DOMAIN: ${{ github.ref == 'refs/heads/prod' && 'mycredex.app' || 'stage.mycredex.dev' }}
+      DOMAIN: ${{ github.ref == 'refs/heads/prod' && 'whatsapp.vimbisopay.africa' || 'whatsapp-stage.vimbisopay.africa' }}
 
     steps:
       - name: Checkout code

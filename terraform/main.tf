@@ -1,9 +1,25 @@
 # Local variables for environment configuration
 locals {
   # Domain configuration
-  is_production = var.environment == "production"
-  domain = local.is_production ? local.current_env.domain : "${local.current_env.subdomain}.${local.current_env.dev_domain_base}"
-  domain_base = local.is_production ? local.current_env.domain : local.current_env.dev_domain_base
+  domains = {
+    production = {
+      domain = "whatsapp.vimbisopay.africa"
+      zone_name = "vimbisopay.africa"  # Root hosted zone
+    }
+    staging = {
+      domain = "whatsapp-stage.vimbisopay.africa"
+      zone_name = "vimbisopay.africa"  # Same root hosted zone
+    }
+  }
+
+  current_domain = local.domains[var.environment]
+
+  # Common tags for all resources
+  common_tags = {
+    Environment = var.environment
+    ManagedBy   = "terraform"
+    Project     = "vimbiso-pay"
+  }
 }
 
 #---------------------------------------------------------------
@@ -168,7 +184,7 @@ resource "aws_security_group" "ecs_tasks" {
 
 # ACM Certificate
 resource "aws_acm_certificate" "main" {
-  domain_name       = local.domain
+  domain_name       = local.current_domain.domain
   validation_method = "DNS"
 
   tags = local.common_tags
@@ -180,9 +196,24 @@ resource "aws_acm_certificate" "main" {
 
 # Route53 Configuration
 data "aws_route53_zone" "domain" {
-  name = local.domain_base
+  name = local.current_domain.zone_name
+  private_zone = false
 }
 
+# Create A record for the domain
+resource "aws_route53_record" "app" {
+  zone_id = data.aws_route53_zone.domain.zone_id
+  name    = local.current_domain.domain
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
+  }
+}
+
+# DNS Validation record
 resource "aws_route53_record" "cert_validation" {
   for_each = {
     for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
