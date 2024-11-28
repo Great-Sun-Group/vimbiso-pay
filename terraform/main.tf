@@ -407,6 +407,7 @@ resource "aws_ecs_service" "app" {
   launch_type                       = "FARGATE"
   scheduling_strategy               = "REPLICA"
   platform_version                  = "LATEST"
+  wait_for_steady_state            = false # Disable waiting for steady state
 
   network_configuration {
     security_groups  = [aws_security_group.ecs_tasks.id]
@@ -428,7 +429,7 @@ resource "aws_ecs_service" "app" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  depends_on = [aws_ecs_cluster.main]
+  depends_on = [aws_ecs_cluster.main, aws_lb_listener.https]
 
   tags = merge(local.common_tags, {
     Name = "vimbiso-pay-service-${var.environment}"
@@ -443,7 +444,7 @@ resource "aws_appautoscaling_target" "app" {
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
 
-  depends_on = [aws_ecs_cluster.main, aws_ecs_service.app]
+  depends_on = [aws_ecs_service.app]
 
   tags = merge(local.common_tags, {
     Name = "vimbiso-pay-autoscaling-target-${var.environment}"
