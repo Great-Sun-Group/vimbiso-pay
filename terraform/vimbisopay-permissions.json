@@ -95,7 +95,8 @@
                 "elasticloadbalancing:RemoveTags",
                 "elasticloadbalancing:RegisterTargets",
                 "elasticloadbalancing:DeregisterTargets",
-                "elasticloadbalancing:DescribeTags"
+                "elasticloadbalancing:DescribeTags",
+                "elasticloadbalancing:SetSecurityGroups"
             ],
             "Resource": "*"
         },
@@ -198,7 +199,10 @@
             "Action": [
                 "iam:CreateServiceLinkedRole"
             ],
-            "Resource": "arn:aws:iam::*:role/aws-service-role/*"
+            "Resource": [
+                "arn:aws:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/*",
+                "arn:aws:iam::*:role/aws-service-role/ecs.amazonaws.com/*"
+            ]
         },
         {
             "Effect": "Allow",

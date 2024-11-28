@@ -30,6 +30,24 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: af-south-1
 
+      - name: Create AWS Service-Linked Roles
+        run: |
+          # Create ECS service-linked role if it doesn't exist
+          if ! aws iam get-role --role-name "AWSServiceRoleForECS" 2>/dev/null; then
+            echo "Creating ECS service-linked role..."
+            aws iam create-service-linked-role --aws-service-name "ecs.amazonaws.com"
+          else
+            echo "ECS service-linked role already exists"
+          fi
+
+          # Create ELB service-linked role if it doesn't exist
+          if ! aws iam get-role --role-name "AWSServiceRoleForElasticLoadBalancing" 2>/dev/null; then
+            echo "Creating ELB service-linked role..."
+            aws iam create-service-linked-role --aws-service-name "elasticloadbalancing.amazonaws.com"
+          else
+            echo "ELB service-linked role already exists"
+          fi
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
 
