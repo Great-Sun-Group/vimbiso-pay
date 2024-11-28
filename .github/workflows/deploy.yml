@@ -11,7 +11,7 @@ jobs:
 
     env:
       ENVIRONMENT: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
-      BUILD_TARGET: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
+      BUILD_TARGET: production
       DOMAIN: ${{ github.ref == 'refs/heads/prod' && 'whatsapp.vimbisopay.africa' || 'whatsapp-stage.vimbisopay.africa' }}
 
     steps:

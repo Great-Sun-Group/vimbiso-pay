@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Base stage for shared configurations
-FROM python:3.10.12-slim as base
+FROM python:3.10.12-slim AS base
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Development stage
-FROM base as development
+FROM base AS development
 
 # Install development dependencies
 RUN apt-get update && apt-get install -y \
@@ -38,7 +38,7 @@ COPY requirements /app/requirements
 RUN pip install -r requirements/dev.txt
 
 # Production stage
-FROM base as production
+FROM base AS production
 
 # Create non-privileged user
 ARG UID=10001
