@@ -1,28 +1,3 @@
-# Local variables for environment configuration
-locals {
-  # Domain configuration
-  domains = {
-    production = {
-      domain = "whatsapp.vimbisopay.africa"
-      zone_name = "vimbisopay.africa"  # Root hosted zone
-    }
-    staging = {
-      domain = "whatsapp-stage.vimbisopay.africa"
-      zone_name = "vimbisopay.africa"  # Same root hosted zone
-    }
-  }
-
-  current_domain = local.domains[var.environment]
-
-  # Common tags for all resources
-  common_tags = {
-    Environment = var.environment
-    ManagedBy   = "terraform"
-    Project     = "vimbiso-pay"
-  }
-}
-
-#---------------------------------------------------------------
 # Network Resources
 #---------------------------------------------------------------
 
@@ -184,7 +159,7 @@ resource "aws_security_group" "ecs_tasks" {
 
 # ACM Certificate
 resource "aws_acm_certificate" "main" {
-  domain_name       = local.current_domain.domain
+  domain_name       = "${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
   validation_method = "DNS"
 
   tags = local.common_tags
@@ -196,14 +171,14 @@ resource "aws_acm_certificate" "main" {
 
 # Route53 Configuration
 data "aws_route53_zone" "domain" {
-  name = local.current_domain.zone_name
+  name = local.current_domain.dev_domain_base
   private_zone = false
 }
 
 # Create A record for the domain
 resource "aws_route53_record" "app" {
   zone_id = data.aws_route53_zone.domain.zone_id
-  name    = local.current_domain.domain
+  name    = "${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
   type    = "A"
 
   alias {

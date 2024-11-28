@@ -39,7 +39,7 @@ output "target_group_arn" {
 # Domain
 output "domain" {
   description = "The domain name for the environment"
-  value       = local.current_domain.domain
+  value       = "${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
 }
 
 output "load_balancer_dns" {

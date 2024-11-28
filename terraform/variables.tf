@@ -29,7 +29,7 @@ variable "debug" {
 }
 
 variable "mycredex_app_url" {
-  description = "URL for the Credex Core API"
+  description = "URL for the VimbisoPay WhatsApp Chatbot"
   type        = string
 }
 

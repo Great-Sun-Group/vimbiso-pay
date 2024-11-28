@@ -1,7 +1,7 @@
 {
   "environment": "staging",
-  "subdomain": "stage",
-  "dev_domain_base": "mycredex.dev",
+  "subdomain": "whatsapp-stage",
+  "dev_domain_base": "vimbisopay.africa",
   "aws_region": "af-south-1",
   "vpc_cidr": "10.2.0.0/16",
   "ecs_task": {
