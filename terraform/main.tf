@@ -7,9 +7,9 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
   enable_dns_support   = true
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-vpc-${var.environment}"
-  })
+  }
 }
 
 # Fetch AZs in the current region
@@ -22,9 +22,9 @@ resource "aws_subnet" "private" {
   availability_zone = data.aws_availability_zones.available.names[count.index]
   vpc_id            = aws_vpc.main.id
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-private-${var.environment}-${count.index + 1}"
-  })
+  }
 }
 
 # Public subnets
@@ -35,18 +35,18 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   map_public_ip_on_launch = true
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-public-${var.environment}-${count.index + 1}"
-  })
+  }
 }
 
 # Internet Gateway
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-igw-${var.environment}"
-  })
+  }
 }
 
 # Route the public subnet traffic through the IGW
@@ -62,9 +62,9 @@ resource "aws_eip" "nat" {
   vpc        = true
   depends_on = [aws_internet_gateway.main]
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-eip-${var.environment}-${count.index + 1}"
-  })
+  }
 }
 
 resource "aws_nat_gateway" "main" {
@@ -72,9 +72,9 @@ resource "aws_nat_gateway" "main" {
   subnet_id     = element(aws_subnet.public[*].id, count.index)
   allocation_id = element(aws_eip.nat[*].id, count.index)
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-nat-${var.environment}-${count.index + 1}"
-  })
+  }
 }
 
 # Private route tables
@@ -87,9 +87,9 @@ resource "aws_route_table" "private" {
     nat_gateway_id = element(aws_nat_gateway.main[*].id, count.index)
   }
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-private-route-${var.environment}-${count.index + 1}"
-  })
+  }
 }
 
 resource "aws_route_table_association" "private" {
@@ -127,8 +127,6 @@ resource "aws_security_group" "alb" {
     to_port     = 0
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = local.common_tags
 }
 
 resource "aws_security_group" "ecs_tasks" {
@@ -149,8 +147,6 @@ resource "aws_security_group" "ecs_tasks" {
     to_port     = 0
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = local.common_tags
 }
 
 #---------------------------------------------------------------
@@ -161,8 +157,6 @@ resource "aws_security_group" "ecs_tasks" {
 resource "aws_acm_certificate" "main" {
   domain_name       = "${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
   validation_method = "DNS"
-
-  tags = local.common_tags
 
   lifecycle {
     create_before_destroy = true
@@ -218,8 +212,6 @@ resource "aws_lb" "main" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets           = aws_subnet.public[*].id
-
-  tags = local.common_tags
 }
 
 resource "aws_lb_target_group" "app" {
@@ -238,8 +230,6 @@ resource "aws_lb_target_group" "app" {
     path                = "/health/"
     unhealthy_threshold = "3"
   }
-
-  tags = local.common_tags
 }
 
 resource "aws_lb_listener" "https" {
@@ -282,8 +272,6 @@ resource "aws_ecr_repository" "app" {
   image_scanning_configuration {
     scan_on_push = true
   }
-
-  tags = local.common_tags
 }
 
 # IAM Roles
@@ -302,8 +290,6 @@ resource "aws_iam_role" "ecs_execution_role" {
       }
     ]
   })
-
-  tags = local.common_tags
 }
 
 resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
@@ -326,8 +312,6 @@ resource "aws_iam_role" "ecs_task_role" {
       }
     ]
   })
-
-  tags = local.common_tags
 }
 
 #---------------------------------------------------------------
@@ -338,8 +322,6 @@ resource "aws_iam_role" "ecs_task_role" {
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/vimbiso-pay-${var.environment}"
   retention_in_days = 30
-
-  tags = local.common_tags
 }
 
 # ECS Cluster
@@ -350,8 +332,6 @@ resource "aws_ecs_cluster" "main" {
     name  = "containerInsights"
     value = "enabled"
   }
-
-  tags = local.common_tags
 }
 
 # ECS Task Definition
@@ -406,8 +386,6 @@ resource "aws_ecs_task_definition" "app" {
       }
     }
   ])
-
-  tags = local.common_tags
 }
 
 # ECS Service
@@ -441,8 +419,6 @@ resource "aws_ecs_service" "app" {
   lifecycle {
     ignore_changes = [task_definition, desired_count]
   }
-
-  tags = local.common_tags
 }
 
 # Auto Scaling
