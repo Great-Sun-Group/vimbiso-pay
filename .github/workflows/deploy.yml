@@ -1,7 +1,10 @@
 name: Deploy VimbisoPay
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - stage  # Automatically trigger on push to stage branch
+  workflow_dispatch:  # Manual trigger
 
 jobs:
   deploy:
