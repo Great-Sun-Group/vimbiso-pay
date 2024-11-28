@@ -324,6 +324,12 @@ resource "aws_cloudwatch_log_group" "app" {
   retention_in_days = 30
 }
 
+# Add a time delay after cluster creation
+resource "time_sleep" "wait_for_cluster" {
+  depends_on = [aws_ecs_cluster.main]
+  create_duration = "30s"
+}
+
 # ECS Cluster
 resource "aws_ecs_cluster" "main" {
   name = "vimbiso-pay-${var.environment}"
@@ -429,7 +435,7 @@ resource "aws_ecs_service" "app" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  depends_on = [aws_ecs_cluster.main, aws_lb_listener.https]
+  depends_on = [time_sleep.wait_for_cluster, aws_lb_listener.https]
 
   tags = merge(local.common_tags, {
     Name = "vimbiso-pay-service-${var.environment}"
