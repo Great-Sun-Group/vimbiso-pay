@@ -332,6 +332,10 @@ resource "aws_ecs_cluster" "main" {
     name  = "containerInsights"
     value = "enabled"
   }
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-${var.environment}"
+  })
 }
 
 # ECS Task Definition
@@ -386,6 +390,10 @@ resource "aws_ecs_task_definition" "app" {
       }
     }
   ])
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-${var.environment}"
+  })
 }
 
 # ECS Service
@@ -419,6 +427,12 @@ resource "aws_ecs_service" "app" {
   lifecycle {
     ignore_changes = [task_definition, desired_count]
   }
+
+  depends_on = [aws_ecs_cluster.main]
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-service-${var.environment}"
+  })
 }
 
 # Auto Scaling
@@ -428,6 +442,12 @@ resource "aws_appautoscaling_target" "app" {
   resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
+
+  depends_on = [aws_ecs_cluster.main, aws_ecs_service.app]
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-autoscaling-target-${var.environment}"
+  })
 }
 
 resource "aws_appautoscaling_policy" "cpu" {
@@ -443,6 +463,8 @@ resource "aws_appautoscaling_policy" "cpu" {
     }
     target_value = local.current_env.autoscaling.cpu_threshold
   }
+
+  depends_on = [aws_appautoscaling_target.app]
 }
 
 resource "aws_appautoscaling_policy" "memory" {
@@ -458,4 +480,6 @@ resource "aws_appautoscaling_policy" "memory" {
     }
     target_value = local.current_env.autoscaling.memory_threshold
   }
+
+  depends_on = [aws_appautoscaling_target.app]
 }

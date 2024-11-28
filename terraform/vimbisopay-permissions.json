@@ -89,8 +89,28 @@
             ],
             "Resource": [
                 "arn:aws:iam::*:role/vimbiso-pay-*",
-                "arn:aws:iam::*:role/aws-service-role/*"
+                "arn:aws:iam::*:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/*",
+                "arn:aws:iam::*:role/aws-service-role/application-autoscaling.amazonaws.com/*",
+                "arn:aws:iam::*:role/aws-service-role/ecs.amazonaws.com/*",
+                "arn:aws:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/*"
             ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "iam:CreateServiceLinkedRole"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "StringEquals": {
+                    "iam:AWSServiceName": [
+                        "ecs.application-autoscaling.amazonaws.com",
+                        "application-autoscaling.amazonaws.com",
+                        "ecs.amazonaws.com",
+                        "elasticloadbalancing.amazonaws.com"
+                    ]
+                }
+            }
         },
         {
             "Effect": "Allow",
