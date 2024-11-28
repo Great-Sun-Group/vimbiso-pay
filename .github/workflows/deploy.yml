@@ -39,7 +39,6 @@ jobs:
           BUCKET_NAME="vimbiso-pay-terraform-state-${ENVIRONMENT}"
           TABLE_NAME="vimbiso-pay-terraform-state-lock-${ENVIRONMENT}"
 
-          # Check if S3 bucket exists, create if it doesn't
           if ! aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
             echo "Creating S3 bucket: $BUCKET_NAME"
             aws s3api create-bucket --bucket "$BUCKET_NAME" --create-bucket-configuration LocationConstraint=af-south-1
@@ -49,7 +48,6 @@ jobs:
             echo "S3 bucket already exists: $BUCKET_NAME"
           fi
 
-          # Check if DynamoDB table exists, create if it doesn't
           if ! aws dynamodb describe-table --table-name "$TABLE_NAME" >/dev/null 2>&1; then
             echo "Creating DynamoDB table: $TABLE_NAME"
             aws dynamodb create-table --table-name "$TABLE_NAME" \
@@ -60,7 +58,6 @@ jobs:
             echo "DynamoDB table already exists: $TABLE_NAME"
           fi
 
-          # Initialize Terraform
           cd terraform
           terraform init \
             -backend-config="bucket=${BUCKET_NAME}" \
@@ -68,10 +65,10 @@ jobs:
             -backend-config="region=af-south-1" \
             -backend-config="dynamodb_table=${TABLE_NAME}"
 
-      - name: Terraform Plan
+      - name: Create Base Infrastructure
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
-          TF_VAR_docker_image: ""  # Will be set after pushing image
+          TF_VAR_docker_image: "dummy-image:latest"
           TF_VAR_django_secret: ${{ secrets.DJANGO_SECRET }}
           TF_VAR_mycredex_app_url: ${{ secrets.MYCREDEX_APP_URL }}
           TF_VAR_client_api_key: ${{ secrets.CLIENT_API_KEY }}
@@ -83,30 +80,25 @@ jobs:
           TF_VAR_whatsapp_company_registration_flow_id: ${{ secrets.WHATSAPP_COMPANY_REGISTRATION_FLOW_ID }}
         run: |
           cd terraform
-          terraform plan -input=false -out=tfplan
-
-      - name: Terraform Apply
-        env:
-          TF_VAR_environment: ${{ env.ENVIRONMENT }}
-          TF_VAR_docker_image: ""  # Will be set after pushing image
-          TF_VAR_django_secret: ${{ secrets.DJANGO_SECRET }}
-          TF_VAR_mycredex_app_url: ${{ secrets.MYCREDEX_APP_URL }}
-          TF_VAR_client_api_key: ${{ secrets.CLIENT_API_KEY }}
-          TF_VAR_whatsapp_api_url: ${{ secrets.WHATSAPP_API_URL }}
-          TF_VAR_whatsapp_access_token: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
-          TF_VAR_whatsapp_phone_number_id: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
-          TF_VAR_whatsapp_business_id: ${{ secrets.WHATSAPP_BUSINESS_ID }}
-          TF_VAR_whatsapp_registration_flow_id: ${{ secrets.WHATSAPP_REGISTRATION_FLOW_ID }}
-          TF_VAR_whatsapp_company_registration_flow_id: ${{ secrets.WHATSAPP_COMPANY_REGISTRATION_FLOW_ID }}
-        run: |
-          cd terraform
-          terraform apply -auto-approve -input=false tfplan
+          terraform apply -auto-approve \
+            -target=aws_vpc.main \
+            -target=aws_subnet.private \
+            -target=aws_subnet.public \
+            -target=aws_internet_gateway.main \
+            -target=aws_route.internet_access \
+            -target=aws_eip.nat \
+            -target=aws_nat_gateway.main \
+            -target=aws_route_table.private \
+            -target=aws_route_table_association.private \
+            -target=aws_security_group.alb \
+            -target=aws_security_group.ecs_tasks \
+            -target=aws_ecr_repository.app
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build, tag, and push image to Amazon ECR
+      - name: Build and Push Docker Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: vimbiso-pay-${{ env.ENVIRONMENT }}
@@ -123,8 +115,7 @@ jobs:
 
           echo "IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
 
-      # Now update the infrastructure with the new image
-      - name: Update Infrastructure with New Image
+      - name: Deploy Application
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
           TF_VAR_docker_image: ${{ env.IMAGE }}
@@ -150,13 +141,11 @@ jobs:
           DEPLOYMENT_DONE=false
 
           while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
-            # Get service details
             SERVICE_JSON=$(aws ecs describe-services \
               --cluster vimbiso-pay-cluster-$ENVIRONMENT \
               --services vimbiso-pay-service-$ENVIRONMENT \
               --query 'services[0]')
 
-            # Get primary deployment status
             PRIMARY_DEPLOYMENT=$(echo $SERVICE_JSON | jq -r '.deployments[] | select(.status == "PRIMARY")')
             RUNNING_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.runningCount')
             DESIRED_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.desiredCount')
@@ -172,7 +161,6 @@ jobs:
               DEPLOYMENT_DONE=true
               break
             elif [[ "$FAILED_TASKS" -gt 0 ]]; then
-              # Get task details and logs for debugging
               TASKS=$(aws ecs list-tasks \
                 --cluster vimbiso-pay-cluster-$ENVIRONMENT \
                 --service-name vimbiso-pay-service-$ENVIRONMENT \
@@ -186,7 +174,6 @@ jobs:
                   --tasks $TASK \
                   --query 'tasks[].{reason: stoppedReason, exitCode: containers[].exitCode}'
 
-                # Try to get logs even if task failed
                 echo "Logs for failed task $TASK:"
                 aws logs get-log-events \
                   --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
@@ -200,7 +187,6 @@ jobs:
               exit 1
             fi
 
-            # Get recent service events
             echo "Recent Events:"
             echo $SERVICE_JSON | jq -r '.events[0:3][] | .message'
 

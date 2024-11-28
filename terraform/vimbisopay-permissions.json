@@ -69,7 +69,8 @@
                 "ec2:DescribeAvailabilityZones",
                 "ec2:CreateTags",
                 "ec2:DeleteTags",
-                "ec2:DescribeTags"
+                "ec2:DescribeTags",
+                "ec2:DescribeVpcAttribute"
             ],
             "Resource": "*"
         },
@@ -87,8 +88,14 @@
                 "elasticloadbalancing:ModifyListener",
                 "elasticloadbalancing:DescribeLoadBalancers",
                 "elasticloadbalancing:DescribeTargetGroups",
+                "elasticloadbalancing:DescribeTargetGroupAttributes",
                 "elasticloadbalancing:DescribeListeners",
-                "elasticloadbalancing:DescribeTargetHealth"
+                "elasticloadbalancing:DescribeTargetHealth",
+                "elasticloadbalancing:AddTags",
+                "elasticloadbalancing:RemoveTags",
+                "elasticloadbalancing:RegisterTargets",
+                "elasticloadbalancing:DeregisterTargets",
+                "elasticloadbalancing:DescribeTags"
             ],
             "Resource": "*"
         },
@@ -100,7 +107,12 @@
                 "acm:DescribeCertificate",
                 "acm:ListCertificates",
                 "acm:AddTagsToCertificate",
-                "acm:ListTagsForCertificate"
+                "acm:ListTagsForCertificate",
+                "acm:GetCertificate",
+                "acm:ImportCertificate",
+                "acm:RenewCertificate",
+                "acm:UpdateCertificateOptions",
+                "acm:ValidateCertificate"
             ],
             "Resource": "*"
         },
@@ -115,7 +127,9 @@
                 "route53:CreateHealthCheck",
                 "route53:DeleteHealthCheck",
                 "route53:GetHealthCheck",
-                "route53:ListTagsForResource"
+                "route53:ListTagsForResource",
+                "route53:GetHostedZoneCount",
+                "route53:ListHostedZonesByName"
             ],
             "Resource": "*"
         },
@@ -140,7 +154,10 @@
                 "ecr:UploadLayerPart",
                 "ecr:CompleteLayerUpload",
                 "ecr:PutImage",
-                "ecr:ListTagsForResource"
+                "ecr:ListTagsForResource",
+                "ecr:BatchDeleteImage",
+                "ecr:PutLifecyclePolicy",
+                "ecr:DeleteLifecyclePolicy"
             ],
             "Resource": [
                 "arn:aws:ecr:af-south-1:*:repository/vimbiso-pay-*"
@@ -166,9 +183,22 @@
                 "iam:TagRole",
                 "iam:PassRole",
                 "iam:ListRolePolicies",
-                "iam:ListAttachedRolePolicies"
+                "iam:ListAttachedRolePolicies",
+                "iam:ListInstanceProfilesForRole",
+                "iam:CreateInstanceProfile",
+                "iam:DeleteInstanceProfile",
+                "iam:GetInstanceProfile",
+                "iam:AddRoleToInstanceProfile",
+                "iam:RemoveRoleFromInstanceProfile"
             ],
             "Resource": "arn:aws:iam::*:role/vimbiso-pay-*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "iam:CreateServiceLinkedRole"
+            ],
+            "Resource": "arn:aws:iam::*:role/aws-service-role/*"
         },
         {
             "Effect": "Allow",
@@ -182,7 +212,10 @@
                 "logs:GetLogEvents",
                 "logs:DescribeLogStreams",
                 "logs:DescribeLogGroups",
-                "logs:ListTagsLogGroup"
+                "logs:ListTagsLogGroup",
+                "logs:DeleteLogStream",
+                "logs:DeleteRetentionPolicy",
+                "logs:UntagResource"
             ],
             "Resource": "*"
         },
@@ -204,7 +237,13 @@
                 "ecs:ListTasks",
                 "ecs:DescribeTasks",
                 "ecs:RunTask",
-                "ecs:StopTask"
+                "ecs:StopTask",
+                "ecs:ListTaskDefinitions",
+                "ecs:ListClusters",
+                "ecs:ListServices",
+                "ecs:UntagResource",
+                "ecs:UpdateTaskSet",
+                "ecs:DeleteTaskSet"
             ],
             "Resource": "*"
         },
@@ -216,7 +255,11 @@
                 "application-autoscaling:PutScalingPolicy",
                 "application-autoscaling:DeleteScalingPolicy",
                 "application-autoscaling:DescribeScalableTargets",
-                "application-autoscaling:DescribeScalingPolicies"
+                "application-autoscaling:DescribeScalingPolicies",
+                "application-autoscaling:DescribeScalingActivities",
+                "application-autoscaling:DescribeScheduledActions",
+                "application-autoscaling:PutScheduledAction",
+                "application-autoscaling:DeleteScheduledAction"
             ],
             "Resource": "*"
         }
