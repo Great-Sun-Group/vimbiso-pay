@@ -96,6 +96,17 @@ jobs:
       - name: Create Base Infrastructure
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
+          # Add dummy values for required variables during base infrastructure creation
+          TF_VAR_docker_image: "dummy-image:latest"
+          TF_VAR_django_secret: "dummy-secret"
+          TF_VAR_mycredex_app_url: "https://dummy-url"
+          TF_VAR_client_api_key: "dummy-key"
+          TF_VAR_whatsapp_api_url: "https://dummy-url"
+          TF_VAR_whatsapp_access_token: "dummy-token"
+          TF_VAR_whatsapp_phone_number_id: "dummy-id"
+          TF_VAR_whatsapp_business_id: "dummy-id"
+          TF_VAR_whatsapp_registration_flow_id: "dummy-id"
+          TF_VAR_whatsapp_company_registration_flow_id: "dummy-id"
         run: |
           cd terraform
           # Create plan file for base infrastructure (networking, IAM, ECR)
@@ -115,6 +126,17 @@ jobs:
       - name: Configure Load Balancer
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
+          # Add dummy values for required variables during load balancer configuration
+          TF_VAR_docker_image: "dummy-image:latest"
+          TF_VAR_django_secret: "dummy-secret"
+          TF_VAR_mycredex_app_url: "https://dummy-url"
+          TF_VAR_client_api_key: "dummy-key"
+          TF_VAR_whatsapp_api_url: "https://dummy-url"
+          TF_VAR_whatsapp_access_token: "dummy-token"
+          TF_VAR_whatsapp_phone_number_id: "dummy-id"
+          TF_VAR_whatsapp_business_id: "dummy-id"
+          TF_VAR_whatsapp_registration_flow_id: "dummy-id"
+          TF_VAR_whatsapp_company_registration_flow_id: "dummy-id"
         run: |
           cd terraform
           # Create plan file for load balancer configuration
