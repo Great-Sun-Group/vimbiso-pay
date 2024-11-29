@@ -5,6 +5,10 @@ resource "aws_s3_bucket" "alb_logs" {
   tags = merge(var.tags, {
     Name = "vimbiso-pay-alb-logs-${var.environment}"
   })
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_s3_bucket_versioning" "alb_logs" {
@@ -140,6 +144,10 @@ resource "aws_wafv2_web_acl" "main" {
   tags = merge(var.tags, {
     Name = "vimbiso-pay-waf-${var.environment}"
   })
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Application Load Balancer
@@ -165,12 +173,24 @@ resource "aws_lb" "main" {
   tags = merge(var.tags, {
     Name = "vimbiso-pay-alb-${var.environment}"
   })
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      access_logs,
+      tags
+    ]
+  }
 }
 
 # Associate WAF Web ACL with ALB
 resource "aws_wafv2_web_acl_association" "main" {
   resource_arn = aws_lb.main.arn
   web_acl_arn  = aws_wafv2_web_acl.main.arn
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Target Group
@@ -207,6 +227,10 @@ resource "aws_lb_target_group" "app" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes = [
+      tags,
+      health_check
+    ]
   }
 }
 
@@ -215,13 +239,16 @@ resource "aws_acm_certificate" "main" {
   domain_name       = var.domain_name
   validation_method = "DNS"
 
-  lifecycle {
-    create_before_destroy = true
-  }
-
   tags = merge(var.tags, {
     Name = "vimbiso-pay-cert-${var.environment}"
   })
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes = [
+      tags
+    ]
+  }
 }
 
 # Route53 Configuration
@@ -241,6 +268,13 @@ resource "aws_route53_record" "app" {
     zone_id                = aws_lb.main.zone_id
     evaluate_target_health = true
   }
+
+  lifecycle {
+    ignore_changes = [
+      zone_id,
+      alias
+    ]
+  }
 }
 
 # DNS Validation record
@@ -253,17 +287,33 @@ resource "aws_route53_record" "cert_validation" {
     }
   }
 
-  allow_overwrite = true
   name            = each.value.name
   records         = [each.value.record]
   ttl             = 60
   type            = each.value.type
   zone_id         = data.aws_route53_zone.domain.zone_id
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes = [
+      records,
+      ttl,
+      zone_id
+    ]
+  }
 }
 
 resource "aws_acm_certificate_validation" "main" {
   certificate_arn         = aws_acm_certificate.main.arn
   validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  depends_on = [
+    aws_route53_record.cert_validation
+  ]
 }
 
 # HTTPS Listener with improved SSL policy
@@ -272,12 +322,24 @@ resource "aws_lb_listener" "https" {
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = aws_acm_certificate_validation.main.certificate_arn
+  certificate_arn   = aws_acm_certificate.main.arn
 
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.app.arn
   }
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes = [
+      default_action,
+      ssl_policy
+    ]
+  }
+
+  depends_on = [
+    aws_acm_certificate_validation.main
+  ]
 }
 
 # HTTP Listener (redirects to HTTPS)
@@ -294,6 +356,10 @@ resource "aws_lb_listener" "http" {
       protocol    = "HTTPS"
       status_code = "HTTP_301"
     }
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
