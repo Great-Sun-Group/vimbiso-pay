@@ -36,8 +36,13 @@ jobs:
       - name: Setup and Initialize Terraform Backend
         run: |
           echo "Current environment: ${ENVIRONMENT}"
-          BUCKET_NAME="vimbiso-pay-terraform-state-${ENVIRONMENT}"
-          TABLE_NAME="vimbiso-pay-terraform-state-lock-${ENVIRONMENT}"
+
+          # Get AWS Account ID
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+          # Use AWS Account ID in bucket and table names
+          BUCKET_NAME="vimbiso-pay-terraform-state-${ENVIRONMENT}-${AWS_ACCOUNT_ID}"
+          TABLE_NAME="vimbiso-pay-terraform-state-lock-${ENVIRONMENT}-${AWS_ACCOUNT_ID}"
 
           if ! aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
             echo "Creating S3 bucket: $BUCKET_NAME"
