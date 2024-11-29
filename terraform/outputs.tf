@@ -84,3 +84,19 @@ output "autoscaling_target_max_capacity" {
   description = "Maximum capacity of the auto scaling target"
   value       = aws_appautoscaling_target.app.max_capacity
 }
+
+# EFS Resources
+output "efs_file_system_id" {
+  description = "ID of the EFS file system"
+  value       = aws_efs_file_system.app_data.id
+}
+
+output "efs_mount_targets" {
+  description = "IDs of the EFS mount targets"
+  value       = aws_efs_mount_target.app_data[*].id
+}
+
+output "efs_security_group_id" {
+  description = "ID of the EFS security group"
+  value       = aws_security_group.efs.id
+}

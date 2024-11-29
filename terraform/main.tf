@@ -363,6 +363,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_secret },
         { name = "DEBUG", value = tostring(var.debug) },
+        { name = "ALLOWED_HOSTS", value = "*.amazonaws.com,${aws_lb.main.dns_name},${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}" },
         { name = "MYCREDEX_APP_URL", value = var.mycredex_app_url },
         { name = "CLIENT_API_KEY", value = var.client_api_key },
         { name = "WHATSAPP_API_URL", value = var.whatsapp_api_url },
@@ -390,15 +391,74 @@ resource "aws_ecs_task_definition" "app" {
       healthCheck = {
         command     = ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
         interval    = 30
-        timeout     = 5
+        timeout     = 10
         retries     = 3
-        startPeriod = 60
+        startPeriod = 120
       }
+      mountPoints = [
+        {
+          sourceVolume  = "data"
+          containerPath = "/app/data"
+          readOnly     = false
+        }
+      ]
     }
   ])
 
+  volume {
+    name = "data"
+    efs_volume_configuration {
+      file_system_id = aws_efs_file_system.app_data.id
+      root_directory = "/"
+    }
+  }
+
   tags = merge(local.common_tags, {
     Name = "vimbiso-pay-${var.environment}"
+  })
+}
+
+# EFS File System
+resource "aws_efs_file_system" "app_data" {
+  creation_token = "vimbiso-pay-efs-${var.environment}"
+  encrypted      = true
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-efs-${var.environment}"
+  })
+}
+
+# EFS Mount Targets
+resource "aws_efs_mount_target" "app_data" {
+  count           = length(aws_subnet.private)
+  file_system_id  = aws_efs_file_system.app_data.id
+  subnet_id       = aws_subnet.private[count.index].id
+  security_groups = [aws_security_group.efs.id]
+}
+
+# Security Group for EFS
+resource "aws_security_group" "efs" {
+  name        = "vimbiso-pay-efs-${var.environment}"
+  description = "Allow inbound NFS traffic from ECS tasks"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "NFS from ECS tasks"
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-efs-${var.environment}"
   })
 }
 
@@ -436,7 +496,7 @@ resource "aws_ecs_service" "app" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  depends_on = [aws_ecs_cluster.main, aws_lb_listener.https]
+  depends_on = [aws_ecs_cluster.main, aws_lb_listener.https, aws_efs_mount_target.app_data]
 
   tags = merge(local.common_tags, {
     Name = "vimbiso-pay-service-${var.environment}"
@@ -452,7 +512,7 @@ resource "aws_ecs_service" "app" {
       while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
         # Get service details
         SERVICE_JSON=$(aws ecs describe-services \
-          --cluster vimbiso-pay-cluster-${var.environment} \
+          --cluster ${aws_ecs_cluster.main.name} \
           --services ${self.name} \
           --region ${local.current_env.aws_region})
 
@@ -467,11 +527,11 @@ resource "aws_ecs_service" "app" {
         echo "Desired Count: $DESIRED_COUNT"
         echo "Failed Tasks: $FAILED_TASKS"
 
-        if [[ "$RUNNING_COUNT" == "$DESIRED_COUNT" && "$DESIRED_COUNT" -gt 0 ]]; then
+        if [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ] && [ "$DESIRED_COUNT" -gt 0 ]; then
           echo "Deployment completed successfully!"
           DEPLOYMENT_DONE=true
           break
-        elif [[ "$FAILED_TASKS" -gt 0 ]]; then
+        elif [ "$FAILED_TASKS" -gt 0 ]; then
           echo "Deployment failed due to task failures"
           exit 1
         fi

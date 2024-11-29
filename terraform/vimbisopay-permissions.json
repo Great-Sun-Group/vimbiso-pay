@@ -115,6 +115,13 @@
                 "application-autoscaling:*"
             ],
             "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "elasticfilesystem:*"
+            ],
+            "Resource": "*"
         }
     ]
 }
