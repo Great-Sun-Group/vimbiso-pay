@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Base stage for shared configurations
-FROM python:3.10.12-slim AS base
+FROM python:3.13.0-slim AS base
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
