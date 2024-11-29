@@ -86,22 +86,17 @@ output "container_insights_metric_filter_name" {
 # Container Insights Status
 output "container_insights_status" {
   description = "Status of Container Insights for the cluster"
-  value       = aws_ecs_cluster.main.setting[0].value
+  value       = [for s in aws_ecs_cluster.main.setting : s.value if s.name == "containerInsights"][0]
 }
 
-# Capacity Providers
-output "capacity_providers" {
-  description = "List of capacity providers associated with the cluster"
-  value       = aws_ecs_cluster.main.capacity_providers
-}
-
+# Default Capacity Provider Strategy
 output "default_capacity_provider_strategy" {
   description = "Default capacity provider strategy for the cluster"
-  value = {
-    capacity_provider = aws_ecs_cluster.main.default_capacity_provider_strategy[0].capacity_provider
-    weight           = aws_ecs_cluster.main.default_capacity_provider_strategy[0].weight
-    base             = aws_ecs_cluster.main.default_capacity_provider_strategy[0].base
-  }
+  value = [for s in aws_ecs_cluster_capacity_providers.main.default_capacity_provider_strategy : {
+    capacity_provider = s.capacity_provider
+    weight           = s.weight
+    base             = s.base
+  }][0]
 }
 
 # Region Information

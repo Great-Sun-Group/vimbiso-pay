@@ -51,7 +51,8 @@ resource "aws_ecs_service" "app" {
   }
 
   depends_on = [
-    time_sleep.wait_for_cluster
+    aws_service_discovery_service.app,
+    aws_ecs_cluster.main
   ]
 
   tags = merge(var.tags, {
