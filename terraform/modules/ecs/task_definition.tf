@@ -138,6 +138,3 @@ resource "aws_ecs_task_definition" "app" {
     Name = "vimbiso-pay-task-${var.environment}"
   })
 }
-
-# Get current region
-data "aws_region" "current" {}

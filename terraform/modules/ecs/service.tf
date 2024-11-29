@@ -51,46 +51,10 @@ resource "aws_ecs_service" "app" {
   }
 
   depends_on = [
-    aws_service_discovery_service.app,
     time_sleep.wait_for_cluster
   ]
 
   tags = merge(var.tags, {
     Name = "vimbiso-pay-service-${var.environment}"
-  })
-}
-
-# Service Discovery Private DNS Namespace
-resource "aws_service_discovery_private_dns_namespace" "app" {
-  name        = "vimbiso-pay-${var.environment}.local"
-  description = "Service Discovery namespace for VimbisoPay ${var.environment}"
-  vpc         = var.vpc_id
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-dns-${var.environment}"
-  })
-}
-
-# Service Discovery Service
-resource "aws_service_discovery_service" "app" {
-  name = "vimbiso-pay-${var.environment}"
-
-  dns_config {
-    namespace_id = aws_service_discovery_private_dns_namespace.app.id
-
-    dns_records {
-      ttl  = 10
-      type = "A"
-    }
-
-    routing_policy = "MULTIVALUE"
-  }
-
-  health_check_custom_config {
-    failure_threshold = 1
-  }
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-discovery-${var.environment}"
   })
 }
