@@ -68,7 +68,10 @@
             "Effect": "Allow",
             "Action": [
                 "ecr:GetAuthorizationToken",
-                "ecr:PutRegistryScanningConfiguration"
+                "ecr:PutRegistryScanningConfiguration",
+                "ecr:GetRegistryScanningConfiguration",
+                "inspector2:Enable",
+                "inspector2:Disable"
             ],
             "Resource": "*"
         },
