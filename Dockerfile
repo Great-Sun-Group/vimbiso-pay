@@ -70,8 +70,9 @@ RUN apt-get purge -y build-essential \
 COPY ./app /app
 
 # Create required directories with proper permissions
-RUN mkdir -p /app/data && \
+RUN mkdir -p /app/data/logs /app/data/db && \
     chown -R appuser:appuser /app && \
+    chmod -R 755 /app/data && \
     chmod +x /app/start_app.sh
 
 # Switch to non-privileged user

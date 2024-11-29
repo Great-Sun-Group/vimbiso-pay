@@ -71,10 +71,10 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "data/db.sqlite3",
+        "NAME": BASE_DIR / "data/db.sqlite3",  # noqa: E501
         "ATOMIC_REQUESTS": True,  # Ensures database integrity
         "OPTIONS": {
-            "timeout": 20,  # Increase timeout for better concurrent access handling
+            "timeout": 20,  # Better concurrent access handling
             "isolation_level": "IMMEDIATE",  # Better concurrency control
         },
     }
@@ -103,7 +103,7 @@ SESSION_CACHE_ALIAS = "default"
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",  # noqa: E501
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
@@ -197,7 +197,7 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-# Logging configuration
+# Logging configuration - Modified for container-friendly setup
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -213,22 +213,15 @@ LOGGING = {
             "formatter": "json",
             "level": "INFO",
         },
-        "file": {
-            "class": "logging.handlers.RotatingFileHandler",
-            "filename": str(BASE_DIR / "data/logs/application.log"),
-            "maxBytes": 1024 * 1024 * 5,  # 5 MB
-            "backupCount": 5,
-            "formatter": "json",
-        },
     },
     "loggers": {
         "django": {
-            "handlers": ["console", "file"],
+            "handlers": ["console"],
             "level": env("DJANGO_LOG_LEVEL", default="INFO"),
             "propagate": True,
         },
         "core": {
-            "handlers": ["console", "file"],
+            "handlers": ["console"],
             "level": env("APP_LOG_LEVEL", default="INFO"),
             "propagate": False,
         },
