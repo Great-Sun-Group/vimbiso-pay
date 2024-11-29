@@ -1,6 +1,7 @@
 {
   "environment": "production",
-  "domain": "mycredex.app",
+  "subdomain": "whatsapp",
+  "dev_domain_base": "vimbisopay.africa",
   "aws_region": "af-south-1",
   "vpc_cidr": "10.0.0.0/16",
   "ecs_task": {

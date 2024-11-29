@@ -31,12 +31,12 @@ locals {
   # Domain configuration
   domain_config = {
     production = {
-      domain = local.production.domain
-      dev_domain_base = null
-      environment_subdomains = {}
+      dev_domain_base = local.production.dev_domain_base
+      environment_subdomains = {
+        production = local.production.subdomain
+      }
     }
     staging = {
-      domain = null
       dev_domain_base = local.staging.dev_domain_base
       environment_subdomains = {
         staging = local.staging.subdomain

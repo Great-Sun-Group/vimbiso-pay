@@ -1,6 +1,6 @@
 # VimbisoPay
 
-A WhatsApp bot service that facilitates financial transactions through the credex-core API, enabling users to manage their credex accounts and perform financial operations directly in a secure WhatsApp chat.
+A WhatsApp bot service that facilitates financial transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in a secure WhatsApp chat.
 
 ### Quick Start
 After cloning and setting up environment variables, or activation of a codespace, start development environment with:

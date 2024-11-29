@@ -1,18 +1,3 @@
-# Local variables for environment configuration
-locals {
-  common_tags = {
-    Environment = var.environment
-    ManagedBy   = "terraform"
-    Project     = "vimbiso-pay"
-  }
-
-  # Domain configuration
-  is_production = var.environment == "production"
-  domain = local.is_production ? local.current_env.domain : "${local.current_env.subdomain}.${local.current_env.dev_domain_base}"
-  domain_base = local.is_production ? local.current_env.domain : local.current_env.dev_domain_base
-}
-
-#---------------------------------------------------------------
 # Network Resources
 #---------------------------------------------------------------
 
@@ -22,9 +7,9 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
   enable_dns_support   = true
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-vpc-${var.environment}"
-  })
+  }
 }
 
 # Fetch AZs in the current region
@@ -37,9 +22,9 @@ resource "aws_subnet" "private" {
   availability_zone = data.aws_availability_zones.available.names[count.index]
   vpc_id            = aws_vpc.main.id
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-private-${var.environment}-${count.index + 1}"
-  })
+  }
 }
 
 # Public subnets
@@ -50,18 +35,18 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   map_public_ip_on_launch = true
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-public-${var.environment}-${count.index + 1}"
-  })
+  }
 }
 
 # Internet Gateway
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-igw-${var.environment}"
-  })
+  }
 }
 
 # Route the public subnet traffic through the IGW
@@ -77,9 +62,9 @@ resource "aws_eip" "nat" {
   vpc        = true
   depends_on = [aws_internet_gateway.main]
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-eip-${var.environment}-${count.index + 1}"
-  })
+  }
 }
 
 resource "aws_nat_gateway" "main" {
@@ -87,9 +72,9 @@ resource "aws_nat_gateway" "main" {
   subnet_id     = element(aws_subnet.public[*].id, count.index)
   allocation_id = element(aws_eip.nat[*].id, count.index)
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-nat-${var.environment}-${count.index + 1}"
-  })
+  }
 }
 
 # Private route tables
@@ -102,9 +87,9 @@ resource "aws_route_table" "private" {
     nat_gateway_id = element(aws_nat_gateway.main[*].id, count.index)
   }
 
-  tags = merge(local.common_tags, {
+  tags = {
     Name = "vimbiso-pay-private-route-${var.environment}-${count.index + 1}"
-  })
+  }
 }
 
 resource "aws_route_table_association" "private" {
@@ -142,8 +127,6 @@ resource "aws_security_group" "alb" {
     to_port     = 0
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = local.common_tags
 }
 
 resource "aws_security_group" "ecs_tasks" {
@@ -164,8 +147,6 @@ resource "aws_security_group" "ecs_tasks" {
     to_port     = 0
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = local.common_tags
 }
 
 #---------------------------------------------------------------
@@ -174,10 +155,8 @@ resource "aws_security_group" "ecs_tasks" {
 
 # ACM Certificate
 resource "aws_acm_certificate" "main" {
-  domain_name       = local.domain
+  domain_name       = "${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
   validation_method = "DNS"
-
-  tags = local.common_tags
 
   lifecycle {
     create_before_destroy = true
@@ -186,9 +165,24 @@ resource "aws_acm_certificate" "main" {
 
 # Route53 Configuration
 data "aws_route53_zone" "domain" {
-  name = local.domain_base
+  name = local.current_domain.dev_domain_base
+  private_zone = false
 }
 
+# Create A record for the domain
+resource "aws_route53_record" "app" {
+  zone_id = data.aws_route53_zone.domain.zone_id
+  name    = "${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
+  }
+}
+
+# DNS Validation record
 resource "aws_route53_record" "cert_validation" {
   for_each = {
     for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
@@ -218,8 +212,6 @@ resource "aws_lb" "main" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets           = aws_subnet.public[*].id
-
-  tags = local.common_tags
 }
 
 resource "aws_lb_target_group" "app" {
@@ -238,8 +230,6 @@ resource "aws_lb_target_group" "app" {
     path                = "/health/"
     unhealthy_threshold = "3"
   }
-
-  tags = local.common_tags
 }
 
 resource "aws_lb_listener" "https" {
@@ -282,8 +272,6 @@ resource "aws_ecr_repository" "app" {
   image_scanning_configuration {
     scan_on_push = true
   }
-
-  tags = local.common_tags
 }
 
 # IAM Roles
@@ -302,8 +290,6 @@ resource "aws_iam_role" "ecs_execution_role" {
       }
     ]
   })
-
-  tags = local.common_tags
 }
 
 resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
@@ -326,8 +312,6 @@ resource "aws_iam_role" "ecs_task_role" {
       }
     ]
   })
-
-  tags = local.common_tags
 }
 
 #---------------------------------------------------------------
@@ -338,20 +322,26 @@ resource "aws_iam_role" "ecs_task_role" {
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/vimbiso-pay-${var.environment}"
   retention_in_days = 30
+}
 
-  tags = local.common_tags
+# Add a time delay after cluster creation
+resource "time_sleep" "wait_for_cluster" {
+  depends_on = [aws_ecs_cluster.main]
+  create_duration = "30s"
 }
 
 # ECS Cluster
 resource "aws_ecs_cluster" "main" {
-  name = "vimbiso-pay-${var.environment}"
+  name = "vimbiso-pay-cluster-${var.environment}"
 
   setting {
     name  = "containerInsights"
     value = "enabled"
   }
 
-  tags = local.common_tags
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-cluster-${var.environment}"
+  })
 }
 
 # ECS Task Definition
@@ -373,6 +363,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_secret },
         { name = "DEBUG", value = tostring(var.debug) },
+        { name = "ALLOWED_HOSTS", value = "*.amazonaws.com,${aws_lb.main.dns_name},${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}" },
         { name = "MYCREDEX_APP_URL", value = var.mycredex_app_url },
         { name = "CLIENT_API_KEY", value = var.client_api_key },
         { name = "WHATSAPP_API_URL", value = var.whatsapp_api_url },
@@ -400,14 +391,75 @@ resource "aws_ecs_task_definition" "app" {
       healthCheck = {
         command     = ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
         interval    = 30
-        timeout     = 5
+        timeout     = 10
         retries     = 3
-        startPeriod = 60
+        startPeriod = 120
       }
+      mountPoints = [
+        {
+          sourceVolume  = "data"
+          containerPath = "/app/data"
+          readOnly     = false
+        }
+      ]
     }
   ])
 
-  tags = local.common_tags
+  volume {
+    name = "data"
+    efs_volume_configuration {
+      file_system_id = aws_efs_file_system.app_data.id
+      root_directory = "/"
+    }
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-${var.environment}"
+  })
+}
+
+# EFS File System
+resource "aws_efs_file_system" "app_data" {
+  creation_token = "vimbiso-pay-efs-${var.environment}"
+  encrypted      = true
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-efs-${var.environment}"
+  })
+}
+
+# EFS Mount Targets
+resource "aws_efs_mount_target" "app_data" {
+  count           = length(aws_subnet.private)
+  file_system_id  = aws_efs_file_system.app_data.id
+  subnet_id       = aws_subnet.private[count.index].id
+  security_groups = [aws_security_group.efs.id]
+}
+
+# Security Group for EFS
+resource "aws_security_group" "efs" {
+  name        = "vimbiso-pay-efs-${var.environment}"
+  description = "Allow inbound NFS traffic from ECS tasks"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "NFS from ECS tasks"
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-efs-${var.environment}"
+  })
 }
 
 # ECS Service
@@ -421,6 +473,7 @@ resource "aws_ecs_service" "app" {
   launch_type                       = "FARGATE"
   scheduling_strategy               = "REPLICA"
   platform_version                  = "LATEST"
+  wait_for_steady_state            = false
 
   network_configuration {
     security_groups  = [aws_security_group.ecs_tasks.id]
@@ -439,10 +492,67 @@ resource "aws_ecs_service" "app" {
   }
 
   lifecycle {
+    create_before_destroy = true
     ignore_changes = [task_definition, desired_count]
   }
 
-  tags = local.common_tags
+  depends_on = [aws_ecs_cluster.main, aws_lb_listener.https, aws_efs_mount_target.app_data]
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-service-${var.environment}"
+  })
+
+  # Custom wait using local-exec with better error handling
+  provisioner "local-exec" {
+    command = <<EOT
+      MAX_ATTEMPTS=40
+      ATTEMPTS=0
+      DEPLOYMENT_DONE=false
+
+      while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+        # Get service details
+        SERVICE_JSON=$(aws ecs describe-services \
+          --cluster ${aws_ecs_cluster.main.name} \
+          --services ${self.name} \
+          --region ${local.current_env.aws_region})
+
+        # Get primary deployment status
+        PRIMARY_DEPLOYMENT=$(echo $SERVICE_JSON | jq -r '.services[0].deployments[] | select(.status == "PRIMARY")')
+        RUNNING_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.runningCount')
+        DESIRED_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.desiredCount')
+        FAILED_TASKS=$(echo $PRIMARY_DEPLOYMENT | jq -r '.failedTasks')
+
+        echo "Deployment Status:"
+        echo "Running Count: $RUNNING_COUNT"
+        echo "Desired Count: $DESIRED_COUNT"
+        echo "Failed Tasks: $FAILED_TASKS"
+
+        if [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ] && [ "$DESIRED_COUNT" -gt 0 ]; then
+          echo "Deployment completed successfully!"
+          DEPLOYMENT_DONE=true
+          break
+        elif [ "$FAILED_TASKS" -gt 0 ]; then
+          echo "Deployment failed due to task failures"
+          exit 1
+        fi
+
+        # Get recent service events
+        echo "Recent Events:"
+        echo $SERVICE_JSON | jq -r '.services[0].events[0:3][] | .message'
+
+        ATTEMPTS=$((ATTEMPTS + 1))
+        if [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; then
+          echo "Waiting 30 seconds before next check (Attempt $ATTEMPTS of $MAX_ATTEMPTS)..."
+          sleep 30
+        fi
+      done
+
+      if [ "$DEPLOYMENT_DONE" != "true" ]; then
+        echo "Deployment did not complete within expected time"
+        exit 1
+      fi
+    EOT
+  }
 }
 
 # Auto Scaling
@@ -452,6 +562,12 @@ resource "aws_appautoscaling_target" "app" {
   resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
+
+  depends_on = [aws_ecs_service.app]
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-autoscaling-target-${var.environment}"
+  })
 }
 
 resource "aws_appautoscaling_policy" "cpu" {
@@ -467,6 +583,8 @@ resource "aws_appautoscaling_policy" "cpu" {
     }
     target_value = local.current_env.autoscaling.cpu_threshold
   }
+
+  depends_on = [aws_appautoscaling_target.app]
 }
 
 resource "aws_appautoscaling_policy" "memory" {
@@ -482,4 +600,6 @@ resource "aws_appautoscaling_policy" "memory" {
     }
     target_value = local.current_env.autoscaling.memory_threshold
   }
+
+  depends_on = [aws_appautoscaling_target.app]
 }
