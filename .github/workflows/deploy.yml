@@ -34,27 +34,8 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Clear Stale Locks
-        run: |
-          echo "Checking for stale locks..."
-          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          TABLE_NAME="vimbiso-pay-terraform-state-lock-${ENVIRONMENT}-${AWS_ACCOUNT_ID}"
-
-          # Get all locks
-          LOCKS=$(aws dynamodb scan --table-name "$TABLE_NAME" --query "Items[*].LockID.S" --output text)
-
-          if [ ! -z "$LOCKS" ]; then
-            echo "Found stale locks, clearing them..."
-            cd terraform
-            for LOCK_ID in $LOCKS; do
-              echo "Clearing lock: $LOCK_ID"
-              terraform force-unlock -force "$LOCK_ID"
-            done
-          else
-            echo "No stale locks found"
-          fi
-
       - name: Setup and Initialize Terraform Backend
+        id: init-backend
         run: |
           echo "Current environment: ${ENVIRONMENT}"
 
@@ -91,6 +72,28 @@ jobs:
             -backend-config="key=terraform.tfstate" \
             -backend-config="region=af-south-1" \
             -backend-config="dynamodb_table=${TABLE_NAME}"
+
+          # Export the table name for use in other steps
+          echo "dynamodb_table=${TABLE_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Clear Stale Locks
+        env:
+          DYNAMODB_TABLE: ${{ steps.init-backend.outputs.dynamodb_table }}
+        run: |
+          echo "Checking for stale locks..."
+          # Get all locks
+          LOCKS=$(aws dynamodb scan --table-name "$DYNAMODB_TABLE" --query "Items[*].LockID.S" --output text)
+
+          if [ ! -z "$LOCKS" ]; then
+            echo "Found stale locks, clearing them..."
+            cd terraform
+            for LOCK_ID in $LOCKS; do
+              echo "Clearing lock: $LOCK_ID"
+              terraform force-unlock -force "$LOCK_ID"
+            done
+          else
+            echo "No stale locks found"
+          fi
 
       - name: Create Base Infrastructure
         env:
