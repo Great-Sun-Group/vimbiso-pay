@@ -101,3 +101,28 @@ output "efs_security_group_id" {
   description = "ID of the EFS security group"
   value       = module.networking.efs_security_group_id
 }
+
+# New Monitoring Outputs
+output "container_insights_status" {
+  description = "Status of Container Insights"
+  value       = module.ecs.container_insights_status
+}
+
+output "cloudwatch_dashboard_name" {
+  description = "Name of the CloudWatch dashboard"
+  value       = module.ecs.cloudwatch_dashboard_name
+}
+
+output "monitoring_urls" {
+  description = "URLs for monitoring the application"
+  value = {
+    cloudwatch_dashboard = "https://${local.current_env.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${local.current_env.aws_region}#dashboards:name=${module.ecs.cloudwatch_dashboard_name}"
+    container_insights  = "https://${local.current_env.aws_region}.console.aws.amazon.com/ecs/home?region=${local.current_env.aws_region}#/clusters/${module.ecs.cluster_name}/containerInsights"
+    application_url    = "https://${module.loadbalancer.domain_name}"
+  }
+}
+
+output "health_check_url" {
+  description = "URL for the application health check"
+  value       = "https://${module.loadbalancer.domain_name}/health/"
+}

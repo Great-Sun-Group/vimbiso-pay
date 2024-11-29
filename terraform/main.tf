@@ -12,47 +12,65 @@ module "networking" {
 module "loadbalancer" {
   source = "./modules/loadbalancer"
 
-  environment         = var.environment
-  vpc_id             = module.networking.vpc_id
-  public_subnet_ids  = module.networking.public_subnet_ids
+  environment            = var.environment
+  vpc_id                = module.networking.vpc_id
+  public_subnet_ids     = module.networking.public_subnet_ids
   alb_security_group_id = module.networking.alb_security_group_id
-  domain_name        = "${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
-  domain_zone_name   = local.current_domain.dev_domain_base
-  health_check_path  = "/health/"
-  health_check_port  = 8000
-  tags               = local.common_tags
+  domain_name           = "${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
+  domain_zone_name      = local.current_domain.dev_domain_base
+  health_check_path     = "/health/"
+  health_check_port     = 8000
+  deregistration_delay  = 60
+  tags                  = local.common_tags
+
+  depends_on = [module.networking]
 }
 
 # EFS Module
 module "efs" {
   source = "./modules/efs"
 
-  environment         = var.environment
-  private_subnet_ids = module.networking.private_subnet_ids
-  efs_security_group_id = module.networking.efs_security_group_id
-  tags               = local.common_tags
+  environment            = var.environment
+  private_subnet_ids     = module.networking.private_subnet_ids
+  efs_security_group_id  = module.networking.efs_security_group_id
+  encrypted             = true
+  performance_mode      = "generalPurpose"
+  throughput_mode       = "bursting"
+  transition_to_ia      = "AFTER_30_DAYS"
+  enable_backup         = true
+  backup_retention_days = 30
+  tags                  = local.common_tags
+
+  depends_on = [module.networking]
 }
 
 # IAM Module
 module "iam" {
   source = "./modules/iam"
 
-  environment            = var.environment
-  efs_file_system_arn   = module.efs.file_system_arn
-  app_access_point_arn  = module.efs.app_access_point_arn
-  redis_access_point_arn = module.efs.redis_access_point_arn
+  environment              = var.environment
+  efs_file_system_arn     = module.efs.file_system_arn
+  app_access_point_arn    = module.efs.app_access_point_arn
+  redis_access_point_arn  = module.efs.redis_access_point_arn
   cloudwatch_log_group_arn = "arn:aws:logs:${local.current_env.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/vimbiso-pay-${var.environment}:*"
-  region                = local.current_env.aws_region
-  account_id            = data.aws_caller_identity.current.account_id
-  tags                  = local.common_tags
+  region                  = local.current_env.aws_region
+  account_id              = data.aws_caller_identity.current.account_id
+  tags                    = local.common_tags
+
+  depends_on = [module.efs]
 }
 
 # ECR Module
 module "ecr" {
   source = "./modules/ecr"
 
-  environment = var.environment
-  tags       = local.common_tags
+  environment           = var.environment
+  scan_on_push         = true
+  image_retention_count = 20
+  force_delete         = var.environment != "production"
+  encryption_type      = "AES256"
+  image_tag_mutability = "MUTABLE"
+  tags                 = local.common_tags
 }
 
 # ECS Module
@@ -76,6 +94,8 @@ module "ecs" {
   max_capacity              = local.current_env.autoscaling.max_capacity
   cpu_threshold             = local.current_env.autoscaling.cpu_threshold
   memory_threshold          = local.current_env.autoscaling.memory_threshold
+  log_retention_days        = 30
+  service_discovery_ttl     = 10
   allowed_hosts            = "*.amazonaws.com,${module.loadbalancer.alb_dns_name},${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
 
   django_env = {
@@ -92,6 +112,13 @@ module "ecs" {
   }
 
   tags = local.common_tags
+
+  depends_on = [
+    module.networking,
+    module.loadbalancer,
+    module.efs,
+    module.iam
+  ]
 }
 
 # Get current AWS account ID

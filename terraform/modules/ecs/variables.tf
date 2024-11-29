@@ -64,11 +64,19 @@ variable "redis_port" {
 variable "task_cpu" {
   description = "CPU units for the task"
   type        = number
+  validation {
+    condition     = contains([256, 512, 1024, 2048, 4096], var.task_cpu)
+    error_message = "Task CPU must be one of: 256, 512, 1024, 2048, 4096"
+  }
 }
 
 variable "task_memory" {
   description = "Memory (MiB) for the task"
   type        = number
+  validation {
+    condition     = contains([512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192], var.task_memory)
+    error_message = "Task memory must be one of: 512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192"
+  }
 }
 
 # EFS Configuration
@@ -92,24 +100,40 @@ variable "min_capacity" {
   description = "Minimum number of tasks"
   type        = number
   default     = 2
+  validation {
+    condition     = var.min_capacity >= 2
+    error_message = "Minimum capacity must be at least 2 for high availability"
+  }
 }
 
 variable "max_capacity" {
   description = "Maximum number of tasks"
   type        = number
   default     = 4
+  validation {
+    condition     = var.max_capacity >= var.min_capacity
+    error_message = "Maximum capacity must be greater than or equal to minimum capacity"
+  }
 }
 
 variable "cpu_threshold" {
   description = "CPU utilization threshold for scaling"
   type        = number
   default     = 80
+  validation {
+    condition     = var.cpu_threshold > 0 && var.cpu_threshold <= 100
+    error_message = "CPU threshold must be between 1 and 100"
+  }
 }
 
 variable "memory_threshold" {
   description = "Memory utilization threshold for scaling"
   type        = number
   default     = 80
+  validation {
+    condition     = var.memory_threshold > 0 && var.memory_threshold <= 100
+    error_message = "Memory threshold must be between 1 and 100"
+  }
 }
 
 # Environment Variables
@@ -140,4 +164,19 @@ variable "log_retention_days" {
   description = "Number of days to retain CloudWatch logs"
   type        = number
   default     = 30
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653], var.log_retention_days)
+    error_message = "Log retention days must be one of: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653"
+  }
+}
+
+# Service Discovery Configuration
+variable "service_discovery_ttl" {
+  description = "TTL for service discovery DNS records"
+  type        = number
+  default     = 10
+  validation {
+    condition     = var.service_discovery_ttl >= 0 && var.service_discovery_ttl <= 60
+    error_message = "Service discovery TTL must be between 0 and 60 seconds"
+  }
 }
