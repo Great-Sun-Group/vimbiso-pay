@@ -241,8 +241,8 @@ resource "aws_lb_target_group" "app" {
     unhealthy_threshold = 3
   }
 
-  # Reduced deregistration delay to speed up deployments while still allowing in-flight requests to complete
-  deregistration_delay = 30
+  # Increased deregistration delay to ensure in-flight requests complete
+  deregistration_delay = 60
 
   stickiness {
     type            = "lb_cookie"
@@ -400,8 +400,15 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 30
         timeout     = 5
         retries     = 5
-        startPeriod = 30
+        startPeriod = 60
       }
+      mountPoints = [
+        {
+          sourceVolume  = "data"
+          containerPath = "/data"
+          readOnly     = false
+        }
+      ]
     },
     {
       name         = "vimbiso-pay-${var.environment}"
@@ -422,7 +429,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_BUSINESS_ID", value = var.whatsapp_business_id },
         { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.whatsapp_registration_flow_id },
         { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.whatsapp_company_registration_flow_id },
-        { name = "REDIS_URL", value = "redis://redis:6379/0" }
+        { name = "REDIS_URL", value = "redis://localhost:6379/0" }
       ]
       portMappings = [
         {
@@ -460,6 +467,7 @@ resource "aws_ecs_task_definition" "app" {
           condition     = "HEALTHY"
         }
       ]
+      user = "root"  # Temporarily run as root to fix permissions
     }
   ])
 
@@ -468,6 +476,11 @@ resource "aws_ecs_task_definition" "app" {
     efs_volume_configuration {
       file_system_id = aws_efs_file_system.app_data.id
       root_directory = "/"
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.app_data.id
+        iam = "ENABLED"
+      }
     }
   }
 
@@ -483,6 +496,29 @@ resource "aws_efs_file_system" "app_data" {
 
   tags = merge(local.common_tags, {
     Name = "vimbiso-pay-efs-${var.environment}"
+  })
+}
+
+# EFS Access Point
+resource "aws_efs_access_point" "app_data" {
+  file_system_id = aws_efs_file_system.app_data.id
+
+  posix_user {
+    gid = 0
+    uid = 0
+  }
+
+  root_directory {
+    path = "/data"
+    creation_info {
+      owner_gid   = 0
+      owner_uid   = 0
+      permissions = "755"
+    }
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "vimbiso-pay-efs-ap-${var.environment}"
   })
 }
 
@@ -526,7 +562,7 @@ resource "aws_ecs_service" "app" {
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = 2
-  deployment_minimum_healthy_percent = 100
+  deployment_minimum_healthy_percent = 50
   deployment_maximum_percent        = 200
   launch_type                       = "FARGATE"
   scheduling_strategy               = "REPLICA"
