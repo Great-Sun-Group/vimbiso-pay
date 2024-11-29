@@ -392,6 +392,7 @@ resource "aws_ecs_task_definition" "app" {
           awslogs-group         = aws_cloudwatch_log_group.app.name
           awslogs-region        = local.current_env.aws_region
           awslogs-stream-prefix = "redis"
+          awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
         }
       }
       healthCheck = {
@@ -421,7 +422,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_BUSINESS_ID", value = var.whatsapp_business_id },
         { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.whatsapp_registration_flow_id },
         { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.whatsapp_company_registration_flow_id },
-        { name = "REDIS_URL", value = "redis://localhost:6379/0" }
+        { name = "REDIS_URL", value = "redis://redis:6379/0" }
       ]
       portMappings = [
         {
@@ -435,7 +436,8 @@ resource "aws_ecs_task_definition" "app" {
         options = {
           awslogs-group         = aws_cloudwatch_log_group.app.name
           awslogs-region        = local.current_env.aws_region
-          awslogs-stream-prefix = "ecs"
+          awslogs-stream-prefix = "app"
+          awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
         }
       }
       healthCheck = {
@@ -560,56 +562,79 @@ resource "aws_ecs_service" "app" {
 
   # Custom wait using local-exec with better error handling
   provisioner "local-exec" {
-    command = <<EOT
+    command = <<-EOT
       MAX_ATTEMPTS=40
       ATTEMPTS=0
       DEPLOYMENT_DONE=false
 
-      while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+      while [ $$ATTEMPTS -lt $$MAX_ATTEMPTS ]; do
         # Get service details
-        SERVICE_JSON=$(aws ecs describe-services \
+        SERVICE_JSON=$$(aws ecs describe-services \
           --cluster ${aws_ecs_cluster.main.name} \
           --services ${self.name} \
           --region ${local.current_env.aws_region})
 
         # Get primary deployment status
-        PRIMARY_DEPLOYMENT=$(echo $SERVICE_JSON | jq -r '.services[0].deployments[] | select(.status == "PRIMARY")')
-        RUNNING_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.runningCount')
-        DESIRED_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.desiredCount')
-        FAILED_TASKS=$(echo $PRIMARY_DEPLOYMENT | jq -r '.failedTasks')
+        PRIMARY_DEPLOYMENT=$$(echo $$SERVICE_JSON | jq -r '.services[0].deployments[] | select(.status == "PRIMARY")')
+        RUNNING_COUNT=$$(echo $$PRIMARY_DEPLOYMENT | jq -r '.runningCount')
+        DESIRED_COUNT=$$(echo $$PRIMARY_DEPLOYMENT | jq -r '.desiredCount')
+        FAILED_TASKS=$$(echo $$PRIMARY_DEPLOYMENT | jq -r '.failedTasks')
+        PENDING_COUNT=$$(echo $$PRIMARY_DEPLOYMENT | jq -r '.pendingCount')
 
         echo "Deployment Status:"
-        echo "Running Count: $RUNNING_COUNT"
-        echo "Desired Count: $DESIRED_COUNT"
-        echo "Failed Tasks: $FAILED_TASKS"
+        echo "Running Count: $$RUNNING_COUNT"
+        echo "Desired Count: $$DESIRED_COUNT"
+        echo "Pending Count: $$PENDING_COUNT"
+        echo "Failed Tasks: $$FAILED_TASKS"
 
-        if [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ] && [ "$DESIRED_COUNT" -gt 0 ]; then
-          if [ "$FAILED_TASKS" -gt 0 ]; then
-            echo "Warning: $FAILED_TASKS tasks failed during deployment"
-            # Get details of failed tasks
-            TASKS=$(aws ecs list-tasks \
+        # Check for failed tasks first
+        if [ "$$FAILED_TASKS" -gt 0 ]; then
+          echo "Error: $$FAILED_TASKS tasks failed during deployment"
+          # Get details of failed tasks
+          TASKS=$$(aws ecs list-tasks \
+            --cluster ${aws_ecs_cluster.main.name} \
+            --service-name ${self.name} \
+            --desired-status STOPPED \
+            --query 'taskArns[]' --output text)
+
+          for TASK in $$TASKS; do
+            TASK_ID=$${TASK##*/}
+            echo "Failed task details for $$TASK_ID:"
+
+            # Get task details including stopped reason
+            aws ecs describe-tasks \
               --cluster ${aws_ecs_cluster.main.name} \
-              --service-name ${self.name} \
-              --desired-status STOPPED \
-              --query 'taskArns[]' --output text)
+              --tasks $$TASK \
+              --query 'tasks[].{reason: stoppedReason, containers: containers[].{name: name, exitCode: exitCode, reason: reason}}' \
+              --output json
 
-            for TASK in $TASKS; do
-              echo "Failed task details for $TASK:"
-              aws ecs describe-tasks \
-                --cluster ${aws_ecs_cluster.main.name} \
-                --tasks $TASK \
-                --query 'tasks[].{reason: stoppedReason, exitCode: containers[].exitCode}'
+            # Get Django app logs
+            echo "App logs for failed task $$TASK_ID:"
+            aws logs get-log-events \
+              --log-group-name "/ecs/vimbiso-pay-${var.environment}" \
+              --log-stream-name "app/$$TASK_ID" \
+              --limit 100 \
+              --query 'events[].message' \
+              --output text || echo "No app logs available"
 
-              echo "Logs for failed task $TASK:"
-              aws logs get-log-events \
-                --log-group-name "/ecs/vimbiso-pay-${var.environment}" \
-                --log-stream-name "vimbiso-pay-${var.environment}/$TASK##*/}" \
-                --limit 20 \
-                --query 'events[].message' \
-                --output text || echo "No logs available"
-            done
-            exit 1
-          fi
+            # Get Redis logs
+            echo "Redis logs for failed task $$TASK_ID:"
+            aws logs get-log-events \
+              --log-group-name "/ecs/vimbiso-pay-${var.environment}" \
+              --log-stream-name "redis/$$TASK_ID" \
+              --limit 100 \
+              --query 'events[].message' \
+              --output text || echo "No Redis logs available"
+
+            # Get recent service events
+            echo "Recent service events:"
+            echo $$SERVICE_JSON | jq -r '.services[0].events[0:5][] | .message'
+          done
+          exit 1
+        fi
+
+        # Check if deployment is complete
+        if [ "$$RUNNING_COUNT" = "$$DESIRED_COUNT" ] && [ "$$DESIRED_COUNT" -gt 0 ] && [ "$$PENDING_COUNT" = "0" ] && [ "$$FAILED_TASKS" = "0" ]; then
           echo "Deployment completed successfully!"
           DEPLOYMENT_DONE=true
           break
@@ -617,16 +642,16 @@ resource "aws_ecs_service" "app" {
 
         # Get recent service events
         echo "Recent Events:"
-        echo $SERVICE_JSON | jq -r '.services[0].events[0:3][] | .message'
+        echo $$SERVICE_JSON | jq -r '.services[0].events[0:3][] | .message'
 
-        ATTEMPTS=$((ATTEMPTS + 1))
-        if [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; then
-          echo "Waiting 30 seconds before next check (Attempt $ATTEMPTS of $MAX_ATTEMPTS)..."
+        ATTEMPTS=$$((ATTEMPTS + 1))
+        if [ $$ATTEMPTS -lt $$MAX_ATTEMPTS ]; then
+          echo "Waiting 30 seconds before next check (Attempt $$ATTEMPTS of $$MAX_ATTEMPTS)..."
           sleep 30
         fi
       done
 
-      if [ "$DEPLOYMENT_DONE" != "true" ]; then
+      if [ "$$DEPLOYMENT_DONE" != "true" ]; then
         echo "Deployment did not complete within expected time"
         exit 1
       fi

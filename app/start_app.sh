@@ -4,7 +4,7 @@ set -e
 # Function to wait for Redis
 wait_for_redis() {
     echo "Waiting for Redis to be ready..."
-    until redis-cli -h localhost ping &>/dev/null; do
+    until redis-cli -h redis ping &>/dev/null; do
         echo "Redis is unavailable - sleeping"
         sleep 1
     done
