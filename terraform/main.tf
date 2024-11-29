@@ -413,7 +413,7 @@ resource "aws_ecs_service" "app" {
   launch_type                       = "FARGATE"
   scheduling_strategy               = "REPLICA"
   platform_version                  = "LATEST"
-  wait_for_steady_state            = false # Disable waiting for steady state
+  wait_for_steady_state            = false
 
   network_configuration {
     security_groups  = [aws_security_group.ecs_tasks.id]
@@ -432,14 +432,67 @@ resource "aws_ecs_service" "app" {
   }
 
   lifecycle {
+    create_before_destroy = true
     ignore_changes = [task_definition, desired_count]
   }
 
-  depends_on = [time_sleep.wait_for_cluster, aws_lb_listener.https]
+  depends_on = [aws_ecs_cluster.main, aws_lb_listener.https]
 
   tags = merge(local.common_tags, {
     Name = "vimbiso-pay-service-${var.environment}"
   })
+
+  # Custom wait using local-exec with better error handling
+  provisioner "local-exec" {
+    command = <<EOT
+      MAX_ATTEMPTS=40
+      ATTEMPTS=0
+      DEPLOYMENT_DONE=false
+
+      while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+        # Get service details
+        SERVICE_JSON=$(aws ecs describe-services \
+          --cluster ${aws_ecs_cluster.main.name} \
+          --services ${self.name} \
+          --region ${local.current_env.aws_region})
+
+        # Get primary deployment status
+        PRIMARY_DEPLOYMENT=$(echo $SERVICE_JSON | jq -r '.services[0].deployments[] | select(.status == "PRIMARY")')
+        RUNNING_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.runningCount')
+        DESIRED_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.desiredCount')
+        FAILED_TASKS=$(echo $PRIMARY_DEPLOYMENT | jq -r '.failedTasks')
+
+        echo "Deployment Status:"
+        echo "Running Count: $RUNNING_COUNT"
+        echo "Desired Count: $DESIRED_COUNT"
+        echo "Failed Tasks: $FAILED_TASKS"
+
+        if [[ "$RUNNING_COUNT" == "$DESIRED_COUNT" && "$DESIRED_COUNT" -gt 0 ]]; then
+          echo "Deployment completed successfully!"
+          DEPLOYMENT_DONE=true
+          break
+        elif [[ "$FAILED_TASKS" -gt 0 ]]; then
+          echo "Deployment failed due to task failures"
+          exit 1
+        fi
+
+        # Get recent service events
+        echo "Recent Events:"
+        echo $SERVICE_JSON | jq -r '.services[0].events[0:3][] | .message'
+
+        ATTEMPTS=$((ATTEMPTS + 1))
+        if [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; then
+          echo "Waiting 30 seconds before next check (Attempt $ATTEMPTS of $MAX_ATTEMPTS)..."
+          sleep 30
+        fi
+      done
+
+      if [ "$DEPLOYMENT_DONE" != "true" ]; then
+        echo "Deployment did not complete within expected time"
+        exit 1
+      fi
+    EOT
+  }
 }
 
 # Auto Scaling

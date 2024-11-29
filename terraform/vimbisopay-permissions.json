@@ -74,43 +74,26 @@
         {
             "Effect": "Allow",
             "Action": [
-                "iam:Create*",
-                "iam:Delete*",
-                "iam:Get*",
-                "iam:List*",
-                "iam:Put*",
-                "iam:Attach*",
-                "iam:Detach*",
-                "iam:Tag*",
-                "iam:Untag*",
+                "iam:CreateRole",
+                "iam:DeleteRole",
+                "iam:GetRole",
+                "iam:PutRolePolicy",
+                "iam:DeleteRolePolicy",
+                "iam:AttachRolePolicy",
+                "iam:DetachRolePolicy",
+                "iam:TagRole",
                 "iam:PassRole",
+                "iam:ListRolePolicies",
+                "iam:ListAttachedRolePolicies",
+                "iam:ListInstanceProfilesForRole",
+                "iam:CreateInstanceProfile",
+                "iam:DeleteInstanceProfile",
+                "iam:GetInstanceProfile",
                 "iam:AddRoleToInstanceProfile",
-                "iam:RemoveRoleFromInstanceProfile"
-            ],
-            "Resource": [
-                "arn:aws:iam::*:role/vimbiso-pay-*",
-                "arn:aws:iam::*:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/*",
-                "arn:aws:iam::*:role/aws-service-role/application-autoscaling.amazonaws.com/*",
-                "arn:aws:iam::*:role/aws-service-role/ecs.amazonaws.com/*",
-                "arn:aws:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/*"
-            ]
-        },
-        {
-            "Effect": "Allow",
-            "Action": [
+                "iam:RemoveRoleFromInstanceProfile",
                 "iam:CreateServiceLinkedRole"
             ],
-            "Resource": "*",
-            "Condition": {
-                "StringEquals": {
-                    "iam:AWSServiceName": [
-                        "ecs.application-autoscaling.amazonaws.com",
-                        "application-autoscaling.amazonaws.com",
-                        "ecs.amazonaws.com",
-                        "elasticloadbalancing.amazonaws.com"
-                    ]
-                }
-            }
+            "Resource": "*"
         },
         {
             "Effect": "Allow",
