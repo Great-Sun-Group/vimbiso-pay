@@ -1,102 +1,103 @@
 # Network Outputs
 output "vpc_id" {
   description = "The ID of the VPC"
-  value       = aws_vpc.main.id
+  value       = module.networking.vpc_id
 }
 
 output "private_subnet_ids" {
   description = "List of private subnet IDs"
-  value       = aws_subnet.private[*].id
+  value       = module.networking.private_subnet_ids
 }
 
 output "public_subnet_ids" {
   description = "List of public subnet IDs"
-  value       = aws_subnet.public[*].id
+  value       = module.networking.public_subnet_ids
 }
 
-# Security Groups
-output "alb_security_group_id" {
-  description = "Security group ID for the ALB"
-  value       = aws_security_group.alb.id
-}
-
-output "ecs_tasks_security_group_id" {
-  description = "Security group ID for ECS tasks"
-  value       = aws_security_group.ecs_tasks.id
-}
-
-# Load Balancer
+# Load Balancer Outputs
 output "alb_dns_name" {
   description = "DNS name of the Application Load Balancer"
-  value       = aws_lb.main.dns_name
+  value       = module.loadbalancer.alb_dns_name
 }
 
-output "target_group_arn" {
-  description = "ARN of the target group"
-  value       = aws_lb_target_group.app.arn
-}
-
-# Domain
-output "domain" {
+output "domain_name" {
   description = "The domain name for the environment"
-  value       = "${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
+  value       = module.loadbalancer.domain_name
 }
 
-output "load_balancer_dns" {
-  description = "DNS name of the load balancer"
-  value       = aws_lb.main.dns_name
-}
-
-# Container Registry
+# Container Registry Output
 output "ecr_repository_url" {
   description = "URL of the ECR repository"
-  value       = aws_ecr_repository.app.repository_url
+  value       = module.ecr.repository_url
 }
 
 # ECS Resources
 output "ecs_cluster_arn" {
   description = "ARN of the ECS cluster"
-  value       = aws_ecs_cluster.main.arn
+  value       = module.ecs.cluster_arn
 }
 
 output "ecs_cluster_name" {
   description = "Name of the ECS cluster"
-  value       = aws_ecs_cluster.main.name
+  value       = module.ecs.cluster_name
 }
 
 output "ecs_service_name" {
   description = "Name of the ECS service"
-  value       = aws_ecs_service.app.name
+  value       = module.ecs.service_name
 }
 
 output "ecs_task_definition_arn" {
   description = "ARN of the ECS task definition"
-  value       = aws_ecs_task_definition.app.arn
+  value       = module.ecs.task_definition_arn
 }
 
 # Auto Scaling
 output "autoscaling_target_min_capacity" {
   description = "Minimum capacity of the auto scaling target"
-  value       = aws_appautoscaling_target.app.min_capacity
+  value       = local.current_env.autoscaling.min_capacity
 }
 
 output "autoscaling_target_max_capacity" {
   description = "Maximum capacity of the auto scaling target"
-  value       = aws_appautoscaling_target.app.max_capacity
+  value       = local.current_env.autoscaling.max_capacity
 }
 
 # EFS Resources
 output "efs_file_system_id" {
   description = "ID of the EFS file system"
-  value       = aws_efs_file_system.app_data.id
+  value       = module.efs.file_system_id
 }
 
 output "efs_mount_targets" {
-  description = "IDs of the EFS mount targets"
-  value       = aws_efs_mount_target.app_data[*].id
+  description = "List of mount target IDs"
+  value       = module.efs.mount_target_ids
+}
+
+# CloudWatch Logs
+output "cloudwatch_log_group_name" {
+  description = "Name of the CloudWatch log group"
+  value       = module.ecs.cloudwatch_log_group_name
+}
+
+# Service Discovery
+output "service_discovery_namespace_id" {
+  description = "ID of the service discovery namespace"
+  value       = module.ecs.service_discovery_namespace_id
+}
+
+# Security Groups
+output "alb_security_group_id" {
+  description = "ID of the ALB security group"
+  value       = module.networking.alb_security_group_id
+}
+
+output "ecs_tasks_security_group_id" {
+  description = "ID of the ECS tasks security group"
+  value       = module.networking.ecs_tasks_security_group_id
 }
 
 output "efs_security_group_id" {
   description = "ID of the EFS security group"
-  value       = aws_security_group.efs.id
+  value       = module.networking.efs_security_group_id
 }

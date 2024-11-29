@@ -81,18 +81,10 @@ jobs:
         run: |
           cd terraform
           terraform apply -auto-approve \
-            -target=aws_vpc.main \
-            -target=aws_subnet.private \
-            -target=aws_subnet.public \
-            -target=aws_internet_gateway.main \
-            -target=aws_route.internet_access \
-            -target=aws_eip.nat \
-            -target=aws_nat_gateway.main \
-            -target=aws_route_table.private \
-            -target=aws_route_table_association.private \
-            -target=aws_security_group.alb \
-            -target=aws_security_group.ecs_tasks \
-            -target=aws_ecr_repository.app
+            -target=module.networking \
+            -target=module.loadbalancer \
+            -target=module.iam \
+            -target=module.ecr
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -238,7 +230,7 @@ jobs:
           echo "Private Subnet IDs: $(terraform output -json private_subnet_ids)"
           echo "Public Subnet IDs: $(terraform output -json public_subnet_ids)"
           echo "ECR Repository URL: $(terraform output -raw ecr_repository_url)"
-          echo "Domain: $(terraform output -raw domain)"
+          echo "Domain: $(terraform output -raw domain_name)"
           echo "========================================"
           echo "Application Outputs:"
           echo "========================================"
