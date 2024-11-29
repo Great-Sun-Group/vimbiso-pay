@@ -7,12 +7,10 @@ terraform {
     # staging:    vimbiso-pay-terraform-state-staging / vimbiso-pay-terraform-state-lock-staging
     # production: vimbiso-pay-terraform-state-production / vimbiso-pay-terraform-state-lock-production
 
-    # Additional security configurations
-    kms_key_id     = "alias/terraform-bucket-key"
     # Enable versioning
     versioning     = true
     # Enable server-side encryption
-    sse_algorithm  = "aws:kms"
+    sse_algorithm  = "AES256"
     # Enable access logging
     access_logging = true
   }
