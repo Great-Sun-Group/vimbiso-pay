@@ -17,7 +17,6 @@ jobs:
       ENVIRONMENT: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
       BUILD_TARGET: production
       DOMAIN: ${{ github.ref == 'refs/heads/prod' && 'whatsapp.vimbisopay.africa' || 'whatsapp-stage.vimbisopay.africa' }}
-      TF_CLI_ARGS: "-lock-timeout=20m"  # Add lock timeout
 
     steps:
       - name: Checkout code
@@ -49,7 +48,7 @@ jobs:
             cd terraform
             for LOCK_ID in $LOCKS; do
               echo "Clearing lock: $LOCK_ID"
-              terraform force-unlock -force "$LOCK_ID" || true
+              terraform force-unlock -force "$LOCK_ID"
             done
           else
             echo "No stale locks found"
@@ -111,15 +110,16 @@ jobs:
           cd terraform
           # Create plan file for base infrastructure (networking, IAM, ECR)
           terraform plan -input=false \
+            -lock-timeout=20m \
             -target=module.networking \
             -target=module.iam \
             -target=module.ecr \
             -out=base.tfplan
 
           # Apply base infrastructure
-          terraform apply -input=false base.tfplan || {
+          terraform apply -input=false -lock-timeout=20m base.tfplan || {
             echo "Base infrastructure deployment failed"
-            terraform force-unlock -force $(terraform workspace show) || true
+            terraform force-unlock -force $(terraform workspace show)
             exit 1
           }
 
@@ -141,13 +141,14 @@ jobs:
           cd terraform
           # Create plan file for load balancer configuration
           terraform plan -input=false \
+            -lock-timeout=20m \
             -target=module.loadbalancer \
             -out=lb.tfplan
 
           # Apply load balancer configuration
-          terraform apply -input=false lb.tfplan || {
+          terraform apply -input=false -lock-timeout=20m lb.tfplan || {
             echo "Load balancer configuration failed"
-            terraform force-unlock -force $(terraform workspace show) || true
+            terraform force-unlock -force $(terraform workspace show)
             exit 1
           }
 
@@ -189,18 +190,19 @@ jobs:
           cd terraform
           # Create plan file for ECS deployment
           terraform plan -input=false \
+            -lock-timeout=20m \
             -target=module.ecs \
             -target=module.efs \
             -out=app.tfplan || {
             echo "Application plan creation failed"
-            terraform force-unlock -force $(terraform workspace show) || true
+            terraform force-unlock -force $(terraform workspace show)
             exit 1
           }
 
           # Apply ECS deployment
-          terraform apply -input=false app.tfplan || {
+          terraform apply -input=false -lock-timeout=20m app.tfplan || {
             echo "Application deployment failed"
-            terraform force-unlock -force $(terraform workspace show) || true
+            terraform force-unlock -force $(terraform workspace show)
             exit 1
           }
 
@@ -209,7 +211,7 @@ jobs:
         run: |
           cd terraform
           echo "Cleaning up any hanging locks..."
-          terraform force-unlock -force $(terraform workspace show) || true
+          terraform force-unlock -force $(terraform workspace show)
 
       - name: Wait for Deployment
         run: |

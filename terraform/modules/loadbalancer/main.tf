@@ -147,6 +147,12 @@ resource "aws_wafv2_web_acl" "main" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes = [
+      tags,
+      description,
+      rule,
+      visibility_config
+    ]
   }
 }
 
@@ -178,7 +184,9 @@ resource "aws_lb" "main" {
     prevent_destroy = true
     ignore_changes = [
       access_logs,
-      tags
+      tags,
+      security_groups,
+      subnets
     ]
   }
 }
@@ -190,6 +198,9 @@ resource "aws_wafv2_web_acl_association" "main" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes = [
+      web_acl_arn
+    ]
   }
 }
 
@@ -229,7 +240,8 @@ resource "aws_lb_target_group" "app" {
     create_before_destroy = true
     ignore_changes = [
       tags,
-      health_check
+      health_check,
+      stickiness
     ]
   }
 }
@@ -246,7 +258,8 @@ resource "aws_acm_certificate" "main" {
   lifecycle {
     create_before_destroy = true
     ignore_changes = [
-      tags
+      tags,
+      validation_method
     ]
   }
 }
@@ -298,7 +311,8 @@ resource "aws_route53_record" "cert_validation" {
     ignore_changes = [
       records,
       ttl,
-      zone_id
+      zone_id,
+      name
     ]
   }
 }
@@ -309,6 +323,9 @@ resource "aws_acm_certificate_validation" "main" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes = [
+      validation_record_fqdns
+    ]
   }
 
   depends_on = [
@@ -333,7 +350,8 @@ resource "aws_lb_listener" "https" {
     create_before_destroy = true
     ignore_changes = [
       default_action,
-      ssl_policy
+      ssl_policy,
+      certificate_arn
     ]
   }
 
@@ -360,6 +378,9 @@ resource "aws_lb_listener" "http" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes = [
+      default_action
+    ]
   }
 }
 
