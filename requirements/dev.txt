@@ -8,11 +8,11 @@ pytest==8.0.0
 pytest-django==4.8.0
 pytest-cov==4.1.0
 mypy==1.8.0
-django-debug-toolbar==4.3.0
-django-browser-reload==1.12.1
+django-debug-toolbar==4.4.6
+django-browser-reload==1.17.0
 ipython==8.29.0
 
 # Type stubs for better development experience
 types-requests==2.31.0.20240125
 types-urllib3==1.26.25.14
-django-stubs==4.2.7
+django-stubs==5.1.1
