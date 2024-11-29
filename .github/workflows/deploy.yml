@@ -150,17 +150,17 @@ jobs:
             RUNNING_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.runningCount')
             DESIRED_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.desiredCount')
             FAILED_TASKS=$(echo $PRIMARY_DEPLOYMENT | jq -r '.failedTasks')
+            PENDING_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.pendingCount')
 
             echo "Deployment Status:"
             echo "Running Count: $RUNNING_COUNT"
             echo "Desired Count: $DESIRED_COUNT"
+            echo "Pending Count: $PENDING_COUNT"
             echo "Failed Tasks: $FAILED_TASKS"
 
-            if [[ "$RUNNING_COUNT" == "$DESIRED_COUNT" && "$DESIRED_COUNT" -gt 0 ]]; then
-              echo "Deployment completed successfully!"
-              DEPLOYMENT_DONE=true
-              break
-            elif [[ "$FAILED_TASKS" -gt 0 ]]; then
+            # Check for failed tasks first
+            if [ "$FAILED_TASKS" -gt 0 ]; then
+              echo "Error: Failed tasks detected during deployment"
               TASKS=$(aws ecs list-tasks \
                 --cluster vimbiso-pay-cluster-$ENVIRONMENT \
                 --service-name vimbiso-pay-service-$ENVIRONMENT \
@@ -168,23 +168,45 @@ jobs:
                 --query 'taskArns[]' --output text)
 
               for TASK in $TASKS; do
-                echo "Failed task details for $TASK:"
+                TASK_ID=${TASK##*/}
+                echo "Failed task details for $TASK_ID:"
+
+                # Get task details including stopped reason
                 aws ecs describe-tasks \
                   --cluster vimbiso-pay-cluster-$ENVIRONMENT \
                   --tasks $TASK \
-                  --query 'tasks[].{reason: stoppedReason, exitCode: containers[].exitCode}'
+                  --query 'tasks[].{reason: stoppedReason, containers: containers[].{name: name, exitCode: exitCode, reason: reason}}' \
+                  --output json
 
-                echo "Logs for failed task $TASK:"
+                # Get application logs
+                echo "App logs for failed task $TASK_ID:"
                 aws logs get-log-events \
                   --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
-                  --log-stream-name "vimbiso-pay-$ENVIRONMENT/${TASK##*/}" \
-                  --limit 20 \
+                  --log-stream-name "app/$TASK_ID" \
+                  --limit 100 \
                   --query 'events[].message' \
-                  --output text || echo "No logs available"
+                  --output text || echo "No app logs available"
+
+                # Get Redis logs
+                echo "Redis logs for failed task $TASK_ID:"
+                aws logs get-log-events \
+                  --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
+                  --log-stream-name "redis/$TASK_ID" \
+                  --limit 100 \
+                  --query 'events[].message' \
+                  --output text || echo "No Redis logs available"
               done
 
-              echo "Deployment failed due to task failures"
+              echo "Recent service events:"
+              echo $SERVICE_JSON | jq -r '.events[0:5][] | .message'
               exit 1
+            fi
+
+            # Check if deployment is complete
+            if [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ] && [ "$DESIRED_COUNT" -gt 0 ] && [ "$PENDING_COUNT" = "0" ] && [ "$FAILED_TASKS" = "0" ]; then
+              echo "Deployment completed successfully!"
+              DEPLOYMENT_DONE=true
+              break
             fi
 
             echo "Recent Events:"
@@ -223,5 +245,6 @@ jobs:
           echo "ECS Cluster ARN: $(terraform output -raw ecs_cluster_arn)"
           echo "ECS Service Name: $(terraform output -raw ecs_service_name)"
           echo "ECS Task Definition ARN: $(terraform output -raw ecs_task_definition_arn)"
-          echo "Auto Scaling Config: $(terraform output -json autoscaling_config)"
+          echo "Auto Scaling Min Capacity: $(terraform output -raw autoscaling_target_min_capacity)"
+          echo "Auto Scaling Max Capacity: $(terraform output -raw autoscaling_target_max_capacity)"
           echo "========================================"

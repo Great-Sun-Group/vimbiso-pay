@@ -231,18 +231,18 @@ resource "aws_lb_target_group" "app" {
 
   health_check {
     enabled             = true
-    healthy_threshold   = 3
-    interval            = 60
+    healthy_threshold   = 2
+    interval            = 30
     matcher             = "200"
     path                = "/health/"
     port                = "traffic-port"
     protocol            = "HTTP"
-    timeout             = 30
-    unhealthy_threshold = 5
+    timeout             = 10
+    unhealthy_threshold = 3
   }
 
-  # Allow time for the container to start up
-  deregistration_delay = 60
+  # Reduced deregistration delay to speed up deployments while still allowing in-flight requests to complete
+  deregistration_delay = 30
 
   stickiness {
     type            = "lb_cookie"
@@ -399,8 +399,8 @@ resource "aws_ecs_task_definition" "app" {
         command     = ["CMD", "redis-cli", "ping"]
         interval    = 30
         timeout     = 5
-        retries     = 3
-        startPeriod = 10
+        retries     = 5
+        startPeriod = 30
       }
     },
     {
@@ -444,8 +444,8 @@ resource "aws_ecs_task_definition" "app" {
         command     = ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
         interval    = 30
         timeout     = 10
-        retries     = 3
-        startPeriod = 120
+        retries     = 5
+        startPeriod = 180
       }
       mountPoints = [
         {
@@ -526,12 +526,21 @@ resource "aws_ecs_service" "app" {
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = 2
-  deployment_minimum_healthy_percent = 50
+  deployment_minimum_healthy_percent = 100
   deployment_maximum_percent        = 200
   launch_type                       = "FARGATE"
   scheduling_strategy               = "REPLICA"
   platform_version                  = "LATEST"
-  wait_for_steady_state            = false
+  wait_for_steady_state            = true
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  deployment_controller {
+    type = "ECS"
+  }
 
   network_configuration {
     security_groups  = [aws_security_group.ecs_tasks.id]
@@ -545,10 +554,6 @@ resource "aws_ecs_service" "app" {
     container_port   = 8000
   }
 
-  deployment_controller {
-    type = "ECS"
-  }
-
   lifecycle {
     create_before_destroy = true
     ignore_changes = [task_definition, desired_count]
@@ -559,104 +564,6 @@ resource "aws_ecs_service" "app" {
   tags = merge(local.common_tags, {
     Name = "vimbiso-pay-service-${var.environment}"
   })
-
-  # Custom wait using local-exec with better error handling
-  provisioner "local-exec" {
-    command = <<-EOT
-      MAX_ATTEMPTS=40
-      ATTEMPTS=0
-      DEPLOYMENT_DONE=false
-
-      while [ $$ATTEMPTS -lt $$MAX_ATTEMPTS ]; do
-        # Get service details
-        SERVICE_JSON=$$(aws ecs describe-services \
-          --cluster ${aws_ecs_cluster.main.name} \
-          --services ${self.name} \
-          --region ${local.current_env.aws_region})
-
-        # Get primary deployment status
-        PRIMARY_DEPLOYMENT=$$(echo $$SERVICE_JSON | jq -r '.services[0].deployments[] | select(.status == "PRIMARY")')
-        RUNNING_COUNT=$$(echo $$PRIMARY_DEPLOYMENT | jq -r '.runningCount')
-        DESIRED_COUNT=$$(echo $$PRIMARY_DEPLOYMENT | jq -r '.desiredCount')
-        FAILED_TASKS=$$(echo $$PRIMARY_DEPLOYMENT | jq -r '.failedTasks')
-        PENDING_COUNT=$$(echo $$PRIMARY_DEPLOYMENT | jq -r '.pendingCount')
-
-        echo "Deployment Status:"
-        echo "Running Count: $$RUNNING_COUNT"
-        echo "Desired Count: $$DESIRED_COUNT"
-        echo "Pending Count: $$PENDING_COUNT"
-        echo "Failed Tasks: $$FAILED_TASKS"
-
-        # Check for failed tasks first
-        if [ "$$FAILED_TASKS" -gt 0 ]; then
-          echo "Error: $$FAILED_TASKS tasks failed during deployment"
-          # Get details of failed tasks
-          TASKS=$$(aws ecs list-tasks \
-            --cluster ${aws_ecs_cluster.main.name} \
-            --service-name ${self.name} \
-            --desired-status STOPPED \
-            --query 'taskArns[]' --output text)
-
-          for TASK in $$TASKS; do
-            TASK_ID=$${TASK##*/}
-            echo "Failed task details for $$TASK_ID:"
-
-            # Get task details including stopped reason
-            aws ecs describe-tasks \
-              --cluster ${aws_ecs_cluster.main.name} \
-              --tasks $$TASK \
-              --query 'tasks[].{reason: stoppedReason, containers: containers[].{name: name, exitCode: exitCode, reason: reason}}' \
-              --output json
-
-            # Get Django app logs
-            echo "App logs for failed task $$TASK_ID:"
-            aws logs get-log-events \
-              --log-group-name "/ecs/vimbiso-pay-${var.environment}" \
-              --log-stream-name "app/$$TASK_ID" \
-              --limit 100 \
-              --query 'events[].message' \
-              --output text || echo "No app logs available"
-
-            # Get Redis logs
-            echo "Redis logs for failed task $$TASK_ID:"
-            aws logs get-log-events \
-              --log-group-name "/ecs/vimbiso-pay-${var.environment}" \
-              --log-stream-name "redis/$$TASK_ID" \
-              --limit 100 \
-              --query 'events[].message' \
-              --output text || echo "No Redis logs available"
-
-            # Get recent service events
-            echo "Recent service events:"
-            echo $$SERVICE_JSON | jq -r '.services[0].events[0:5][] | .message'
-          done
-          exit 1
-        fi
-
-        # Check if deployment is complete
-        if [ "$$RUNNING_COUNT" = "$$DESIRED_COUNT" ] && [ "$$DESIRED_COUNT" -gt 0 ] && [ "$$PENDING_COUNT" = "0" ] && [ "$$FAILED_TASKS" = "0" ]; then
-          echo "Deployment completed successfully!"
-          DEPLOYMENT_DONE=true
-          break
-        fi
-
-        # Get recent service events
-        echo "Recent Events:"
-        echo $$SERVICE_JSON | jq -r '.services[0].events[0:3][] | .message'
-
-        ATTEMPTS=$$((ATTEMPTS + 1))
-        if [ $$ATTEMPTS -lt $$MAX_ATTEMPTS ]; then
-          echo "Waiting 30 seconds before next check (Attempt $$ATTEMPTS of $$MAX_ATTEMPTS)..."
-          sleep 30
-        fi
-      done
-
-      if [ "$$DEPLOYMENT_DONE" != "true" ]; then
-        echo "Deployment did not complete within expected time"
-        exit 1
-      fi
-    EOT
-  }
 }
 
 # Auto Scaling
