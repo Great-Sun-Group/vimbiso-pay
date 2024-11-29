@@ -24,7 +24,7 @@ PyJWT==2.8.0
 
 # Dependencies
 asgiref==3.8.1
-certifi==2024.6.2
+certifi==2024.8.30
 charset-normalizer==3.3.2
 defusedxml==0.7.1
 idna==3.7
