@@ -25,18 +25,5 @@ terraform {
   }
 }
 
-provider "aws" {
-  region = local.current_env.aws_region
-
-  default_tags {
-    tags = local.common_tags
-  }
-
-  # Enable AWS provider features
-  assume_role {
-    role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/terraform-execution"
-  }
-}
-
 # Get current AWS account ID
 data "aws_caller_identity" "current" {}
