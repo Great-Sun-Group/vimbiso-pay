@@ -95,7 +95,7 @@ resource "aws_efs_file_system_policy" "main" {
           AWS = "*"
         }
         Action = "*"
-        Resource = "${aws_efs_file_system.main.arn}/*"
+        Resource = aws_efs_file_system.main.arn
         Condition = {
           Bool = {
             "aws:SecureTransport" = "false"
