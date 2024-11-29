@@ -332,7 +332,7 @@ resource "time_sleep" "wait_for_cluster" {
 
 # ECS Cluster
 resource "aws_ecs_cluster" "main" {
-  name = "vimbiso-pay-${var.environment}"
+  name = "vimbiso-pay-cluster-${var.environment}"
 
   setting {
     name  = "containerInsights"
@@ -340,7 +340,7 @@ resource "aws_ecs_cluster" "main" {
   }
 
   tags = merge(local.common_tags, {
-    Name = "vimbiso-pay-${var.environment}"
+    Name = "vimbiso-pay-cluster-${var.environment}"
   })
 }
 
@@ -452,7 +452,7 @@ resource "aws_ecs_service" "app" {
       while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
         # Get service details
         SERVICE_JSON=$(aws ecs describe-services \
-          --cluster ${aws_ecs_cluster.main.name} \
+          --cluster vimbiso-pay-cluster-${var.environment} \
           --services ${self.name} \
           --region ${local.current_env.aws_region})
 
