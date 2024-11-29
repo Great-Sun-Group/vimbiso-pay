@@ -141,6 +141,14 @@ resource "aws_security_group" "ecs_tasks" {
     security_groups = [aws_security_group.alb.id]
   }
 
+  ingress {
+    protocol    = "tcp"
+    from_port   = 6379
+    to_port     = 6379
+    self        = true
+    description = "Allow Redis traffic between tasks"
+  }
+
   egress {
     protocol    = "-1"
     from_port   = 0
@@ -356,9 +364,39 @@ resource "aws_ecs_task_definition" "app" {
 
   container_definitions = jsonencode([
     {
+      name         = "redis"
+      image        = "redis:7-alpine"
+      essential    = true
+      memory       = floor(local.current_env.ecs_task.memory * 0.25)
+      cpu          = floor(local.current_env.ecs_task.cpu * 0.25)
+      portMappings = [
+        {
+          containerPort = 6379
+          protocol      = "tcp"
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.app.name
+          awslogs-region        = local.current_env.aws_region
+          awslogs-stream-prefix = "redis"
+        }
+      }
+      healthCheck = {
+        command     = ["CMD", "redis-cli", "ping"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 10
+      }
+    },
+    {
       name         = "vimbiso-pay-${var.environment}"
       image        = var.docker_image
       essential    = true
+      memory       = floor(local.current_env.ecs_task.memory * 0.75)
+      cpu          = floor(local.current_env.ecs_task.cpu * 0.75)
       environment  = [
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_secret },
@@ -371,7 +409,8 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_PHONE_NUMBER_ID", value = var.whatsapp_phone_number_id },
         { name = "WHATSAPP_BUSINESS_ID", value = var.whatsapp_business_id },
         { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.whatsapp_registration_flow_id },
-        { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.whatsapp_company_registration_flow_id }
+        { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.whatsapp_company_registration_flow_id },
+        { name = "REDIS_URL", value = "redis://localhost:6379/0" }
       ]
       portMappings = [
         {
@@ -400,6 +439,12 @@ resource "aws_ecs_task_definition" "app" {
           sourceVolume  = "data"
           containerPath = "/app/data"
           readOnly     = false
+        }
+      ]
+      dependsOn = [
+        {
+          containerName = "redis"
+          condition     = "HEALTHY"
         }
       ]
     }
@@ -528,12 +573,35 @@ resource "aws_ecs_service" "app" {
         echo "Failed Tasks: $FAILED_TASKS"
 
         if [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ] && [ "$DESIRED_COUNT" -gt 0 ]; then
+          if [ "$FAILED_TASKS" -gt 0 ]; then
+            echo "Warning: $FAILED_TASKS tasks failed during deployment"
+            # Get details of failed tasks
+            TASKS=$(aws ecs list-tasks \
+              --cluster ${aws_ecs_cluster.main.name} \
+              --service-name ${self.name} \
+              --desired-status STOPPED \
+              --query 'taskArns[]' --output text)
+
+            for TASK in $TASKS; do
+              echo "Failed task details for $TASK:"
+              aws ecs describe-tasks \
+                --cluster ${aws_ecs_cluster.main.name} \
+                --tasks $TASK \
+                --query 'tasks[].{reason: stoppedReason, exitCode: containers[].exitCode}'
+
+              echo "Logs for failed task $TASK:"
+              aws logs get-log-events \
+                --log-group-name "/ecs/vimbiso-pay-${var.environment}" \
+                --log-stream-name "vimbiso-pay-${var.environment}/$TASK##*/}" \
+                --limit 20 \
+                --query 'events[].message' \
+                --output text || echo "No logs available"
+            done
+            exit 1
+          fi
           echo "Deployment completed successfully!"
           DEPLOYMENT_DONE=true
           break
-        elif [ "$FAILED_TASKS" -gt 0 ]; then
-          echo "Deployment failed due to task failures"
-          exit 1
         fi
 
         # Get recent service events
