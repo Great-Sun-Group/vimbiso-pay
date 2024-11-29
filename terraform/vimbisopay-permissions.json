@@ -34,7 +34,8 @@
                 "ec2:Associate*",
                 "ec2:Disassociate*",
                 "ec2:Allocate*",
-                "ec2:Release*"
+                "ec2:Release*",
+                "ec2:GetSecurityGroupsForVpc"
             ],
             "Resource": "*"
         },
@@ -85,6 +86,7 @@
                 "iam:GetRole",
                 "iam:PutRolePolicy",
                 "iam:DeleteRolePolicy",
+                "iam:GetRolePolicy",
                 "iam:AttachRolePolicy",
                 "iam:DetachRolePolicy",
                 "iam:TagRole",
@@ -97,7 +99,17 @@
                 "iam:GetInstanceProfile",
                 "iam:AddRoleToInstanceProfile",
                 "iam:RemoveRoleFromInstanceProfile",
-                "iam:CreateServiceLinkedRole"
+                "iam:CreateServiceLinkedRole",
+                "iam:CreatePolicy",
+                "iam:DeletePolicy",
+                "iam:GetPolicy",
+                "iam:ListPolicyVersions",
+                "iam:CreatePolicyVersion",
+                "iam:DeletePolicyVersion",
+                "iam:GetPolicyVersion",
+                "iam:SetDefaultPolicyVersion",
+                "iam:TagPolicy",
+                "iam:UntagPolicy"
             ],
             "Resource": "*"
         },
