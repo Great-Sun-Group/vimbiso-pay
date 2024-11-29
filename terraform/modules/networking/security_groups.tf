@@ -136,22 +136,12 @@ resource "aws_security_group_rule" "vpc_endpoints_s3" {
   description       = "Allow HTTPS inbound for S3 VPC endpoint"
 }
 
-resource "aws_security_group_rule" "vpc_endpoints_ecr" {
+resource "aws_security_group_rule" "vpc_endpoints_services" {
   type                     = "ingress"
   from_port                = 443
   to_port                  = 443
   protocol                 = "tcp"
   security_group_id        = aws_security_group.vpc_endpoints.id
   source_security_group_id = aws_security_group.ecs_tasks.id
-  description             = "Allow HTTPS inbound for ECR VPC endpoint"
-}
-
-resource "aws_security_group_rule" "vpc_endpoints_logs" {
-  type                     = "ingress"
-  from_port                = 443
-  to_port                  = 443
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.vpc_endpoints.id
-  source_security_group_id = aws_security_group.ecs_tasks.id
-  description             = "Allow HTTPS inbound for CloudWatch Logs VPC endpoint"
+  description             = "Allow HTTPS inbound for AWS services VPC endpoints (ECR, CloudWatch Logs)"
 }
