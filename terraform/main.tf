@@ -230,13 +230,24 @@ resource "aws_lb_target_group" "app" {
   target_type = "ip"
 
   health_check {
-    healthy_threshold   = "2"
-    interval            = "30"
-    protocol            = "HTTP"
+    enabled             = true
+    healthy_threshold   = 3
+    interval            = 60
     matcher             = "200"
-    timeout             = "10"
     path                = "/health/"
-    unhealthy_threshold = "3"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 30
+    unhealthy_threshold = 5
+  }
+
+  # Allow time for the container to start up
+  deregistration_delay = 60
+
+  stickiness {
+    type            = "lb_cookie"
+    cookie_duration = 86400
+    enabled         = true
   }
 }
 

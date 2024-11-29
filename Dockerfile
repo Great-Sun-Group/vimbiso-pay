@@ -55,6 +55,7 @@ RUN adduser \
 # Install build dependencies needed for compiling packages
 RUN apt-get update && apt-get install -y \
     build-essential \
+    redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Install production dependencies
@@ -78,8 +79,8 @@ RUN mkdir -p /app/data/logs /app/data/db && \
 # Switch to non-privileged user
 USER appuser
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+# Health check with increased start period
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health/ || exit 1
 
 # Expose port

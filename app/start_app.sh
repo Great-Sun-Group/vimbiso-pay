@@ -1,6 +1,19 @@
 #!/bin/bash
 set -e
 
+# Function to wait for Redis
+wait_for_redis() {
+    echo "Waiting for Redis to be ready..."
+    until redis-cli -h localhost ping &>/dev/null; do
+        echo "Redis is unavailable - sleeping"
+        sleep 1
+    done
+    echo "Redis is ready!"
+}
+
+# Wait for Redis to be ready
+wait_for_redis
+
 # Apply database migrations if not running in development
 # (development environment handles migrations in docker-compose)
 if [ "${DJANGO_ENV:-development}" = "production" ]; then
@@ -23,7 +36,9 @@ if [ "${DJANGO_ENV:-development}" = "production" ]; then
         --error-logfile - \
         --timeout ${GUNICORN_TIMEOUT:-120} \
         --max-requests 1000 \
-        --max-requests-jitter 50
+        --max-requests-jitter 50 \
+        --graceful-timeout 30 \
+        --keep-alive 65
 else
     echo "Starting Django development server..."
     exec python manage.py runserver 0.0.0.0:${PORT:-8000}
