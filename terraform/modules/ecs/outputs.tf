@@ -110,3 +110,14 @@ output "cluster_tags" {
   description = "Tags applied to the ECS cluster"
   value       = aws_ecs_cluster.main.tags_all
 }
+
+# Service Outputs
+output "service_name" {
+  description = "Name of the ECS service"
+  value       = aws_ecs_service.app.name
+}
+
+output "task_definition_arn" {
+  description = "ARN of the ECS task definition"
+  value       = aws_ecs_task_definition.app.arn
+}
