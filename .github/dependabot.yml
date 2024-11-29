@@ -7,9 +7,6 @@ updates:
       interval: "weekly"
       day: "monday"
     target-branch: "dev"
-    labels:
-      - "dependencies"
-      - "python"
     commit-message:
       prefix: "deps"
       include: "scope"
@@ -33,9 +30,6 @@ updates:
       interval: "weekly"
       day: "monday"
     target-branch: "dev"
-    labels:
-      - "dependencies"
-      - "github-actions"
     commit-message:
       prefix: "ci"
       include: "scope"
@@ -47,9 +41,6 @@ updates:
       interval: "weekly"
       day: "monday"
     target-branch: "dev"
-    labels:
-      - "dependencies"
-      - "docker"
     commit-message:
       prefix: "docker"
       include: "scope"
