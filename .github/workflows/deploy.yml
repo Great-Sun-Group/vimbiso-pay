@@ -81,18 +81,46 @@ jobs:
           DYNAMODB_TABLE: ${{ steps.init-backend.outputs.dynamodb_table }}
         run: |
           echo "Checking for stale locks..."
-          # Get all locks
-          LOCKS=$(aws dynamodb scan --table-name "$DYNAMODB_TABLE" --query "Items[*].LockID.S" --output text)
 
-          if [ ! -z "$LOCKS" ]; then
-            echo "Found stale locks, clearing them..."
+          # Get all locks with full details
+          LOCKS_JSON=$(aws dynamodb scan --table-name "$DYNAMODB_TABLE" --output json)
+
+          if [ ! -z "$LOCKS_JSON" ] && [ "$LOCKS_JSON" != "null" ]; then
+            echo "Found locks, analyzing..."
             cd terraform
-            for LOCK_ID in $LOCKS; do
-              echo "Clearing lock: $LOCK_ID"
-              terraform force-unlock -force "$LOCK_ID"
+
+            # Parse the JSON and extract lock IDs
+            echo "$LOCKS_JSON" | jq -r '.Items[] | select(.LockID != null) | .LockID.S' | while read -r LOCK_ID; do
+              if [ ! -z "$LOCK_ID" ]; then
+                echo "Found lock: $LOCK_ID"
+
+                # Get lock info
+                LOCK_INFO=$(aws dynamodb get-item \
+                  --table-name "$DYNAMODB_TABLE" \
+                  --key "{\"LockID\": {\"S\": \"$LOCK_ID\"}}" \
+                  --output json)
+
+                if [ ! -z "$LOCK_INFO" ] && [ "$LOCK_INFO" != "null" ]; then
+                  echo "Lock info: $LOCK_INFO"
+
+                  # Extract the actual state path from the lock ID
+                  STATE_PATH=$(echo "$LOCK_ID" | sed 's/-md5$//')
+
+                  echo "Attempting to clear lock for state: $STATE_PATH"
+                  terraform force-unlock -force "$STATE_PATH" || {
+                    echo "Warning: Failed to clear lock via terraform, attempting direct DynamoDB removal"
+                    aws dynamodb delete-item \
+                      --table-name "$DYNAMODB_TABLE" \
+                      --key "{\"LockID\": {\"S\": \"$LOCK_ID\"}}" \
+                      --return-values ALL_OLD
+                  }
+                else
+                  echo "Warning: Could not get lock info for $LOCK_ID"
+                fi
+              fi
             done
           else
-            echo "No stale locks found"
+            echo "No locks found in DynamoDB table"
           fi
 
       - name: Create Base Infrastructure
