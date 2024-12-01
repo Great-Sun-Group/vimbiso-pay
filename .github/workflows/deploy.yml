@@ -123,7 +123,68 @@ jobs:
             echo "No locks found in DynamoDB table"
           fi
 
+      - name: Setup DNS Infrastructure
+        id: dns-setup
+        env:
+          TF_VAR_environment: ${{ env.ENVIRONMENT }}
+          # Add dummy values for required variables during DNS setup
+          TF_VAR_docker_image: "dummy-image:latest"
+          TF_VAR_django_secret: "dummy-secret"
+          TF_VAR_mycredex_app_url: "https://dummy-url"
+          TF_VAR_client_api_key: "dummy-key"
+          TF_VAR_whatsapp_api_url: "https://dummy-url"
+          TF_VAR_whatsapp_access_token: "dummy-token"
+          TF_VAR_whatsapp_phone_number_id: "dummy-id"
+          TF_VAR_whatsapp_business_id: "dummy-id"
+          TF_VAR_whatsapp_registration_flow_id: "dummy-id"
+          TF_VAR_whatsapp_company_registration_flow_id: "dummy-id"
+        run: |
+          cd terraform
+
+          # Create plan file for Route53 setup
+          terraform plan -input=false \
+            -lock-timeout=20m \
+            -target=module.route53_dns \
+            -out=dns.tfplan
+
+          # Apply Route53 configuration
+          terraform apply -input=false -lock-timeout=20m dns.tfplan
+
+          # Check if this is first run by looking for NS records output
+          NS_RECORDS=$(terraform output -json route53_nameservers 2>/dev/null)
+          if [ $? -eq 0 ] && [ ! -z "$NS_RECORDS" ]; then
+            echo "First run detected. NS records need to be configured in parent domain."
+            echo "Required NS Records:"
+            echo "$NS_RECORDS" | jq -r '.[]'
+
+            # Create a GitHub issue with NS record information
+            if [ "$GITHUB_TOKEN" != "" ]; then
+              ISSUE_BODY="DNS Configuration Required for ${DOMAIN}
+
+              Please configure the following NS records in the parent domain for ${DOMAIN}:
+
+              $(echo "$NS_RECORDS" | jq -r '.[]' | sed 's/^/- /')
+
+              Once these NS records are configured in the parent domain, please re-run this workflow."
+
+              curl -X POST \
+                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Accept: application/vnd.github.v3+json" \
+                https://api.github.com/repos/${{ github.repository }}/issues \
+                -d "{\"title\":\"DNS Configuration Required for ${DOMAIN}\",\"body\":\"$ISSUE_BODY\",\"labels\":[\"dns-setup\"]}"
+            fi
+
+            echo "first_run=true" >> $GITHUB_OUTPUT
+            echo "Please configure NS records in the parent domain and re-run this workflow."
+            exit 0
+          else
+            echo "NS records already configured, proceeding with deployment."
+            echo "first_run=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Only continue with remaining deployment if this isn't the first run
       - name: Create Base Infrastructure
+        if: steps.dns-setup.outputs.first_run != 'true'
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
           # Add dummy values for required variables during base infrastructure creation
@@ -155,6 +216,7 @@ jobs:
           }
 
       - name: Configure Load Balancer
+        if: steps.dns-setup.outputs.first_run != 'true'
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
           # Add dummy values for required variables during load balancer configuration
@@ -184,10 +246,12 @@ jobs:
           }
 
       - name: Login to Amazon ECR
+        if: steps.dns-setup.outputs.first_run != 'true'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and Push Docker Image
+        if: steps.dns-setup.outputs.first_run != 'true'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: vimbiso-pay-${{ env.ENVIRONMENT }}
@@ -205,6 +269,7 @@ jobs:
           echo "IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
 
       - name: Deploy Application
+        if: steps.dns-setup.outputs.first_run != 'true'
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
           TF_VAR_docker_image: ${{ env.IMAGE }}
@@ -245,6 +310,7 @@ jobs:
           terraform force-unlock -force $(terraform workspace show)
 
       - name: Wait for Deployment
+        if: steps.dns-setup.outputs.first_run != 'true'
         run: |
           echo "Waiting for deployment to complete..."
           MAX_ATTEMPTS=40  # 20 minutes total (30 seconds * 40)
@@ -274,7 +340,7 @@ jobs:
               echo "Error: Failed tasks detected during deployment"
               TASKS=$(aws ecs list-tasks \
                 --cluster vimbiso-pay-cluster-$ENVIRONMENT \
-                --service-name vimbiso-pay-service-$ENVIRONMENT \
+                --services vimbiso-pay-service-$ENVIRONMENT \
                 --desired-status STOPPED \
                 --query 'taskArns[]' --output text)
 
@@ -336,6 +402,7 @@ jobs:
           fi
 
       - name: Print Deployment Information
+        if: steps.dns-setup.outputs.first_run != 'true'
         run: |
           cd terraform
           echo "Deployment completed successfully."
