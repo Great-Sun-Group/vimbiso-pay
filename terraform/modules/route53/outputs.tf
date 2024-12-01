@@ -20,5 +20,5 @@ output "certificate_arn" {
 
 output "health_check_id" {
   description = "The ID of the Route53 health check"
-  value       = aws_route53_health_check.app.id
+  value       = var.create_dns_records ? aws_route53_health_check.app[0].id : null
 }

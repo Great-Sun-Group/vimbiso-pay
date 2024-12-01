@@ -8,19 +8,17 @@ module "networking" {
   tags        = local.common_tags
 }
 
-# Route53 Module - Creates zone and certificate first
-module "route53" {
+# Route53 Module - First part: Certificate only
+module "route53_cert" {
   source = "./modules/route53"
 
-  environment       = var.environment
-  domain_name      = var.environment == "production" ? "whatsapp.vimbisopay.africa" : "stage.whatsapp.vimbisopay.africa"
-  alb_dns_name     = module.loadbalancer.alb_dns_name
-  alb_zone_id      = module.loadbalancer.alb_zone_id
-  health_check_path = "/health/"
-  tags             = local.common_tags
+  environment        = var.environment
+  domain_name       = var.environment == "production" ? "whatsapp.vimbisopay.africa" : "stage.whatsapp.vimbisopay.africa"
+  create_dns_records = false
+  tags              = local.common_tags
 }
 
-# Load Balancer Module - Uses the certificate from Route53
+# Load Balancer Module
 module "loadbalancer" {
   source = "./modules/loadbalancer"
 
@@ -28,13 +26,28 @@ module "loadbalancer" {
   vpc_id                = module.networking.vpc_id
   public_subnet_ids     = module.networking.public_subnet_ids
   alb_security_group_id = module.networking.alb_security_group_id
-  certificate_arn       = module.route53.certificate_arn
+  certificate_arn       = module.route53_cert.certificate_arn
   health_check_path     = "/health/"
   health_check_port     = 8000
   deregistration_delay  = 60
   tags                  = local.common_tags
 
-  depends_on = [module.networking, module.route53]
+  depends_on = [module.networking, module.route53_cert]
+}
+
+# Route53 Module - Second part: DNS records
+module "route53_dns" {
+  source = "./modules/route53"
+
+  environment        = var.environment
+  domain_name       = var.environment == "production" ? "whatsapp.vimbisopay.africa" : "stage.whatsapp.vimbisopay.africa"
+  create_dns_records = true
+  alb_dns_name      = module.loadbalancer.alb_dns_name
+  alb_zone_id       = module.loadbalancer.alb_zone_id
+  health_check_path = "/health/"
+  tags             = local.common_tags
+
+  depends_on = [module.loadbalancer]
 }
 
 # EFS Module
@@ -107,7 +120,7 @@ module "ecs" {
   memory_threshold          = local.current_env.autoscaling.memory_threshold
   log_retention_days        = 30
   service_discovery_ttl     = 10
-  allowed_hosts            = "*.amazonaws.com,${module.loadbalancer.alb_dns_name},${module.route53.domain_name}"
+  allowed_hosts            = "*.amazonaws.com,${module.loadbalancer.alb_dns_name},${module.route53_dns.domain_name}"
 
   django_env = {
     django_secret                         = var.django_secret
