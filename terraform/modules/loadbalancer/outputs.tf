@@ -8,11 +8,6 @@ output "alb_zone_id" {
   value       = aws_lb.main.zone_id
 }
 
-output "alb_arn" {
-  description = "ARN of the Application Load Balancer"
-  value       = aws_lb.main.arn
-}
-
 output "target_group_arn" {
   description = "ARN of the target group"
   value       = aws_lb_target_group.app.arn
@@ -28,17 +23,12 @@ output "https_listener_arn" {
   value       = aws_lb_listener.https.arn
 }
 
-output "domain_name" {
-  description = "Domain name for the application"
-  value       = var.domain_name
+output "waf_web_acl_arn" {
+  description = "ARN of the WAF web ACL"
+  value       = aws_wafv2_web_acl.main.arn
 }
 
-output "certificate_arn" {
-  description = "ARN of the ACM certificate"
-  value       = aws_acm_certificate_validation.main.certificate_arn
-}
-
-output "route53_zone_id" {
-  description = "ID of the Route53 zone"
-  value       = data.aws_route53_zone.domain.zone_id
+output "alb_logs_bucket" {
+  description = "Name of the S3 bucket for ALB access logs"
+  value       = aws_s3_bucket.alb_logs.id
 }

@@ -1,0 +1,12 @@
+environment = "staging"
+docker_image = "vimbiso-pay-staging:latest"
+django_secret = "placeholder"
+debug = true
+mycredex_app_url = "https://dev.mycredex.dev/"
+client_api_key = "placeholder"
+whatsapp_api_url = "https://graph.facebook.com/v17.0/"
+whatsapp_access_token = "placeholder"
+whatsapp_phone_number_id = "placeholder"
+whatsapp_business_id = "placeholder"
+whatsapp_registration_flow_id = "placeholder"
+whatsapp_company_registration_flow_id = "placeholder"

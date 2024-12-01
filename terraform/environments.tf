@@ -26,24 +26,6 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
     Project     = "vimbiso-pay"
+    Application = "whatsapp-bot"
   }
-
-  # Domain configuration
-  domain_config = {
-    production = {
-      dev_domain_base = local.production.dev_domain_base
-      environment_subdomains = {
-        production = local.production.subdomain
-      }
-    }
-    staging = {
-      dev_domain_base = local.staging.dev_domain_base
-      environment_subdomains = {
-        staging = local.staging.subdomain
-      }
-    }
-  }
-
-  # Get current domain config
-  current_domain = local.domain_config[var.environment]
 }

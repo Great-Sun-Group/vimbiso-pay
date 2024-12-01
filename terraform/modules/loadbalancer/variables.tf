@@ -1,5 +1,5 @@
 variable "environment" {
-  description = "The deployment environment (staging, production)"
+  description = "Environment (production/staging)"
   type        = string
 }
 
@@ -18,24 +18,14 @@ variable "alb_security_group_id" {
   type        = string
 }
 
-variable "domain_name" {
-  description = "The domain name for the environment"
-  type        = string
-}
-
-variable "domain_zone_name" {
-  description = "The Route53 zone name"
-  type        = string
-}
-
 variable "health_check_path" {
-  description = "Path for target group health check"
+  description = "Path for health checks"
   type        = string
   default     = "/health/"
 }
 
 variable "health_check_port" {
-  description = "Port for target group health check"
+  description = "Port for health checks"
   type        = number
   default     = 8000
 }
@@ -46,8 +36,13 @@ variable "deregistration_delay" {
   default     = 60
 }
 
+variable "certificate_arn" {
+  description = "ARN of the ACM certificate to use for HTTPS"
+  type        = string
+}
+
 variable "tags" {
-  description = "Common resource tags"
+  description = "Tags to apply to resources"
   type        = map(string)
   default     = {}
 }

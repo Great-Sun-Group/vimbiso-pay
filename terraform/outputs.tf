@@ -20,9 +20,20 @@ output "alb_dns_name" {
   value       = module.loadbalancer.alb_dns_name
 }
 
+# DNS Outputs
+output "route53_nameservers" {
+  description = "Nameservers for the Route53 zone. Provide these to the root domain administrator."
+  value       = module.route53.name_servers
+}
+
 output "domain_name" {
   description = "The domain name for the environment"
-  value       = module.loadbalancer.domain_name
+  value       = module.route53.domain_name
+}
+
+output "zone_id" {
+  description = "Route53 zone ID"
+  value       = module.route53.zone_id
 }
 
 # Container Registry Output
@@ -118,11 +129,11 @@ output "monitoring_urls" {
   value = {
     cloudwatch_dashboard = "https://${local.current_env.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${local.current_env.aws_region}#dashboards:name=${module.ecs.cloudwatch_dashboard_name}"
     container_insights  = "https://${local.current_env.aws_region}.console.aws.amazon.com/ecs/home?region=${local.current_env.aws_region}#/clusters/${module.ecs.cluster_name}/containerInsights"
-    application_url    = "https://${module.loadbalancer.domain_name}"
+    application_url    = "https://${module.route53.domain_name}"
   }
 }
 
 output "health_check_url" {
   description = "URL for the application health check"
-  value       = "https://${module.loadbalancer.domain_name}/health/"
+  value       = "https://${module.route53.domain_name}/health/"
 }

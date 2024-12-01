@@ -8,6 +8,20 @@ module "networking" {
   tags        = local.common_tags
 }
 
+# Route53 Module
+module "route53" {
+  source = "./modules/route53"
+
+  environment       = var.environment
+  domain_name      = var.environment == "production" ? "whatsapp.vimbisopay.africa" : "stage.whatsapp.vimbisopay.africa"
+  alb_dns_name     = module.loadbalancer.alb_dns_name
+  alb_zone_id      = module.loadbalancer.alb_zone_id
+  health_check_path = "/health/"
+  tags             = local.common_tags
+
+  depends_on = [module.loadbalancer]
+}
+
 # Load Balancer Module
 module "loadbalancer" {
   source = "./modules/loadbalancer"
@@ -16,8 +30,7 @@ module "loadbalancer" {
   vpc_id                = module.networking.vpc_id
   public_subnet_ids     = module.networking.public_subnet_ids
   alb_security_group_id = module.networking.alb_security_group_id
-  domain_name           = "${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
-  domain_zone_name      = local.current_domain.dev_domain_base
+  certificate_arn       = module.route53.certificate_arn
   health_check_path     = "/health/"
   health_check_port     = 8000
   deregistration_delay  = 60
@@ -96,7 +109,7 @@ module "ecs" {
   memory_threshold          = local.current_env.autoscaling.memory_threshold
   log_retention_days        = 30
   service_discovery_ttl     = 10
-  allowed_hosts            = "*.amazonaws.com,${module.loadbalancer.alb_dns_name},${local.current_domain.environment_subdomains[var.environment]}.${local.current_domain.dev_domain_base}"
+  allowed_hosts            = "*.amazonaws.com,${module.loadbalancer.alb_dns_name},${module.route53.domain_name}"
 
   django_env = {
     django_secret                         = var.django_secret
