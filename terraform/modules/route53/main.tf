@@ -37,12 +37,16 @@ resource "aws_route53_record" "cert_validation" {
   type    = each.value.type
   records = [each.value.record]
   ttl     = 60
+
+  depends_on = [aws_route53_zone.app]
 }
 
 # Validate the certificate
 resource "aws_acm_certificate_validation" "app" {
   certificate_arn         = aws_acm_certificate.app.arn
   validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+
+  depends_on = [aws_route53_record.cert_validation]
 }
 
 # Create A record for the application
@@ -56,6 +60,8 @@ resource "aws_route53_record" "app" {
     zone_id                = var.alb_zone_id
     evaluate_target_health = true
   }
+
+  depends_on = [aws_acm_certificate_validation.app]
 }
 
 # Create health check for the application
@@ -70,4 +76,6 @@ resource "aws_route53_health_check" "app" {
   tags = merge(var.tags, {
     Name = "vimbiso-pay-health-${var.environment}"
   })
+
+  depends_on = [aws_route53_record.app]
 }

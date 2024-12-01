@@ -8,7 +8,7 @@ module "networking" {
   tags        = local.common_tags
 }
 
-# Route53 Module
+# Route53 Module - Creates zone and certificate first
 module "route53" {
   source = "./modules/route53"
 
@@ -18,11 +18,9 @@ module "route53" {
   alb_zone_id      = module.loadbalancer.alb_zone_id
   health_check_path = "/health/"
   tags             = local.common_tags
-
-  depends_on = [module.loadbalancer]
 }
 
-# Load Balancer Module
+# Load Balancer Module - Uses the certificate from Route53
 module "loadbalancer" {
   source = "./modules/loadbalancer"
 
@@ -36,7 +34,7 @@ module "loadbalancer" {
   deregistration_delay  = 60
   tags                  = local.common_tags
 
-  depends_on = [module.networking]
+  depends_on = [module.networking, module.route53]
 }
 
 # EFS Module
