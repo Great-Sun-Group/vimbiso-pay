@@ -16,7 +16,7 @@ jobs:
     env:
       ENVIRONMENT: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
       BUILD_TARGET: production
-      DOMAIN: ${{ github.ref == 'refs/heads/prod' && 'whatsapp.vimbisopay.africa' || 'whatsapp-stage.vimbisopay.africa' }}
+      DOMAIN: ${{ github.ref == 'refs/heads/prod' && 'whatsapp.vimbisopay.africa' || 'stage.whatsapp.vimbisopay.africa' }}
 
     steps:
       - name: Checkout code
