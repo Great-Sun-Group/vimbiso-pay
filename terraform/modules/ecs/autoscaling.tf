@@ -2,7 +2,7 @@
 resource "aws_appautoscaling_target" "app" {
   max_capacity       = var.max_capacity
   min_capacity       = var.min_capacity
-  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app.name}"
+  resource_id        = "service/vimbiso-pay-cluster-${var.environment}/vimbiso-pay-service-${var.environment}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
 
