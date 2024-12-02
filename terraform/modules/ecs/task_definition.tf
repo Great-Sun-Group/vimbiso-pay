@@ -36,10 +36,10 @@ resource "aws_ecs_task_definition" "app" {
       }
       healthCheck = {
         command     = ["CMD", "redis-cli", "ping"]
-        interval    = 10
-        timeout     = 5
+        interval    = 5
+        timeout     = 3
         retries     = 3
-        startPeriod = 10
+        startPeriod = 20
       }
       mountPoints = [
         {
@@ -66,7 +66,9 @@ resource "aws_ecs_task_definition" "app" {
         "--appendonly", "yes",
         "--save", "60", "1",
         "--maxmemory", "512mb",
-        "--maxmemory-policy", "allkeys-lru"
+        "--maxmemory-policy", "allkeys-lru",
+        "--tcp-backlog", "511",
+        "--tcp-keepalive", "300"
       ]
     },
     {
@@ -88,7 +90,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_BUSINESS_ID", value = var.django_env.whatsapp_business_id },
         { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_registration_flow_id },
         { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_company_registration_flow_id },
-        { name = "REDIS_URL", value = "redis://redis:${var.redis_port}/0" }
+        { name = "REDIS_URL", value = "redis://localhost:${var.redis_port}/0" }
       ]
       portMappings = [
         {
