@@ -36,7 +36,7 @@ resource "aws_efs_access_point" "app_data" {
   }
 
   root_directory {
-    path = "/app"
+    path = "/app/data"
     creation_info {
       owner_gid   = 10001  # Match container's appuser GID
       owner_uid   = 10001  # Match container's appuser UID
