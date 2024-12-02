@@ -123,7 +123,7 @@ jobs:
             echo "No locks found in DynamoDB table"
           fi
 
-      - name: Check DNS Setup
+      - name: Check and Clean DNS Setup
         id: dns-check
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
@@ -141,13 +141,86 @@ jobs:
         run: |
           cd terraform
 
-          # Create plan file for Route53 setup
+          echo "Checking for existing resources..."
+
+          # Check for existing hosted zone
+          HOSTED_ZONE_ID=$(aws route53 list-hosted-zones-by-name \
+            --dns-name "${DOMAIN}." \
+            --max-items 1 \
+            --query 'HostedZones[?Name==`'${DOMAIN}'.`].Id' \
+            --output text)
+
+          # Check for existing certificates
+          CERT_ARN=$(aws acm list-certificates \
+            --query "CertificateSummaryList[?DomainName=='${DOMAIN}'].CertificateArn" \
+            --output text)
+
+          # Check for existing validation records
+          VALIDATION_RECORDS=""
+          if [ ! -z "$HOSTED_ZONE_ID" ]; then
+            ZONE_ID=${HOSTED_ZONE_ID#/hostedzone/}
+            VALIDATION_RECORDS=$(aws route53 list-resource-record-sets \
+              --hosted-zone-id $ZONE_ID \
+              --query "ResourceRecordSets[?Type=='CNAME' && starts_with(Name, '_')].Name" \
+              --output text)
+          fi
+
+          if [ ! -z "$HOSTED_ZONE_ID" ] || [ ! -z "$CERT_ARN" ] || [ ! -z "$VALIDATION_RECORDS" ]; then
+            echo "Found existing resources. Cleaning up..."
+
+            # Clean up any existing validation records first
+            if [ ! -z "$VALIDATION_RECORDS" ]; then
+              echo "Cleaning up validation records..."
+              for record in $VALIDATION_RECORDS; do
+                aws route53 change-resource-record-sets \
+                  --hosted-zone-id $ZONE_ID \
+                  --change-batch "{\"Changes\":[{\"Action\":\"DELETE\",\"ResourceRecordSet\":{\"Name\":\"$record\",\"Type\":\"CNAME\",\"TTL\":60}}]}" || true
+              done
+            fi
+
+            # Delete any existing certificates
+            if [ ! -z "$CERT_ARN" ]; then
+              echo "Deleting certificate..."
+              aws acm delete-certificate --certificate-arn $CERT_ARN || true
+            fi
+
+            # Import and destroy hosted zone through Terraform
+            if [ ! -z "$HOSTED_ZONE_ID" ]; then
+              echo "Importing and destroying hosted zone..."
+              ZONE_ID=${HOSTED_ZONE_ID#/hostedzone/}
+              terraform import -input=false module.route53_dns.aws_route53_zone.app $ZONE_ID || true
+
+              terraform destroy -input=false \
+                -lock-timeout=20m \
+                -target=module.route53_dns.aws_route53_zone.app \
+                -auto-approve || {
+                  echo "Warning: Terraform destroy failed, attempting direct cleanup..."
+                  # Delete all record sets except NS and SOA
+                  aws route53 list-resource-record-sets --hosted-zone-id $ZONE_ID | \
+                    jq -r '.ResourceRecordSets[] | select(.Type != "SOA" and .Type != "NS") |
+                    {"Action": "DELETE", "ResourceRecordSet": .}' | \
+                    jq -s '{"Changes": .}' > /tmp/changes.json
+                  aws route53 change-resource-record-sets \
+                    --hosted-zone-id $ZONE_ID \
+                    --change-batch file:///tmp/changes.json || true
+
+                  # Finally delete the hosted zone
+                  aws route53 delete-hosted-zone --id $ZONE_ID || true
+                }
+            fi
+
+            echo "Cleanup completed. Proceeding with fresh setup..."
+            sleep 30  # Wait for DNS propagation
+          fi
+
+          echo "Creating Route53 zone..."
+          # Create plan file for Route53 zone only
           terraform plan -input=false \
             -lock-timeout=20m \
-            -target=module.route53_dns \
+            -target=module.route53_dns.aws_route53_zone.app \
             -out=dns.tfplan
 
-          # Apply Route53 configuration to get NS records
+          # Apply Route53 zone configuration to get NS records
           terraform apply -input=false -lock-timeout=20m dns.tfplan
 
           # Check if NS records exist
