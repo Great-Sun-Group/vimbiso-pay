@@ -5,34 +5,8 @@ echo "Starting application..."
 echo "Environment: $DJANGO_ENV"
 echo "Port: $PORT"
 
-# Function to wait for Redis
-wait_for_redis() {
-    echo "Waiting for Redis to be ready..."
-    echo "Checking Redis at localhost:6379..."
-
-    local attempts=0
-    local max_attempts=30
-
-    while [ $attempts -lt $max_attempts ]; do
-        if nc -z localhost 6379; then
-            echo "Redis is ready!"
-            return 0
-        fi
-
-        attempts=$((attempts + 1))
-        echo "Redis not ready (attempt $attempts/$max_attempts) - sleeping 1s"
-        sleep 1
-    done
-
-    echo "Redis connection timeout after $max_attempts attempts"
-    return 1
-}
-
-# Wait for Redis to be ready
-wait_for_redis
-
-# Apply database migrations if not running in development
-# (development environment handles migrations in docker-compose)
+# In ECS, we use container dependencies instead of waiting for Redis
+# The container won't start until Redis is healthy
 if [ "${DJANGO_ENV:-development}" = "production" ]; then
     echo "Applying database migrations..."
     python manage.py migrate --noinput

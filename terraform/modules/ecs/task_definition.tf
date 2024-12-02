@@ -35,7 +35,7 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD", "redis-cli", "ping"]
+        command     = ["CMD", "/usr/local/bin/redis-cli", "ping"]
         interval    = 30
         timeout     = 10
         retries     = 3
@@ -136,7 +136,8 @@ resource "aws_ecs_task_definition" "app" {
           value     = "1024"
         }
       ]
-      user = "root"
+      # Run as appuser (UID 10001) to match Dockerfile
+      user = "10001:10001"
     }
   ])
 
@@ -149,6 +150,7 @@ resource "aws_ecs_task_definition" "app" {
         access_point_id = var.app_access_point_id
         iam = "ENABLED"
       }
+      root_directory = "/"
     }
   }
 
@@ -161,6 +163,7 @@ resource "aws_ecs_task_definition" "app" {
         access_point_id = var.redis_access_point_id
         iam = "ENABLED"
       }
+      root_directory = "/"
     }
   }
 
