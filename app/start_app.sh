@@ -10,7 +10,7 @@ echo "Waiting for Redis to be ready..."
 max_attempts=30
 attempt=1
 
-while ! redis-cli ping > /dev/null 2>&1; do
+while ! redis-cli -h 127.0.0.1 ping > /dev/null 2>&1; do
     if [ $attempt -eq $max_attempts ]; then
         echo "Redis is still unavailable after $max_attempts attempts - giving up"
         exit 1
