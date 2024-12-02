@@ -131,7 +131,7 @@ resource "aws_iam_role_policy" "ecs_task_cloudwatch" {
           "logs:PutLogEvents",
           "logs:CreateLogGroup"
         ]
-        Resource = "${var.cloudwatch_log_group_arn}"
+        Resource = "${var.cloudwatch_log_group_arn}:*"
       }
     ]
   })
@@ -153,11 +153,6 @@ resource "aws_iam_role_policy" "ecs_task_efs" {
           "elasticfilesystem:ClientRootAccess"
         ]
         Resource = var.efs_file_system_arn
-        Condition = {
-          StringEquals = {
-            "elasticfilesystem:AccessPointArn" : [var.app_access_point_arn, var.redis_access_point_arn]
-          }
-        }
       }
     ]
   })
