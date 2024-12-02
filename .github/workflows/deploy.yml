@@ -179,66 +179,74 @@ jobs:
                 --output text)
 
               if [ ! -z "$TASKS" ]; then
-                echo "$TASKS" | tr ' ' '\n' | while read -r TASK; do
-                  if [ ! -z "$TASK" ]; then
-                    TASK_ID=${TASK##*/}
+                echo "$TASKS" | tr ' ' '\n' | while read -r TASK_ARN; do
+                  if [ ! -z "$TASK_ARN" ]; then
+                    # Extract just the task ID from the full ARN
+                    # ARN format: arn:aws:ecs:region:account:task/cluster-name/task-id
+                    CLUSTER_AND_TASK=$(echo "$TASK_ARN" | awk -F'task/' '{print $2}')
+                    TASK_ID=$(echo "$CLUSTER_AND_TASK" | cut -d'/' -f2)
+                    echo "Processing task: $TASK_ID"
 
                     # Get task details first
                     TASK_INFO=$(aws ecs describe-tasks \
                       --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
-                      --tasks "$TASK" \
+                      --tasks "$TASK_ARN" \
                       --query 'tasks[0]')
 
-                    echo "Task Details:"
-                    echo "============="
-                    STOP_CODE=$(echo $TASK_INFO | jq -r '.stoppedReason')
-                    echo "Stop reason: $STOP_CODE"
+                    if [ ! -z "$TASK_INFO" ] && [ "$TASK_INFO" != "null" ]; then
+                      echo "Task Details:"
+                      echo "============="
+                      STOP_CODE=$(echo $TASK_INFO | jq -r '.stoppedReason')
+                      echo "Stop reason: $STOP_CODE"
 
-                    # Get container details
-                    echo "Container Status:"
-                    echo "================="
-                    echo $TASK_INFO | jq -r '.containers[] | "Container \(.name):\n  Status: \(.lastStatus)\n  Reason: \(.reason // "No error")\n  Exit Code: \(.exitCode // "N/A")\n  Health Status: \(.healthStatus // "N/A")"'
+                      # Get container details
+                      echo "Container Status:"
+                      echo "================="
+                      echo $TASK_INFO | jq -r '.containers[] | "Container \(.name):\n  Status: \(.lastStatus)\n  Reason: \(.reason // "No error")\n  Exit Code: \(.exitCode // "N/A")\n  Health Status: \(.healthStatus // "N/A")"'
 
-                    # Try to get logs for each container
-                    echo "Container Logs:"
-                    echo "=============="
+                      # Try to get logs for each container
+                      echo "Container Logs:"
+                      echo "=============="
 
-                    # App container logs
-                    echo "App Container Logs:"
-                    START_TIME=$(($(date +%s) - 300))
-                    aws logs get-log-events \
-                      --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
-                      --log-stream-name "app/vimbiso-pay-${ENVIRONMENT}/$TASK_ID" \
-                      --start-time ${START_TIME}000 \
-                      --limit 100 \
-                      --query 'events[].message' \
-                      --output text || echo "No app container logs available"
+                      # App container logs
+                      echo "App Container Logs:"
+                      START_TIME=$(($(date +%s) - 300))
+                      aws logs get-log-events \
+                        --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
+                        --log-stream-name "app/vimbiso-pay-${ENVIRONMENT}/${TASK_ID}" \
+                        --start-time ${START_TIME}000 \
+                        --limit 100 \
+                        --query 'events[].message' \
+                        --output text || echo "No app container logs available"
 
-                    # Redis container logs
-                    echo "Redis Container Logs:"
-                    aws logs get-log-events \
-                      --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
-                      --log-stream-name "redis/redis/$TASK_ID" \
-                      --start-time ${START_TIME}000 \
-                      --limit 100 \
-                      --query 'events[].message' \
-                      --output text || echo "No Redis container logs available"
+                      # Redis container logs
+                      echo "Redis Container Logs:"
+                      aws logs get-log-events \
+                        --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
+                        --log-stream-name "redis/redis/${TASK_ID}" \
+                        --start-time ${START_TIME}000 \
+                        --limit 100 \
+                        --query 'events[].message' \
+                        --output text || echo "No Redis container logs available"
 
-                    # Get resource metrics
-                    echo "Resource Metrics:"
-                    echo "================"
-                    END_TIME=$(date +%s)
-                    START_TIME=$((END_TIME - 300))
-                    aws cloudwatch get-metric-statistics \
-                      --namespace AWS/ECS \
-                      --metric-name CPUUtilization \
-                      --dimensions Name=ClusterName,Value="vimbiso-pay-cluster-$ENVIRONMENT" Name=ServiceName,Value="vimbiso-pay-service-$ENVIRONMENT" \
-                      --start-time "$(date --utc -d @${START_TIME} +%Y-%m-%dT%H:%M:%SZ)" \
-                      --end-time "$(date --utc -d @${END_TIME} +%Y-%m-%dT%H:%M:%SZ)" \
-                      --period 60 \
-                      --statistics Maximum \
-                      --query 'Datapoints[*].[Timestamp,Maximum]' \
-                      --output text || echo "No CPU metrics available"
+                      # Get resource metrics
+                      echo "Resource Metrics:"
+                      echo "================"
+                      END_TIME=$(date +%s)
+                      START_TIME=$((END_TIME - 300))
+                      aws cloudwatch get-metric-statistics \
+                        --namespace AWS/ECS \
+                        --metric-name CPUUtilization \
+                        --dimensions Name=ClusterName,Value="vimbiso-pay-cluster-$ENVIRONMENT" Name=ServiceName,Value="vimbiso-pay-service-$ENVIRONMENT" \
+                        --start-time "$(date --utc -d @${START_TIME} +%Y-%m-%dT%H:%M:%SZ)" \
+                        --end-time "$(date --utc -d @${END_TIME} +%Y-%m-%dT%H:%M:%SZ)" \
+                        --period 60 \
+                        --statistics Maximum \
+                        --query 'Datapoints[*].[Timestamp,Maximum]' \
+                        --output text || echo "No CPU metrics available"
+                    else
+                      echo "Failed to get task details"
+                    fi
                   fi
                 done
               else
