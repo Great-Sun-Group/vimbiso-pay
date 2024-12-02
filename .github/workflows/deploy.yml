@@ -94,33 +94,25 @@ jobs:
             done
           fi
 
-      - name: Deploy Base Infrastructure
+      - name: Deploy Infrastructure
         run: |
           cd terraform
-          # Deploy networking and initial Route53 setup
+          # Deploy all infrastructure except ECS (which needs the latest image)
           terraform plan -input=false -lock-timeout=20m \
             -target=module.networking \
             -target=module.route53_cert \
-            -out=phase1.tfplan
-
-          terraform apply -input=false -lock-timeout=20m phase1.tfplan
-
-          # Display NS records for reference
-          echo "NS records for ${DOMAIN}:"
-          terraform output -json route53_nameservers | jq -r '.[]' | sed 's/^/- /'
-
-      - name: Deploy Core Infrastructure
-        run: |
-          cd terraform
-          # Deploy load balancer, route53 DNS records, IAM, and ECR
-          terraform plan -input=false -lock-timeout=20m \
             -target=module.loadbalancer \
             -target=module.route53_dns \
             -target=module.iam \
             -target=module.ecr \
-            -out=phase2.tfplan
+            -target=module.efs \
+            -out=infra.tfplan
 
-          terraform apply -input=false -lock-timeout=20m phase2.tfplan
+          terraform apply -input=false -lock-timeout=20m infra.tfplan
+
+          # Display NS records for reference
+          echo "NS records for ${DOMAIN}:"
+          terraform output -json route53_nameservers | jq -r '.[]' | sed 's/^/- /'
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -151,13 +143,12 @@ jobs:
           TF_VAR_whatsapp_company_registration_flow_id: ${{ secrets.WHATSAPP_COMPANY_REGISTRATION_FLOW_ID }}
         run: |
           cd terraform
-          # Deploy EFS and ECS
+          # Deploy only ECS with the new image
           terraform plan -input=false -lock-timeout=20m \
-            -target=module.efs \
             -target=module.ecs \
-            -out=phase3.tfplan
+            -out=app.tfplan
 
-          terraform apply -input=false -lock-timeout=20m phase3.tfplan
+          terraform apply -input=false -lock-timeout=20m app.tfplan
 
       - name: Wait for Deployment
         run: |
@@ -191,13 +182,63 @@ jobs:
                 echo "$TASKS" | tr ' ' '\n' | while read -r TASK; do
                   if [ ! -z "$TASK" ]; then
                     TASK_ID=${TASK##*/}
-                    echo "Logs for task $TASK_ID:"
+
+                    # Get task details first
+                    TASK_INFO=$(aws ecs describe-tasks \
+                      --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+                      --tasks "$TASK" \
+                      --query 'tasks[0]')
+
+                    echo "Task Details:"
+                    echo "============="
+                    STOP_CODE=$(echo $TASK_INFO | jq -r '.stoppedReason')
+                    echo "Stop reason: $STOP_CODE"
+
+                    # Get container details
+                    echo "Container Status:"
+                    echo "================="
+                    echo $TASK_INFO | jq -r '.containers[] | "Container \(.name):\n  Status: \(.lastStatus)\n  Reason: \(.reason // "No error")\n  Exit Code: \(.exitCode // "N/A")\n  Health Status: \(.healthStatus // "N/A")"'
+
+                    # Try to get logs for each container
+                    echo "Container Logs:"
+                    echo "=============="
+
+                    # App container logs
+                    echo "App Container Logs:"
+                    START_TIME=$(($(date +%s) - 300))
                     aws logs get-log-events \
                       --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
-                      --log-stream-name "app/$TASK_ID" \
+                      --log-stream-name "app/vimbiso-pay-${ENVIRONMENT}/$TASK_ID" \
+                      --start-time ${START_TIME}000 \
                       --limit 100 \
                       --query 'events[].message' \
-                      --output text || echo "No logs available"
+                      --output text || echo "No app container logs available"
+
+                    # Redis container logs
+                    echo "Redis Container Logs:"
+                    aws logs get-log-events \
+                      --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
+                      --log-stream-name "redis/redis/$TASK_ID" \
+                      --start-time ${START_TIME}000 \
+                      --limit 100 \
+                      --query 'events[].message' \
+                      --output text || echo "No Redis container logs available"
+
+                    # Get resource metrics
+                    echo "Resource Metrics:"
+                    echo "================"
+                    END_TIME=$(date +%s)
+                    START_TIME=$((END_TIME - 300))
+                    aws cloudwatch get-metric-statistics \
+                      --namespace AWS/ECS \
+                      --metric-name CPUUtilization \
+                      --dimensions Name=ClusterName,Value="vimbiso-pay-cluster-$ENVIRONMENT" Name=ServiceName,Value="vimbiso-pay-service-$ENVIRONMENT" \
+                      --start-time "$(date --utc -d @${START_TIME} +%Y-%m-%dT%H:%M:%SZ)" \
+                      --end-time "$(date --utc -d @${END_TIME} +%Y-%m-%dT%H:%M:%SZ)" \
+                      --period 60 \
+                      --statistics Maximum \
+                      --query 'Datapoints[*].[Timestamp,Maximum]' \
+                      --output text || echo "No CPU metrics available"
                   fi
                 done
               else
