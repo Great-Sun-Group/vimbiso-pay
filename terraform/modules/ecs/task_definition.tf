@@ -61,17 +61,9 @@ resource "aws_ecs_task_definition" "app" {
           value     = "1024"
         }
       ]
-      entryPoint = ["/app/init_redis.sh"],
       command = [
-        "--appendonly", "yes",
-        "--maxmemory", "512mb",
-        "--maxmemory-policy", "allkeys-lru",
-        "--bind", "0.0.0.0",
-        "--dir", "/data",
-        "--no-appendfsync-on-rewrite", "yes",
-        "--auto-aof-rewrite-percentage", "100",
-        "--auto-aof-rewrite-min-size", "64mb",
-        "--stop-writes-on-bgsave-error", "no"
+        "sh", "-c",
+        "mkdir -p /data && chown -R redis:redis /data && redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --dir /data --no-appendfsync-on-rewrite yes --auto-aof-rewrite-percentage 100 --auto-aof-rewrite-min-size 64mb --stop-writes-on-bgsave-error no"
       ]
     },
     {
@@ -151,8 +143,10 @@ resource "aws_ecs_task_definition" "app" {
           value     = "1024"
         }
       ]
-      entryPoint = ["/bin/bash", "-c"],
-      command = ["./init_efs.sh && ./start_app.sh"],
+      command = [
+        "sh", "-c",
+        "mkdir -p /app/data/{logs,db,static,media} && chmod -R 755 /app/data && chown -R appuser:appuser /app/data && ./start_app.sh"
+      ],
       # Run as appuser (UID 10001) to match Dockerfile and EFS access point
       user = "10001:10001"
     }
