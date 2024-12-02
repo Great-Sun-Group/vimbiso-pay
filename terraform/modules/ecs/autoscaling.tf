@@ -55,6 +55,13 @@ resource "aws_appautoscaling_policy" "memory" {
   depends_on = [aws_appautoscaling_target.app]
 }
 
+# Wait for ECS service to be stable
+resource "time_sleep" "wait_for_service_stable" {
+  depends_on = [aws_ecs_service.app]
+
+  create_duration = "30s"
+}
+
 # Request Count Scaling Policy
 resource "aws_appautoscaling_policy" "requests" {
   name               = "vimbiso-pay-requests-autoscaling-${var.environment}"
@@ -74,7 +81,14 @@ resource "aws_appautoscaling_policy" "requests" {
     scale_out_cooldown = 60   # 1 minute
   }
 
-  depends_on = [aws_ecs_service.app]
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  depends_on = [
+    aws_appautoscaling_target.app,
+    time_sleep.wait_for_service_stable
+  ]
 }
 
 # CloudWatch Alarms for Auto Scaling
