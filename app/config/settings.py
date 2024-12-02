@@ -71,12 +71,14 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "data/db.sqlite3",  # noqa: E501
-        "ATOMIC_REQUESTS": True,  # Ensures database integrity
+        "NAME": BASE_DIR / "data/db.sqlite3",
+        "ATOMIC_REQUESTS": True,
         "OPTIONS": {
-            "timeout": 20,  # Better concurrent access handling
-            "isolation_level": "IMMEDIATE",  # Better concurrency control
+            "timeout": 30,  # Increased timeout for better handling
+            "isolation_level": "READ_COMMITTED",  # Less aggressive isolation
+            "cache_size": -2000,  # 2MB cache size
         },
+        "CONN_MAX_AGE": 60,  # Connection pooling
     }
 }
 
@@ -84,26 +86,36 @@ DATABASES = {
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": env("REDIS_URL", default="redis://redis:6379/0"),
+        "LOCATION": env("REDIS_URL", default="redis://localhost:6379/0"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
             "SOCKET_CONNECT_TIMEOUT": 5,
             "SOCKET_TIMEOUT": 5,
             "RETRY_ON_TIMEOUT": True,
-            "MAX_CONNECTIONS": 1000,
-            "CONNECTION_POOL_KWARGS": {"max_connections": 100},
+            "MAX_CONNECTIONS": 50,  # Reduced from 1000
+            "CONNECTION_POOL_KWARGS": {
+                "max_connections": 50,
+                "retry_on_timeout": True,
+            },
+            "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
+            "IGNORE_EXCEPTIONS": True,  # More resilient error handling
         },
+        "KEY_PREFIX": "vimbiso",  # Add prefix to avoid key collisions
     }
 }
 
-# Use Redis for session storage
+# Use Redis for session storage with optimized settings
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 SESSION_CACHE_ALIAS = "default"
+SESSION_COOKIE_AGE = 86400  # 24 hours
+SESSION_SAVE_EVERY_REQUEST = False  # Reduce writes to Redis
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",  # noqa: E501
+        "NAME": (
+            "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+        ),
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
@@ -218,7 +230,7 @@ LOGGING = {
         "django": {
             "handlers": ["console"],
             "level": env("DJANGO_LOG_LEVEL", default="INFO"),
-            "propagate": True,
+            "propagate": False,  # Changed to False to reduce duplicate logs
         },
         "core": {
             "handlers": ["console"],

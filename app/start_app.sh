@@ -4,7 +4,7 @@ set -e
 # Function to wait for Redis
 wait_for_redis() {
     echo "Waiting for Redis to be ready..."
-    until redis-cli -h redis ping &>/dev/null; do
+    until redis-cli -h localhost ping &>/dev/null; do
         echo "Redis is unavailable - sleeping"
         sleep 1
     done
@@ -24,21 +24,21 @@ fi
 # Determine environment and set appropriate server command
 if [ "${DJANGO_ENV:-development}" = "production" ]; then
     echo "Starting Gunicorn server in production mode..."
-    # Using fewer workers but more threads for better SQLite concurrency
+    # Using sync worker with preload for better memory efficiency
     exec gunicorn config.wsgi:application \
         --bind 0.0.0.0:${PORT:-8000} \
         --workers ${GUNICORN_WORKERS:-2} \
-        --worker-class gthread \
-        --threads ${GUNICORN_THREADS:-4} \
-        --worker-tmp-dir /dev/shm \
+        --worker-class sync \
+        --preload \
+        --max-requests 1000 \
+        --max-requests-jitter 50 \
         --log-level ${LOG_LEVEL:-info} \
         --access-logfile - \
         --error-logfile - \
         --timeout ${GUNICORN_TIMEOUT:-120} \
-        --max-requests 1000 \
-        --max-requests-jitter 50 \
         --graceful-timeout 30 \
-        --keep-alive 65
+        --keep-alive 65 \
+        --max-child-requests 1000
 else
     echo "Starting Django development server..."
     exec python manage.py runserver 0.0.0.0:${PORT:-8000}
