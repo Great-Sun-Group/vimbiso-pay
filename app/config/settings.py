@@ -71,14 +71,15 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "data/db.sqlite3",
+        # Changed path to ensure proper permissions
+        "NAME": BASE_DIR / "data/db/db.sqlite3",
         "ATOMIC_REQUESTS": True,
         "OPTIONS": {
-            "timeout": 30,  # Increased timeout for better handling
-            "isolation_level": "READ_COMMITTED",  # Less aggressive isolation
-            "cache_size": -2000,  # 2MB cache size
+            "timeout": 60,  # Increased timeout
+            "isolation_level": "READ_COMMITTED",
+            "cache_size": -2000,
         },
-        "CONN_MAX_AGE": 60,  # Connection pooling
+        "CONN_MAX_AGE": 60,
     }
 }
 
@@ -89,18 +90,18 @@ CACHES = {
         "LOCATION": env("REDIS_URL", default="redis://localhost:6379/0"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SOCKET_CONNECT_TIMEOUT": 5,
-            "SOCKET_TIMEOUT": 5,
+            "SOCKET_CONNECT_TIMEOUT": 30,  # Increased timeout
+            "SOCKET_TIMEOUT": 30,  # Increased timeout
             "RETRY_ON_TIMEOUT": True,
-            "MAX_CONNECTIONS": 50,  # Reduced from 1000
+            "MAX_CONNECTIONS": 50,
             "CONNECTION_POOL_KWARGS": {
                 "max_connections": 50,
                 "retry_on_timeout": True,
             },
             "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
-            "IGNORE_EXCEPTIONS": True,  # More resilient error handling
+            "IGNORE_EXCEPTIONS": True,
         },
-        "KEY_PREFIX": "vimbiso",  # Add prefix to avoid key collisions
+        "KEY_PREFIX": "vimbiso",
     }
 }
 
@@ -108,13 +109,14 @@ CACHES = {
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 SESSION_CACHE_ALIAS = "default"
 SESSION_COOKIE_AGE = 86400  # 24 hours
-SESSION_SAVE_EVERY_REQUEST = False  # Reduce writes to Redis
+SESSION_SAVE_EVERY_REQUEST = False
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": (
-            "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+            "django.contrib.auth.password_validation."
+            "UserAttributeSimilarityValidator"
         ),
     },
     {
@@ -136,9 +138,11 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = "/static/"
-STATIC_ROOT = Path.joinpath(BASE_DIR, "static")
+# Changed path to ensure proper permissions
+STATIC_ROOT = Path.joinpath(BASE_DIR, "data/static")
 
-MEDIA_ROOT = Path.joinpath(BASE_DIR, "media")
+# Changed path to ensure proper permissions
+MEDIA_ROOT = Path.joinpath(BASE_DIR, "data/media")
 MEDIA_URL = "/media/"
 
 # Default primary key field type
@@ -230,7 +234,7 @@ LOGGING = {
         "django": {
             "handlers": ["console"],
             "level": env("DJANGO_LOG_LEVEL", default="INFO"),
-            "propagate": False,  # Changed to False to reduce duplicate logs
+            "propagate": False,
         },
         "core": {
             "handlers": ["console"],
