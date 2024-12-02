@@ -35,11 +35,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD", "redis-cli", "ping"]
+        command     = ["CMD-SHELL", "redis-cli -h localhost -p ${var.redis_port} ping || exit 1"]
         interval    = 5
         timeout     = 3
         retries     = 3
-        startPeriod = 20
+        startPeriod = 10
       }
       mountPoints = [
         {
@@ -59,16 +59,18 @@ resource "aws_ecs_task_definition" "app" {
         {
           namespace = "net.core.somaxconn"
           value     = "1024"
+        },
+        {
+          namespace = "vm.overcommit_memory"
+          value     = "1"
         }
       ]
       command = [
         "redis-server",
         "--appendonly", "yes",
-        "--save", "60", "1",
         "--maxmemory", "512mb",
         "--maxmemory-policy", "allkeys-lru",
-        "--tcp-backlog", "511",
-        "--tcp-keepalive", "300"
+        "--bind", "0.0.0.0"
       ]
     },
     {
@@ -90,7 +92,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_BUSINESS_ID", value = var.django_env.whatsapp_business_id },
         { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_registration_flow_id },
         { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_company_registration_flow_id },
-        { name = "REDIS_URL", value = "redis://localhost:${var.redis_port}/0" }
+        { name = "REDIS_URL", value = "redis://127.0.0.1:${var.redis_port}/0" }
       ]
       portMappings = [
         {
