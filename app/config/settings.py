@@ -84,10 +84,15 @@ DATABASES = {
 }
 
 # Cache configuration using Redis for session storage
+REDIS_URL = env(
+    "REDIS_URL",
+    default="redis://redis:6379/0" if not DEBUG else "redis://localhost:6379/0"
+)
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": env("REDIS_URL", default="redis://localhost:6379/0"),
+        "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
             "SOCKET_CONNECT_TIMEOUT": 30,  # Increased timeout
@@ -100,6 +105,7 @@ CACHES = {
             },
             "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
             "IGNORE_EXCEPTIONS": True,
+            "PARSER_CLASS": "redis.connection.HiredisParser",
         },
         "KEY_PREFIX": "vimbiso",
     }

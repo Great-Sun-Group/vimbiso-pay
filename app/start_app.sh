@@ -6,25 +6,6 @@ echo "Environment: $DJANGO_ENV"
 echo "Port: $PORT"
 
 # In ECS, we use container dependencies instead of waiting for Redis
-# Only check Redis in development environment
-if [ "${DJANGO_ENV:-development}" != "production" ]; then
-    # Wait for Redis to be ready with timeout
-    MAX_RETRIES=30
-    RETRY_COUNT=0
-    echo "Waiting for Redis to be ready..."
-    while ! redis-cli -h redis ping &>/dev/null; do
-        if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-            echo "Redis connection timeout after $MAX_RETRIES attempts"
-            exit 1
-        fi
-        echo "Redis is unavailable - sleeping (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
-        RETRY_COUNT=$((RETRY_COUNT + 1))
-        sleep 2
-    done
-    echo "Redis is ready!"
-fi
-
-# In ECS, we use container dependencies instead of waiting for Redis
 # The container won't start until Redis is healthy
 if [ "${DJANGO_ENV:-development}" = "production" ]; then
     echo "Applying database migrations..."
