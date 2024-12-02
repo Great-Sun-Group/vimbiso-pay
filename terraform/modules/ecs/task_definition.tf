@@ -15,7 +15,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.25)
       cpu          = floor(var.task_cpu * 0.25)
-      user         = "root"  # Run as root to bind to port 6379
+      user         = "root"
       portMappings = [
         {
           containerPort = var.redis_port
@@ -68,12 +68,9 @@ resource "aws_ecs_task_definition" "app" {
         }
       ]
       command = [
-        "redis-server",
-        "--appendonly", "yes",
-        "--maxmemory", "512mb",
-        "--maxmemory-policy", "allkeys-lru",
-        "--bind", "0.0.0.0",
-        "--dir", "/redis"
+        "sh",
+        "-c",
+        "mkdir -p /redis && chown -R root:root /redis && redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --dir /redis"
       ]
     },
     {
