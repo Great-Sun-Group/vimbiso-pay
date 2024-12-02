@@ -66,7 +66,13 @@ resource "aws_appautoscaling_policy" "requests" {
   target_tracking_scaling_policy_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ALBRequestCountPerTarget"
-      resource_label        = "${split(":", var.target_group_arn)[5]}"  # Extract the loadbalancer/targetgroup part
+      resource_label        = format(
+        "app/%s/%s/targetgroup/%s/%s",
+        split("/", var.alb_arn)[2],        # load balancer name
+        split("/", var.alb_arn)[3],        # load balancer id
+        split("/", var.target_group_arn)[1], # target group name
+        split("/", var.target_group_arn)[2]  # target group id
+      )
     }
     target_value = 1000  # Target requests per target
 

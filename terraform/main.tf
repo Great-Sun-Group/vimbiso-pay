@@ -106,6 +106,7 @@ module "ecs" {
   private_subnet_ids         = module.networking.private_subnet_ids
   ecs_tasks_security_group_id = module.networking.ecs_tasks_security_group_id
   target_group_arn           = module.loadbalancer.target_group_arn
+  alb_arn                    = module.loadbalancer.alb_arn
   execution_role_arn         = module.iam.ecs_execution_role_arn
   task_role_arn             = module.iam.ecs_task_role_arn
   docker_image              = var.docker_image

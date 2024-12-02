@@ -31,6 +31,11 @@ variable "target_group_arn" {
   type        = string
 }
 
+variable "alb_arn" {
+  description = "ARN of the Application Load Balancer"
+  type        = string
+}
+
 # IAM Configuration
 variable "execution_role_arn" {
   description = "ARN of the ECS task execution role"
