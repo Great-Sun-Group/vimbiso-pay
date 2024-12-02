@@ -215,16 +215,16 @@ resource "aws_lb_target_group" "app" {
   health_check {
     enabled             = true
     healthy_threshold   = 2
-    interval            = 30
+    interval            = 15        # Reduced from 30
     matcher             = "200"
     path                = var.health_check_path
     port                = "traffic-port"
     protocol            = "HTTP"
-    timeout             = 10
-    unhealthy_threshold = 3
+    timeout             = 5         # Reduced from 10
+    unhealthy_threshold = 2         # Reduced from 3
   }
 
-  deregistration_delay = var.deregistration_delay
+  deregistration_delay = 0  # Changed from var.deregistration_delay to speed up target deregistration
 
   stickiness {
     type            = "lb_cookie"

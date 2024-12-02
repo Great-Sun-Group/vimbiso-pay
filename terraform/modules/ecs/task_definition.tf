@@ -18,6 +18,7 @@ resource "aws_ecs_task_definition" "app" {
       portMappings = [
         {
           containerPort = var.redis_port
+          hostPort     = var.redis_port
           protocol      = "tcp"
         }
       ]
@@ -25,7 +26,7 @@ resource "aws_ecs_task_definition" "app" {
         logDriver = "awslogs"
         options = {
           awslogs-group         = aws_cloudwatch_log_group.app.name
-          awslogs-region        = data.aws_region.current.name
+          awslogs-region        = var.aws_region
           awslogs-stream-prefix = "redis"
           awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
           awslogs-create-group  = "true"
@@ -33,10 +34,10 @@ resource "aws_ecs_task_definition" "app" {
       }
       healthCheck = {
         command     = ["CMD", "redis-cli", "ping"]
-        interval    = 30
+        interval    = 15
         timeout     = 5
-        retries     = 5
-        startPeriod = 60
+        retries     = 3
+        startPeriod = 30
       }
       mountPoints = [
         {
@@ -78,7 +79,7 @@ resource "aws_ecs_task_definition" "app" {
         logDriver = "awslogs"
         options = {
           awslogs-group         = aws_cloudwatch_log_group.app.name
-          awslogs-region        = data.aws_region.current.name
+          awslogs-region        = var.aws_region
           awslogs-stream-prefix = "app"
           awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
           awslogs-create-group  = "true"
@@ -86,10 +87,10 @@ resource "aws_ecs_task_definition" "app" {
       }
       healthCheck = {
         command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ || exit 1"]
-        interval    = 30
-        timeout     = 10
-        retries     = 5
-        startPeriod = 180
+        interval    = 15
+        timeout     = 5
+        retries     = 3
+        startPeriod = 90
       }
       mountPoints = [
         {
@@ -104,7 +105,7 @@ resource "aws_ecs_task_definition" "app" {
           condition     = "HEALTHY"
         }
       ]
-      user = "root"  # Temporarily run as root to fix permissions
+      user = "root"
     }
   ])
 

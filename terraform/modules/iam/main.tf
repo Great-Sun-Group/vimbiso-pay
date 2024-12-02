@@ -1,20 +1,33 @@
 # Permission boundary policy
 resource "aws_iam_policy" "permission_boundary" {
-  name        = "vimbiso-pay-permission-boundary-${var.environment}"
-  description = "Permission boundary for VimbisoPay ECS roles"
+  name = "vimbiso-pay-permission-boundary-${var.environment}"
+  path = "/"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:CreateLogGroup",
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess"
+        ]
+        Resource = "*"
+      },
+      {
         Effect = "Deny"
         Action = [
-          "iam:CreateUser",
-          "iam:DeleteUser",
-          "iam:CreateRole",
-          "iam:DeleteRole",
-          "iam:CreatePolicy",
-          "iam:DeletePolicy"
+          "ssm:DeleteParameter",
+          "ssm:DeleteParameters",
+          "ssm:PutParameter"
         ]
         Resource = "*"
       }
@@ -26,10 +39,9 @@ resource "aws_iam_policy" "permission_boundary" {
   })
 }
 
-# ECS Task Execution Role
+# ECS task execution role
 resource "aws_iam_role" "ecs_execution_role" {
   name                 = "vimbiso-pay-ecs-execution-${var.environment}"
-  path                 = "/service-role/"
   permissions_boundary = aws_iam_policy.permission_boundary.arn
 
   assume_role_policy = jsonencode({
@@ -50,16 +62,40 @@ resource "aws_iam_role" "ecs_execution_role" {
   })
 }
 
-# Attach AWS managed policy for ECS task execution
+# Attach the AWS managed policy for ECS task execution
 resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
   role       = aws_iam_role.ecs_execution_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# ECS Task Role
+# Additional permissions for ECS execution role
+resource "aws_iam_role_policy" "ecs_execution_extra" {
+  name = "vimbiso-pay-ecs-execution-extra-${var.environment}"
+  role = aws_iam_role.ecs_execution_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:CreateLogGroup"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# ECS task role
 resource "aws_iam_role" "ecs_task_role" {
   name                 = "vimbiso-pay-ecs-task-${var.environment}"
-  path                 = "/service-role/"
   permissions_boundary = aws_iam_policy.permission_boundary.arn
 
   assume_role_policy = jsonencode({
@@ -80,44 +116,7 @@ resource "aws_iam_role" "ecs_task_role" {
   })
 }
 
-# EFS access policy for task role with explicit deny
-resource "aws_iam_role_policy" "ecs_task_efs" {
-  name = "vimbiso-pay-ecs-task-efs-${var.environment}"
-  role = aws_iam_role.ecs_task_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticfilesystem:ClientMount",
-          "elasticfilesystem:ClientWrite"
-        ]
-        Resource = var.efs_file_system_arn
-        Condition = {
-          StringEquals = {
-            "elasticfilesystem:AccessPointArn" = [
-              var.app_access_point_arn,
-              var.redis_access_point_arn
-            ]
-          }
-        }
-      },
-      {
-        Effect = "Deny"
-        Action = [
-          "elasticfilesystem:DeleteFileSystem",
-          "elasticfilesystem:DeleteMountTarget",
-          "elasticfilesystem:DeleteAccessPoint"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# CloudWatch logs policy for task role with explicit deny
+# CloudWatch permissions for task role
 resource "aws_iam_role_policy" "ecs_task_cloudwatch" {
   name = "vimbiso-pay-ecs-task-cloudwatch-${var.environment}"
   role = aws_iam_role.ecs_task_role.id
@@ -129,30 +128,19 @@ resource "aws_iam_role_policy" "ecs_task_cloudwatch" {
         Effect = "Allow"
         Action = [
           "logs:CreateLogStream",
-          "logs:PutLogEvents"
+          "logs:PutLogEvents",
+          "logs:CreateLogGroup"
         ]
-        Resource = [
-          "${var.cloudwatch_log_group_arn}:*"
-        ]
-      },
-      {
-        Effect = "Deny"
-        Action = [
-          "logs:DeleteLogGroup",
-          "logs:DeleteLogStream",
-          "logs:DeleteMetricFilter",
-          "logs:DeleteRetentionPolicy"
-        ]
-        Resource = "*"
+        Resource = "${var.cloudwatch_log_group_arn}"
       }
     ]
   })
 }
 
-# Additional permissions for task execution role (for SSM parameters and ECR)
-resource "aws_iam_role_policy" "ecs_execution_extra" {
-  name = "vimbiso-pay-ecs-execution-extra-${var.environment}"
-  role = aws_iam_role.ecs_execution_role.id
+# EFS permissions for task role
+resource "aws_iam_role_policy" "ecs_task_efs" {
+  name = "vimbiso-pay-ecs-task-efs-${var.environment}"
+  role = aws_iam_role.ecs_task_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -160,52 +148,22 @@ resource "aws_iam_role_policy" "ecs_execution_extra" {
       {
         Effect = "Allow"
         Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage"
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess"
         ]
-        Resource = "*"
+        Resource = var.efs_file_system_arn
         Condition = {
-          StringLike = {
-            "ecr:ResourceTag/Environment": var.environment
+          StringEquals = {
+            "elasticfilesystem:AccessPointArn" : [var.app_access_point_arn, var.redis_access_point_arn]
           }
         }
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:GetParameters",
-          "ssm:GetParameter"
-        ]
-        Resource = [
-          "arn:aws:ssm:${var.region}:${var.account_id}:parameter/vimbiso-pay/${var.environment}/*"
-        ]
-      },
-      {
-        Effect = "Deny"
-        Action = [
-          "ssm:DeleteParameter",
-          "ssm:DeleteParameters",
-          "ssm:PutParameter"
-        ]
-        Resource = "*"
       }
     ]
   })
 }
 
-# Service-linked role for ECS
-resource "aws_iam_service_linked_role" "ecs" {
-  aws_service_name = "ecs.amazonaws.com"
-  description      = "Service-linked role for ECS"
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-ecs-service-linked-${var.environment}"
-  })
-}
-
-# KMS key policy for encryption
+# KMS permissions
 resource "aws_iam_role_policy" "kms" {
   name = "vimbiso-pay-kms-${var.environment}"
   role = aws_iam_role.ecs_task_role.id
@@ -222,7 +180,7 @@ resource "aws_iam_role_policy" "kms" {
         Resource = "*"
         Condition = {
           StringEquals = {
-            "kms:ViaService": [
+            "kms:ViaService" = [
               "ecs.${var.region}.amazonaws.com",
               "ssm.${var.region}.amazonaws.com"
             ]
@@ -230,5 +188,15 @@ resource "aws_iam_role_policy" "kms" {
         }
       }
     ]
+  })
+}
+
+# ECS service linked role
+resource "aws_iam_service_linked_role" "ecs" {
+  aws_service_name = "ecs.amazonaws.com"
+  description      = "Service-linked role for ECS"
+
+  tags = merge(var.tags, {
+    Name = "vimbiso-pay-ecs-service-linked-${var.environment}"
   })
 }

@@ -22,27 +22,20 @@ resource "aws_acm_certificate" "app" {
   }
 }
 
-# Create DNS validation records
+# Create DNS validation record
 resource "aws_route53_record" "cert_validation" {
-  for_each = {
-    for dvo in aws_acm_certificate.app.domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
-    }
-  }
-
-  zone_id = aws_route53_zone.app.zone_id
-  name    = each.value.name
-  type    = each.value.type
-  records = [each.value.record]
-  ttl     = 60
+  allow_overwrite = true
+  name            = tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_name
+  records         = [tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_value]
+  type            = tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_type
+  zone_id         = aws_route53_zone.app.zone_id
+  ttl             = 60
 }
 
 # Validate the certificate
 resource "aws_acm_certificate_validation" "app" {
   certificate_arn         = aws_acm_certificate.app.arn
-  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+  validation_record_fqdns = [aws_route53_record.cert_validation.fqdn]
 }
 
 # Create A record for the application

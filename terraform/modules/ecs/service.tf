@@ -4,17 +4,16 @@ resource "aws_ecs_service" "app" {
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = var.min_capacity
-  deployment_minimum_healthy_percent = 100
+  deployment_minimum_healthy_percent = 50
   deployment_maximum_percent        = 200
-  launch_type                       = "FARGATE"
   scheduling_strategy               = "REPLICA"
-  platform_version                  = "LATEST"
-  wait_for_steady_state            = true
+  force_new_deployment             = true
+  health_check_grace_period_seconds = 120
 
-  # Enable deployment circuit breaker with rollback
+  # Disable automatic rollback to prevent deployment loops
   deployment_circuit_breaker {
     enable   = true
-    rollback = true
+    rollback = false
   }
 
   deployment_controller {
@@ -33,21 +32,24 @@ resource "aws_ecs_service" "app" {
     container_port   = var.app_port
   }
 
-  # Capacity provider strategy
   capacity_provider_strategy {
     capacity_provider = "FARGATE"
     weight           = 100
     base             = 1
   }
 
-  lifecycle {
-    create_before_destroy = true
-    ignore_changes       = [desired_count, task_definition]
-  }
-
-  # Service registry configuration (if using service discovery)
   service_registries {
     registry_arn = aws_service_discovery_service.app.arn
+  }
+
+  # Ignore changes that are managed by the deployment workflow
+  lifecycle {
+    ignore_changes = [
+      desired_count,
+      task_definition,
+      capacity_provider_strategy,
+      health_check_grace_period_seconds
+    ]
   }
 
   depends_on = [

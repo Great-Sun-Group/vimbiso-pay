@@ -60,6 +60,17 @@ variable "redis_port" {
   default     = 6379
 }
 
+# AWS Account Configuration
+variable "aws_account_id" {
+  description = "AWS Account ID"
+  type        = string
+}
+
+variable "aws_region" {
+  description = "AWS Region"
+  type        = string
+}
+
 # Task Resource Configuration
 variable "task_cpu" {
   description = "CPU units for the task"
