@@ -159,7 +159,7 @@ jobs:
             # Get the parent domain's NS records
             PARENT_DOMAIN="whatsapp.vimbisopay.africa"
             PARENT_NS=$(aws route53 list-resource-record-sets \
-              --hosted-zone-id Z0431766U8KGKIFJOPNG \
+              --hosted-zone-id Z052672026G3UK54TSSGX \
               --query "ResourceRecordSets[?Name == '${DOMAIN}.']" \
               --output json)
 
