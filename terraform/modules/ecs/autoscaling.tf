@@ -67,11 +67,11 @@ resource "aws_appautoscaling_policy" "requests" {
     predefined_metric_specification {
       predefined_metric_type = "ALBRequestCountPerTarget"
       resource_label        = format(
-        "app/%s/%s/targetgroup/%s/%s",
-        split("/", var.alb_arn)[2],        # load balancer name
-        split("/", var.alb_arn)[3],        # load balancer id
-        split("/", var.target_group_arn)[1], # target group name
-        split("/", var.target_group_arn)[2]  # target group id
+        "app/vimbiso-pay-alb-%s/%s/targetgroup/vimbiso-pay-tg-%s/%s",
+        var.environment,
+        split("/", var.alb_arn)[3],  # Load balancer ID
+        var.environment,
+        split("/", var.target_group_arn)[1]  # Target group ID
       )
     }
     target_value = 1000  # Target requests per target

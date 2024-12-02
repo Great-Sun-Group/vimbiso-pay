@@ -179,30 +179,34 @@ jobs:
                 --output text)
 
               if [ ! -z "$TASKS" ]; then
-                echo "$TASKS" | tr ' ' '\n' | while read -r TASK_ARN; do
+                echo "Found stopped tasks: $TASKS"
+                echo "$TASKS" | xargs -n1 | while read -r TASK_ARN; do
                   if [ ! -z "$TASK_ARN" ]; then
-                    # Extract just the task ID from the full ARN
-                    # ARN format: arn:aws:ecs:region:account:task/cluster-name/task-id
-                    CLUSTER_AND_TASK=$(echo "$TASK_ARN" | awk -F'task/' '{print $2}')
-                    TASK_ID=$(echo "$CLUSTER_AND_TASK" | cut -d'/' -f2)
-                    echo "Processing task: $TASK_ID"
+                    echo "Processing task ARN: $TASK_ARN"
 
                     # Get task details first
+                    echo "Fetching task details..."
                     TASK_INFO=$(aws ecs describe-tasks \
                       --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
                       --tasks "$TASK_ARN" \
-                      --query 'tasks[0]')
+                      --output json)
+
+                    echo "Task info response: $TASK_INFO"
 
                     if [ ! -z "$TASK_INFO" ] && [ "$TASK_INFO" != "null" ]; then
+                      # Extract task ID from task ARN in the response
+                      TASK_ID=$(echo "$TASK_INFO" | jq -r '.tasks[0].taskArn' | awk -F'/' '{print $NF}')
+                      echo "Extracted task ID: $TASK_ID"
+
                       echo "Task Details:"
                       echo "============="
-                      STOP_CODE=$(echo $TASK_INFO | jq -r '.stoppedReason')
+                      STOP_CODE=$(echo "$TASK_INFO" | jq -r '.tasks[0].stoppedReason')
                       echo "Stop reason: $STOP_CODE"
 
                       # Get container details
                       echo "Container Status:"
                       echo "================="
-                      echo $TASK_INFO | jq -r '.containers[] | "Container \(.name):\n  Status: \(.lastStatus)\n  Reason: \(.reason // "No error")\n  Exit Code: \(.exitCode // "N/A")\n  Health Status: \(.healthStatus // "N/A")"'
+                      echo "$TASK_INFO" | jq -r '.tasks[0].containers[] | "Container \(.name):\n  Status: \(.lastStatus)\n  Reason: \(.reason // "No error")\n  Exit Code: \(.exitCode // "N/A")\n  Health Status: \(.healthStatus // "N/A")"'
 
                       # Try to get logs for each container
                       echo "Container Logs:"
