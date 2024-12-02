@@ -35,7 +35,7 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD", "redis-cli", "-h", "localhost", "ping"]
+        command     = ["CMD", "redis-cli", "ping"]
         interval    = 10
         timeout     = 5
         retries     = 3
@@ -150,7 +150,7 @@ resource "aws_ecs_task_definition" "app" {
       entryPoint = [
         "sh",
         "-c",
-        "mkdir -p /app/data/{db,static,media,logs} && chmod -R 755 /app/data && ./start_app.sh"
+        "set -e && mkdir -p /app/data/{db,static,media,logs} && chmod -R 755 /app/data && ./start_app.sh"
       ]
     }
   ])

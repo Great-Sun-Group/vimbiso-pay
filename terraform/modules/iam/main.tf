@@ -85,7 +85,9 @@ resource "aws_iam_role_policy" "ecs_execution_extra" {
           "ecr:BatchGetImage",
           "logs:CreateLogStream",
           "logs:PutLogEvents",
-          "logs:CreateLogGroup"
+          "logs:CreateLogGroup",
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite"
         ]
         Resource = "*"
       }
@@ -152,7 +154,10 @@ resource "aws_iam_role_policy" "ecs_task_efs" {
           "elasticfilesystem:ClientWrite",
           "elasticfilesystem:ClientRootAccess"
         ]
-        Resource = var.efs_file_system_arn
+        Resource = [
+          var.efs_file_system_arn,
+          "${var.efs_file_system_arn}/*"
+        ]
       }
     ]
   })
