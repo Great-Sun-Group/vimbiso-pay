@@ -54,7 +54,7 @@ RUN adduser \
     --uid "${UID}" \
     appuser
 
-# Install build dependencies and runtime dependencies
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -94,5 +94,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # Expose port
 EXPOSE ${PORT}
 
-# Start command
-CMD ["./start_app.sh"]
+# No CMD or ENTRYPOINT - these are set in the task definition

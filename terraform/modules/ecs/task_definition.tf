@@ -15,6 +15,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.25)
       cpu          = floor(var.task_cpu * 0.25)
+      user         = "root"  # Run as root to bind to port 6379
       portMappings = [
         {
           containerPort = var.redis_port
@@ -94,7 +95,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_BUSINESS_ID", value = var.django_env.whatsapp_business_id },
         { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_registration_flow_id },
         { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_company_registration_flow_id },
-        { name = "REDIS_URL", value = "redis://redis:${var.redis_port}/0" },
+        { name = "REDIS_URL", value = "redis://localhost:${var.redis_port}/0" },
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
@@ -155,7 +156,7 @@ resource "aws_ecs_task_definition" "app" {
           value     = "1024"
         }
       ]
-      entryPoint = [
+      command = [
         "sh",
         "-c",
         "set -e && mkdir -p /app/data/{db,static,media,logs} && chmod -R 755 /app/data && ./start_app.sh"

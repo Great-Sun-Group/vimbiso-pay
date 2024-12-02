@@ -10,7 +10,7 @@ echo "Waiting for Redis to be ready..."
 max_attempts=30
 attempt=1
 
-while ! redis-cli -h redis ping > /dev/null 2>&1; do
+while ! redis-cli ping > /dev/null 2>&1; do
     if [ $attempt -eq $max_attempts ]; then
         echo "Redis is still unavailable after $max_attempts attempts - giving up"
         exit 1
@@ -22,8 +22,11 @@ done
 
 echo "Redis is ready!"
 
-# In ECS, we use container dependencies instead of waiting for Redis
-# The container won't start until Redis is healthy
+# Create required directories if they don't exist
+mkdir -p /app/data/{db,static,media,logs}
+chmod -R 755 /app/data
+
+# In production, run migrations and collect static files
 if [ "${DJANGO_ENV:-development}" = "production" ]; then
     echo "Applying database migrations..."
     python manage.py migrate --noinput

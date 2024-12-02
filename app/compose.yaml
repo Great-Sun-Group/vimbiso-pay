@@ -18,7 +18,7 @@ services:
       - PYTHONPATH=${PYTHONPATH:-/app}
 
       # Redis Configuration
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/}
+      - REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
 
       # Credex Core API Configuration
       - MYCREDEX_APP_URL=${MYCREDEX_APP_URL:-https://dev.mycredex.dev/}
@@ -41,11 +41,10 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: >
-      sh -c "python manage.py migrate &&
-             python manage.py runserver 0.0.0.0:8000"
+    command: ./start_app.sh
+    network_mode: "service:redis"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -65,17 +64,24 @@ services:
 
   redis:
     image: redis:7-alpine
+    user: root
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - redis_data:/redis
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
-      start_period: 10s
-    command: redis-server --appendonly yes
+      start_period: 30s
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --bind 0.0.0.0
+      --dir /redis
 
 volumes:
   redis_data:
