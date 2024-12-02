@@ -5,12 +5,6 @@ echo "Starting application..."
 echo "Environment: $DJANGO_ENV"
 echo "Port: $PORT"
 
-# Ensure data directories exist and have proper permissions
-echo "Setting up data directories..."
-mkdir -p /app/data/{logs,db,static,media}
-chmod -R 755 /app/data
-chown -R appuser:appuser /app/data
-
 # In ECS, we use container dependencies instead of waiting for Redis
 # The container won't start until Redis is healthy
 if [ "${DJANGO_ENV:-development}" = "production" ]; then

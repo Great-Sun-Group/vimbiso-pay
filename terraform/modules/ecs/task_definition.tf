@@ -35,16 +35,16 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "redis-cli ping || exit 1"]
+        command     = ["CMD", "redis-cli", "ping"]
         interval    = 30
         timeout     = 5
         retries     = 3
-        startPeriod = 30
+        startPeriod = 10
       }
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/data"
+          containerPath = "/redis"
           readOnly     = false
         }
       ]
@@ -62,8 +62,12 @@ resource "aws_ecs_task_definition" "app" {
         }
       ]
       command = [
-        "sh", "-c",
-        "mkdir -p /data && chown -R redis:redis /data && redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --dir /data --no-appendfsync-on-rewrite yes --auto-aof-rewrite-percentage 100 --auto-aof-rewrite-min-size 64mb --stop-writes-on-bgsave-error no"
+        "redis-server",
+        "--appendonly", "yes",
+        "--maxmemory", "512mb",
+        "--maxmemory-policy", "allkeys-lru",
+        "--bind", "0.0.0.0",
+        "--dir", "/redis"
       ]
     },
     {
@@ -85,10 +89,10 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_BUSINESS_ID", value = var.django_env.whatsapp_business_id },
         { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_registration_flow_id },
         { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_company_registration_flow_id },
-        { name = "REDIS_URL", value = "redis://redis:${var.redis_port}/0" },
+        { name = "REDIS_URL", value = "redis://localhost:${var.redis_port}/0" },
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
-        { name = "DJANGO_LOG_LEVEL", value = "DEBUG" }  # Temporarily set to DEBUG for more info
+        { name = "DJANGO_LOG_LEVEL", value = "DEBUG" }
       ]
       portMappings = [
         {
@@ -120,7 +124,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "app-data"
-          containerPath = "/app/data"
+          containerPath = "/app"
           readOnly     = false
         }
       ]
@@ -143,9 +147,7 @@ resource "aws_ecs_task_definition" "app" {
           value     = "1024"
         }
       ]
-      command = ["./start_app.sh"],
-      # Run as appuser (UID 10001) to match Dockerfile and EFS access point
-      user = "10001:10001"
+      command = ["./start_app.sh"]
     }
   ])
 
