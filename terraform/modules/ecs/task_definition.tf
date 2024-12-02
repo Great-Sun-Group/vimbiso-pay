@@ -41,11 +41,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD", "redis-cli", "-h", "127.0.0.1", "ping"]
-        interval    = 10
+        command     = ["CMD-SHELL", "redis-cli -h 127.0.0.1 ping || exit 1"]
+        interval    = 30
         timeout     = 5
         retries     = 3
-        startPeriod = 30
+        startPeriod = 60
       }
       mountPoints = [
         {
@@ -65,12 +65,16 @@ resource "aws_ecs_task_definition" "app" {
         {
           namespace = "net.core.somaxconn"
           value     = "1024"
+        },
+        {
+          namespace = "vm.overcommit_memory"
+          value     = "1"
         }
       ]
       command = [
         "sh",
         "-c",
-        "mkdir -p /redis && chown -R root:root /redis && redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --dir /redis"
+        "sysctl vm.overcommit_memory=1 || true && mkdir -p /redis && chown -R root:root /redis && redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --dir /redis"
       ]
     },
     {
