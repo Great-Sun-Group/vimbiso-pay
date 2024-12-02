@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import HttpResponse
+from django.http import JsonResponse
 from rest_framework.decorators import permission_classes, api_view
 from rest_framework.permissions import AllowAny
 from core.api.views import (
@@ -12,13 +12,31 @@ from core.api.views import (
     WipeCache,
 )
 from core.api.tests import test_integrations
+from django.core.cache import cache
 
 
 # Health check endpoint
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def health_check(request):
-    return HttpResponse("OK")
+    try:
+        # Test Redis connectivity
+        cache.set('health_check', 'ok', 10)
+        result = cache.get('health_check')
+        if result != 'ok':
+            return JsonResponse({
+                "status": "error",
+                "message": "Redis connectivity check failed"
+            }, status=500)
+        return JsonResponse({
+            "status": "ok",
+            "message": "Service is healthy"
+        })
+    except Exception as e:
+        return JsonResponse({
+            "status": "error",
+            "message": f"Health check failed: {str(e)}"
+        }, status=500)
 
 
 urlpatterns = [
