@@ -18,7 +18,7 @@ services:
       - PYTHONPATH=${PYTHONPATH:-/app}
 
       # Redis Configuration
-      - REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
+      - REDIS_URL=${REDIS_URL:-redis://127.0.0.1:6379/0}
 
       # Credex Core API Configuration
       - MYCREDEX_APP_URL=${MYCREDEX_APP_URL:-https://dev.mycredex.dev/}
@@ -41,8 +41,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: ./start_app.sh
     network_mode: "service:redis"
+    command: ./start_app.sh
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
       interval: 30s
@@ -70,7 +70,7 @@ services:
     volumes:
       - redis_data:/redis
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
