@@ -69,8 +69,10 @@ RUN apt-mark manual redis-tools && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy application code
+# Copy application code and initialization scripts
 COPY ./app /app
+COPY ./app/init_efs.sh /app/init_efs.sh
+COPY ./app/init_redis.sh /app/init_redis.sh
 
 # Create required directories with proper permissions
 RUN mkdir -p \
@@ -81,6 +83,8 @@ RUN mkdir -p \
     && chown -R appuser:appuser /app \
     && chmod -R 755 /app/data \
     && chmod +x /app/start_app.sh \
+    && chmod +x /app/init_efs.sh \
+    && chmod +x /app/init_redis.sh \
     && find /app/data -type d -exec chmod 755 {} \; \
     && find /app/data -type f -exec chmod 644 {} \;
 
