@@ -123,8 +123,8 @@ jobs:
             echo "No locks found in DynamoDB table"
           fi
 
-      - name: Setup DNS Infrastructure
-        id: dns-setup
+      - name: Check DNS Setup
+        id: dns-check
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
           # Add dummy values for required variables during DNS setup
@@ -147,44 +147,56 @@ jobs:
             -target=module.route53_dns \
             -out=dns.tfplan
 
-          # Apply Route53 configuration
+          # Apply Route53 configuration to get NS records
           terraform apply -input=false -lock-timeout=20m dns.tfplan
 
-          # Check if this is first run by looking for NS records output
+          # Check if NS records exist
           NS_RECORDS=$(terraform output -json route53_nameservers 2>/dev/null)
           if [ $? -eq 0 ] && [ ! -z "$NS_RECORDS" ]; then
-            echo "First run detected. NS records need to be configured in parent domain."
-            echo "Required NS Records:"
-            echo "$NS_RECORDS" | jq -r '.[]'
+            echo "NS records found. Checking if they are configured in parent domain..."
 
-            # Create a GitHub issue with NS record information
-            if [ "$GITHUB_TOKEN" != "" ]; then
-              ISSUE_BODY="DNS Configuration Required for ${DOMAIN}
+            # Get the parent domain's NS records
+            PARENT_DOMAIN="whatsapp.vimbisopay.africa"
+            PARENT_NS=$(aws route53 list-resource-record-sets \
+              --hosted-zone-id Z0431766U8KGKIFJOPNG \
+              --query "ResourceRecordSets[?Name == '${DOMAIN}.']" \
+              --output json)
 
-              Please configure the following NS records in the parent domain for ${DOMAIN}:
+            if [ -z "$PARENT_NS" ] || [ "$PARENT_NS" == "[]" ]; then
+              echo "NS records not configured in parent domain. Creating GitHub issue..."
 
-              $(echo "$NS_RECORDS" | jq -r '.[]' | sed 's/^/- /')
+              # Create a GitHub issue with NS record information
+              if [ "$GITHUB_TOKEN" != "" ]; then
+                ISSUE_BODY="DNS Configuration Required for ${DOMAIN}
 
-              Once these NS records are configured in the parent domain, please re-run this workflow."
+                Please configure the following NS records in the parent domain (${PARENT_DOMAIN}):
 
-              curl -X POST \
-                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -H "Accept: application/vnd.github.v3+json" \
-                https://api.github.com/repos/${{ github.repository }}/issues \
-                -d "{\"title\":\"DNS Configuration Required for ${DOMAIN}\",\"body\":\"$ISSUE_BODY\",\"labels\":[\"dns-setup\"]}"
+                $(echo "$NS_RECORDS" | jq -r '.[]' | sed 's/^/- /')
+
+                Once these NS records are configured in the parent domain, please re-run this workflow."
+
+                curl -X POST \
+                  -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                  -H "Accept: application/vnd.github.v3+json" \
+                  https://api.github.com/repos/${{ github.repository }}/issues \
+                  -d "{\"title\":\"DNS Configuration Required for ${DOMAIN}\",\"body\":\"$ISSUE_BODY\",\"labels\":[\"dns-setup\"]}"
+              fi
+
+              echo "first_run=true" >> $GITHUB_OUTPUT
+              echo "Please configure NS records in the parent domain and re-run this workflow."
+              exit 0
+            else
+              echo "NS records already configured in parent domain."
+              echo "first_run=false" >> $GITHUB_OUTPUT
             fi
-
-            echo "first_run=true" >> $GITHUB_OUTPUT
-            echo "Please configure NS records in the parent domain and re-run this workflow."
-            exit 0
           else
-            echo "NS records already configured, proceeding with deployment."
-            echo "first_run=false" >> $GITHUB_OUTPUT
+            echo "No NS records found. This is unexpected - check Route53 configuration."
+            exit 1
           fi
 
-      # Only continue with remaining deployment if this isn't the first run
+      # Only continue with remaining deployment if NS records are configured
       - name: Create Base Infrastructure
-        if: steps.dns-setup.outputs.first_run != 'true'
+        if: steps.dns-check.outputs.first_run != 'true'
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
           # Add dummy values for required variables during base infrastructure creation
@@ -216,7 +228,7 @@ jobs:
           }
 
       - name: Configure Load Balancer
-        if: steps.dns-setup.outputs.first_run != 'true'
+        if: steps.dns-check.outputs.first_run != 'true'
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
           # Add dummy values for required variables during load balancer configuration
@@ -246,12 +258,12 @@ jobs:
           }
 
       - name: Login to Amazon ECR
-        if: steps.dns-setup.outputs.first_run != 'true'
+        if: steps.dns-check.outputs.first_run != 'true'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and Push Docker Image
-        if: steps.dns-setup.outputs.first_run != 'true'
+        if: steps.dns-check.outputs.first_run != 'true'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: vimbiso-pay-${{ env.ENVIRONMENT }}
@@ -269,7 +281,7 @@ jobs:
           echo "IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
 
       - name: Deploy Application
-        if: steps.dns-setup.outputs.first_run != 'true'
+        if: steps.dns-check.outputs.first_run != 'true'
         env:
           TF_VAR_environment: ${{ env.ENVIRONMENT }}
           TF_VAR_docker_image: ${{ env.IMAGE }}
@@ -310,7 +322,7 @@ jobs:
           terraform force-unlock -force $(terraform workspace show)
 
       - name: Wait for Deployment
-        if: steps.dns-setup.outputs.first_run != 'true'
+        if: steps.dns-check.outputs.first_run != 'true'
         run: |
           echo "Waiting for deployment to complete..."
           MAX_ATTEMPTS=40  # 20 minutes total (30 seconds * 40)
@@ -402,7 +414,7 @@ jobs:
           fi
 
       - name: Print Deployment Information
-        if: steps.dns-setup.outputs.first_run != 'true'
+        if: steps.dns-check.outputs.first_run != 'true'
         run: |
           cd terraform
           echo "Deployment completed successfully."
