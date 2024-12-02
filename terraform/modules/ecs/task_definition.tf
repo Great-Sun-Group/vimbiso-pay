@@ -30,20 +30,38 @@ resource "aws_ecs_task_definition" "app" {
           awslogs-stream-prefix = "redis"
           awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
           awslogs-create-group  = "true"
+          mode                  = "non-blocking"
+          max-buffer-size       = "4m"
+          # Ensure logs are flushed quickly for deployment monitoring
+          flush-to-disk         = "true"
+          compress-logs         = "false"
         }
       }
       healthCheck = {
         command     = ["CMD", "redis-cli", "ping"]
-        interval    = 15
-        timeout     = 5
+        interval    = 30
+        timeout     = 10
         retries     = 3
-        startPeriod = 30
+        startPeriod = 60
       }
       mountPoints = [
         {
           sourceVolume  = "redis-data"
           containerPath = "/data"
           readOnly     = false
+        }
+      ]
+      ulimits = [
+        {
+          name = "nofile"
+          softLimit = 65536
+          hardLimit = 65536
+        }
+      ]
+      systemControls = [
+        {
+          namespace = "net.core.somaxconn"
+          value     = "1024"
         }
       ]
     },
@@ -83,14 +101,20 @@ resource "aws_ecs_task_definition" "app" {
           awslogs-stream-prefix = "app"
           awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
           awslogs-create-group  = "true"
+          awslogs-multiline-pattern = "^\\[\\d{4}-\\d{2}-\\d{2}"
+          mode                  = "non-blocking"
+          max-buffer-size       = "4m"
+          # Ensure logs are flushed quickly for deployment monitoring
+          flush-to-disk         = "true"
+          compress-logs         = "false"
         }
       }
       healthCheck = {
         command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ || exit 1"]
-        interval    = 15
-        timeout     = 5
+        interval    = 30
+        timeout     = 10
         retries     = 3
-        startPeriod = 90
+        startPeriod = 120
       }
       mountPoints = [
         {
@@ -103,6 +127,19 @@ resource "aws_ecs_task_definition" "app" {
         {
           containerName = "redis"
           condition     = "HEALTHY"
+        }
+      ]
+      ulimits = [
+        {
+          name = "nofile"
+          softLimit = 65536
+          hardLimit = 65536
+        }
+      ]
+      systemControls = [
+        {
+          namespace = "net.core.somaxconn"
+          value     = "1024"
         }
       ]
       user = "root"

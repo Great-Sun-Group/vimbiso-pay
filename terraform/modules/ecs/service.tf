@@ -8,12 +8,12 @@ resource "aws_ecs_service" "app" {
   deployment_maximum_percent        = 200
   scheduling_strategy               = "REPLICA"
   force_new_deployment             = true
-  health_check_grace_period_seconds = 120
+  health_check_grace_period_seconds = 300  # Increased to match target group settings
 
-  # Disable automatic rollback to prevent deployment loops
+  # Enable rollback for failed deployments
   deployment_circuit_breaker {
     enable   = true
-    rollback = false
+    rollback = true  # Enable automatic rollback
   }
 
   deployment_controller {
@@ -47,8 +47,7 @@ resource "aws_ecs_service" "app" {
     ignore_changes = [
       desired_count,
       task_definition,
-      capacity_provider_strategy,
-      health_check_grace_period_seconds
+      capacity_provider_strategy
     ]
   }
 
