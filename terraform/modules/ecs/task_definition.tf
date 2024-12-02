@@ -32,9 +32,6 @@ resource "aws_ecs_task_definition" "app" {
           awslogs-create-group  = "true"
           mode                  = "non-blocking"
           max-buffer-size       = "4m"
-          # Ensure logs are flushed quickly for deployment monitoring
-          flush-to-disk         = "true"
-          compress-logs         = "false"
         }
       }
       healthCheck = {
@@ -104,9 +101,6 @@ resource "aws_ecs_task_definition" "app" {
           awslogs-multiline-pattern = "^\\[\\d{4}-\\d{2}-\\d{2}"
           mode                  = "non-blocking"
           max-buffer-size       = "4m"
-          # Ensure logs are flushed quickly for deployment monitoring
-          flush-to-disk         = "true"
-          compress-logs         = "false"
         }
       }
       healthCheck = {
