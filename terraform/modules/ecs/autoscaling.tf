@@ -66,7 +66,7 @@ resource "aws_appautoscaling_policy" "requests" {
   target_tracking_scaling_policy_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ALBRequestCountPerTarget"
-      resource_label        = "${split("/", var.alb_arn)[1]}/${split("/", var.alb_arn)[3]}/${split("/", var.target_group_arn)[1]}/${split("/", var.target_group_arn)[2]}"
+      resource_label        = "app/vimbiso-pay-alb-${var.environment}/*/targetgroup/vimbiso-pay-tg-${var.environment}/*"
     }
     target_value = 1000  # Target requests per target
 
