@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     locales \
     netcat-traditional \
+    redis-tools \
     && locale-gen en_US.UTF-8 \
     && update-locale \
     && rm -rf /var/lib/apt/lists/*
@@ -56,7 +57,6 @@ RUN adduser \
 # Install build dependencies and runtime dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
-    redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Install production dependencies
@@ -64,7 +64,7 @@ COPY requirements /app/requirements
 RUN pip install --no-cache-dir -r requirements/prod.txt
 
 # Remove build dependencies but keep runtime dependencies
-RUN apt-mark manual redis-tools && \
+RUN apt-mark manual redis-tools curl && \
     apt-get purge -y build-essential && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*

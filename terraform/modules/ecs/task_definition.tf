@@ -22,6 +22,11 @@ resource "aws_ecs_task_definition" "app" {
           protocol      = "tcp"
         }
       ]
+      environment = [
+        { name = "LANG", value = "en_US.UTF-8" },
+        { name = "LANGUAGE", value = "en_US:en" },
+        { name = "LC_ALL", value = "en_US.UTF-8" }
+      ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -39,7 +44,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 10
         timeout     = 5
         retries     = 3
-        startPeriod = 10
+        startPeriod = 30
       }
       mountPoints = [
         {
@@ -92,7 +97,10 @@ resource "aws_ecs_task_definition" "app" {
         { name = "REDIS_URL", value = "redis://redis:${var.redis_port}/0" },
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
-        { name = "DJANGO_LOG_LEVEL", value = "DEBUG" }
+        { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
+        { name = "LANG", value = "en_US.UTF-8" },
+        { name = "LANGUAGE", value = "en_US:en" },
+        { name = "LC_ALL", value = "en_US.UTF-8" }
       ]
       portMappings = [
         {
@@ -119,7 +127,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 30
         timeout     = 5
         retries     = 3
-        startPeriod = 60
+        startPeriod = 90
       }
       mountPoints = [
         {
