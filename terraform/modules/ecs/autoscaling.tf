@@ -73,7 +73,7 @@ resource "aws_appautoscaling_policy" "requests" {
   target_tracking_scaling_policy_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ALBRequestCountPerTarget"
-      resource_label        = "app/vimbiso-pay-alb-${var.environment}/*/targetgroup/vimbiso-pay-tg-${var.environment}/*"
+      resource_label        = "${data.aws_lb.app.arn_suffix}/${data.aws_lb_target_group.app.arn_suffix}"
     }
     target_value = 1000  # Target requests per target
 
@@ -87,8 +87,18 @@ resource "aws_appautoscaling_policy" "requests" {
 
   depends_on = [
     aws_appautoscaling_target.app,
-    time_sleep.wait_for_service_stable
+    time_sleep.wait_for_service_stable,
+    aws_ecs_service.app
   ]
+}
+
+# Data sources for ALB and target group ARN suffixes
+data "aws_lb" "app" {
+  arn = var.alb_arn
+}
+
+data "aws_lb_target_group" "app" {
+  arn = var.target_group_arn
 }
 
 # CloudWatch Alarms for Auto Scaling
