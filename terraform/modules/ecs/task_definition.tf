@@ -35,11 +35,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD", "/usr/local/bin/redis-cli", "ping"]
-        interval    = 30
-        timeout     = 10
+        command     = ["CMD", "redis-cli", "ping"]
+        interval    = 10
+        timeout     = 5
         retries     = 3
-        startPeriod = 60
+        startPeriod = 10
       }
       mountPoints = [
         {
@@ -61,6 +61,13 @@ resource "aws_ecs_task_definition" "app" {
           value     = "1024"
         }
       ]
+      command = [
+        "redis-server",
+        "--appendonly", "yes",
+        "--save", "60", "1",
+        "--maxmemory", "512mb",
+        "--maxmemory-policy", "allkeys-lru"
+      ]
     },
     {
       name         = "vimbiso-pay-${var.environment}"
@@ -81,7 +88,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_BUSINESS_ID", value = var.django_env.whatsapp_business_id },
         { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_registration_flow_id },
         { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_company_registration_flow_id },
-        { name = "REDIS_URL", value = "redis://localhost:${var.redis_port}/0" }
+        { name = "REDIS_URL", value = "redis://redis:${var.redis_port}/0" }
       ]
       portMappings = [
         {
@@ -106,9 +113,9 @@ resource "aws_ecs_task_definition" "app" {
       healthCheck = {
         command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ || exit 1"]
         interval    = 30
-        timeout     = 10
+        timeout     = 5
         retries     = 3
-        startPeriod = 120
+        startPeriod = 60
       }
       mountPoints = [
         {

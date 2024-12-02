@@ -5,6 +5,14 @@ echo "Starting application..."
 echo "Environment: $DJANGO_ENV"
 echo "Port: $PORT"
 
+# Wait for Redis to be ready
+echo "Waiting for Redis to be ready..."
+until redis-cli -h redis ping; do
+  echo "Redis is unavailable - sleeping"
+  sleep 1
+done
+echo "Redis is ready!"
+
 # In ECS, we use container dependencies instead of waiting for Redis
 # The container won't start until Redis is healthy
 if [ "${DJANGO_ENV:-development}" = "production" ]; then
