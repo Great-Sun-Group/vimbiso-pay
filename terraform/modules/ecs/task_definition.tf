@@ -15,7 +15,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.25)
       cpu          = floor(var.task_cpu * 0.25)
-      user         = "999:999"  # Standard Redis UID:GID
+      user         = "redis:redis"  # Use redis user instead of UID
       portMappings = [
         {
           containerPort = var.redis_port
@@ -68,6 +68,7 @@ resource "aws_ecs_task_definition" "app" {
         "--maxmemory", "512mb",
         "--maxmemory-policy", "allkeys-lru",
         "--bind", "0.0.0.0",
+        "--dir", "/data",  # Explicitly set data directory
         "--no-appendfsync-on-rewrite", "yes",
         "--auto-aof-rewrite-percentage", "100",
         "--auto-aof-rewrite-min-size", "64mb",
