@@ -15,7 +15,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.25)
       cpu          = floor(var.task_cpu * 0.25)
-      user         = "redis:redis"  # Use redis user instead of UID
+      # Remove explicit user configuration to use default Redis Alpine user
       portMappings = [
         {
           containerPort = var.redis_port
