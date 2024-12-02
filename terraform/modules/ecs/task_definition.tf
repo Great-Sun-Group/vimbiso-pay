@@ -65,16 +65,12 @@ resource "aws_ecs_task_definition" "app" {
         {
           namespace = "net.core.somaxconn"
           value     = "1024"
-        },
-        {
-          namespace = "vm.overcommit_memory"
-          value     = "1"
         }
       ]
       command = [
         "sh",
         "-c",
-        "sysctl vm.overcommit_memory=1 || true && mkdir -p /redis && chown -R root:root /redis && redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --dir /redis"
+        "echo 1 > /proc/sys/vm/overcommit_memory || true && mkdir -p /redis && chown -R root:root /redis && redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --dir /redis"
       ]
     },
     {
