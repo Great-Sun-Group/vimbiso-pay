@@ -85,7 +85,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_BUSINESS_ID", value = var.django_env.whatsapp_business_id },
         { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_registration_flow_id },
         { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_company_registration_flow_id },
-        { name = "REDIS_URL", value = "redis://redis:${var.redis_port}/0" },  # Changed to use container name
+        { name = "REDIS_URL", value = "redis://redis:${var.redis_port}/0" },
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" }  # Temporarily set to DEBUG for more info
@@ -143,10 +143,7 @@ resource "aws_ecs_task_definition" "app" {
           value     = "1024"
         }
       ]
-      command = [
-        "sh", "-c",
-        "mkdir -p /app/data/{logs,db,static,media} && chmod -R 755 /app/data && chown -R appuser:appuser /app/data && ./start_app.sh"
-      ],
+      command = ["./start_app.sh"],
       # Run as appuser (UID 10001) to match Dockerfile and EFS access point
       user = "10001:10001"
     }
