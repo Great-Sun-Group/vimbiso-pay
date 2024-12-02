@@ -3,8 +3,8 @@ name: Deploy VimbisoPay
 on:
   push:
     branches:
-      - stage  # Automatically trigger on push to stage branch
-  workflow_dispatch:  # Manual trigger
+      - stage
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -50,22 +50,16 @@ jobs:
         id: init-backend
         run: |
           echo "Current environment: ${ENVIRONMENT}"
-
-          # Get AWS Account ID
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-          # Use AWS Account ID in bucket and table names
           BUCKET_NAME="vimbiso-pay-terraform-state-${ENVIRONMENT}-${AWS_ACCOUNT_ID}"
           TABLE_NAME="vimbiso-pay-terraform-state-lock-${ENVIRONMENT}-${AWS_ACCOUNT_ID}"
 
-          # Create S3 bucket if it doesn't exist
           if ! aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
             aws s3api create-bucket --bucket "$BUCKET_NAME" --create-bucket-configuration LocationConstraint=af-south-1
             aws s3api put-bucket-versioning --bucket "$BUCKET_NAME" --versioning-configuration Status=Enabled
             aws s3api put-bucket-encryption --bucket "$BUCKET_NAME" --server-side-encryption-configuration '{"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]}'
           fi
 
-          # Create DynamoDB table if it doesn't exist
           if ! aws dynamodb describe-table --table-name "$TABLE_NAME" >/dev/null 2>&1; then
             aws dynamodb create-table --table-name "$TABLE_NAME" \
               --attribute-definitions AttributeName=LockID,AttributeType=S \
@@ -100,13 +94,13 @@ jobs:
             done
           fi
 
-      - name: Deploy DNS and Network Infrastructure
+      - name: Deploy Base Infrastructure
         run: |
           cd terraform
-          # Deploy Route53 certificate and networking infrastructure
+          # Deploy networking and initial Route53 setup
           terraform plan -input=false -lock-timeout=20m \
-            -target=module.route53_cert \
             -target=module.networking \
+            -target=module.route53_cert \
             -out=phase1.tfplan
 
           terraform apply -input=false -lock-timeout=20m phase1.tfplan
@@ -118,9 +112,10 @@ jobs:
       - name: Deploy Core Infrastructure
         run: |
           cd terraform
-          # Deploy load balancer, IAM, and ECR
+          # Deploy load balancer, route53 DNS records, IAM, and ECR
           terraform plan -input=false -lock-timeout=20m \
             -target=module.loadbalancer \
+            -target=module.route53_dns \
             -target=module.iam \
             -target=module.ecr \
             -out=phase2.tfplan
@@ -156,11 +151,10 @@ jobs:
           TF_VAR_whatsapp_company_registration_flow_id: ${{ secrets.WHATSAPP_COMPANY_REGISTRATION_FLOW_ID }}
         run: |
           cd terraform
-          # Deploy ECS, EFS, and DNS records
+          # Deploy EFS and ECS
           terraform plan -input=false -lock-timeout=20m \
-            -target=module.ecs \
             -target=module.efs \
-            -target=module.route53_dns \
+            -target=module.ecs \
             -out=phase3.tfplan
 
           terraform apply -input=false -lock-timeout=20m phase3.tfplan
