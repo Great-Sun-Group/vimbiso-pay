@@ -168,8 +168,8 @@ jobs:
 
           while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
             SERVICE_JSON=$(aws ecs describe-services \
-              --cluster vimbiso-pay-cluster-$ENVIRONMENT \
-              --services vimbiso-pay-service-$ENVIRONMENT \
+              --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+              --service "vimbiso-pay-service-$ENVIRONMENT" \
               --query 'services[0]')
 
             PRIMARY_DEPLOYMENT=$(echo $SERVICE_JSON | jq -r '.deployments[] | select(.status == "PRIMARY")')
@@ -180,21 +180,29 @@ jobs:
 
             if [ "$FAILED_TASKS" -gt 0 ]; then
               echo "Failed tasks detected. Fetching logs..."
-              aws ecs list-tasks \
-                --cluster vimbiso-pay-cluster-$ENVIRONMENT \
-                --services vimbiso-pay-service-$ENVIRONMENT \
+              TASKS=$(aws ecs list-tasks \
+                --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+                --service-name "vimbiso-pay-service-$ENVIRONMENT" \
                 --desired-status STOPPED \
                 --query 'taskArns[]' \
-                --output text | while read -r TASK; do
-                  TASK_ID=${TASK##*/}
-                  echo "Logs for task $TASK_ID:"
-                  aws logs get-log-events \
-                    --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
-                    --log-stream-name "app/$TASK_ID" \
-                    --limit 100 \
-                    --query 'events[].message' \
-                    --output text || echo "No logs available"
+                --output text)
+
+              if [ ! -z "$TASKS" ]; then
+                echo "$TASKS" | tr ' ' '\n' | while read -r TASK; do
+                  if [ ! -z "$TASK" ]; then
+                    TASK_ID=${TASK##*/}
+                    echo "Logs for task $TASK_ID:"
+                    aws logs get-log-events \
+                      --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
+                      --log-stream-name "app/$TASK_ID" \
+                      --limit 100 \
+                      --query 'events[].message' \
+                      --output text || echo "No logs available"
+                  fi
                 done
+              else
+                echo "No stopped tasks found"
+              fi
               exit 1
             fi
 
