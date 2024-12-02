@@ -66,7 +66,7 @@ resource "aws_appautoscaling_policy" "requests" {
   target_tracking_scaling_policy_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ALBRequestCountPerTarget"
-      resource_label        = "${regex("app/[^/]+/[^/]+", var.alb_arn)[0]}/${regex("targetgroup/.+", var.target_group_arn)[0]}"
+      resource_label        = "app/vimbiso-pay-alb-${var.environment}/*/targetgroup/vimbiso-pay-tg-${var.environment}/*"
     }
     target_value = 1000  # Target requests per target
 
@@ -74,7 +74,7 @@ resource "aws_appautoscaling_policy" "requests" {
     scale_out_cooldown = 60   # 1 minute
   }
 
-  depends_on = [aws_appautoscaling_target.app, aws_ecs_service.app]
+  depends_on = [aws_ecs_service.app]
 }
 
 # CloudWatch Alarms for Auto Scaling
