@@ -144,7 +144,6 @@ resource "aws_ecs_task_definition" "app" {
     name = "app-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/app"
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.app_access_point_id
@@ -157,7 +156,6 @@ resource "aws_ecs_task_definition" "app" {
     name = "redis-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/redis"
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.redis_access_point_id
