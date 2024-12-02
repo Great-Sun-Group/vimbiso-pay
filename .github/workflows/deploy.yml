@@ -169,6 +169,12 @@ jobs:
             FAILED_TASKS=$(echo $PRIMARY_DEPLOYMENT | jq -r '.failedTasks')
             PENDING_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.pendingCount')
 
+            echo "Deployment Status:"
+            echo "  Running Count: $RUNNING_COUNT"
+            echo "  Desired Count: $DESIRED_COUNT"
+            echo "  Failed Tasks: $FAILED_TASKS"
+            echo "  Pending Count: $PENDING_COUNT"
+
             if [ "$FAILED_TASKS" -gt 0 ]; then
               echo "Failed tasks detected. Fetching logs..."
               TASKS=$(aws ecs list-tasks \
@@ -253,9 +259,8 @@ jobs:
                     fi
                   fi
                 done
-              else
-                echo "No stopped tasks found"
               fi
+              echo "Deployment failed due to task failures"
               exit 1
             fi
 
