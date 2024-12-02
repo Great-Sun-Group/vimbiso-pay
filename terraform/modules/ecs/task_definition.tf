@@ -59,10 +59,6 @@ resource "aws_ecs_task_definition" "app" {
         {
           namespace = "net.core.somaxconn"
           value     = "1024"
-        },
-        {
-          namespace = "vm.overcommit_memory"
-          value     = "1"
         }
       ]
       command = [
@@ -70,7 +66,11 @@ resource "aws_ecs_task_definition" "app" {
         "--appendonly", "yes",
         "--maxmemory", "512mb",
         "--maxmemory-policy", "allkeys-lru",
-        "--bind", "0.0.0.0"
+        "--bind", "0.0.0.0",
+        "--no-appendfsync-on-rewrite", "yes",
+        "--auto-aof-rewrite-percentage", "100",
+        "--auto-aof-rewrite-min-size", "64mb",
+        "--stop-writes-on-bgsave-error", "no"
       ]
     },
     {
