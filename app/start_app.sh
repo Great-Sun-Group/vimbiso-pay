@@ -1,15 +1,31 @@
 #!/bin/bash
 set -e
 
+echo "Starting application..."
+echo "Environment: $DJANGO_ENV"
+echo "Port: $PORT"
+
 # Function to wait for Redis
 wait_for_redis() {
     echo "Waiting for Redis to be ready..."
-    # Use nc to check Redis port instead of redis-cli
-    until nc -z localhost 6379; do
-        echo "Redis is unavailable - sleeping"
+    echo "Checking Redis at localhost:6379..."
+
+    local attempts=0
+    local max_attempts=30
+
+    while [ $attempts -lt $max_attempts ]; do
+        if nc -z localhost 6379; then
+            echo "Redis is ready!"
+            return 0
+        fi
+
+        attempts=$((attempts + 1))
+        echo "Redis not ready (attempt $attempts/$max_attempts) - sleeping 1s"
         sleep 1
     done
-    echo "Redis is ready!"
+
+    echo "Redis connection timeout after $max_attempts attempts"
+    return 1
 }
 
 # Wait for Redis to be ready
@@ -25,6 +41,8 @@ fi
 # Determine environment and set appropriate server command
 if [ "${DJANGO_ENV:-development}" = "production" ]; then
     echo "Starting Gunicorn server in production mode..."
+    echo "Workers: ${GUNICORN_WORKERS:-2}"
+
     # Using sync worker with preload for better memory efficiency
     exec gunicorn config.wsgi:application \
         --bind 0.0.0.0:${PORT:-8000} \
