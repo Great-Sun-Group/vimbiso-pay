@@ -87,7 +87,8 @@ resource "aws_iam_role_policy" "ecs_execution_extra" {
           "logs:PutLogEvents",
           "logs:CreateLogGroup",
           "elasticfilesystem:ClientMount",
-          "elasticfilesystem:ClientWrite"
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess"
         ]
         Resource = "*"
       }
