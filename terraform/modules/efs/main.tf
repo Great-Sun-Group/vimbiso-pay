@@ -31,15 +31,15 @@ resource "aws_efs_access_point" "app_data" {
   file_system_id = aws_efs_file_system.main.id
 
   posix_user {
-    gid = 0
-    uid = 0
+    gid = 10001  # Match container's appuser GID
+    uid = 10001  # Match container's appuser UID
   }
 
   root_directory {
     path = "/app"
     creation_info {
-      owner_gid   = 0
-      owner_uid   = 0
+      owner_gid   = 10001  # Match container's appuser GID
+      owner_uid   = 10001  # Match container's appuser UID
       permissions = "755"
     }
   }
@@ -54,15 +54,15 @@ resource "aws_efs_access_point" "redis_data" {
   file_system_id = aws_efs_file_system.main.id
 
   posix_user {
-    gid = 0
-    uid = 0
+    gid = 999  # Standard Redis GID
+    uid = 999  # Standard Redis UID
   }
 
   root_directory {
     path = "/redis"
     creation_info {
-      owner_gid   = 0
-      owner_uid   = 0
+      owner_gid   = 999  # Standard Redis GID
+      owner_uid   = 999  # Standard Redis UID
       permissions = "755"
     }
   }

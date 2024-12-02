@@ -15,6 +15,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.25)
       cpu          = floor(var.task_cpu * 0.25)
+      user         = "999:999"  # Standard Redis UID:GID
       portMappings = [
         {
           containerPort = var.redis_port
@@ -36,10 +37,10 @@ resource "aws_ecs_task_definition" "app" {
       }
       healthCheck = {
         command     = ["CMD-SHELL", "redis-cli -h localhost -p ${var.redis_port} ping || exit 1"]
-        interval    = 5
-        timeout     = 3
+        interval    = 30  # Increased interval
+        timeout     = 5
         retries     = 3
-        startPeriod = 10
+        startPeriod = 30  # Increased start period
       }
       mountPoints = [
         {
@@ -92,7 +93,9 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_BUSINESS_ID", value = var.django_env.whatsapp_business_id },
         { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_registration_flow_id },
         { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_company_registration_flow_id },
-        { name = "REDIS_URL", value = "redis://127.0.0.1:${var.redis_port}/0" }
+        { name = "REDIS_URL", value = "redis://127.0.0.1:${var.redis_port}/0" },
+        { name = "GUNICORN_WORKERS", value = "2" },
+        { name = "GUNICORN_TIMEOUT", value = "120" }
       ]
       portMappings = [
         {
@@ -147,7 +150,7 @@ resource "aws_ecs_task_definition" "app" {
           value     = "1024"
         }
       ]
-      # Run as appuser (UID 10001) to match Dockerfile
+      # Run as appuser (UID 10001) to match Dockerfile and EFS access point
       user = "10001:10001"
     }
   ])
