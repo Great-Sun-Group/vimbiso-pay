@@ -73,10 +73,16 @@ RUN apt-mark manual redis-tools && \
 COPY ./app /app
 
 # Create required directories with proper permissions
-RUN mkdir -p /app/data/logs /app/data/db && \
-    chown -R appuser:appuser /app && \
-    chmod -R 755 /app/data && \
-    chmod +x /app/start_app.sh
+RUN mkdir -p \
+    /app/data/logs \
+    /app/data/db \
+    /app/data/static \
+    /app/data/media \
+    && chown -R appuser:appuser /app \
+    && chmod -R 755 /app/data \
+    && chmod +x /app/start_app.sh \
+    && find /app/data -type d -exec chmod 755 {} \; \
+    && find /app/data -type f -exec chmod 644 {} \;
 
 # Switch to non-privileged user
 USER appuser
