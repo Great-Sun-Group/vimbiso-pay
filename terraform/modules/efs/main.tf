@@ -36,7 +36,7 @@ resource "aws_efs_access_point" "app_data" {
   }
 
   root_directory {
-    path = "/efs-vols/app-data"
+    path = "/app/data"
     creation_info {
       owner_gid   = 10001  # Match container's appuser GID
       owner_uid   = 10001  # Match container's appuser UID
@@ -59,7 +59,7 @@ resource "aws_efs_access_point" "redis_data" {
   }
 
   root_directory {
-    path = "/efs-vols/redis-data"
+    path = "/data"
     creation_info {
       owner_gid   = 999  # Alpine Redis group
       owner_uid   = 999  # Alpine Redis user
@@ -114,6 +114,14 @@ resource "aws_efs_file_system_policy" "main" {
           "elasticfilesystem:ClientRootAccess"
         ]
         Resource = aws_efs_file_system.main.arn
+        Condition = {
+          StringEquals = {
+            "elasticfilesystem:AccessPointArn": [
+              aws_efs_access_point.app_data.arn,
+              aws_efs_access_point.redis_data.arn
+            ]
+          }
+        }
       }
     ]
   })

@@ -37,7 +37,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/efs-vols/redis-data"
+          containerPath = "/data"
           readOnly     = false
         }
       ]
@@ -51,10 +51,19 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        mkdir -p /efs-vols/redis-data
-        chown -R redis:redis /efs-vols/redis-data
+        # Wait for EFS mount to be ready
+        until mount | grep -q '/data'; do
+          echo "Waiting for EFS volume to be mounted..."
+          sleep 2
+        done
+
+        # Ensure Redis data directory exists and has correct permissions
+        mkdir -p /data
+        chown -R redis:redis /data
+        chmod 755 /data
+
         echo "[Redis] Starting Redis server..."
-        redis-server --appendonly yes --protected-mode no --bind 0.0.0.0 --dir /efs-vols/redis-data
+        exec redis-server --appendonly yes --protected-mode no --bind 0.0.0.0 --dir /data
         EOT
       ]
       healthCheck = {
@@ -124,7 +133,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "app-data"
-          containerPath = "/efs-vols/app-data"
+          containerPath = "/app/data"
           readOnly     = false
         }
       ]
@@ -132,6 +141,17 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
+        # Wait for EFS mount to be ready
+        until mount | grep -q '/app/data'; do
+          echo "Waiting for EFS volume to be mounted..."
+          sleep 2
+        done
+
+        # Ensure app data directory exists and has correct permissions
+        mkdir -p /app/data
+        chown -R 10001:10001 /app/data
+        chmod 755 /app/data
+
         echo "[App] Waiting for Redis..."
         timeout=60
         until redis-cli -h localhost ping > /dev/null 2>&1; do
@@ -160,7 +180,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "app-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/efs-vols/app-data"
+      root_directory = "/"
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.app_access_point_id
@@ -173,7 +193,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "redis-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/efs-vols/redis-data"
+      root_directory = "/"
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.redis_access_point_id
