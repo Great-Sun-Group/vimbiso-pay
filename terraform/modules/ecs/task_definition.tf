@@ -14,6 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
+      user         = "redis:redis"
       portMappings = [
         {
           containerPort = var.redis_port
@@ -41,10 +42,21 @@ resource "aws_ecs_task_definition" "app" {
         }
       ]
       command = [
-        "redis-server",
-        "--dir", "/data",
-        "--appendonly", "yes",
-        "--protected-mode", "no"
+        "sh",
+        "-c",
+        <<-EOT
+        echo "[Redis] Checking data directory..."
+        if [ ! -d /data ]; then
+            echo "[Redis] ERROR: /data directory does not exist"
+            exit 1
+        fi
+        if [ ! -w /data ]; then
+            echo "[Redis] ERROR: /data directory is not writable"
+            exit 1
+        fi
+        echo "[Redis] Data directory OK, starting server..."
+        exec redis-server --dir /data --appendonly yes --protected-mode no
+        EOT
       ]
     },
     {
@@ -112,8 +124,6 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        set -e
-
         echo "[App] Waiting for Redis..."
         timeout=60
         until redis-cli ping > /dev/null 2>&1; do
