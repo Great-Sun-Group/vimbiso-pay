@@ -36,7 +36,7 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "redis-cli -h localhost ping && redis-cli -h localhost info | grep -q '^used_memory:' && redis-cli -h localhost info clients | grep -q '^connected_clients:' && redis-cli -h localhost info stats | grep -q '^total_commands_processed:' || exit 1"]
+        command     = ["CMD-SHELL", "redis-cli ping"]
         interval    = 15
         timeout     = 10
         retries     = 3
@@ -57,79 +57,32 @@ resource "aws_ecs_task_definition" "app" {
 
         echo "Starting Redis initialization..."
 
-        # Wait for EFS mount to be ready
-        until mountpoint -q /redis; do
-          echo "Waiting for EFS mount..."
-          sleep 2
-        done
-
-        echo "EFS mount ready at /redis"
+        # Wait for EFS mount
+        echo "Checking EFS mount..."
+        if ! mountpoint -q /redis; then
+          echo "ERROR: /redis is not mounted"
+          ls -la /
+          ls -la /redis || true
+          exit 1
+        fi
+        echo "EFS mount verified at /redis"
         ls -la /redis
 
-        # Create Redis config with optimized settings
+        # Create minimal Redis config
         cat > /tmp/redis.conf << EOF
-        # Memory settings
-        maxmemory 512mb
-        maxmemory-policy allkeys-lru
-        maxmemory-samples 10
-
-        # Initial persistence settings (AOF disabled on startup)
-        appendonly no
-        appendfsync everysec
-        no-appendfsync-on-rewrite yes
-        auto-aof-rewrite-percentage 100
-        auto-aof-rewrite-min-size 64mb
-
-        # Performance settings
-        bind 0.0.0.0
         dir /redis
         port ${var.redis_port}
-        activerehashing yes
-        lazyfree-lazy-eviction yes
-        lazyfree-lazy-expire yes
-        lazyfree-lazy-server-del yes
-        replica-lazy-flush yes
-        dynamic-hz yes
-
-        # Connection settings
-        timeout 0
-        tcp-keepalive 60
+        bind 0.0.0.0
         protected-mode no
-
-        # Enhanced logging settings
         loglevel debug
         logfile /redis/redis.log
-        slowlog-log-slower-than 10000
-        slowlog-max-len 128
-
-        # Disable RDB persistence
-        save ""
-
-        # Ignore warnings that don't affect functionality
-        ignore-warnings ARM64-COW-BUG
         EOF
 
         echo "Redis config created:"
         cat /tmp/redis.conf
 
         echo "Starting Redis server..."
-        redis-server /tmp/redis.conf --loglevel debug
-
-        # Comprehensive Redis readiness check
-        echo "Verifying Redis is fully operational..."
-        until redis-cli -h localhost ping > /dev/null && \
-              redis-cli -h localhost info | grep -q '^used_memory:' && \
-              redis-cli -h localhost info clients | grep -q '^connected_clients:' && \
-              redis-cli -h localhost info stats | grep -q '^total_commands_processed:'; do
-          echo "Waiting for Redis to be fully operational..."
-          sleep 2
-          redis-cli -h localhost ping || echo "Ping failed"
-          redis-cli -h localhost info || echo "Info failed"
-        done
-        echo "Redis is fully operational and ready for connections"
-
-        # Keep container running
-        tail -f /redis/redis.log
+        exec redis-server /tmp/redis.conf --loglevel debug
         EOT
       ]
     },
@@ -181,7 +134,7 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ || true && redis-cli -h redis info | grep -q '^used_memory:' || exit 1"]
+        command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ || true && redis-cli -h redis ping | grep -q PONG || exit 1"]
         interval    = 30
         timeout     = 10
         retries     = 3
