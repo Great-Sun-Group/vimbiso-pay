@@ -56,9 +56,6 @@ resource "aws_ecs_task_definition" "app" {
         retries     = 3
         startPeriod = 10
       }
-      dockerLabels = {
-        "com.amazonaws.ecs.task-efs-volume" = "true"
-      }
     },
     {
       name         = "vimbiso-pay-${var.environment}"
@@ -147,9 +144,6 @@ resource "aws_ecs_task_definition" "app" {
           condition     = "HEALTHY"
         }
       ]
-      dockerLabels = {
-        "com.amazonaws.ecs.task-efs-volume" = "true"
-      }
     }
   ])
 
