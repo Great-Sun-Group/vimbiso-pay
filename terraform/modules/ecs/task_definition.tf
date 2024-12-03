@@ -37,7 +37,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/data"
+          containerPath = "/redis"
           readOnly     = false
         }
       ]
@@ -46,18 +46,18 @@ resource "aws_ecs_task_definition" "app" {
         "-c",
         <<-EOT
         echo "[Redis] Checking data directory..."
-        if [ ! -d /data ]; then
-            echo "[Redis] ERROR: /data directory does not exist"
+        if [ ! -d /redis ]; then
+            echo "[Redis] ERROR: /redis directory does not exist"
             ls -la /
             exit 1
         fi
-        if [ ! -w /data ]; then
-            echo "[Redis] ERROR: /data directory is not writable"
-            ls -la /data
+        if [ ! -w /redis ]; then
+            echo "[Redis] ERROR: /redis directory is not writable"
+            ls -la /redis
             exit 1
         fi
         echo "[Redis] Data directory OK, starting server..."
-        exec redis-server --dir /data --appendonly yes --protected-mode no
+        exec redis-server --dir /redis --appendonly yes --protected-mode no
         EOT
       ]
     },
