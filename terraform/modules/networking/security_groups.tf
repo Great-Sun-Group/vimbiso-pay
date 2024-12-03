@@ -4,14 +4,6 @@ resource "aws_security_group" "vpc_endpoints" {
   description = "Security group for VPC endpoints"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    from_port       = 2049
-    to_port         = 2049
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
-    description     = "Allow NFS traffic for EFS endpoint"
-  }
-
   egress {
     from_port   = 0
     to_port     = 0
@@ -69,46 +61,12 @@ resource "aws_security_group" "ecs_tasks" {
   description = "Allow inbound access from the ALB only"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    protocol        = "tcp"
-    from_port       = 8000
-    to_port         = 8000
-    security_groups = [aws_security_group.alb.id]
-    description     = "Allow inbound traffic from ALB"
-  }
-
-  ingress {
-    protocol    = "tcp"
-    from_port   = 6379
-    to_port     = 6379
-    self        = true
-    description = "Allow Redis traffic between tasks"
-  }
-
   egress {
     protocol    = "-1"
     from_port   = 0
     to_port     = 0
     cidr_blocks = ["0.0.0.0/0"]
     description = "Allow all outbound traffic"
-  }
-
-  # Explicit egress rule for EFS
-  egress {
-    protocol        = "tcp"
-    from_port       = 2049
-    to_port         = 2049
-    security_groups = [aws_security_group.efs.id]
-    description     = "Allow outbound NFS traffic to EFS"
-  }
-
-  # Explicit egress rule for EFS endpoint
-  egress {
-    protocol        = "tcp"
-    from_port       = 2049
-    to_port         = 2049
-    security_groups = [aws_security_group.vpc_endpoints.id]
-    description     = "Allow outbound NFS traffic to EFS endpoint"
   }
 
   lifecycle {
@@ -126,16 +84,6 @@ resource "aws_security_group" "efs" {
   description = "Allow inbound NFS traffic from ECS tasks"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description     = "NFS from ECS tasks"
-    from_port       = 2049
-    to_port         = 2049
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
-  }
-
-  # No explicit egress rules needed - return traffic is allowed by the stateful nature of security groups
-
   lifecycle {
     create_before_destroy = true
   }
@@ -145,7 +93,47 @@ resource "aws_security_group" "efs" {
   })
 }
 
-# Add security group rules for VPC endpoints
+# Security Group Rules
+resource "aws_security_group_rule" "ecs_alb_ingress" {
+  type                     = "ingress"
+  from_port                = 8000
+  to_port                  = 8000
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.ecs_tasks.id
+  source_security_group_id = aws_security_group.alb.id
+  description             = "Allow inbound traffic from ALB"
+}
+
+resource "aws_security_group_rule" "ecs_redis_ingress" {
+  type              = "ingress"
+  from_port         = 6379
+  to_port           = 6379
+  protocol          = "tcp"
+  security_group_id = aws_security_group.ecs_tasks.id
+  self              = true
+  description       = "Allow Redis traffic between tasks"
+}
+
+resource "aws_security_group_rule" "efs_nfs_ingress" {
+  type                     = "ingress"
+  from_port                = 2049
+  to_port                  = 2049
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.efs.id
+  source_security_group_id = aws_security_group.ecs_tasks.id
+  description             = "NFS from ECS tasks"
+}
+
+resource "aws_security_group_rule" "vpc_endpoints_nfs_ingress" {
+  type                     = "ingress"
+  from_port                = 2049
+  to_port                  = 2049
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.vpc_endpoints.id
+  source_security_group_id = aws_security_group.ecs_tasks.id
+  description             = "Allow NFS traffic for EFS endpoint"
+}
+
 resource "aws_security_group_rule" "vpc_endpoints_s3" {
   type              = "ingress"
   from_port         = 443
@@ -163,5 +151,5 @@ resource "aws_security_group_rule" "vpc_endpoints_services" {
   protocol                 = "tcp"
   security_group_id        = aws_security_group.vpc_endpoints.id
   source_security_group_id = aws_security_group.ecs_tasks.id
-  description             = "Allow HTTPS inbound for AWS services VPC endpoints (ECR, CloudWatch Logs)"
+  description             = "Allow HTTPS inbound for AWS services VPC endpoints"
 }
