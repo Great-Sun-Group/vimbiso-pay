@@ -85,8 +85,8 @@ DATABASES = {
     }
 }
 
-# Redis configuration - Use environment variable with localhost fallback
-REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+# Redis configuration - Use environment variable with redis container name as default
+REDIS_URL = env("REDIS_URL", default="redis://redis:6379/0")
 
 CACHES = {
     "default": {
