@@ -37,7 +37,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/efs-vols/redis-data"
+          containerPath = "/data"  # Mount directly to Redis data directory
           readOnly     = false
         }
       ]
@@ -45,21 +45,7 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        echo "[Redis] Starting initialization..."
-        echo "[Redis] Current directory structure:"
-        ls -la /
-
-        echo "[Redis] Creating data directory symlink..."
-        mkdir -p /efs-vols/redis-data
-        ln -s /efs-vols/redis-data /data
-
-        echo "[Redis] Checking data directory:"
-        ls -la /data
-
-        echo "[Redis] Current user and group:"
-        id
-
-        echo "[Redis] Starting Redis server..."
+        echo "[Redis] Starting Redis server with mounted EFS volume..."
         exec redis-server --appendonly yes --protected-mode no --bind 0.0.0.0
         EOT
       ]
@@ -128,7 +114,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "app-data"
-          containerPath = "/efs-vols/app-data"
+          containerPath = "/app/data"  # Mount directly to app data directory
           readOnly     = false
         }
       ]
@@ -136,10 +122,6 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        echo "[App] Creating data directory symlink..."
-        mkdir -p /efs-vols/app-data
-        ln -s /efs-vols/app-data /app/data
-
         echo "[App] Waiting for Redis..."
         timeout=60
         until redis-cli -h redis.vimbiso-pay-${var.environment}.local ping > /dev/null 2>&1; do
@@ -169,7 +151,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "app-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/"
+      root_directory = "/efs-vols/app-data"  # Match access point path
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.app_access_point_id
@@ -182,7 +164,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "redis-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/"
+      root_directory = "/efs-vols/redis-data"  # Match access point path
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.redis_access_point_id

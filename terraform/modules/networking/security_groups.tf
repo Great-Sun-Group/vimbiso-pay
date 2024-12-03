@@ -56,13 +56,13 @@ resource "aws_security_group" "ecs_tasks" {
     description = "Allow Redis traffic between tasks"
   }
 
-  # Add explicit rule for NFS traffic to EFS
-  egress {
+  # Allow NFS traffic between tasks
+  ingress {
     protocol    = "tcp"
     from_port   = 2049
     to_port     = 2049
-    cidr_blocks = [aws_vpc.main.cidr_block]
-    description = "Allow NFS traffic to EFS"
+    self        = true
+    description = "Allow NFS traffic between tasks"
   }
 
   egress {
@@ -97,6 +97,15 @@ resource "aws_security_group" "efs" {
     description     = "Allow NFS from ECS tasks"
   }
 
+  # Add egress rule to allow return traffic
+  egress {
+    protocol        = "tcp"
+    from_port       = 0
+    to_port         = 65535
+    security_groups = [aws_security_group.ecs_tasks.id]
+    description     = "Allow return traffic to ECS tasks"
+  }
+
   lifecycle {
     create_before_destroy = true
   }
@@ -114,14 +123,7 @@ resource "aws_security_group" "vpc_endpoints" {
   description = "Security group for VPC endpoints"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    from_port       = 2049
-    to_port         = 2049
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
-    description     = "Allow NFS traffic from ECS tasks"
-  }
-
+  # Allow HTTPS from VPC CIDR
   ingress {
     from_port   = 443
     to_port     = 443
@@ -130,12 +132,13 @@ resource "aws_security_group" "vpc_endpoints" {
     description = "Allow HTTPS from VPC CIDR"
   }
 
+  # Allow all traffic from ECS tasks
   ingress {
-    from_port       = 443
-    to_port         = 443
+    from_port       = 0
+    to_port         = 65535
     protocol        = "tcp"
     security_groups = [aws_security_group.ecs_tasks.id]
-    description     = "Allow HTTPS from ECS tasks"
+    description     = "Allow all TCP traffic from ECS tasks"
   }
 
   egress {

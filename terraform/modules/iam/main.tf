@@ -17,7 +17,11 @@ resource "aws_iam_policy" "permission_boundary" {
           "logs:PutLogEvents",
           "logs:CreateLogGroup",
           "elasticfilesystem:ClientMount",
-          "elasticfilesystem:ClientWrite"
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess",
+          "elasticfilesystem:DescribeFileSystems",
+          "elasticfilesystem:DescribeMountTargets",
+          "elasticfilesystem:DescribeAccessPoints"
         ]
         Resource = "*"
       },
@@ -86,7 +90,11 @@ resource "aws_iam_role_policy" "ecs_execution_extra" {
           "logs:PutLogEvents",
           "logs:CreateLogGroup",
           "elasticfilesystem:ClientMount",
-          "elasticfilesystem:ClientWrite"
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess",
+          "elasticfilesystem:DescribeFileSystems",
+          "elasticfilesystem:DescribeMountTargets",
+          "elasticfilesystem:DescribeAccessPoints"
         ]
         Resource = "*"
       }
@@ -150,11 +158,24 @@ resource "aws_iam_role_policy" "ecs_task_efs" {
         Effect = "Allow"
         Action = [
           "elasticfilesystem:ClientMount",
-          "elasticfilesystem:ClientWrite"
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess",
+          "elasticfilesystem:DescribeFileSystems",
+          "elasticfilesystem:DescribeMountTargets",
+          "elasticfilesystem:DescribeAccessPoints"
         ]
         Resource = [
           var.efs_file_system_arn,
-          "${var.efs_file_system_arn}/*",
+          "${var.efs_file_system_arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite"
+        ]
+        Resource = [
           var.app_access_point_arn,
           var.redis_access_point_arn
         ]
