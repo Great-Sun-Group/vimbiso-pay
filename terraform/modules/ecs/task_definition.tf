@@ -13,8 +13,8 @@ resource "aws_ecs_task_definition" "app" {
       name         = "redis"
       image        = "redis:7-alpine"
       essential    = true
-      memory       = floor(var.task_memory * 0.35)  # Increased to 35%
-      cpu          = floor(var.task_cpu * 0.35)     # Increased to 35%
+      memory       = floor(var.task_memory * 0.35)
+      cpu          = floor(var.task_cpu * 0.35)
       user         = "redis:redis"
       portMappings = [
         {
@@ -22,11 +22,6 @@ resource "aws_ecs_task_definition" "app" {
           hostPort     = var.redis_port
           protocol      = "tcp"
         }
-      ]
-      environment = [
-        { name = "LANG", value = "en_US.UTF-8" },
-        { name = "LANGUAGE", value = "en_US:en" },
-        { name = "LC_ALL", value = "en_US.UTF-8" }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -41,30 +36,17 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD", "redis-cli", "ping"]  # Simplified health check
-        interval    = 5         # More frequent checks
-        timeout     = 2         # Shorter timeout
+        command     = ["CMD", "redis-cli", "ping"]
+        interval    = 5
+        timeout     = 2
         retries     = 3
-        startPeriod = 5        # Shorter start period
+        startPeriod = 5
       }
       mountPoints = [
         {
           sourceVolume  = "redis-data"
           containerPath = "/data"
           readOnly     = false
-        }
-      ]
-      ulimits = [
-        {
-          name = "nofile"
-          softLimit = 65536
-          hardLimit = 65536
-        }
-      ]
-      systemControls = [
-        {
-          namespace = "net.core.somaxconn"
-          value     = "1024"
         }
       ]
       command = [
@@ -141,8 +123,8 @@ resource "aws_ecs_task_definition" "app" {
       name         = "vimbiso-pay-${var.environment}"
       image        = var.docker_image
       essential    = true
-      memory       = floor(var.task_memory * 0.65)  # Adjusted to complement Redis
-      cpu          = floor(var.task_cpu * 0.65)     # Adjusted to complement Redis
+      memory       = floor(var.task_memory * 0.65)
+      cpu          = floor(var.task_cpu * 0.65)
       environment  = [
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_env.django_secret },
@@ -159,6 +141,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
+        { name = "REDIS_URL", value = "redis://redis:6379/0" },  # Use container name instead of localhost
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" }
@@ -188,7 +171,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 30
         timeout     = 5
         retries     = 3
-        startPeriod = 60  # Reduced to fit within service grace period
+        startPeriod = 60
       }
       mountPoints = [
         {
@@ -200,7 +183,7 @@ resource "aws_ecs_task_definition" "app" {
       dependsOn = [
         {
           containerName = "redis"
-          condition     = "START"  # Changed from HEALTHY to START to avoid timing issues
+          condition     = "START"
         }
       ]
       command = [

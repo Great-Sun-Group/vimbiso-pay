@@ -5,6 +5,10 @@ echo "Starting application..."
 echo "Environment: $DJANGO_ENV"
 echo "Port: $PORT"
 
+# Extract Redis host from REDIS_URL or fallback to localhost
+REDIS_HOST=$(echo "${REDIS_URL:-redis://localhost:6379/0}" | sed -E 's|redis://([^:/]+).*|\1|')
+echo "Using Redis host: $REDIS_HOST"
+
 # Wait for Redis to be ready with exponential backoff and better logging
 echo "Waiting for Redis to be ready..."
 max_attempts=20  # Increased from 10
@@ -15,7 +19,7 @@ while true; do
     if [ $attempt -gt $max_attempts ]; then
         echo "Redis is still unavailable after $max_attempts attempts - giving up"
         echo "Last Redis connection attempt output:"
-        redis-cli -h localhost info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
+        redis-cli -h "$REDIS_HOST" info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
         echo "Redis process status:"
         ps aux | grep redis-server
         echo "Redis logs (last 50 lines):"
@@ -29,23 +33,23 @@ while true; do
 
     echo "Attempting Redis connection (attempt $attempt/$max_attempts, waiting ${wait_time}s)..."
 
-    if redis-cli -h localhost info > /dev/null 2>&1; then
+    if redis-cli -h "$REDIS_HOST" info > /dev/null 2>&1; then
         echo "Redis connection successful!"
         echo "Redis server info:"
-        redis-cli -h localhost info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
+        redis-cli -h "$REDIS_HOST" info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
         echo "Redis data directory:"
-        redis-cli -h localhost config get dir
+        redis-cli -h "$REDIS_HOST" config get dir
         echo "Redis persistence status:"
-        redis-cli -h localhost config get appendonly
+        redis-cli -h "$REDIS_HOST" config get appendonly
         echo "Redis memory settings:"
-        redis-cli -h localhost config get maxmemory
-        redis-cli -h localhost config get maxmemory-policy
+        redis-cli -h "$REDIS_HOST" config get maxmemory
+        redis-cli -h "$REDIS_HOST" config get maxmemory-policy
         echo "Redis client list:"
-        redis-cli -h localhost client list
+        redis-cli -h "$REDIS_HOST" client list
         break
     else
         echo "Redis connection failed. Server response:"
-        redis-cli -h localhost ping || true
+        redis-cli -h "$REDIS_HOST" ping || true
         echo "Checking Redis process status..."
         ps aux | grep redis-server || true
         echo "Checking Redis port status:"
