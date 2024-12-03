@@ -45,7 +45,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/data"
+          containerPath = "/redis"
           readOnly     = false
         }
       ]
@@ -58,21 +58,13 @@ resource "aws_ecs_task_definition" "app" {
         echo "Starting Redis initialization..."
 
         # Wait for EFS mount to be ready
-        until mountpoint -q /data; do
+        until mountpoint -q /redis; do
           echo "Waiting for EFS mount..."
           sleep 2
         done
 
-        echo "EFS mount ready at /data"
-        ls -la /data
-
-        # Verify directory permissions
-        mkdir -p /data
-        chown redis:redis /data
-        chmod 755 /data
-
-        echo "Directory permissions set"
-        ls -la /data
+        echo "EFS mount ready at /redis"
+        ls -la /redis
 
         # Create Redis config with optimized settings
         cat > /tmp/redis.conf << EOF
@@ -90,7 +82,7 @@ resource "aws_ecs_task_definition" "app" {
 
         # Performance settings
         bind 0.0.0.0
-        dir /data
+        dir /redis
         port ${var.redis_port}
         activerehashing yes
         lazyfree-lazy-eviction yes
@@ -106,7 +98,7 @@ resource "aws_ecs_task_definition" "app" {
 
         # Enhanced logging settings
         loglevel debug
-        logfile /data/redis.log
+        logfile /redis/redis.log
         slowlog-log-slower-than 10000
         slowlog-max-len 128
 
@@ -137,7 +129,7 @@ resource "aws_ecs_task_definition" "app" {
         echo "Redis is fully operational and ready for connections"
 
         # Keep container running
-        tail -f /data/redis.log
+        tail -f /redis/redis.log
         EOT
       ]
     },
