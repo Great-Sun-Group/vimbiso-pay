@@ -15,7 +15,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.25)
       cpu          = floor(var.task_cpu * 0.25)
-      user         = "root"
+      user         = "root"  # Temporarily use root to set up permissions
       portMappings = [
         {
           containerPort = var.redis_port
@@ -65,13 +65,27 @@ resource "aws_ecs_task_definition" "app" {
         {
           namespace = "net.core.somaxconn"
           value     = "1024"
+        },
+        {
+          namespace = "vm.overcommit_memory"
+          value     = "1"
         }
       ]
       command = [
         "sh",
         "-c",
-        "mkdir -p /redis && chown -R redis:redis /redis && gosu redis redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --dir /redis --port ${var.redis_port}"
+        <<-EOT
+        set -e
+        apk add --no-cache shadow
+        mkdir -p /redis
+        chown -R redis:redis /redis
+        sysctl vm.overcommit_memory=1 || true
+        echo never > /sys/kernel/mm/transparent_hugepage/enabled || true
+        su-exec redis redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --dir /redis --port ${var.redis_port}
+        EOT
       ]
+      dockerSecurityOptions = ["no-new-privileges"]
+      privileged           = true  # Needed for sysctl
     },
     {
       name         = "vimbiso-pay-${var.environment}"
@@ -158,6 +172,7 @@ resource "aws_ecs_task_definition" "app" {
           value     = "1024"
         }
       ]
+      dockerSecurityOptions = ["no-new-privileges"]
     }
   ])
 
