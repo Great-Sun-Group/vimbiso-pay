@@ -56,6 +56,9 @@ resource "aws_ecs_task_definition" "app" {
         retries     = 3
         startPeriod = 10
       }
+      dockerLabels = {
+        "com.amazonaws.ecs.task-efs-volume" = "true"
+      }
     },
     {
       name         = "vimbiso-pay-${var.environment}"
@@ -82,7 +85,8 @@ resource "aws_ecs_task_definition" "app" {
         { name = "REDIS_URL", value = "redis://localhost:${var.redis_port}/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
-        { name = "LC_ALL", value = "en_US.UTF-8" }
+        { name = "LC_ALL", value = "en_US.UTF-8" },
+        { name = "AWS_REGION", value = var.aws_region }  # Add AWS region for EFS
       ]
       portMappings = [
         {
@@ -143,6 +147,9 @@ resource "aws_ecs_task_definition" "app" {
           condition     = "HEALTHY"
         }
       ]
+      dockerLabels = {
+        "com.amazonaws.ecs.task-efs-volume" = "true"
+      }
     }
   ])
 
@@ -150,6 +157,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "app-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
+      root_directory = "/"  # Use root and let access point handle the path
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.app_access_point_id
@@ -162,6 +170,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "redis-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
+      root_directory = "/"  # Use root and let access point handle the path
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.redis_access_point_id
