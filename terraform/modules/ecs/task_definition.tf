@@ -65,10 +65,6 @@ resource "aws_ecs_task_definition" "app" {
         {
           namespace = "net.core.somaxconn"
           value     = "1024"
-        },
-        {
-          namespace = "vm.overcommit_memory"
-          value     = "1"
         }
       ]
       command = [
@@ -76,18 +72,31 @@ resource "aws_ecs_task_definition" "app" {
         "-c",
         <<-EOT
         set -e
-        echo never > /sys/kernel/mm/transparent_hugepage/enabled || true
-        exec redis-server \
-          --appendonly yes \
-          --maxmemory 256mb \
-          --maxmemory-policy allkeys-lru \
-          --bind 0.0.0.0 \
-          --dir /data \
-          --port ${var.redis_port}
+        # Create Redis config with optimized settings
+        cat > /tmp/redis.conf << 'EOF'
+        appendonly yes
+        maxmemory 256mb
+        maxmemory-policy allkeys-lru
+        bind 0.0.0.0
+        dir /data
+        port ${var.redis_port}
+        # Memory optimization settings
+        activerehashing yes
+        lazyfree-lazy-eviction yes
+        lazyfree-lazy-expire yes
+        lazyfree-lazy-server-del yes
+        replica-lazy-flush yes
+        dynamic-hz yes
+        maxmemory-samples 10
+        # Performance tuning
+        io-threads 2
+        io-threads-do-reads yes
+        EOF
+
+        exec redis-server /tmp/redis.conf
         EOT
       ]
       dockerSecurityOptions = ["no-new-privileges"]
-      privileged           = true  # Needed for sysctl
     },
     {
       name         = "vimbiso-pay-${var.environment}"
