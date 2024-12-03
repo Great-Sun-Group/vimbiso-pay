@@ -12,7 +12,7 @@ resource "aws_ecs_task_definition" "app" {
     {
       name         = "redis"
       image        = "redis:7-alpine"
-      essential    = true
+      essential    = true  # Keep essential since app needs Redis
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
       user         = "redis:redis"
@@ -40,7 +40,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 5
         timeout     = 2
         retries     = 3
-        startPeriod = 5
+        startPeriod = 10  # Short start period since Redis starts quickly
       }
       mountPoints = [
         {
@@ -53,7 +53,7 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        set -ex  # Add -x for debug output
+        set -ex
 
         echo "Starting Redis initialization..."
 
@@ -141,7 +141,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
-        { name = "REDIS_URL", value = "redis://redis:6379/0" },  # Use container name instead of localhost
+        { name = "REDIS_URL", value = "redis://redis:6379/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" }
@@ -167,11 +167,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ || exit 1"]
+        command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ && redis-cli -h redis ping | grep -q PONG || exit 1"]
         interval    = 30
         timeout     = 5
         retries     = 3
-        startPeriod = 60
+        startPeriod = 120  # Increased to allow for Redis retries
       }
       mountPoints = [
         {
@@ -183,7 +183,7 @@ resource "aws_ecs_task_definition" "app" {
       dependsOn = [
         {
           containerName = "redis"
-          condition     = "START"
+          condition     = "HEALTHY"  # Wait for Redis to be healthy
         }
       ]
       command = [
