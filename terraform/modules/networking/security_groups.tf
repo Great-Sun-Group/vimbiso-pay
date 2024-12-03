@@ -56,13 +56,12 @@ resource "aws_security_group" "ecs_tasks" {
     description = "Allow Redis traffic between tasks"
   }
 
-  # Allow NFS traffic between tasks
+  # Allow all traffic within the security group
   ingress {
-    protocol    = "tcp"
-    from_port   = 2049
-    to_port     = 2049
-    self        = true
-    description = "Allow NFS traffic between tasks"
+    protocol  = -1
+    from_port = 0
+    to_port   = 0
+    self      = true
   }
 
   egress {
@@ -79,8 +78,6 @@ resource "aws_security_group" "ecs_tasks" {
   tags = merge(var.tags, {
     Name = "vimbiso-pay-ecs-tasks-${var.environment}"
   })
-
-  depends_on = [aws_security_group.alb]
 }
 
 # EFS Security Group
@@ -89,6 +86,7 @@ resource "aws_security_group" "efs" {
   description = "Security group for EFS mount targets"
   vpc_id      = aws_vpc.main.id
 
+  # Allow NFS traffic from ECS tasks
   ingress {
     protocol        = "tcp"
     from_port       = 2049
@@ -97,13 +95,20 @@ resource "aws_security_group" "efs" {
     description     = "Allow NFS from ECS tasks"
   }
 
-  # Add egress rule to allow return traffic
+  # Allow NFS traffic from the VPC CIDR
+  ingress {
+    protocol    = "tcp"
+    from_port   = 2049
+    to_port     = 2049
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow NFS from VPC CIDR"
+  }
+
   egress {
-    protocol        = "tcp"
-    from_port       = 0
-    to_port         = 65535
-    security_groups = [aws_security_group.ecs_tasks.id]
-    description     = "Allow return traffic to ECS tasks"
+    protocol    = "-1"
+    from_port   = 0
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   lifecycle {
@@ -113,8 +118,6 @@ resource "aws_security_group" "efs" {
   tags = merge(var.tags, {
     Name = "vimbiso-pay-efs-${var.environment}"
   })
-
-  depends_on = [aws_security_group.ecs_tasks]
 }
 
 # VPC Endpoints Security Group
@@ -123,22 +126,12 @@ resource "aws_security_group" "vpc_endpoints" {
   description = "Security group for VPC endpoints"
   vpc_id      = aws_vpc.main.id
 
-  # Allow HTTPS from VPC CIDR
   ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.main.cidr_block]
-    description = "Allow HTTPS from VPC CIDR"
-  }
-
-  # Allow all traffic from ECS tasks
-  ingress {
-    from_port       = 0
-    to_port         = 65535
+    from_port       = 443
+    to_port         = 443
     protocol        = "tcp"
     security_groups = [aws_security_group.ecs_tasks.id]
-    description     = "Allow all TCP traffic from ECS tasks"
+    description     = "Allow HTTPS from ECS tasks"
   }
 
   egress {
@@ -151,6 +144,4 @@ resource "aws_security_group" "vpc_endpoints" {
   tags = merge(var.tags, {
     Name = "vimbiso-pay-vpc-endpoints-${var.environment}"
   })
-
-  depends_on = [aws_security_group.ecs_tasks]
 }
