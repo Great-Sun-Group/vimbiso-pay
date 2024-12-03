@@ -14,7 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "redis:redis"
+      user         = "999:999"  # Alpine Redis user/group
       portMappings = [
         {
           containerPort = var.redis_port
@@ -48,10 +48,12 @@ resource "aws_ecs_task_definition" "app" {
         echo "[Redis] Checking data directory..."
         if [ ! -d /data ]; then
             echo "[Redis] ERROR: /data directory does not exist"
+            ls -la /
             exit 1
         fi
         if [ ! -w /data ]; then
             echo "[Redis] ERROR: /data directory is not writable"
+            ls -la /data
             exit 1
         fi
         echo "[Redis] Data directory OK, starting server..."
@@ -81,7 +83,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
-        { name = "REDIS_URL", value = "redis://localhost:6379/0" },
+        { name = "REDIS_URL", value = "redis://redis:6379/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" }
