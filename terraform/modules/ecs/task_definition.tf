@@ -140,6 +140,11 @@ resource "aws_ecs_task_definition" "app" {
           condition     = "HEALTHY"
         }
       ]
+      command = [
+        "sh",
+        "-c",
+        "set -e && mkdir -p /app/data/{db,static,media,logs} && chmod -R 755 /app/data && ./start_app.sh"
+      ]
       ulimits = [
         {
           name = "nofile"
@@ -152,11 +157,6 @@ resource "aws_ecs_task_definition" "app" {
           namespace = "net.core.somaxconn"
           value     = "1024"
         }
-      ]
-      command = [
-        "sh",
-        "-c",
-        "set -e && mkdir -p /app/data/{db,static,media,logs} && chmod -R 755 /app/data && ./start_app.sh"
       ]
     }
   ])
