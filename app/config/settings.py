@@ -2,6 +2,7 @@ from corsheaders.defaults import default_headers
 from decouple import config as env
 from pathlib import Path
 from datetime import timedelta
+import redis  # Added Redis import
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -83,11 +84,8 @@ DATABASES = {
     }
 }
 
-# Cache configuration using Redis for session storage
-REDIS_URL = env(
-    "REDIS_URL",
-    default="redis://redis:6379/0" if not DEBUG else "redis://localhost:6379/0"
-)
+# Redis configuration with improved connection handling
+REDIS_URL = env("REDIS_URL", default="redis://redis:6379/0")
 
 CACHES = {
     "default": {
@@ -95,13 +93,15 @@ CACHES = {
         "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SOCKET_CONNECT_TIMEOUT": 30,  # Increased timeout
-            "SOCKET_TIMEOUT": 30,  # Increased timeout
+            "SOCKET_CONNECT_TIMEOUT": 30,
+            "SOCKET_TIMEOUT": 30,
             "RETRY_ON_TIMEOUT": True,
             "MAX_CONNECTIONS": 50,
             "CONNECTION_POOL_KWARGS": {
                 "max_connections": 50,
                 "retry_on_timeout": True,
+                "retry_on_error": [redis.ConnectionError, redis.TimeoutError],
+                "health_check_interval": 30,
             },
             "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
             "IGNORE_EXCEPTIONS": True,
@@ -245,6 +245,11 @@ LOGGING = {
         "core": {
             "handlers": ["console"],
             "level": env("APP_LOG_LEVEL", default="INFO"),
+            "propagate": False,
+        },
+        "django_redis": {  # Added Redis-specific logging
+            "handlers": ["console"],
+            "level": "WARNING",
             "propagate": False,
         },
     },

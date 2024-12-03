@@ -5,19 +5,21 @@ echo "Starting application..."
 echo "Environment: $DJANGO_ENV"
 echo "Port: $PORT"
 
-# Wait for Redis to be ready
+# Wait for Redis to be ready with exponential backoff
 echo "Waiting for Redis to be ready..."
-max_attempts=30
+max_attempts=10
 attempt=1
+wait_time=1
 
-while ! redis-cli -h 127.0.0.1 ping > /dev/null 2>&1; do
+while ! redis-cli -h redis ping > /dev/null 2>&1; do
     if [ $attempt -eq $max_attempts ]; then
         echo "Redis is still unavailable after $max_attempts attempts - giving up"
         exit 1
     fi
-    echo "Redis is unavailable - sleeping (attempt $attempt/$max_attempts)"
+    echo "Redis is unavailable - sleeping for ${wait_time}s (attempt $attempt/$max_attempts)"
+    sleep $wait_time
     attempt=$((attempt + 1))
-    sleep 2
+    wait_time=$((wait_time * 2))  # Exponential backoff
 done
 
 echo "Redis is ready!"
