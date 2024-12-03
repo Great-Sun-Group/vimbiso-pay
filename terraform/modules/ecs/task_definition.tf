@@ -41,9 +41,9 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "redis-cli -h localhost ping || exit 1"]
-        interval    = 5         # More frequent checks
-        timeout     = 3         # Shorter timeout
+        command     = ["CMD", "redis-cli", "ping"]  # Simplified health check
+        interval    = 10        # More frequent checks
+        timeout     = 5         # Shorter timeout
         retries     = 3
         startPeriod = 10        # Shorter start period
       }
@@ -71,7 +71,9 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        set -e
+        set -ex  # Add -x for debug output
+
+        echo "Starting Redis initialization..."
 
         # Wait for EFS mount to be ready
         until mountpoint -q /data; do
@@ -79,10 +81,16 @@ resource "aws_ecs_task_definition" "app" {
           sleep 2
         done
 
+        echo "EFS mount ready at /data"
+        ls -la /data
+
         # Verify directory permissions
         mkdir -p /data
         chown redis:redis /data
         chmod 755 /data
+
+        echo "Directory permissions set"
+        ls -la /data
 
         # Create Redis config with optimized settings
         cat > /tmp/redis.conf << EOF
@@ -117,19 +125,26 @@ resource "aws_ecs_task_definition" "app" {
         ignore-warnings ARM64-COW-BUG
         EOF
 
-        # Start Redis without AOF initially
-        redis-server /tmp/redis.conf &
+        echo "Redis config created:"
+        cat /tmp/redis.conf
+
+        echo "Starting Redis server..."
+        redis-server /tmp/redis.conf --loglevel debug &
         REDIS_PID=$!
 
         # Wait for Redis to be ready
+        echo "Waiting for Redis to be ready..."
         until redis-cli ping; do
-          echo "Waiting for Redis to be ready..."
+          echo "Redis not ready yet..."
+          ps aux | grep redis-server
           sleep 1
         done
 
-        # Enable AOF after Redis is running
-        echo "Enabling AOF persistence..."
+        echo "Redis is ready! Enabling AOF..."
         redis-cli config set appendonly yes
+
+        echo "Final Redis status:"
+        redis-cli info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
 
         # Wait for Redis process
         wait $REDIS_PID
@@ -205,7 +220,7 @@ resource "aws_ecs_task_definition" "app" {
       command = [
         "sh",
         "-c",
-        "set -e && mkdir -p /app/data/{db,static,media,logs} && chmod -R 755 /app/data && ./start_app.sh"
+        "set -ex && mkdir -p /app/data/{db,static,media,logs} && chmod -R 755 /app/data && ./start_app.sh"
       ]
       ulimits = [
         {
