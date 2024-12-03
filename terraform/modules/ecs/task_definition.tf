@@ -75,7 +75,7 @@ resource "aws_ecs_task_definition" "app" {
         bind 0.0.0.0
         protected-mode no
         loglevel debug
-        logfile /data/redis.log
+        logfile stdout
         EOF
 
         echo "Redis config created:"
