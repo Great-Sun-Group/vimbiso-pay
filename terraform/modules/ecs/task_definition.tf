@@ -1,4 +1,3 @@
-# ECS Task Definition
 resource "aws_ecs_task_definition" "app" {
   family                   = "vimbiso-pay-${var.environment}"
   network_mode             = "awsvpc"
@@ -15,7 +14,6 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "redis:redis"
       portMappings = [
         {
           containerPort = var.redis_port
@@ -36,11 +34,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "redis-cli ping"]
-        interval    = 15
-        timeout     = 10
+        command     = ["CMD", "redis-cli", "ping"]
+        interval    = 30
+        timeout     = 5
         retries     = 3
-        startPeriod = 45
+        startPeriod = 90
       }
       mountPoints = [
         {
@@ -50,40 +48,26 @@ resource "aws_ecs_task_definition" "app" {
         }
       ]
       command = [
-        "sh",
-        "-c",
-        <<-EOT
-        set -ex
-
-        echo "Starting Redis initialization..."
-
-        # Wait for EFS mount
-        echo "Checking EFS mount..."
-        if ! mountpoint -q /data; then
-          echo "ERROR: /data is not mounted"
-          ls -la /
-          ls -la /data || true
-          exit 1
-        fi
-        echo "EFS mount verified at /data"
-        ls -la /data
-
-        # Create minimal Redis config
-        cat > /tmp/redis.conf << EOF
-        dir /data
-        port ${var.redis_port}
-        bind 0.0.0.0
-        protected-mode no
-        loglevel debug
-        logfile stdout
-        EOF
-
-        echo "Redis config created:"
-        cat /tmp/redis.conf
-
-        echo "Starting Redis server..."
-        exec redis-server /tmp/redis.conf --loglevel debug
-        EOT
+        "redis-server",
+        "--save", "60", "1",
+        "--loglevel", "debug",
+        "--maxmemory", "512mb",
+        "--maxmemory-policy", "allkeys-lru",
+        "--appendonly", "yes",
+        "--appendfsync", "everysec"
+      ]
+      ulimits = [
+        {
+          name = "nofile"
+          softLimit = 65536
+          hardLimit = 65536
+        }
+      ]
+      systemControls = [
+        {
+          namespace = "net.core.somaxconn"
+          value     = "1024"
+        }
       ]
     },
     {
@@ -134,7 +118,7 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ || true && redis-cli -h redis ping | grep -q PONG || exit 1"]
+        command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ || exit 1"]
         interval    = 30
         timeout     = 10
         retries     = 3
