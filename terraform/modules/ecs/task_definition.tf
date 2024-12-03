@@ -13,9 +13,9 @@ resource "aws_ecs_task_definition" "app" {
       name         = "redis"
       image        = "redis:7-alpine"
       essential    = true
-      memory       = floor(var.task_memory * 0.25)
-      cpu          = floor(var.task_cpu * 0.25)
-      user         = "redis:redis"  # Use redis user directly
+      memory       = floor(var.task_memory * 0.35)  # Increased to 35%
+      cpu          = floor(var.task_cpu * 0.35)     # Increased to 35%
+      user         = "redis:redis"
       portMappings = [
         {
           containerPort = var.redis_port
@@ -42,15 +42,15 @@ resource "aws_ecs_task_definition" "app" {
       }
       healthCheck = {
         command     = ["CMD-SHELL", "redis-cli -h localhost ping || exit 1"]
-        interval    = 15
-        timeout     = 10
-        retries     = 5
-        startPeriod = 90
+        interval    = 10        # Reduced from 15
+        timeout     = 5         # Reduced from 10
+        retries     = 3         # Reduced from 5
+        startPeriod = 30        # Reduced from 90
       }
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/data"  # Standard Redis data directory
+          containerPath = "/data"
           readOnly     = false
         }
       ]
@@ -72,10 +72,19 @@ resource "aws_ecs_task_definition" "app" {
         "-c",
         <<-EOT
         set -e
+        # Ensure proper permissions
+        mkdir -p /data
+        chown redis:redis /data
+        chmod 755 /data
+
+        # Calculate Redis memory limit (80% of container memory)
+        CONTAINER_MEMORY_MB=$(free -m | grep Mem | awk '{print $2}')
+        REDIS_MEMORY_MB=$(($CONTAINER_MEMORY_MB * 80 / 100))
+
         # Create Redis config with optimized settings
-        cat > /tmp/redis.conf << 'EOF'
+        cat > /tmp/redis.conf << EOF
         appendonly yes
-        maxmemory 256mb
+        maxmemory ${REDIS_MEMORY_MB}mb
         maxmemory-policy allkeys-lru
         bind 0.0.0.0
         dir /data
@@ -91,6 +100,14 @@ resource "aws_ecs_task_definition" "app" {
         # Performance tuning
         io-threads 2
         io-threads-do-reads yes
+        # Connection settings
+        timeout 0
+        tcp-keepalive 60
+        # AOF settings
+        appendfsync everysec
+        no-appendfsync-on-rewrite yes
+        auto-aof-rewrite-percentage 100
+        auto-aof-rewrite-min-size 64mb
         EOF
 
         exec redis-server /tmp/redis.conf
@@ -101,8 +118,8 @@ resource "aws_ecs_task_definition" "app" {
       name         = "vimbiso-pay-${var.environment}"
       image        = var.docker_image
       essential    = true
-      memory       = floor(var.task_memory * 0.75)
-      cpu          = floor(var.task_cpu * 0.75)
+      memory       = floor(var.task_memory * 0.65)  # Adjusted to complement Redis
+      cpu          = floor(var.task_cpu * 0.65)     # Adjusted to complement Redis
       environment  = [
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_env.django_secret },

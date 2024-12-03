@@ -7,7 +7,7 @@ echo "Port: $PORT"
 
 # Wait for Redis to be ready with exponential backoff and better logging
 echo "Waiting for Redis to be ready..."
-max_attempts=10
+max_attempts=20  # Increased from 10
 attempt=1
 wait_time=1
 
@@ -16,6 +16,14 @@ while true; do
         echo "Redis is still unavailable after $max_attempts attempts - giving up"
         echo "Last Redis connection attempt output:"
         redis-cli -h localhost info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
+        echo "Redis process status:"
+        ps aux | grep redis-server
+        echo "Redis logs (last 50 lines):"
+        tail -n 50 /data/redis.log || true
+        echo "System memory status:"
+        free -m
+        echo "Network status:"
+        netstat -an | grep 6379
         exit 1
     fi
 
@@ -32,16 +40,25 @@ while true; do
         echo "Redis memory settings:"
         redis-cli -h localhost config get maxmemory
         redis-cli -h localhost config get maxmemory-policy
+        echo "Redis client list:"
+        redis-cli -h localhost client list
         break
     else
         echo "Redis connection failed. Server response:"
         redis-cli -h localhost ping || true
         echo "Checking Redis process status..."
         ps aux | grep redis-server || true
+        echo "Checking Redis port status:"
+        netstat -an | grep 6379 || true
         echo "Retrying in ${wait_time}s..."
         sleep $wait_time
         attempt=$((attempt + 1))
-        wait_time=$((wait_time * 2))  # Exponential backoff
+        # More gradual exponential backoff
+        if [ $attempt -le 5 ]; then
+            wait_time=$((wait_time * 2))
+        else
+            wait_time=$((wait_time + 1))
+        fi
     fi
 done
 
