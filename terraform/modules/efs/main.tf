@@ -81,7 +81,7 @@ resource "aws_efs_mount_target" "main" {
   security_groups = [var.efs_security_group_id]
 }
 
-# Optional: Enable encryption in transit
+# EFS File System Policy
 resource "aws_efs_file_system_policy" "main" {
   file_system_id = aws_efs_file_system.main.id
 
@@ -99,6 +99,26 @@ resource "aws_efs_file_system_policy" "main" {
         Condition = {
           Bool = {
             "aws:SecureTransport" = "false"
+          }
+        }
+      },
+      {
+        Sid    = "AllowAccessViaAccessPoint"
+        Effect = "Allow"
+        Principal = {
+          AWS = "*"
+        }
+        Action = [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite"
+        ]
+        Resource = aws_efs_file_system.main.arn
+        Condition = {
+          StringEquals = {
+            "elasticfilesystem:AccessPointArn": [
+              aws_efs_access_point.app_data.arn,
+              aws_efs_access_point.redis_data.arn
+            ]
           }
         }
       }
