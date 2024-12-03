@@ -9,6 +9,21 @@ resource "aws_vpc" "main" {
   })
 }
 
+# DHCP Options
+resource "aws_vpc_dhcp_options" "main" {
+  domain_name          = "${data.aws_region.current.name}.compute.internal"
+  domain_name_servers  = ["AmazonProvidedDNS"]
+
+  tags = merge(var.tags, {
+    Name = "vimbiso-pay-dhcp-${var.environment}"
+  })
+}
+
+resource "aws_vpc_dhcp_options_association" "main" {
+  vpc_id          = aws_vpc.main.id
+  dhcp_options_id = aws_vpc_dhcp_options.main.id
+}
+
 # Fetch AZs in the current region
 data "aws_availability_zones" "available" {}
 

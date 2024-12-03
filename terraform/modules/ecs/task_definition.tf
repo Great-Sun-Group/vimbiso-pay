@@ -10,7 +10,7 @@ resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([
     {
       name         = "redis"
-      image        = "redis:7-alpine"
+      image        = "public.ecr.aws/docker/library/redis:7-alpine"
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
@@ -37,16 +37,24 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/data"
+          containerPath = "/efs-vols/redis-data"
           readOnly     = false
+        }
+      ]
+      environment = [
+        {
+          name  = "TZ",
+          value = "UTC"
         }
       ]
       command = [
         "sh",
         "-c",
         <<-EOT
+        mkdir -p /efs-vols/redis-data
+        chown -R redis:redis /efs-vols/redis-data
         echo "[Redis] Starting Redis server..."
-        redis-server --appendonly yes --protected-mode no --bind 0.0.0.0
+        redis-server --appendonly yes --protected-mode no --bind 0.0.0.0 --dir /efs-vols/redis-data
         EOT
       ]
       healthCheck = {
@@ -83,7 +91,8 @@ resource "aws_ecs_task_definition" "app" {
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" },
-        { name = "AWS_REGION", value = var.aws_region }  # Add AWS region for EFS
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "TZ", value = "UTC" }
       ]
       portMappings = [
         {
@@ -115,7 +124,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "app-data"
-          containerPath = "/app/data"
+          containerPath = "/efs-vols/app-data"
           readOnly     = false
         }
       ]
@@ -151,7 +160,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "app-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/"  # Use root and let access point handle the path
+      root_directory = "/efs-vols/app-data"
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.app_access_point_id
@@ -164,7 +173,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "redis-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/"  # Use root and let access point handle the path
+      root_directory = "/efs-vols/redis-data"
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.redis_access_point_id
