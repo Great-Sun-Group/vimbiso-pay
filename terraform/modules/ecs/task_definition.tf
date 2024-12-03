@@ -45,7 +45,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/redis"
+          containerPath = "/data"
           readOnly     = false
         }
       ]
@@ -59,23 +59,23 @@ resource "aws_ecs_task_definition" "app" {
 
         # Wait for EFS mount
         echo "Checking EFS mount..."
-        if ! mountpoint -q /redis; then
-          echo "ERROR: /redis is not mounted"
+        if ! mountpoint -q /data; then
+          echo "ERROR: /data is not mounted"
           ls -la /
-          ls -la /redis || true
+          ls -la /data || true
           exit 1
         fi
-        echo "EFS mount verified at /redis"
-        ls -la /redis
+        echo "EFS mount verified at /data"
+        ls -la /data
 
         # Create minimal Redis config
         cat > /tmp/redis.conf << EOF
-        dir /redis
+        dir /data
         port ${var.redis_port}
         bind 0.0.0.0
         protected-mode no
         loglevel debug
-        logfile /redis/redis.log
+        logfile /data/redis.log
         EOF
 
         echo "Redis config created:"
@@ -183,7 +183,7 @@ resource "aws_ecs_task_definition" "app" {
         access_point_id = var.app_access_point_id
         iam = "ENABLED"
       }
-      root_directory = "/"
+      root_directory = "/app/data"
     }
   }
 
@@ -196,7 +196,7 @@ resource "aws_ecs_task_definition" "app" {
         access_point_id = var.redis_access_point_id
         iam = "ENABLED"
       }
-      root_directory = "/"
+      root_directory = "/redis"
     }
   }
 
