@@ -5,21 +5,35 @@ echo "Starting application..."
 echo "Environment: $DJANGO_ENV"
 echo "Port: $PORT"
 
-# Wait for Redis to be ready with exponential backoff
+# Wait for Redis to be ready with exponential backoff and better logging
 echo "Waiting for Redis to be ready..."
 max_attempts=10
 attempt=1
 wait_time=1
 
-while ! redis-cli -h redis ping > /dev/null 2>&1; do
-    if [ $attempt -eq $max_attempts ]; then
+while true; do
+    if [ $attempt -gt $max_attempts ]; then
         echo "Redis is still unavailable after $max_attempts attempts - giving up"
+        echo "Last Redis connection attempt output:"
+        redis-cli -h redis info | grep -E "^(connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
         exit 1
     fi
-    echo "Redis is unavailable - sleeping for ${wait_time}s (attempt $attempt/$max_attempts)"
-    sleep $wait_time
-    attempt=$((attempt + 1))
-    wait_time=$((wait_time * 2))  # Exponential backoff
+
+    echo "Attempting Redis connection (attempt $attempt/$max_attempts, waiting ${wait_time}s)..."
+
+    if redis-cli -h redis info > /dev/null 2>&1; then
+        echo "Redis connection successful!"
+        echo "Redis server info:"
+        redis-cli -h redis info | grep -E "^(connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
+        break
+    else
+        echo "Redis connection failed. Server response:"
+        redis-cli -h redis ping || true
+        echo "Retrying in ${wait_time}s..."
+        sleep $wait_time
+        attempt=$((attempt + 1))
+        wait_time=$((wait_time * 2))  # Exponential backoff
+    fi
 done
 
 echo "Redis is ready!"
