@@ -54,15 +54,15 @@ resource "aws_efs_access_point" "redis_data" {
   file_system_id = aws_efs_file_system.main.id
 
   posix_user {
-    gid = 100  # redis group
-    uid = 100  # redis user
+    gid = 999  # Alpine Redis group
+    uid = 999  # Alpine Redis user
   }
 
   root_directory {
     path = "/redis"
     creation_info {
-      owner_gid   = 100  # redis group
-      owner_uid   = 100  # redis user
+      owner_gid   = 999  # Alpine Redis group
+      owner_uid   = 999  # Alpine Redis user
       permissions = "755"
     }
   }
