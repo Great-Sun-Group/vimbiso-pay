@@ -40,13 +40,10 @@ resource "aws_ecs_task_definition" "app" {
         retries     = 3
         startPeriod = 10
       }
-      dnsSearchDomains = [
-        "vimbiso-pay-${var.environment}.local"
-      ]
       environment = [
         {
-          name = "SERVICE_DISCOVERY_NAME",
-          value = "redis.vimbiso-pay-${var.environment}.local"
+          name = "SERVICE_NAME",
+          value = "redis"
         }
       ]
     },
@@ -72,7 +69,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
-        { name = "REDIS_URL", value = "redis://redis.vimbiso-pay-${var.environment}.local:6379/0" },
+        { name = "REDIS_URL", value = "redis://localhost:6379/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" }
@@ -128,9 +125,6 @@ resource "aws_ecs_task_definition" "app" {
           softLimit = 65536
           hardLimit = 65536
         }
-      ]
-      dnsSearchDomains = [
-        "vimbiso-pay-${var.environment}.local"
       ]
     }
   ])
