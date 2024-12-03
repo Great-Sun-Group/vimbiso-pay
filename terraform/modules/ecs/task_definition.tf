@@ -198,7 +198,6 @@ resource "aws_ecs_task_definition" "app" {
         access_point_id = var.redis_access_point_id
         iam = "ENABLED"
       }
-      root_directory = "/redis"
     }
   }
 
