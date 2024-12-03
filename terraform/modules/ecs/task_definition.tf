@@ -77,14 +77,10 @@ resource "aws_ecs_task_definition" "app" {
         chown redis:redis /data
         chmod 755 /data
 
-        # Calculate Redis memory limit (80% of container memory)
-        CONTAINER_MEMORY_MB=$(free -m | grep Mem | awk '{print $2}')
-        REDIS_MEMORY_MB=$(($CONTAINER_MEMORY_MB * 80 / 100))
-
         # Create Redis config with optimized settings
         cat > /tmp/redis.conf << EOF
         appendonly yes
-        maxmemory ${REDIS_MEMORY_MB}mb
+        maxmemory 80%
         maxmemory-policy allkeys-lru
         bind 0.0.0.0
         dir /data
