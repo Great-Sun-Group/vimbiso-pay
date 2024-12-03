@@ -1,42 +1,3 @@
-# VPC Endpoints Security Group
-resource "aws_security_group" "vpc_endpoints" {
-  name        = "vimbiso-pay-vpc-endpoints-${var.environment}"
-  description = "Security group for VPC endpoints"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    from_port       = 2049
-    to_port         = 2049
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
-  }
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.main.cidr_block]
-  }
-
-  ingress {
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-vpc-endpoints-${var.environment}"
-  })
-}
-
 # Application Load Balancer Security Group
 resource "aws_security_group" "alb" {
   name        = "vimbiso-pay-alb-${var.environment}"
@@ -84,13 +45,15 @@ resource "aws_security_group" "ecs_tasks" {
     from_port       = 8000
     to_port         = 8000
     security_groups = [aws_security_group.alb.id]
+    description     = "Allow inbound traffic from ALB"
   }
 
   ingress {
-    protocol  = "tcp"
-    from_port = 6379
-    to_port   = 6379
-    self      = true
+    protocol    = "tcp"
+    from_port   = 6379
+    to_port     = 6379
+    self        = true
+    description = "Allow Redis traffic between tasks"
   }
 
   egress {
@@ -107,6 +70,8 @@ resource "aws_security_group" "ecs_tasks" {
   tags = merge(var.tags, {
     Name = "vimbiso-pay-ecs-tasks-${var.environment}"
   })
+
+  depends_on = [aws_security_group.alb]
 }
 
 # EFS Security Group
@@ -120,6 +85,7 @@ resource "aws_security_group" "efs" {
     from_port       = 2049
     to_port         = 2049
     security_groups = [aws_security_group.ecs_tasks.id]
+    description     = "Allow NFS from ECS tasks"
   }
 
   lifecycle {
@@ -129,4 +95,50 @@ resource "aws_security_group" "efs" {
   tags = merge(var.tags, {
     Name = "vimbiso-pay-efs-${var.environment}"
   })
+
+  depends_on = [aws_security_group.ecs_tasks]
+}
+
+# VPC Endpoints Security Group
+resource "aws_security_group" "vpc_endpoints" {
+  name        = "vimbiso-pay-vpc-endpoints-${var.environment}"
+  description = "Security group for VPC endpoints"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+    description     = "Allow NFS traffic from ECS tasks"
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow HTTPS from VPC CIDR"
+  }
+
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+    description     = "Allow HTTPS from ECS tasks"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(var.tags, {
+    Name = "vimbiso-pay-vpc-endpoints-${var.environment}"
+  })
+
+  depends_on = [aws_security_group.ecs_tasks]
 }

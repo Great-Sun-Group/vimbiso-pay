@@ -41,7 +41,6 @@ resource "aws_ecs_service" "app" {
   service_registries {
     registry_arn = aws_service_discovery_service.redis.arn
     container_name = "redis"
-    container_port = var.redis_port
   }
 
   # Ignore changes that are managed by the deployment workflow

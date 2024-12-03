@@ -59,9 +59,6 @@ resource "aws_ecs_task_definition" "app" {
         exec redis-server --appendonly yes --protected-mode no --bind 0.0.0.0
         EOT
       ]
-      dnsSearchDomains = [
-        "${var.environment}.local"  # Service discovery domain
-      ]
       healthCheck = {
         command     = ["CMD-SHELL", "redis-cli ping || exit 1"]
         interval    = 30
@@ -92,7 +89,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
-        { name = "REDIS_URL", value = "redis://redis.${var.environment}.local:6379/0" },
+        { name = "REDIS_URL", value = "redis://redis.vimbiso-pay-${var.environment}.local:${var.redis_port}/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" }
@@ -137,7 +134,7 @@ resource "aws_ecs_task_definition" "app" {
         <<-EOT
         echo "[App] Waiting for Redis..."
         timeout=60
-        until redis-cli -h redis.${var.environment}.local ping > /dev/null 2>&1; do
+        until redis-cli -h redis.vimbiso-pay-${var.environment}.local ping > /dev/null 2>&1; do
           timeout=$((timeout - 1))
           if [ $timeout -le 0 ]; then
             echo "[App] ERROR: Redis not ready after 60 seconds"
@@ -156,9 +153,6 @@ resource "aws_ecs_task_definition" "app" {
           softLimit = 65536
           hardLimit = 65536
         }
-      ]
-      dnsSearchDomains = [
-        "${var.environment}.local"  # Service discovery domain
       ]
     }
   ])
