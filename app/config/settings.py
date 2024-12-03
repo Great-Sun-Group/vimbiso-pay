@@ -85,8 +85,9 @@ DATABASES = {
     }
 }
 
-# Redis configuration with improved connection handling
-REDIS_URL = env("REDIS_URL", default="redis://redis:6379/0")
+# Redis configuration - hardcoded for single-unit deployment
+# Redis is always in the same task, so we use localhost
+REDIS_URL = "redis://localhost:6379/0"
 
 CACHES = {
     "default": {

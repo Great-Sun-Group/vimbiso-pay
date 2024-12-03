@@ -42,10 +42,10 @@ resource "aws_ecs_task_definition" "app" {
       }
       healthCheck = {
         command     = ["CMD-SHELL", "redis-cli -h localhost ping || exit 1"]
-        interval    = 10        # Reduced from 15
-        timeout     = 5         # Reduced from 10
-        retries     = 3         # Reduced from 5
-        startPeriod = 30        # Reduced from 90
+        interval    = 5         # More frequent checks
+        timeout     = 3         # Shorter timeout
+        retries     = 3
+        startPeriod = 10        # Shorter start period
       }
       mountPoints = [
         {
@@ -80,7 +80,7 @@ resource "aws_ecs_task_definition" "app" {
         # Create Redis config with optimized settings
         cat > /tmp/redis.conf << EOF
         appendonly yes
-        maxmemory 80%
+        # Let Redis manage memory based on container limits
         maxmemory-policy allkeys-lru
         bind 0.0.0.0
         dir /data
@@ -104,9 +104,11 @@ resource "aws_ecs_task_definition" "app" {
         no-appendfsync-on-rewrite yes
         auto-aof-rewrite-percentage 100
         auto-aof-rewrite-min-size 64mb
+        # Ignore warnings that don't affect functionality
+        ignore-warnings ARM64-COW-BUG
         EOF
 
-        exec redis-server /tmp/redis.conf
+        exec redis-server /tmp/redis.conf --ignore-warnings ARM64-COW-BUG
         EOT
       ]
     },
@@ -129,7 +131,6 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_BUSINESS_ID", value = var.django_env.whatsapp_business_id },
         { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_registration_flow_id },
         { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_company_registration_flow_id },
-        { name = "REDIS_URL", value = "redis://localhost:${var.redis_port}/0" },
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
