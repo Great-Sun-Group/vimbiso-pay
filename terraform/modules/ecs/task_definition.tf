@@ -34,13 +34,21 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD", "redis-cli", "ping"]
+        command     = ["CMD-SHELL", "redis-cli ping || exit 1"]
         interval    = 30
         timeout     = 5
         retries     = 3
-        startPeriod = 90
+        startPeriod = 10
       }
-      command = ["redis-server", "--protected-mode", "no"]
+      dnsSearchDomains = [
+        "vimbiso-pay-${var.environment}.local"
+      ]
+      environment = [
+        {
+          name = "SERVICE_DISCOVERY_NAME",
+          value = "redis.vimbiso-pay-${var.environment}.local"
+        }
+      ]
     },
     {
       name         = "vimbiso-pay-${var.environment}"
@@ -64,7 +72,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
-        { name = "REDIS_URL", value = "redis://redis:6379/0" },
+        { name = "REDIS_URL", value = "redis://redis.vimbiso-pay-${var.environment}.local:6379/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" }
@@ -120,6 +128,9 @@ resource "aws_ecs_task_definition" "app" {
           softLimit = 65536
           hardLimit = 65536
         }
+      ]
+      dnsSearchDomains = [
+        "vimbiso-pay-${var.environment}.local"
       ]
     }
   ])
