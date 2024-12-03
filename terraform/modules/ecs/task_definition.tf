@@ -37,7 +37,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/data"  # Mount directly to Redis data directory
+          containerPath = "/data"
           readOnly     = false
         }
       ]
@@ -55,6 +55,9 @@ resource "aws_ecs_task_definition" "app" {
         timeout     = 5
         retries     = 3
         startPeriod = 60
+      }
+      linuxParameters = {
+        initProcessEnabled = true
       }
     },
     {
@@ -79,7 +82,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
-        { name = "REDIS_URL", value = "redis://redis.vimbiso-pay-${var.environment}.local:${var.redis_port}/0" },
+        { name = "REDIS_URL", value = "redis://localhost:${var.redis_port}/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" }
@@ -114,7 +117,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "app-data"
-          containerPath = "/app/data"  # Mount directly to app data directory
+          containerPath = "/app/data"
           readOnly     = false
         }
       ]
@@ -124,7 +127,7 @@ resource "aws_ecs_task_definition" "app" {
         <<-EOT
         echo "[App] Waiting for Redis..."
         timeout=60
-        until redis-cli -h redis.vimbiso-pay-${var.environment}.local ping > /dev/null 2>&1; do
+        until redis-cli -h localhost ping > /dev/null 2>&1; do
           timeout=$((timeout - 1))
           if [ $timeout -le 0 ]; then
             echo "[App] ERROR: Redis not ready after 60 seconds"
@@ -137,11 +140,13 @@ resource "aws_ecs_task_definition" "app" {
         exec ./start_app.sh
         EOT
       ]
-      ulimits = [
+      linuxParameters = {
+        initProcessEnabled = true
+      }
+      dependsOn = [
         {
-          name = "nofile"
-          softLimit = 65536
-          hardLimit = 65536
+          containerName = "redis"
+          condition     = "HEALTHY"
         }
       ]
     }
@@ -151,8 +156,8 @@ resource "aws_ecs_task_definition" "app" {
     name = "app-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/efs-vols/app-data"  # Match access point path
       transit_encryption = "ENABLED"
+      transit_encryption_port = 2999
       authorization_config {
         access_point_id = var.app_access_point_id
         iam = "ENABLED"
@@ -164,8 +169,8 @@ resource "aws_ecs_task_definition" "app" {
     name = "redis-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/efs-vols/redis-data"  # Match access point path
       transit_encryption = "ENABLED"
+      transit_encryption_port = 2998
       authorization_config {
         access_point_id = var.redis_access_point_id
         iam = "ENABLED"
