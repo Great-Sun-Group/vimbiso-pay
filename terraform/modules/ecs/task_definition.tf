@@ -41,7 +41,7 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "redis-cli ping || exit 1"]
+        command     = ["CMD-SHELL", "redis-cli -h localhost ping || exit 1"]
         interval    = 15
         timeout     = 10
         retries     = 5
@@ -70,7 +70,7 @@ resource "aws_ecs_task_definition" "app" {
       command = [
         "sh",
         "-c",
-        "echo 1 > /proc/sys/vm/overcommit_memory || true && mkdir -p /redis && chown -R root:root /redis && redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --dir /redis --port ${var.redis_port}"
+        "mkdir -p /redis && chown -R redis:redis /redis && gosu redis redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --dir /redis --port ${var.redis_port}"
       ]
     },
     {
