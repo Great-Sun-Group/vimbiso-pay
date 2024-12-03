@@ -39,7 +39,9 @@ resource "aws_ecs_service" "app" {
   }
 
   service_registries {
-    registry_arn = aws_service_discovery_service.app.arn
+    registry_arn = aws_service_discovery_service.redis.arn
+    container_name = "redis"
+    container_port = var.redis_port
   }
 
   # Ignore changes that are managed by the deployment workflow
@@ -60,29 +62,5 @@ resource "aws_ecs_service" "app" {
 
   tags = merge(var.tags, {
     Name = "vimbiso-pay-service-${var.environment}"
-  })
-}
-
-# Redis Service Discovery
-resource "aws_service_discovery_service" "redis" {
-  name = "redis"
-
-  dns_config {
-    namespace_id = aws_service_discovery_private_dns_namespace.main.id
-
-    dns_records {
-      ttl  = var.service_discovery_ttl
-      type = "A"
-    }
-
-    routing_policy = "MULTIVALUE"
-  }
-
-  health_check_custom_config {
-    failure_threshold = 1
-  }
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-redis-discovery-${var.environment}"
   })
 }
