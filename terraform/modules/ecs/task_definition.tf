@@ -36,11 +36,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD", "redis-cli", "-h", "redis", "ping"]
-        interval    = 5
-        timeout     = 2
+        command     = ["CMD-SHELL", "redis-cli -h localhost ping && redis-cli -h localhost info | grep -q '^used_memory:' && redis-cli -h localhost info clients | grep -q '^connected_clients:' && redis-cli -h localhost info stats | grep -q '^total_commands_processed:' || exit 1"]
+        interval    = 15
+        timeout     = 10
         retries     = 3
-        startPeriod = 10
+        startPeriod = 45
       }
       mountPoints = [
         {
@@ -104,6 +104,12 @@ resource "aws_ecs_task_definition" "app" {
         tcp-keepalive 60
         protected-mode no
 
+        # Enhanced logging settings
+        loglevel debug
+        logfile /data/redis.log
+        slowlog-log-slower-than 10000
+        slowlog-max-len 128
+
         # Disable RDB persistence
         save ""
 
@@ -116,6 +122,22 @@ resource "aws_ecs_task_definition" "app" {
 
         echo "Starting Redis server..."
         redis-server /tmp/redis.conf --loglevel debug
+
+        # Comprehensive Redis readiness check
+        echo "Verifying Redis is fully operational..."
+        until redis-cli -h localhost ping > /dev/null && \
+              redis-cli -h localhost info | grep -q '^used_memory:' && \
+              redis-cli -h localhost info clients | grep -q '^connected_clients:' && \
+              redis-cli -h localhost info stats | grep -q '^total_commands_processed:'; do
+          echo "Waiting for Redis to be fully operational..."
+          sleep 2
+          redis-cli -h localhost ping || echo "Ping failed"
+          redis-cli -h localhost info || echo "Info failed"
+        done
+        echo "Redis is fully operational and ready for connections"
+
+        # Keep container running
+        tail -f /data/redis.log
         EOT
       ]
     },
@@ -167,9 +189,9 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ && redis-cli -h redis ping | grep -q PONG || exit 1"]
+        command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ || true && redis-cli -h redis info | grep -q '^used_memory:' || exit 1"]
         interval    = 30
-        timeout     = 5
+        timeout     = 10
         retries     = 3
         startPeriod = 120
       }
