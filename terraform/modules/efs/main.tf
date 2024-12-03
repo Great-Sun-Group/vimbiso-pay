@@ -36,7 +36,7 @@ resource "aws_efs_access_point" "app_data" {
   }
 
   root_directory {
-    path = "/app/data"
+    path = "/efs-vols/app-data"
     creation_info {
       owner_gid   = 10001  # Match container's appuser GID
       owner_uid   = 10001  # Match container's appuser UID
@@ -59,7 +59,7 @@ resource "aws_efs_access_point" "redis_data" {
   }
 
   root_directory {
-    path = "/data"
+    path = "/efs-vols/redis-data"
     creation_info {
       owner_gid   = 999  # Alpine Redis group
       owner_uid   = 999  # Alpine Redis user

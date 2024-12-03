@@ -37,7 +37,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/data"
+          containerPath = "/efs-vols/redis-data"
           readOnly     = false
         }
       ]
@@ -48,6 +48,10 @@ resource "aws_ecs_task_definition" "app" {
         echo "[Redis] Starting initialization..."
         echo "[Redis] Current directory structure:"
         ls -la /
+
+        echo "[Redis] Creating data directory symlink..."
+        mkdir -p /efs-vols/redis-data
+        ln -s /efs-vols/redis-data /data
 
         echo "[Redis] Checking data directory:"
         ls -la /data
@@ -124,7 +128,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "app-data"
-          containerPath = "/app/data"
+          containerPath = "/efs-vols/app-data"
           readOnly     = false
         }
       ]
@@ -132,6 +136,10 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
+        echo "[App] Creating data directory symlink..."
+        mkdir -p /efs-vols/app-data
+        ln -s /efs-vols/app-data /app/data
+
         echo "[App] Waiting for Redis..."
         timeout=60
         until redis-cli -h redis.vimbiso-pay-${var.environment}.local ping > /dev/null 2>&1; do
@@ -161,7 +169,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "app-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/app/data"
+      root_directory = "/"
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.app_access_point_id
@@ -174,7 +182,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "redis-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/data"
+      root_directory = "/"
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.redis_access_point_id
