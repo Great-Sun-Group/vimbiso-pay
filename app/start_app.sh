@@ -5,9 +5,18 @@ echo "Starting application..."
 echo "Environment: $DJANGO_ENV"
 echo "Port: $PORT"
 
-# Extract Redis host from REDIS_URL or fallback to localhost
+# Debug Redis configuration
+echo "REDIS_URL from environment: ${REDIS_URL:-not set}"
 REDIS_HOST=$(echo "${REDIS_URL:-redis://localhost:6379/0}" | sed -E 's|redis://([^:/]+).*|\1|')
-echo "Using Redis host: $REDIS_HOST"
+echo "Extracted Redis host: $REDIS_HOST"
+
+# Test network connectivity
+echo "Testing network connectivity to Redis host..."
+nc -zv "$REDIS_HOST" 6379 || echo "Cannot connect to Redis port"
+echo "Network route to Redis:"
+ip route get "$REDIS_HOST" || echo "Cannot determine route to Redis"
+echo "DNS resolution for Redis host:"
+getent hosts "$REDIS_HOST" || echo "Cannot resolve Redis host"
 
 # Wait for Redis to be ready with exponential backoff and better logging
 echo "Waiting for Redis to be ready..."
