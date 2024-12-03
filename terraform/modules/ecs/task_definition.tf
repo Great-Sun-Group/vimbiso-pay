@@ -37,7 +37,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/"
+          containerPath = "/data"
           readOnly     = false
         }
       ]
@@ -49,27 +49,14 @@ resource "aws_ecs_task_definition" "app" {
         echo "[Redis] Current directory structure:"
         ls -la /
 
-        echo "[Redis] Creating Redis data directory..."
-        mkdir -p /data
-        chown -R redis:redis /data
-        chmod 755 /data
-
-        echo "[Redis] Checking Redis directory permissions..."
+        echo "[Redis] Checking data directory:"
         ls -la /data
 
         echo "[Redis] Current user and group:"
         id
 
-        echo "[Redis] Testing write access..."
-        touch /data/test_write
-        if [ $? -ne 0 ]; then
-            echo "[Redis] ERROR: Failed to create test file in /data"
-            exit 1
-        fi
-        rm /data/test_write
-
-        echo "[Redis] Directory setup complete, starting Redis server..."
-        exec redis-server --dir /data --appendonly yes --protected-mode no
+        echo "[Redis] Starting Redis server..."
+        exec redis-server --appendonly yes --protected-mode no
         EOT
       ]
     },
@@ -172,7 +159,6 @@ resource "aws_ecs_task_definition" "app" {
         access_point_id = var.app_access_point_id
         iam = "ENABLED"
       }
-      root_directory = "/app/data"
     }
   }
 
