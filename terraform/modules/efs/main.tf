@@ -89,7 +89,21 @@ resource "aws_efs_file_system_policy" "main" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "AllowAllAccess"
+        Sid    = "RequireEncryptedTransport"
+        Effect = "Deny"
+        Principal = {
+          AWS = "*"
+        }
+        Action = "*"
+        Resource = aws_efs_file_system.main.arn
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      },
+      {
+        Sid    = "AllowAccessViaAccessPoint"
         Effect = "Allow"
         Principal = {
           AWS = "*"
