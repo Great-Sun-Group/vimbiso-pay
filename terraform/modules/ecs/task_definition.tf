@@ -45,18 +45,43 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        echo "[Redis] Checking data directory..."
+        echo "[Redis] Starting initialization..."
+        echo "[Redis] Current directory structure:"
+        ls -la /
+
+        echo "[Redis] Checking Redis directory..."
         if [ ! -d /redis ]; then
             echo "[Redis] ERROR: /redis directory does not exist"
-            ls -la /
-            exit 1
+            echo "[Redis] Attempting to create directory..."
+            mkdir -p /redis
+            if [ $? -ne 0 ]; then
+                echo "[Redis] ERROR: Failed to create /redis directory"
+                exit 1
+            fi
         fi
+
+        echo "[Redis] Checking Redis directory permissions..."
+        ls -la /redis
+
+        echo "[Redis] Checking write permissions..."
         if [ ! -w /redis ]; then
             echo "[Redis] ERROR: /redis directory is not writable"
+            echo "[Redis] Current user and group:"
+            id
+            echo "[Redis] Directory ownership:"
             ls -la /redis
             exit 1
         fi
-        echo "[Redis] Data directory OK, starting server..."
+
+        echo "[Redis] Testing write access..."
+        touch /redis/test_write
+        if [ $? -ne 0 ]; then
+            echo "[Redis] ERROR: Failed to create test file in /redis"
+            exit 1
+        fi
+        rm /redis/test_write
+
+        echo "[Redis] Directory setup complete, starting Redis server..."
         exec redis-server --dir /redis --appendonly yes --protected-mode no
         EOT
       ]
