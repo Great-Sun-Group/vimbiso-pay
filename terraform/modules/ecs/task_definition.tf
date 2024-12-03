@@ -38,13 +38,23 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 30
         timeout     = 5
         retries     = 3
-        startPeriod = 10
+        startPeriod = 30
       }
-      environment = [
+      mountPoints = [
         {
-          name = "SERVICE_NAME",
-          value = "redis"
+          sourceVolume  = "redis-data"
+          containerPath = "/data"
+          readOnly     = false
         }
+      ]
+      command = [
+        "redis-server",
+        "--dir", "/data",
+        "--loglevel", "debug",
+        "--save", "60", "1",
+        "--appendonly", "yes",
+        "--appendfsync", "everysec",
+        "--protected-mode", "no"
       ]
     },
     {
@@ -139,6 +149,19 @@ resource "aws_ecs_task_definition" "app" {
         iam = "ENABLED"
       }
       root_directory = "/app/data"
+    }
+  }
+
+  volume {
+    name = "redis-data"
+    efs_volume_configuration {
+      file_system_id = var.efs_file_system_id
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = var.redis_access_point_id
+        iam = "ENABLED"
+      }
+      root_directory = "/redis"
     }
   }
 
