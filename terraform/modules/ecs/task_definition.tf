@@ -83,7 +83,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_env.django_secret },
         { name = "DEBUG", value = tostring(var.django_env.debug) },
-        { name = "ALLOWED_HOSTS", value = var.allowed_hosts },
+        { name = "ALLOWED_HOSTS", value = "*.amazonaws.com,vimbiso-pay-alb-${var.environment}-427225791.af-south-1.elb.amazonaws.com,${var.environment}.whatsapp.vimbisopay.africa" },
         { name = "MYCREDEX_APP_URL", value = var.django_env.mycredex_app_url },
         { name = "CLIENT_API_KEY", value = var.django_env.client_api_key },
         { name = "WHATSAPP_API_URL", value = var.django_env.whatsapp_api_url },
