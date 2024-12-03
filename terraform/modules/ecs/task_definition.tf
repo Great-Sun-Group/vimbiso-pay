@@ -96,7 +96,6 @@ resource "aws_ecs_task_definition" "app" {
         exec redis-server /tmp/redis.conf
         EOT
       ]
-      dockerSecurityOptions = ["no-new-privileges"]
     },
     {
       name         = "vimbiso-pay-${var.environment}"
@@ -183,7 +182,6 @@ resource "aws_ecs_task_definition" "app" {
           value     = "1024"
         }
       ]
-      dockerSecurityOptions = ["no-new-privileges"]
     }
   ])
 
