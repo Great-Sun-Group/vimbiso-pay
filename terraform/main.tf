@@ -113,6 +113,7 @@ module "ecs" {
   efs_file_system_id        = module.efs.file_system_id
   app_access_point_id       = module.efs.app_access_point_id
   redis_access_point_id     = module.efs.redis_access_point_id
+  efs_mount_targets         = module.efs.mount_target_ids
   task_cpu                  = local.current_env.ecs_task.cpu
   task_memory               = local.current_env.ecs_task.memory
   min_capacity              = local.current_env.autoscaling.min_capacity

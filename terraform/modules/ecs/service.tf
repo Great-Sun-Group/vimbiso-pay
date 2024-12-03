@@ -8,7 +8,7 @@ resource "aws_ecs_service" "app" {
   deployment_maximum_percent        = 200
   scheduling_strategy               = "REPLICA"
   force_new_deployment             = true
-  health_check_grace_period_seconds = 300  # Increased to match target group settings
+  health_check_grace_period_seconds = 600  # Increased to allow time for EFS mount and Redis startup
 
   # Enable rollback for failed deployments
   deployment_circuit_breaker {
@@ -53,10 +53,36 @@ resource "aws_ecs_service" "app" {
 
   depends_on = [
     aws_service_discovery_service.app,
-    aws_ecs_cluster.main
+    aws_service_discovery_service.redis,
+    aws_ecs_cluster.main,
+    var.efs_mount_targets  # Ensure EFS mount targets are ready
   ]
 
   tags = merge(var.tags, {
     Name = "vimbiso-pay-service-${var.environment}"
+  })
+}
+
+# Redis Service Discovery
+resource "aws_service_discovery_service" "redis" {
+  name = "redis"
+
+  dns_config {
+    namespace_id = aws_service_discovery_private_dns_namespace.main.id
+
+    dns_records {
+      ttl  = var.service_discovery_ttl
+      type = "A"
+    }
+
+    routing_policy = "MULTIVALUE"
+  }
+
+  health_check_custom_config {
+    failure_threshold = 1
+  }
+
+  tags = merge(var.tags, {
+    Name = "vimbiso-pay-redis-discovery-${var.environment}"
   })
 }

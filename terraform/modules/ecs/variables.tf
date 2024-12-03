@@ -111,6 +111,11 @@ variable "redis_access_point_id" {
   type        = string
 }
 
+variable "efs_mount_targets" {
+  description = "List of EFS mount target IDs to depend on"
+  type        = list(string)
+}
+
 # Auto Scaling Configuration
 variable "min_capacity" {
   description = "Minimum number of tasks"
