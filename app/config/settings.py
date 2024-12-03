@@ -2,7 +2,8 @@ from corsheaders.defaults import default_headers
 from decouple import config as env
 from pathlib import Path
 from datetime import timedelta
-import redis  # Added Redis import
+import redis
+import socket
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -100,8 +101,21 @@ CACHES = {
             "CONNECTION_POOL_KWARGS": {
                 "max_connections": 50,
                 "retry_on_timeout": True,
-                "retry_on_error": [redis.ConnectionError, redis.TimeoutError],
-                "health_check_interval": 30,
+                "retry_on_error": [
+                    redis.ConnectionError,
+                    redis.TimeoutError,
+                    socket.timeout,
+                    socket.error
+                ],
+                "health_check_interval": 60,  # Increased to reduce frequency
+            },
+            "CONNECTION_POOL_CLASS_KWARGS": {
+                "socket_keepalive": True,
+                "socket_keepalive_options": {
+                    socket.TCP_KEEPIDLE: 30,
+                    socket.TCP_KEEPINTVL: 5,
+                    socket.TCP_KEEPCNT: 5
+                }
             },
             "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
             "IGNORE_EXCEPTIONS": True,
@@ -247,7 +261,12 @@ LOGGING = {
             "level": env("APP_LOG_LEVEL", default="INFO"),
             "propagate": False,
         },
-        "django_redis": {  # Added Redis-specific logging
+        "django_redis": {  # Enhanced Redis logging
+            "handlers": ["console"],
+            "level": "INFO",  # Changed from WARNING to catch more Redis-related issues
+            "propagate": False,
+        },
+        "redis": {  # Added specific Redis client logging
             "handlers": ["console"],
             "level": "WARNING",
             "propagate": False,
