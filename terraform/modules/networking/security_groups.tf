@@ -4,6 +4,14 @@ resource "aws_security_group" "vpc_endpoints" {
   description = "Security group for VPC endpoints"
   vpc_id      = aws_vpc.main.id
 
+  ingress {
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+    description     = "Allow NFS traffic for EFS endpoint"
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -94,6 +102,15 @@ resource "aws_security_group" "ecs_tasks" {
     description     = "Allow outbound NFS traffic to EFS"
   }
 
+  # Explicit egress rule for EFS endpoint
+  egress {
+    protocol        = "tcp"
+    from_port       = 2049
+    to_port         = 2049
+    security_groups = [aws_security_group.vpc_endpoints.id]
+    description     = "Allow outbound NFS traffic to EFS endpoint"
+  }
+
   lifecycle {
     create_before_destroy = true
   }
@@ -117,13 +134,7 @@ resource "aws_security_group" "efs" {
     security_groups = [aws_security_group.ecs_tasks.id]
   }
 
-  egress {
-    protocol        = "tcp"
-    from_port       = 2049
-    to_port         = 2049
-    security_groups = [aws_security_group.ecs_tasks.id]
-    description     = "Allow return NFS traffic to ECS tasks"
-  }
+  # No explicit egress rules needed - return traffic is allowed by the stateful nature of security groups
 
   lifecycle {
     create_before_destroy = true
