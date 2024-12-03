@@ -56,6 +56,15 @@ resource "aws_security_group" "ecs_tasks" {
     description = "Allow Redis traffic between tasks"
   }
 
+  # Add explicit rule for NFS traffic to EFS
+  egress {
+    protocol        = "tcp"
+    from_port       = 2049
+    to_port         = 2049
+    security_groups = [aws_security_group.efs.id]
+    description     = "Allow NFS traffic to EFS"
+  }
+
   egress {
     protocol    = "-1"
     from_port   = 0
@@ -86,6 +95,14 @@ resource "aws_security_group" "efs" {
     to_port         = 2049
     security_groups = [aws_security_group.ecs_tasks.id]
     description     = "Allow NFS from ECS tasks"
+  }
+
+  egress {
+    protocol        = "tcp"
+    from_port       = 2049
+    to_port         = 2049
+    security_groups = [aws_security_group.ecs_tasks.id]
+    description     = "Allow NFS response to ECS tasks"
   }
 
   lifecycle {
