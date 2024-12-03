@@ -40,35 +40,7 @@ resource "aws_ecs_task_definition" "app" {
         retries     = 3
         startPeriod = 90
       }
-      mountPoints = [
-        {
-          sourceVolume  = "redis-data"
-          containerPath = "/data"
-          readOnly     = false
-        }
-      ]
-      command = [
-        "redis-server",
-        "--save", "60", "1",
-        "--loglevel", "debug",
-        "--maxmemory", "512mb",
-        "--maxmemory-policy", "allkeys-lru",
-        "--appendonly", "yes",
-        "--appendfsync", "everysec"
-      ]
-      ulimits = [
-        {
-          name = "nofile"
-          softLimit = 65536
-          hardLimit = 65536
-        }
-      ]
-      systemControls = [
-        {
-          namespace = "net.core.somaxconn"
-          value     = "1024"
-        }
-      ]
+      command = ["redis-server", "--protected-mode", "no"]
     },
     {
       name         = "vimbiso-pay-${var.environment}"
@@ -149,12 +121,6 @@ resource "aws_ecs_task_definition" "app" {
           hardLimit = 65536
         }
       ]
-      systemControls = [
-        {
-          namespace = "net.core.somaxconn"
-          value     = "1024"
-        }
-      ]
     }
   ])
 
@@ -168,19 +134,6 @@ resource "aws_ecs_task_definition" "app" {
         iam = "ENABLED"
       }
       root_directory = "/app/data"
-    }
-  }
-
-  volume {
-    name = "redis-data"
-    efs_volume_configuration {
-      file_system_id = var.efs_file_system_id
-      transit_encryption = "ENABLED"
-      authorization_config {
-        access_point_id = var.redis_access_point_id
-        iam = "ENABLED"
-      }
-      root_directory = "/redis"
     }
   }
 
