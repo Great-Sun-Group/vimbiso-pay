@@ -37,7 +37,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/redis"
+          containerPath = "/"
           readOnly     = false
         }
       ]
@@ -49,40 +49,27 @@ resource "aws_ecs_task_definition" "app" {
         echo "[Redis] Current directory structure:"
         ls -la /
 
-        echo "[Redis] Checking Redis directory..."
-        if [ ! -d /redis ]; then
-            echo "[Redis] ERROR: /redis directory does not exist"
-            echo "[Redis] Attempting to create directory..."
-            mkdir -p /redis
-            if [ $? -ne 0 ]; then
-                echo "[Redis] ERROR: Failed to create /redis directory"
-                exit 1
-            fi
-        fi
+        echo "[Redis] Creating Redis data directory..."
+        mkdir -p /data
+        chown -R redis:redis /data
+        chmod 755 /data
 
         echo "[Redis] Checking Redis directory permissions..."
-        ls -la /redis
+        ls -la /data
 
-        echo "[Redis] Checking write permissions..."
-        if [ ! -w /redis ]; then
-            echo "[Redis] ERROR: /redis directory is not writable"
-            echo "[Redis] Current user and group:"
-            id
-            echo "[Redis] Directory ownership:"
-            ls -la /redis
-            exit 1
-        fi
+        echo "[Redis] Current user and group:"
+        id
 
         echo "[Redis] Testing write access..."
-        touch /redis/test_write
+        touch /data/test_write
         if [ $? -ne 0 ]; then
-            echo "[Redis] ERROR: Failed to create test file in /redis"
+            echo "[Redis] ERROR: Failed to create test file in /data"
             exit 1
         fi
-        rm /redis/test_write
+        rm /data/test_write
 
         echo "[Redis] Directory setup complete, starting Redis server..."
-        exec redis-server --dir /redis --appendonly yes --protected-mode no
+        exec redis-server --dir /data --appendonly yes --protected-mode no
         EOT
       ]
     },

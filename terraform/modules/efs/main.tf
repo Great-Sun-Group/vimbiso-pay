@@ -59,7 +59,7 @@ resource "aws_efs_access_point" "redis_data" {
   }
 
   root_directory {
-    path = "/redis"
+    path = "/"
     creation_info {
       owner_gid   = 999  # Alpine Redis group
       owner_uid   = 999  # Alpine Redis user
