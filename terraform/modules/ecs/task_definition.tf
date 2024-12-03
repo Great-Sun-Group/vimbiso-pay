@@ -42,10 +42,10 @@ resource "aws_ecs_task_definition" "app" {
       }
       healthCheck = {
         command     = ["CMD", "redis-cli", "ping"]  # Simplified health check
-        interval    = 10        # More frequent checks
-        timeout     = 5         # Shorter timeout
+        interval    = 5         # More frequent checks
+        timeout     = 2         # Shorter timeout
         retries     = 3
-        startPeriod = 10        # Shorter start period
+        startPeriod = 5        # Shorter start period
       }
       mountPoints = [
         {
@@ -120,6 +120,10 @@ resource "aws_ecs_task_definition" "app" {
         # Connection settings
         timeout 0
         tcp-keepalive 60
+        protected-mode no
+
+        # Disable RDB persistence
+        save ""
 
         # Ignore warnings that don't affect functionality
         ignore-warnings ARM64-COW-BUG
@@ -129,25 +133,7 @@ resource "aws_ecs_task_definition" "app" {
         cat /tmp/redis.conf
 
         echo "Starting Redis server..."
-        redis-server /tmp/redis.conf --loglevel debug &
-        REDIS_PID=$!
-
-        # Wait for Redis to be ready
-        echo "Waiting for Redis to be ready..."
-        until redis-cli ping; do
-          echo "Redis not ready yet..."
-          ps aux | grep redis-server
-          sleep 1
-        done
-
-        echo "Redis is ready! Enabling AOF..."
-        redis-cli config set appendonly yes
-
-        echo "Final Redis status:"
-        redis-cli info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
-
-        # Wait for Redis process
-        wait $REDIS_PID
+        redis-server /tmp/redis.conf --loglevel debug
         EOT
       ]
     },
@@ -200,9 +186,9 @@ resource "aws_ecs_task_definition" "app" {
       healthCheck = {
         command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ || exit 1"]
         interval    = 30
-        timeout     = 10
-        retries     = 5
-        startPeriod = 120
+        timeout     = 5
+        retries     = 3
+        startPeriod = 60  # Reduced to fit within service grace period
       }
       mountPoints = [
         {
@@ -214,7 +200,7 @@ resource "aws_ecs_task_definition" "app" {
       dependsOn = [
         {
           containerName = "redis"
-          condition     = "HEALTHY"
+          condition     = "START"  # Changed from HEALTHY to START to avoid timing issues
         }
       ]
       command = [
