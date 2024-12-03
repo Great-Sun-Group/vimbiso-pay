@@ -33,13 +33,6 @@ resource "aws_ecs_task_definition" "app" {
           max-buffer-size       = "4m"
         }
       }
-      healthCheck = {
-        command     = ["CMD-SHELL", "redis-cli ping || exit 1"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 30
-      }
       mountPoints = [
         {
           sourceVolume  = "redis-data"
@@ -50,10 +43,7 @@ resource "aws_ecs_task_definition" "app" {
       command = [
         "redis-server",
         "--dir", "/data",
-        "--loglevel", "debug",
-        "--save", "60", "1",
         "--appendonly", "yes",
-        "--appendfsync", "everysec",
         "--protected-mode", "no"
       ]
     },
@@ -118,16 +108,26 @@ resource "aws_ecs_task_definition" "app" {
           readOnly     = false
         }
       ]
-      dependsOn = [
-        {
-          containerName = "redis"
-          condition     = "HEALTHY"
-        }
-      ]
       command = [
         "sh",
         "-c",
-        "set -ex && mkdir -p /app/data/{db,static,media,logs} && chmod -R 755 /app/data && ./start_app.sh"
+        <<-EOT
+        set -e
+
+        echo "[App] Waiting for Redis..."
+        timeout=60
+        until redis-cli ping > /dev/null 2>&1; do
+          timeout=$((timeout - 1))
+          if [ $timeout -le 0 ]; then
+            echo "[App] ERROR: Redis not ready after 60 seconds"
+            exit 1
+          fi
+          sleep 1
+        done
+        echo "[App] Redis is ready"
+
+        exec ./start_app.sh
+        EOT
       ]
       ulimits = [
         {
