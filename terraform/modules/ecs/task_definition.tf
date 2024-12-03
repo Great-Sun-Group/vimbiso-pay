@@ -72,43 +72,67 @@ resource "aws_ecs_task_definition" "app" {
         "-c",
         <<-EOT
         set -e
-        # Ensure proper permissions
+
+        # Wait for EFS mount to be ready
+        until mountpoint -q /data; do
+          echo "Waiting for EFS mount..."
+          sleep 2
+        done
+
+        # Verify directory permissions
         mkdir -p /data
         chown redis:redis /data
         chmod 755 /data
 
         # Create Redis config with optimized settings
         cat > /tmp/redis.conf << EOF
-        appendonly yes
-        # Let Redis manage memory based on container limits
+        # Memory settings
+        maxmemory 512mb
         maxmemory-policy allkeys-lru
+        maxmemory-samples 10
+
+        # Initial persistence settings (AOF disabled on startup)
+        appendonly no
+        appendfsync everysec
+        no-appendfsync-on-rewrite yes
+        auto-aof-rewrite-percentage 100
+        auto-aof-rewrite-min-size 64mb
+
+        # Performance settings
         bind 0.0.0.0
         dir /data
         port ${var.redis_port}
-        # Memory optimization settings
         activerehashing yes
         lazyfree-lazy-eviction yes
         lazyfree-lazy-expire yes
         lazyfree-lazy-server-del yes
         replica-lazy-flush yes
         dynamic-hz yes
-        maxmemory-samples 10
-        # Performance tuning
-        io-threads 2
-        io-threads-do-reads yes
+
         # Connection settings
         timeout 0
         tcp-keepalive 60
-        # AOF settings
-        appendfsync everysec
-        no-appendfsync-on-rewrite yes
-        auto-aof-rewrite-percentage 100
-        auto-aof-rewrite-min-size 64mb
+
         # Ignore warnings that don't affect functionality
         ignore-warnings ARM64-COW-BUG
         EOF
 
-        exec redis-server /tmp/redis.conf --ignore-warnings ARM64-COW-BUG
+        # Start Redis without AOF initially
+        redis-server /tmp/redis.conf &
+        REDIS_PID=$!
+
+        # Wait for Redis to be ready
+        until redis-cli ping; do
+          echo "Waiting for Redis to be ready..."
+          sleep 1
+        done
+
+        # Enable AOF after Redis is running
+        echo "Enabling AOF persistence..."
+        redis-cli config set appendonly yes
+
+        # Wait for Redis process
+        wait $REDIS_PID
         EOT
       ]
     },
