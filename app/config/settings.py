@@ -95,32 +95,25 @@ CACHES = {
         "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SOCKET_CONNECT_TIMEOUT": 30,
-            "SOCKET_TIMEOUT": 30,
+            "SOCKET_CONNECT_TIMEOUT": 5,        # Reduced from 30
+            "SOCKET_TIMEOUT": 5,                # Reduced from 30
             "RETRY_ON_TIMEOUT": True,
-            "MAX_CONNECTIONS": 50,
+            "MAX_CONNECTIONS": 20,              # Reduced from 50
             "CONNECTION_POOL_KWARGS": {
-                "max_connections": 50,
+                "max_connections": 20,          # Reduced from 50
                 "retry_on_timeout": True,
                 "retry_on_error": [
                     redis.ConnectionError,
                     redis.TimeoutError,
                     socket.timeout,
-                    socket.error
+                    socket.error,
                 ],
-                "health_check_interval": 60,  # Increased to reduce frequency
+                "health_check_interval": 30,    # Reduced from 60
             },
-            "CONNECTION_POOL_CLASS_KWARGS": {
-                "socket_keepalive": True,
-                "socket_keepalive_options": {
-                    socket.TCP_KEEPIDLE: 30,
-                    socket.TCP_KEEPINTVL: 5,
-                    socket.TCP_KEEPCNT: 5
-                }
-            },
-            "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
-            "IGNORE_EXCEPTIONS": True,
-            "PARSER_CLASS": "redis.connection.HiredisParser",
+            "PARSER_CLASS": "redis.connection.PythonParser",
+            # Changed above from HiredisParser
+            "COMPRESSOR": None,  # Disabled compression for now
+            "IGNORE_EXCEPTIONS": False,  # Changed to False to surface errors
         },
         "KEY_PREFIX": "vimbiso",
     }
@@ -136,8 +129,8 @@ SESSION_SAVE_EVERY_REQUEST = False
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": (
-            "django.contrib.auth.password_validation."
-            "UserAttributeSimilarityValidator"
+            "django.contrib.auth.password_validation"
+            ".UserAttributeSimilarityValidator"
         ),
     },
     {
@@ -264,12 +257,12 @@ LOGGING = {
         },
         "django_redis": {  # Enhanced Redis logging
             "handlers": ["console"],
-            "level": "INFO",  # Changed from WARNING to catch more Redis-related issues
+            "level": "DEBUG",  # Changed to DEBUG for more detail
             "propagate": False,
         },
         "redis": {  # Added specific Redis client logging
             "handlers": ["console"],
-            "level": "WARNING",
+            "level": "DEBUG",  # Changed to DEBUG for more detail
             "propagate": False,
         },
     },
