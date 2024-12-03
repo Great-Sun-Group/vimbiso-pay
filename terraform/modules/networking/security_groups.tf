@@ -85,6 +85,15 @@ resource "aws_security_group" "ecs_tasks" {
     description = "Allow all outbound traffic"
   }
 
+  # Explicit egress rule for EFS
+  egress {
+    protocol        = "tcp"
+    from_port       = 2049
+    to_port         = 2049
+    security_groups = [aws_security_group.efs.id]
+    description     = "Allow outbound NFS traffic to EFS"
+  }
+
   lifecycle {
     create_before_destroy = true
   }
@@ -109,11 +118,11 @@ resource "aws_security_group" "efs" {
   }
 
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
+    protocol        = "tcp"
+    from_port       = 2049
+    to_port         = 2049
+    security_groups = [aws_security_group.ecs_tasks.id]
+    description     = "Allow return NFS traffic to ECS tasks"
   }
 
   lifecycle {
