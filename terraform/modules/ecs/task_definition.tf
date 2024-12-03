@@ -45,19 +45,16 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        echo "[Redis] Starting Redis server with mounted EFS volume..."
-        exec redis-server --appendonly yes --protected-mode no --bind 0.0.0.0
+        echo "[Redis] Starting Redis server..."
+        redis-server --appendonly yes --protected-mode no --bind 0.0.0.0
         EOT
       ]
       healthCheck = {
-        command     = ["CMD-SHELL", "redis-cli ping || exit 1"]
-        interval    = 30
+        command     = ["CMD", "redis-cli", "ping"]
+        interval    = 10
         timeout     = 5
         retries     = 3
-        startPeriod = 60
-      }
-      linuxParameters = {
-        initProcessEnabled = true
+        startPeriod = 10
       }
     },
     {
@@ -140,9 +137,6 @@ resource "aws_ecs_task_definition" "app" {
         exec ./start_app.sh
         EOT
       ]
-      linuxParameters = {
-        initProcessEnabled = true
-      }
       dependsOn = [
         {
           containerName = "redis"
@@ -157,7 +151,6 @@ resource "aws_ecs_task_definition" "app" {
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
       transit_encryption = "ENABLED"
-      transit_encryption_port = 2999
       authorization_config {
         access_point_id = var.app_access_point_id
         iam = "ENABLED"
@@ -170,7 +163,6 @@ resource "aws_ecs_task_definition" "app" {
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
       transit_encryption = "ENABLED"
-      transit_encryption_port = 2998
       authorization_config {
         access_point_id = var.redis_access_point_id
         iam = "ENABLED"
