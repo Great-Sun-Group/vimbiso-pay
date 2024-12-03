@@ -89,38 +89,17 @@ resource "aws_efs_file_system_policy" "main" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "RequireEncryptedTransport"
-        Effect = "Deny"
-        Principal = {
-          AWS = "*"
-        }
-        Action = "*"
-        Resource = aws_efs_file_system.main.arn
-        Condition = {
-          Bool = {
-            "aws:SecureTransport" = "false"
-          }
-        }
-      },
-      {
-        Sid    = "AllowAccessViaAccessPoint"
+        Sid    = "AllowAllAccess"
         Effect = "Allow"
         Principal = {
           AWS = "*"
         }
         Action = [
           "elasticfilesystem:ClientMount",
-          "elasticfilesystem:ClientWrite"
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess"
         ]
         Resource = aws_efs_file_system.main.arn
-        Condition = {
-          StringEquals = {
-            "elasticfilesystem:AccessPointArn": [
-              aws_efs_access_point.app_data.arn,
-              aws_efs_access_point.redis_data.arn
-            ]
-          }
-        }
       }
     ]
   })
