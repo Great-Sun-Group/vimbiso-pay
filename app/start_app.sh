@@ -15,7 +15,7 @@ while true; do
     if [ $attempt -gt $max_attempts ]; then
         echo "Redis is still unavailable after $max_attempts attempts - giving up"
         echo "Last Redis connection attempt output:"
-        redis-cli -h redis info | grep -E "^(connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
+        redis-cli -h redis info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
         exit 1
     fi
 
@@ -24,11 +24,20 @@ while true; do
     if redis-cli -h redis info > /dev/null 2>&1; then
         echo "Redis connection successful!"
         echo "Redis server info:"
-        redis-cli -h redis info | grep -E "^(connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
+        redis-cli -h redis info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
+        echo "Redis data directory:"
+        redis-cli -h redis config get dir
+        echo "Redis persistence status:"
+        redis-cli -h redis config get appendonly
+        echo "Redis memory settings:"
+        redis-cli -h redis config get maxmemory
+        redis-cli -h redis config get maxmemory-policy
         break
     else
         echo "Redis connection failed. Server response:"
         redis-cli -h redis ping || true
+        echo "Checking Redis process status..."
+        ps aux | grep redis-server || true
         echo "Retrying in ${wait_time}s..."
         sleep $wait_time
         attempt=$((attempt + 1))
