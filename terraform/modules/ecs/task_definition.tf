@@ -12,7 +12,7 @@ resource "aws_ecs_task_definition" "app" {
     {
       name         = "redis"
       image        = "redis:7-alpine"
-      essential    = true  # Keep essential since app needs Redis
+      essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
       user         = "redis:redis"
@@ -36,11 +36,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD", "redis-cli", "ping"]
+        command     = ["CMD", "redis-cli", "-h", "redis", "ping"]
         interval    = 5
         timeout     = 2
         retries     = 3
-        startPeriod = 10  # Short start period since Redis starts quickly
+        startPeriod = 10
       }
       mountPoints = [
         {
@@ -171,7 +171,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 30
         timeout     = 5
         retries     = 3
-        startPeriod = 120  # Increased to allow for Redis retries
+        startPeriod = 120
       }
       mountPoints = [
         {
@@ -183,7 +183,7 @@ resource "aws_ecs_task_definition" "app" {
       dependsOn = [
         {
           containerName = "redis"
-          condition     = "HEALTHY"  # Wait for Redis to be healthy
+          condition     = "HEALTHY"
         }
       ]
       command = [
