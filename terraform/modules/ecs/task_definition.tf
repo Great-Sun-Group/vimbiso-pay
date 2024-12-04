@@ -14,7 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "root"  # Start as root to set up permissions
+      user         = "root"  # Keep as root to handle EFS permissions
       portMappings = [
         {
           containerPort = var.redis_port
@@ -54,23 +54,41 @@ resource "aws_ecs_task_definition" "app" {
         # Install su-exec for proper user switching
         apk add --no-cache su-exec
 
-        # Create required directories
+        # Create required directories and fix permissions
         mkdir -p /data/appendonlydir
         touch /data/appendonly.aof
 
-        # Set correct ownership and permissions
+        # Fix any corrupted AOF files
+        if [ -f /data/appendonlydir/appendonly.aof.1.incr.aof ]; then
+          echo "Checking AOF file integrity..."
+          if ! redis-check-aof --fix /data/appendonlydir/appendonly.aof.1.incr.aof; then
+            echo "AOF file corrupted, removing and starting fresh..."
+            rm -f /data/appendonlydir/appendonly.aof.1.incr.aof
+            rm -f /data/appendonlydir/appendonly.aof.manifest
+          fi
+        fi
+
+        # Ensure proper ownership
         chown -R redis:redis /data
         chmod 755 /data /data/appendonlydir
 
+        # Enable overcommit_memory
+        echo 1 > /proc/sys/vm/overcommit_memory || true
+
         # Start Redis server as redis user with increased timeouts
         echo "[Redis] Starting server as redis user..."
-        exec su-exec redis:redis redis-server \
+        exec redis-server \
           --appendonly yes \
           --protected-mode no \
           --bind 0.0.0.0 \
           --dir /data \
           --timeout 30 \
-          --tcp-keepalive 60
+          --tcp-keepalive 60 \
+          --appendfsync everysec \
+          --auto-aof-rewrite-percentage 100 \
+          --auto-aof-rewrite-min-size 64mb \
+          --aof-load-truncated yes \
+          --aof-use-rdb-preamble yes
         EOT
       ]
       healthCheck = {
@@ -78,7 +96,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 30
         timeout     = 10
         retries     = 3
-        startPeriod = 300  # Increased to match service grace period
+        startPeriod = 300  # Matches service grace period
       }
     },
     {
