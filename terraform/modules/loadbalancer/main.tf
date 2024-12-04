@@ -1,33 +1,42 @@
-# Get the AWS ELB service account ID
-data "aws_elb_service_account" "current" {}
+# Target Group for application
+resource "aws_lb_target_group" "app" {
+  name        = "vimbiso-pay-tg-${var.environment}"
+  port        = 8000  # Match container port
+  protocol    = "HTTP"  # Keep as HTTP since ALB handles SSL termination
+  vpc_id      = var.vpc_id
+  target_type = "ip"
 
-# S3 bucket for ALB access logs
-resource "aws_s3_bucket" "alb_logs" {
-  bucket = "vimbiso-pay-alb-logs-${var.environment}"
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200"
+    path                = var.health_check_path
+    port                = "traffic-port"
+    protocol            = "HTTP"  # Keep as HTTP since ALB handles SSL termination
+    timeout             = 5  # Reduced from 15
+    unhealthy_threshold = 3  # Reduced from 10
+  }
+
+  stickiness {
+    type            = "lb_cookie"
+    cookie_duration = 86400
+    enabled         = true
+  }
+
+  # Slow start gives targets time to warm up before receiving full share of requests
+  slow_start = 30  # Reduced from 60 seconds
 
   tags = merge(var.tags, {
-    Name = "vimbiso-pay-alb-logs-${var.environment}"
+    Name = "vimbiso-pay-tg-${var.environment}"
   })
 
   lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "aws_s3_bucket_versioning" "alb_logs" {
-  bucket = aws_s3_bucket.alb_logs.id
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
-  bucket = aws_s3_bucket.alb_logs.id
-
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
+    create_before_destroy = true
+    ignore_changes = [
+      tags,
+      stickiness
+    ]
   }
 }
 
@@ -188,8 +197,7 @@ resource "aws_lb" "main" {
     ignore_changes = [
       access_logs,
       tags,
-      security_groups,
-      subnets
+      subnets  # Removed security_groups from ignore_changes
     ]
   }
 }
@@ -203,48 +211,6 @@ resource "aws_wafv2_web_acl_association" "main" {
     create_before_destroy = true
     ignore_changes = [
       web_acl_arn
-    ]
-  }
-}
-
-# Target Group for application
-resource "aws_lb_target_group" "app" {
-  name        = "vimbiso-pay-tg-${var.environment}"
-  port        = 8000  # Match container port
-  protocol    = "HTTP"  # Keep as HTTP since ALB handles SSL termination
-  vpc_id      = var.vpc_id
-  target_type = "ip"
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = var.health_check_path
-    port                = "traffic-port"
-    protocol            = "HTTP"  # Keep as HTTP since ALB handles SSL termination
-    timeout             = 5  # Reduced from 15
-    unhealthy_threshold = 3  # Reduced from 10
-  }
-
-  stickiness {
-    type            = "lb_cookie"
-    cookie_duration = 86400
-    enabled         = true
-  }
-
-  # Slow start gives targets time to warm up before receiving full share of requests
-  slow_start = 30  # Reduced from 60 seconds
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-tg-${var.environment}"
-  })
-
-  lifecycle {
-    create_before_destroy = true
-    ignore_changes = [
-      tags,
-      stickiness
     ]
   }
 }
@@ -328,5 +294,3 @@ resource "aws_lb_listener_rule" "health_check_https" {
     }
   }
 }
-
-# Rest of the file remains the same...
