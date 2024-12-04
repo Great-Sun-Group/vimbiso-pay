@@ -69,13 +69,13 @@ resource "aws_route53_record" "app" {
 resource "aws_route53_health_check" "app" {
   count = var.create_dns_records ? 1 : 0
 
-  fqdn              = var.alb_dns_name  # Changed to use ALB DNS name
+  fqdn              = var.alb_dns_name  # Using ALB DNS name
   port              = 443
   type              = "HTTPS"
   resource_path     = var.health_check_path
   failure_threshold = "3"
   request_interval  = "30"
-  regions          = ["af-south-1"]  # Added to specify health checker region
+  regions          = ["af-south-1", "eu-west-1", "us-east-1"]  # Using multiple regions for redundancy
 
   tags = merge(var.tags, {
     Name = "vimbiso-pay-health-${var.environment}"
