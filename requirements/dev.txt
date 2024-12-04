@@ -10,7 +10,7 @@ pytest-cov==6.0.0
 mypy==1.8.0
 django-debug-toolbar==4.4.6
 django-browser-reload==1.17.0
-ipython==8.29.0
+ipython==8.30.0
 
 # Type stubs for better development experience
 types-requests==2.32.0.20241016
