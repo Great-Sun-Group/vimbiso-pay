@@ -4,16 +4,16 @@ resource "aws_ecs_service" "app" {
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = var.min_capacity
-  deployment_minimum_healthy_percent = 50
+  deployment_minimum_healthy_percent = 100  # Keep at least one task running
   deployment_maximum_percent        = 200
   scheduling_strategy               = "REPLICA"
   force_new_deployment             = true
-  health_check_grace_period_seconds = 600  # Increased to allow time for EFS mount and Redis startup
+  health_check_grace_period_seconds = 300  # 5 minutes for startup
 
-  # Disable rollback temporarily to debug deployment issues
+  # Keep rollback disabled for debugging
   deployment_circuit_breaker {
     enable   = true
-    rollback = false  # Disable automatic rollback to debug issues
+    rollback = false  # Disabled to preserve logs and debug info
   }
 
   deployment_controller {

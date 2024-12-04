@@ -214,14 +214,14 @@ resource "aws_lb_target_group" "app" {
 
   health_check {
     enabled             = true
-    healthy_threshold   = 2                  # Requires 2 consecutive successes
-    interval            = 30                 # Check every 30 seconds
+    healthy_threshold   = 2                  # Keep 2 consecutive successes requirement
+    interval            = 20                 # Check more frequently (was 30)
     matcher             = "200"
     path                = var.health_check_path
     port                = "traffic-port"
     protocol            = "HTTP"
-    timeout             = 15                 # Wait up to 15 seconds for response
-    unhealthy_threshold = 10                 # Allow up to 10 failures (5 minutes total)
+    timeout             = 10                 # Match app container health check timeout
+    unhealthy_threshold = 15                 # Allow more failures during startup (5 minutes total with 20s interval)
   }
 
   deregistration_delay = 30

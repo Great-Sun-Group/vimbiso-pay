@@ -93,12 +93,12 @@ CACHES = {
         "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SOCKET_CONNECT_TIMEOUT": 5,        # Reduced from 30
-            "SOCKET_TIMEOUT": 5,                # Reduced from 30
+            "SOCKET_CONNECT_TIMEOUT": 15,       # Increased from 5
+            "SOCKET_TIMEOUT": 15,               # Increased from 5
             "RETRY_ON_TIMEOUT": True,
-            "MAX_CONNECTIONS": 20,              # Reduced from 50
+            "MAX_CONNECTIONS": 20,
             "CONNECTION_POOL_KWARGS": {
-                "max_connections": 20,          # Reduced from 50
+                "max_connections": 20,
                 "retry_on_timeout": True,
                 "retry_on_error": [
                     redis.ConnectionError,
@@ -106,12 +106,11 @@ CACHES = {
                     socket.timeout,
                     socket.error
                 ],
-                "health_check_interval": 30    # Reduced from 60
+                "health_check_interval": 30
             },
-            "PARSER_CLASS": "redis.connection.PythonParser",
-            # Changed above from HiredisParser
-            "COMPRESSOR": None,  # Disabled compression for now
-            "IGNORE_EXCEPTIONS": False  # Changed to False to surface errors
+            "PARSER_CLASS": "redis.connection.HiredisParser",
+            "COMPRESSOR": None,
+            "IGNORE_EXCEPTIONS": True  # Changed to True to prevent cascading failures
         },
         "KEY_PREFIX": "vimbiso"
     }
@@ -218,18 +217,13 @@ SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 
-
-def is_health_check(request):
-    return request and request.path.startswith('/health/')
-
-
 # Production security settings
 if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True
     # Conditionally enable SSL redirect
     SECURE_SSL_REDIRECT = True
-    SECURE_REDIRECT_EXEMPT = [r'^health/']  # Exempt health check from SSL redirect
+    SECURE_REDIRECT_EXEMPT = ['^health/$']  # Exact match for health check path
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Logging configuration - Modified for container-friendly setup

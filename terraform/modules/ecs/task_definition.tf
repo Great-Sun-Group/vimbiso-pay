@@ -11,7 +11,7 @@ resource "aws_ecs_task_definition" "app" {
     {
       name         = "redis"
       image        = "public.ecr.aws/docker/library/redis:7.0-alpine"
-      essential    = true
+      essential    = true  # Keep as essential since it's critical for app functionality
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
       user         = "root"  # Keep root to handle EFS mount permissions
@@ -64,11 +64,11 @@ resource "aws_ecs_task_definition" "app" {
         EOT
       ]
       healthCheck = {
-        command     = ["CMD", "redis-cli", "ping"]
-        interval    = 10
+        command     = ["CMD-SHELL", "redis-cli ping | grep -q PONG || exit 1"]
+        interval    = 15  # Check more frequently
         timeout     = 5
         retries     = 3
-        startPeriod = 10
+        startPeriod = 20  # Give reasonable time to start
       }
     },
     {
@@ -122,11 +122,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f --max-time 5 http://localhost:${var.app_port}/health/ || exit 1"]
+        command     = ["CMD-SHELL", "curl -f --max-time 10 http://localhost:${var.app_port}/health/ || exit 1"]
         interval    = 30
-        timeout     = 6
+        timeout     = 10  # Increased timeout for health check
         retries     = 3
-        startPeriod = 180  # Increased to allow more time for initial startup
+        startPeriod = 120  # Reduced but still giving enough time for startup
       }
       mountPoints = [
         {
@@ -154,14 +154,22 @@ resource "aws_ecs_task_definition" "app" {
         chmod 777 /efs-vols/app-data/data/db  # Ensure SQLite has write access
 
         echo "[App] Waiting for Redis..."
-        timeout=60
+        until (echo > /dev/tcp/localhost/${var.redis_port}) >/dev/null 2>&1; do
+          echo "[App] Redis is unavailable - sleeping 2s"
+          sleep 2
+        done
+
+        # Additional Redis connectivity check
+        max_attempts=30
+        attempt=1
         until redis-cli -h localhost ping > /dev/null 2>&1; do
-          timeout=$((timeout - 1))
-          if [ $timeout -le 0 ]; then
-            echo "[App] ERROR: Redis not ready after 60 seconds"
+          if [ $attempt -ge $max_attempts ]; then
+            echo "[App] ERROR: Redis not responding after 60 seconds"
             exit 1
           fi
-          sleep 1
+          echo "[App] Waiting for Redis to accept connections... attempt $attempt/$max_attempts"
+          attempt=$((attempt + 1))
+          sleep 2
         done
         echo "[App] Redis is ready"
 
