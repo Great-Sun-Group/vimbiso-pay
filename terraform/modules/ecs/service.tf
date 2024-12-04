@@ -5,7 +5,7 @@ resource "aws_ecs_service" "app" {
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = var.min_capacity
   deployment_minimum_healthy_percent = 0  # Allow all tasks to be replaced
-  deployment_maximum_percent        = 100 # Prevent multiple new tasks during deployment
+  deployment_maximum_percent        = 200 # Allow new tasks to start before old ones stop
   scheduling_strategy               = "REPLICA"
   force_new_deployment             = true
   health_check_grace_period_seconds = 900  # 15 minutes for complete startup
