@@ -14,7 +14,7 @@ SECRET_KEY = env("DJANGO_SECRET")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env("DEBUG", default=False, cast=bool)
 
-ALLOWED_HOSTS = env("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(" ")
+ALLOWED_HOSTS = env("ALLOWED_HOSTS", default="localhost 127.0.0.1").split(" ")
 
 # Application definition
 INSTALLED_APPS = [
@@ -62,8 +62,8 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-            ]
-        }
+            ],
+        },
     }
 ]
 
@@ -78,14 +78,14 @@ DATABASES = {
         "ATOMIC_REQUESTS": True,
         "OPTIONS": {
             "timeout": 60,  # Increased timeout
-            "isolation_level": "IMMEDIATE"  # Changed from READ_COMMITTED to IMMEDIATE
+            "isolation_level": "IMMEDIATE",  # Changed from READ_COMMITTED to IMMEDIATE
         },
-        "CONN_MAX_AGE": 60
+        "CONN_MAX_AGE": 60,
     }
 }
 
-# Redis configuration - Use environment variable with redis container name as default
-REDIS_URL = env("REDIS_URL", default="redis://redis:6379/0")
+# Redis configuration - Use localhost by default since Redis is in same task
+REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 
 CACHES = {
     "default": {
@@ -104,15 +104,15 @@ CACHES = {
                     redis.ConnectionError,
                     redis.TimeoutError,
                     socket.timeout,
-                    socket.error
+                    socket.error,
                 ],
-                "health_check_interval": 30
+                "health_check_interval": 30,
             },
             "PARSER_CLASS": "redis.connection.HiredisParser",
             "COMPRESSOR": None,
-            "IGNORE_EXCEPTIONS": True  # Changed to True to prevent cascading failures
+            "IGNORE_EXCEPTIONS": True,  # Changed to True to prevent cascading failures
         },
-        "KEY_PREFIX": "vimbiso"
+        "KEY_PREFIX": "vimbiso",
     }
 }
 
@@ -128,17 +128,17 @@ AUTH_PASSWORD_VALIDATORS = [
         "NAME": (
             "django.contrib.auth.password_validation"
             ".UserAttributeSimilarityValidator"
-        )
+        ),
     },
     {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"
-    }
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
 ]
 
 # Internationalization
@@ -180,7 +180,7 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ],
-    "DEFAULT_THROTTLE_RATES": {"anon": "100/day", "user": "1000/day"}
+    "DEFAULT_THROTTLE_RATES": {"anon": "100/day", "user": "1000/day"},
 }
 
 # JWT settings
@@ -233,40 +233,40 @@ LOGGING = {
     "formatters": {
         "json": {
             "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
-            "format": "%(asctime)s %(levelname)s %(name)s %(message)s"
-        }
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "json",
-            "level": "INFO"
-        }
+            "level": "INFO",
+        },
     },
     "loggers": {
         "django": {
             "handlers": ["console"],
             "level": env("DJANGO_LOG_LEVEL", default="INFO"),
-            "propagate": False
+            "propagate": False,
         },
         "core": {
             "handlers": ["console"],
             "level": env("APP_LOG_LEVEL", default="INFO"),
-            "propagate": False
+            "propagate": False,
         },
         "django_redis": {  # Enhanced Redis logging
             "handlers": ["console"],
             "level": "DEBUG",  # Changed to DEBUG for more detail
-            "propagate": False
+            "propagate": False,
         },
         "redis": {  # Added specific Redis client logging
             "handlers": ["console"],
             "level": "DEBUG",  # Changed to DEBUG for more detail
-            "propagate": False
-        }
+            "propagate": False,
+        },
     },
     "root": {
         "handlers": ["console"],
-        "level": "INFO"
-    }
+        "level": "INFO",
+    },
 }

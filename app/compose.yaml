@@ -17,8 +17,8 @@ services:
       - DJANGO_DEBUG_TOOLBAR=${DJANGO_DEBUG_TOOLBAR:-1}
       - PYTHONPATH=${PYTHONPATH:-/app}
 
-      # Redis Configuration
-      - REDIS_URL=${REDIS_URL:-redis://127.0.0.1:6379/0}
+      # Redis Configuration - Using localhost since containers share network
+      - REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
 
       # Credex Core API Configuration
       - MYCREDEX_APP_URL=${MYCREDEX_APP_URL:-https://dev.mycredex.dev/}
@@ -41,7 +41,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    network_mode: "service:redis"
+    network_mode: "service:redis"  # Share network namespace with Redis
     command: ./start_app.sh
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
@@ -64,24 +64,29 @@ services:
 
   redis:
     image: redis:7-alpine
-    user: root
+    user: root  # Start as root to handle permissions
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/redis
     healthcheck:
-      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 30s
     command: >
-      redis-server
-      --appendonly yes
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-      --bind 0.0.0.0
-      --dir /redis
+      sh -c "
+      mkdir -p /redis &&
+      chown -R redis:redis /redis &&
+      chmod 755 /redis &&
+      su-exec redis:redis redis-server \
+        --appendonly yes \
+        --maxmemory 512mb \
+        --maxmemory-policy allkeys-lru \
+        --bind 0.0.0.0 \
+        --dir /redis
+      "
 
 volumes:
   redis_data:

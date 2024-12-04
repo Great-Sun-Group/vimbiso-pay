@@ -38,11 +38,6 @@ resource "aws_ecs_service" "app" {
     base             = 1
   }
 
-  service_registries {
-    registry_arn = aws_service_discovery_service.redis.arn
-    container_name = "redis"
-  }
-
   # Only ignore changes to desired_count and capacity strategy
   lifecycle {
     ignore_changes = [
@@ -52,8 +47,6 @@ resource "aws_ecs_service" "app" {
   }
 
   depends_on = [
-    aws_service_discovery_service.app,
-    aws_service_discovery_service.redis,
     aws_ecs_cluster.main,
     var.efs_mount_targets  # Ensure EFS mount targets are ready
   ]

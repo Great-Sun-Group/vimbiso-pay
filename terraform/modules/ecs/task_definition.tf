@@ -102,7 +102,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
-        { name = "REDIS_URL", value = "redis://redis.vimbiso-pay-${var.environment}.local:${var.redis_port}/0" },
+        { name = "REDIS_URL", value = "redis://localhost:${var.redis_port}/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" },
@@ -164,14 +164,8 @@ resource "aws_ecs_task_definition" "app" {
         chmod 755 /efs-vols/app-data
         chmod 777 /efs-vols/app-data/data/db  # Ensure SQLite has write access
 
-        echo "[App] Waiting for Redis DNS resolution..."
-        until host redis.vimbiso-pay-${var.environment}.local >/dev/null 2>&1; do
-          echo "[App] Waiting for Redis DNS - sleeping 2s"
-          sleep 2
-        done
-
-        echo "[App] Waiting for Redis connection..."
-        until redis-cli -h redis.vimbiso-pay-${var.environment}.local ping >/dev/null 2>&1; do
+        echo "[App] Waiting for Redis..."
+        until nc -z localhost ${var.redis_port}; do
           echo "[App] Redis is unavailable - sleeping 2s"
           sleep 2
         done
@@ -179,7 +173,7 @@ resource "aws_ecs_task_definition" "app" {
         # Verify Redis is actually responding to commands
         max_attempts=30
         attempt=1
-        until redis-cli -h redis.vimbiso-pay-${var.environment}.local set health_check test >/dev/null 2>&1; do
+        until redis-cli -h localhost ping >/dev/null 2>&1; do
           if [ $attempt -ge $max_attempts ]; then
             echo "[App] ERROR: Redis not accepting commands after 60 seconds"
             exit 1
