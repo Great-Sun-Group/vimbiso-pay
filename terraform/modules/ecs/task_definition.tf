@@ -11,10 +11,10 @@ resource "aws_ecs_task_definition" "app" {
     {
       name         = "redis"
       image        = "public.ecr.aws/docker/library/redis:7.0-alpine"
-      essential    = true  # Keep as essential since it's critical for app functionality
+      essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "root"  # Keep root to handle EFS mount permissions
+      user         = "root"
       portMappings = [
         {
           containerPort = var.redis_port
@@ -65,10 +65,10 @@ resource "aws_ecs_task_definition" "app" {
       ]
       healthCheck = {
         command     = ["CMD-SHELL", "redis-cli ping | grep -q PONG || exit 1"]
-        interval    = 15  # Check more frequently
+        interval    = 15
         timeout     = 5
         retries     = 3
-        startPeriod = 20  # Give reasonable time to start
+        startPeriod = 20
       }
     },
     {
@@ -93,7 +93,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
-        { name = "REDIS_URL", value = "redis://localhost:${var.redis_port}/0" },
+        { name = "REDIS_URL", value = "redis://redis:${var.redis_port}/0" },  # Changed to use container name
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" },
@@ -124,9 +124,9 @@ resource "aws_ecs_task_definition" "app" {
       healthCheck = {
         command     = ["CMD-SHELL", "curl -f --max-time 10 http://localhost:${var.app_port}/health/ || exit 1"]
         interval    = 30
-        timeout     = 10  # Increased timeout for health check
+        timeout     = 10
         retries     = 3
-        startPeriod = 120  # Reduced but still giving enough time for startup
+        startPeriod = 120
       }
       mountPoints = [
         {
@@ -154,7 +154,7 @@ resource "aws_ecs_task_definition" "app" {
         chmod 777 /efs-vols/app-data/data/db  # Ensure SQLite has write access
 
         echo "[App] Waiting for Redis..."
-        until (echo > /dev/tcp/localhost/${var.redis_port}) >/dev/null 2>&1; do
+        until (echo > /dev/tcp/redis/${var.redis_port}) >/dev/null 2>&1; do
           echo "[App] Redis is unavailable - sleeping 2s"
           sleep 2
         done
@@ -162,7 +162,7 @@ resource "aws_ecs_task_definition" "app" {
         # Additional Redis connectivity check
         max_attempts=30
         attempt=1
-        until redis-cli -h localhost ping > /dev/null 2>&1; do
+        until redis-cli -h redis ping > /dev/null 2>&1; do
           if [ $attempt -ge $max_attempts ]; then
             echo "[App] ERROR: Redis not responding after 60 seconds"
             exit 1
