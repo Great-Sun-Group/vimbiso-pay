@@ -234,7 +234,7 @@ resource "aws_lb_target_group" "app" {
   }
 
   # Slow start gives targets time to warm up before receiving full share of requests
-  slow_start = 300  # 5 minutes to give containers time to warm up
+  slow_start = 60  # Reduced from 300 to 60 seconds to speed up health check
 
   tags = merge(var.tags, {
     Name = "vimbiso-pay-tg-${var.environment}"
@@ -249,7 +249,7 @@ resource "aws_lb_target_group" "app" {
   }
 }
 
-# HTTPS Listener with SSL termination
+# HTTPS Listener with SSL termination and health check rule
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
@@ -272,19 +272,18 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-# HTTP Listener with conditional forwarding for health checks
+# HTTP Listener with health check rule
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
   protocol          = "HTTP"
 
-  # Forward health check requests directly to target group
   default_action {
-    type = "fixed-response"
-    fixed_response {
-      content_type = "text/plain"
-      message_body = "Please use HTTPS"
-      status_code  = "400"
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
     }
   }
 
@@ -296,8 +295,8 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# Health check listener rule
-resource "aws_lb_listener_rule" "health_check" {
+# Health check listener rule for HTTP
+resource "aws_lb_listener_rule" "health_check_http" {
   listener_arn = aws_lb_listener.http.arn
   priority     = 1
 
@@ -313,23 +312,19 @@ resource "aws_lb_listener_rule" "health_check" {
   }
 }
 
-# HTTPS redirect rule for non-health-check paths
-resource "aws_lb_listener_rule" "redirect_to_https" {
-  listener_arn = aws_lb_listener.http.arn
-  priority     = 2
+# Health check listener rule for HTTPS
+resource "aws_lb_listener_rule" "health_check_https" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 1
 
   action {
-    type = "redirect"
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
-    }
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
   }
 
   condition {
     path_pattern {
-      values = ["/*"]
+      values = ["/health/"]
     }
   }
 }
