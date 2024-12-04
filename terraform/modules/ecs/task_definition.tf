@@ -43,7 +43,7 @@ resource "aws_ecs_task_definition" "app" {
       ]
       environment = [
         {
-          name  = "TZ",
+          name  = "TZ"
           value = "UTC"
         }
       ]
@@ -54,9 +54,11 @@ resource "aws_ecs_task_definition" "app" {
         # Install su-exec for proper user switching
         apk add --no-cache su-exec
 
-        # Create required directories with correct ownership
+        # Create required directories
         mkdir -p /data/appendonlydir
         touch /data/appendonly.aof
+
+        # Set correct ownership and permissions
         chown -R redis:redis /data
         chmod 755 /data /data/appendonlydir
 
@@ -110,21 +112,21 @@ resource "aws_ecs_task_definition" "app" {
       ]
       portMappings = [
         {
-          containerPort = var.app_port,
-          hostPort      = var.app_port,
+          containerPort = var.app_port
+          hostPort      = var.app_port
           protocol      = "tcp"
         }
       ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.app.name,
-          awslogs-region        = var.aws_region,
-          awslogs-stream-prefix = "app",
-          awslogs-datetime-format = "%Y-%m-%d %H:%M:%S",
-          awslogs-create-group  = "true",
-          awslogs-multiline-pattern = "^\\[\\d{4}-\\d{2}-\\d{2}",
-          mode                  = "non-blocking",
+          awslogs-group         = aws_cloudwatch_log_group.app.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "app"
+          awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
+          awslogs-create-group  = "true"
+          awslogs-multiline-pattern = "^\\[\\d{4}-\\d{2}-\\d{2}"
+          mode                  = "non-blocking"
           max-buffer-size       = "4m"
         }
       }
@@ -137,8 +139,8 @@ resource "aws_ecs_task_definition" "app" {
       }
       mountPoints = [
         {
-          sourceVolume  = "app-data",
-          containerPath = "/efs-vols/app-data",
+          sourceVolume  = "app-data"
+          containerPath = "/efs-vols/app-data"
           readOnly     = false
         }
       ]
@@ -152,7 +154,8 @@ resource "aws_ecs_task_definition" "app" {
           curl \
           iproute2 \
           netcat-traditional \
-          dnsutils && \
+          dnsutils \
+          gosu && \
         rm -rf /var/lib/apt/lists/*
 
         # Set up directories with proper permissions
@@ -194,12 +197,12 @@ resource "aws_ecs_task_definition" "app" {
 
         # Switch to app user and start the application
         echo "[App] Starting application as appuser..."
-        exec su-exec 10001:10001 ./start_app.sh
+        exec gosu 10001:10001 ./start_app.sh
         EOT
       ]
       dependsOn = [
         {
-          containerName = "redis",
+          containerName = "redis"
           condition     = "HEALTHY"
         }
       ]

@@ -157,6 +157,35 @@ jobs:
           ATTEMPTS=0
           DEPLOYMENT_DONE=false
 
+          function check_container_health() {
+            local TASK_ARN=$1
+            local CONTAINER_NAME=$2
+
+            HEALTH_STATUS=$(aws ecs describe-tasks \
+              --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+              --tasks "$TASK_ARN" \
+              --query "tasks[0].containers[?name=='$CONTAINER_NAME'].healthStatus" \
+              --output text)
+
+            echo "$HEALTH_STATUS"
+          }
+
+          function get_container_logs() {
+            local TASK_ID=$1
+            local CONTAINER_NAME=$2
+            local START_TIME=$3
+
+            echo "${CONTAINER_NAME} Container Logs:"
+            echo "===================="
+            aws logs get-log-events \
+              --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
+              --log-stream-name "${CONTAINER_NAME}/${CONTAINER_NAME}/${TASK_ID}" \
+              --start-time ${START_TIME}000 \
+              --limit 100 \
+              --query 'events[].message' \
+              --output text || echo "No ${CONTAINER_NAME} logs available"
+          }
+
           while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
             SERVICE_JSON=$(aws ecs describe-services \
               --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
@@ -175,6 +204,44 @@ jobs:
             echo "  Failed Tasks: $FAILED_TASKS"
             echo "  Pending Count: $PENDING_COUNT"
 
+            # Get all running tasks
+            RUNNING_TASKS=$(aws ecs list-tasks \
+              --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+              --service-name "vimbiso-pay-service-$ENVIRONMENT" \
+              --desired-status RUNNING \
+              --query 'taskArns[]' \
+              --output text)
+
+            # Check health status of running tasks
+            if [ ! -z "$RUNNING_TASKS" ]; then
+              echo "Checking health of running tasks..."
+              echo "$RUNNING_TASKS" | xargs -n1 | while read -r TASK_ARN; do
+                if [ ! -z "$TASK_ARN" ]; then
+                  TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
+
+                  # Check Redis health
+                  REDIS_HEALTH=$(check_container_health "$TASK_ARN" "redis")
+                  echo "Redis Health Status: $REDIS_HEALTH"
+
+                  # Check App health
+                  APP_HEALTH=$(check_container_health "$TASK_ARN" "vimbiso-pay-${ENVIRONMENT}")
+                  echo "App Health Status: $APP_HEALTH"
+
+                  # If either container is unhealthy, get logs
+                  if [ "$REDIS_HEALTH" != "HEALTHY" ] || [ "$APP_HEALTH" != "HEALTHY" ]; then
+                    echo "Unhealthy containers detected. Fetching logs..."
+                    START_TIME=$(($(date +%s) - 300))
+
+                    get_container_logs "$TASK_ID" "redis" "$START_TIME"
+                    get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME"
+
+                    echo "Deployment failed due to unhealthy containers"
+                    exit 1
+                  fi
+                fi
+              done
+            fi
+
             if [ "$FAILED_TASKS" -gt 0 ]; then
               echo "Failed tasks detected. Fetching logs..."
               TASKS=$(aws ecs list-tasks \
@@ -188,75 +255,11 @@ jobs:
                 echo "Found stopped tasks: $TASKS"
                 echo "$TASKS" | xargs -n1 | while read -r TASK_ARN; do
                   if [ ! -z "$TASK_ARN" ]; then
-                    echo "Processing task ARN: $TASK_ARN"
+                    TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
+                    START_TIME=$(($(date +%s) - 300))
 
-                    # Get task details first
-                    echo "Fetching task details..."
-                    TASK_INFO=$(aws ecs describe-tasks \
-                      --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
-                      --tasks "$TASK_ARN" \
-                      --output json)
-
-                    echo "Task info response: $TASK_INFO"
-
-                    if [ ! -z "$TASK_INFO" ] && [ "$TASK_INFO" != "null" ]; then
-                      # Extract task ID from task ARN in the response
-                      TASK_ID=$(echo "$TASK_INFO" | jq -r '.tasks[0].taskArn' | awk -F'/' '{print $NF}')
-                      echo "Extracted task ID: $TASK_ID"
-
-                      echo "Task Details:"
-                      echo "============="
-                      STOP_CODE=$(echo "$TASK_INFO" | jq -r '.tasks[0].stoppedReason')
-                      echo "Stop reason: $STOP_CODE"
-
-                      # Get container details
-                      echo "Container Status:"
-                      echo "================="
-                      echo "$TASK_INFO" | jq -r '.tasks[0].containers[] | "Container \(.name):\n  Status: \(.lastStatus)\n  Reason: \(.reason // "No error")\n  Exit Code: \(.exitCode // "N/A")\n  Health Status: \(.healthStatus // "N/A")"'
-
-                      # Try to get logs for each container
-                      echo "Container Logs:"
-                      echo "=============="
-
-                      # App container logs
-                      echo "App Container Logs:"
-                      START_TIME=$(($(date +%s) - 300))
-                      aws logs get-log-events \
-                        --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
-                        --log-stream-name "app/vimbiso-pay-${ENVIRONMENT}/${TASK_ID}" \
-                        --start-time ${START_TIME}000 \
-                        --limit 100 \
-                        --query 'events[].message' \
-                        --output text || echo "No app container logs available"
-
-                      # Redis container logs
-                      echo "Redis Container Logs:"
-                      aws logs get-log-events \
-                        --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
-                        --log-stream-name "redis/redis/${TASK_ID}" \
-                        --start-time ${START_TIME}000 \
-                        --limit 100 \
-                        --query 'events[].message' \
-                        --output text || echo "No Redis container logs available"
-
-                      # Get resource metrics
-                      echo "Resource Metrics:"
-                      echo "================"
-                      END_TIME=$(date +%s)
-                      START_TIME=$((END_TIME - 300))
-                      aws cloudwatch get-metric-statistics \
-                        --namespace AWS/ECS \
-                        --metric-name CPUUtilization \
-                        --dimensions Name=ClusterName,Value="vimbiso-pay-cluster-$ENVIRONMENT" Name=ServiceName,Value="vimbiso-pay-service-$ENVIRONMENT" \
-                        --start-time "$(date --utc -d @${START_TIME} +%Y-%m-%dT%H:%M:%SZ)" \
-                        --end-time "$(date --utc -d @${END_TIME} +%Y-%m-%dT%H:%M:%SZ)" \
-                        --period 60 \
-                        --statistics Maximum \
-                        --query 'Datapoints[*].[Timestamp,Maximum]' \
-                        --output text || echo "No CPU metrics available"
-                    else
-                      echo "Failed to get task details"
-                    fi
+                    get_container_logs "$TASK_ID" "redis" "$START_TIME"
+                    get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME"
                   fi
                 done
               fi
@@ -265,9 +268,39 @@ jobs:
             fi
 
             if [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ] && [ "$DESIRED_COUNT" -gt 0 ] && [ "$PENDING_COUNT" = "0" ]; then
-              echo "Deployment completed successfully!"
-              DEPLOYMENT_DONE=true
-              break
+              echo "Tasks are running, verifying health endpoint..."
+
+              # Get the ALB DNS name
+              ALB_DNS=$(cd terraform && terraform output -raw alb_dns_name)
+
+              # Check the health endpoint
+              HEALTH_CHECK_URL="http://${ALB_DNS}/health/"
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_CHECK_URL")
+
+              if [ "$HTTP_CODE" = "200" ]; then
+                echo "Health endpoint check passed!"
+                DEPLOYMENT_DONE=true
+                break
+              else
+                echo "Health endpoint check failed with HTTP code: $HTTP_CODE"
+                # Get logs from running tasks
+                RUNNING_TASKS=$(aws ecs list-tasks \
+                  --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+                  --service-name "vimbiso-pay-service-$ENVIRONMENT" \
+                  --desired-status RUNNING \
+                  --query 'taskArns[]' \
+                  --output text)
+
+                if [ ! -z "$RUNNING_TASKS" ]; then
+                  echo "$RUNNING_TASKS" | xargs -n1 | while read -r TASK_ARN; do
+                    TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
+                    START_TIME=$(($(date +%s) - 300))
+                    get_container_logs "$TASK_ID" "redis" "$START_TIME"
+                    get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME"
+                  done
+                fi
+                exit 1
+              fi
             fi
 
             ATTEMPTS=$((ATTEMPTS + 1))
