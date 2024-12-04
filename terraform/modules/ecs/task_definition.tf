@@ -86,10 +86,10 @@ resource "aws_ecs_task_definition" "app" {
       ]
       healthCheck = {
         command     = ["CMD", "redis-cli", "ping"]
-        interval    = 30
+        interval    = 20
         timeout     = 10
         retries     = 3
-        startPeriod = 300
+        startPeriod = 180
       }
     },
     {
@@ -144,11 +144,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f --max-time 30 http://localhost:${var.app_port}/health/ || exit 1"]
-        interval    = 60
-        timeout     = 30
+        command     = ["CMD-SHELL", "curl -f --max-time 10 http://localhost:${var.app_port}/health/ || exit 1"]
+        interval    = 20
+        timeout     = 10
         retries     = 3
-        startPeriod = 300
+        startPeriod = 180
       }
       mountPoints = [
         {
