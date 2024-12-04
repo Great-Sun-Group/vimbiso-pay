@@ -221,7 +221,7 @@ resource "aws_lb_target_group" "app" {
     port                = "traffic-port"
     protocol            = "HTTP"
     timeout             = 10                 # Match app container health check timeout
-    unhealthy_threshold = 15                 # Allow more failures during startup (5 minutes total with 20s interval)
+    unhealthy_threshold = 10                 # Maximum allowed value, still gives enough time for startup
   }
 
   deregistration_delay = 30

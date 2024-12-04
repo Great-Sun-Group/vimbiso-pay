@@ -40,6 +40,7 @@ resource "aws_security_group" "ecs_tasks" {
   description = "Security group for ECS tasks"
   vpc_id      = aws_vpc.main.id
 
+  # Allow inbound traffic from ALB to application port
   ingress {
     protocol        = "tcp"
     from_port       = 8000
@@ -48,6 +49,7 @@ resource "aws_security_group" "ecs_tasks" {
     description     = "Allow inbound traffic from ALB"
   }
 
+  # Allow Redis traffic between tasks
   ingress {
     protocol    = "tcp"
     from_port   = 6379
@@ -62,8 +64,10 @@ resource "aws_security_group" "ecs_tasks" {
     from_port = 0
     to_port   = 0
     self      = true
+    description = "Allow all traffic between tasks"
   }
 
+  # Allow outbound internet access
   egress {
     protocol    = "-1"
     from_port   = 0
