@@ -122,7 +122,6 @@ module "ecs" {
   memory_threshold          = local.current_env.autoscaling.memory_threshold
   log_retention_days        = 30
   service_discovery_ttl     = 10
-  allowed_hosts            = "*.amazonaws.com ${module.loadbalancer.alb_dns_name} ${module.route53_dns.domain_name}"
   aws_account_id           = data.aws_caller_identity.current.account_id
   aws_region               = local.current_env.aws_region
 

@@ -178,6 +178,7 @@ variable "django_env" {
 variable "allowed_hosts" {
   description = "List of allowed hosts for Django"
   type        = string
+  default     = "*"  # Allow all hosts by default, relying on security groups and WAF for protection
 }
 
 # CloudWatch Configuration
