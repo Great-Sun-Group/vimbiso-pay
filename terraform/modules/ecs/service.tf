@@ -10,10 +10,10 @@ resource "aws_ecs_service" "app" {
   force_new_deployment             = true
   health_check_grace_period_seconds = 600  # Increased to allow time for EFS mount and Redis startup
 
-  # Enable rollback for failed deployments
+  # Disable rollback temporarily to debug deployment issues
   deployment_circuit_breaker {
     enable   = true
-    rollback = true  # Enable automatic rollback
+    rollback = false  # Disable automatic rollback to debug issues
   }
 
   deployment_controller {
