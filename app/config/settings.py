@@ -221,7 +221,8 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     # Conditionally enable SSL redirect
     SECURE_SSL_REDIRECT = True
-    SECURE_REDIRECT_EXEMPT = ['^health/$']  # Exact match for health check path
+    # Match both with and without trailing slash
+    SECURE_REDIRECT_EXEMPT = [r'^health/?$']
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Logging configuration - Modified for container-friendly setup
