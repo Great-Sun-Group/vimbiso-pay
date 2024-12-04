@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+syntax=docker/dockerfile:1
 
 # Base stage for shared configurations
 FROM python:3.13.0-slim AS base
@@ -20,6 +20,8 @@ RUN apt-get update && apt-get install -y \
     locales \
     netcat-traditional \
     redis-tools \
+    gosu \
+    dnsutils \
     && locale-gen en_US.UTF-8 \
     && update-locale \
     && rm -rf /var/lib/apt/lists/*
@@ -64,7 +66,7 @@ COPY requirements /app/requirements
 RUN pip install --no-cache-dir -r requirements/prod.txt
 
 # Remove build dependencies but keep runtime dependencies
-RUN apt-mark manual redis-tools curl && \
+RUN apt-mark manual redis-tools curl gosu dnsutils netcat-traditional && \
     apt-get purge -y build-essential && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
@@ -84,8 +86,8 @@ RUN mkdir -p \
     && find /app/data -type d -exec chmod 755 {} \; \
     && find /app/data -type f -exec chmod 644 {} \;
 
-# Switch to non-privileged user
-USER appuser
+# Note: Not switching to appuser here since task definition handles user switching
+# This allows the entrypoint script to run as root and switch users as needed
 
 # Health check with increased start period
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
