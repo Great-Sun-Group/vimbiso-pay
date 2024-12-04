@@ -272,18 +272,19 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-# HTTP Listener (redirects to HTTPS)
+# HTTP Listener with conditional forwarding for health checks
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
   protocol          = "HTTP"
 
+  # Forward health check requests directly to target group
   default_action {
-    type = "redirect"
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Please use HTTPS"
+      status_code  = "400"
     }
   }
 
@@ -294,3 +295,43 @@ resource "aws_lb_listener" "http" {
     ]
   }
 }
+
+# Health check listener rule
+resource "aws_lb_listener_rule" "health_check" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 1
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/health/"]
+    }
+  }
+}
+
+# HTTPS redirect rule for non-health-check paths
+resource "aws_lb_listener_rule" "redirect_to_https" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 2
+
+  action {
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+
+  condition {
+    path_pattern {
+      values = ["/*"]
+    }
+  }
+}
+
+# Rest of the file remains the same...
