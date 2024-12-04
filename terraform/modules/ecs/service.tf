@@ -43,11 +43,10 @@ resource "aws_ecs_service" "app" {
     container_name = "redis"
   }
 
-  # Ignore changes that are managed by the deployment workflow
+  # Only ignore changes to desired_count and capacity strategy
   lifecycle {
     ignore_changes = [
       desired_count,
-      task_definition,
       capacity_provider_strategy
     ]
   }
