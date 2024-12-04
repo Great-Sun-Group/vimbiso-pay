@@ -14,7 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "redis"
+      user         = "root"  # Changed to root to handle permissions
       portMappings = [
         {
           containerPort = var.redis_port
@@ -37,7 +37,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/redis/data"  # Updated to match EFS access point path
+          containerPath = "/redis/data"
           readOnly     = false
         }
       ]
@@ -53,6 +53,7 @@ resource "aws_ecs_task_definition" "app" {
         <<-EOT
         # Initialize Redis data directory
         mkdir -p /redis/data/appendonlydir
+        chown -R redis:redis /redis/data
 
         # Check and repair AOF files if needed
         if [ -f /redis/data/appendonlydir/appendonly.aof.1.incr.aof ]; then
@@ -64,11 +65,8 @@ resource "aws_ecs_task_definition" "app" {
           fi
         fi
 
-        # Ensure proper permissions
-        chown -R redis:redis /redis/data
-
-        # Start Redis with fixed memory limit and updated directory
-        exec redis-server \
+        # Start Redis with proper user and fixed memory limit
+        exec su-exec redis redis-server \
           --appendonly yes \
           --appendfsync everysec \
           --auto-aof-rewrite-percentage 100 \
@@ -91,7 +89,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 30
         timeout     = 15
         retries     = 3
-        startPeriod = 300  # Increased to 5 minutes to match app startup time
+        startPeriod = 300
       }
     },
     {
