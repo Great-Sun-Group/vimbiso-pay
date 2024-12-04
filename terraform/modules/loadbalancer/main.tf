@@ -1,3 +1,6 @@
+# Get the AWS ELB service account ID
+data "aws_elb_service_account" "current" {}
+
 # S3 bucket for ALB access logs
 resource "aws_s3_bucket" "alb_logs" {
   bucket = "vimbiso-pay-alb-logs-${var.environment}"
