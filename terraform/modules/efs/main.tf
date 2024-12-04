@@ -49,7 +49,7 @@ resource "aws_efs_access_point" "app_data" {
   })
 }
 
-# Redis Data Access Point
+# Redis Data Access Point with specific directory structure
 resource "aws_efs_access_point" "redis_data" {
   file_system_id = aws_efs_file_system.main.id
 
@@ -59,7 +59,7 @@ resource "aws_efs_access_point" "redis_data" {
   }
 
   root_directory {
-    path = "/data"
+    path = "/redis/data"  # Changed to dedicated Redis directory
     creation_info {
       owner_gid   = 999  # Alpine Redis group
       owner_uid   = 999  # Alpine Redis user

@@ -51,11 +51,11 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        # Create required directories
-        mkdir -p /data/appendonlydir || true
-        touch /data/appendonly.aof || true
+        # Initialize Redis data directory
+        mkdir -p /data/appendonlydir
+        chown -R redis:redis /data
 
-        # Fix any corrupted AOF files
+        # Check and repair AOF files if needed
         if [ -f /data/appendonlydir/appendonly.aof.1.incr.aof ]; then
           echo "Checking AOF file integrity..."
           if ! redis-check-aof --fix /data/appendonlydir/appendonly.aof.1.incr.aof; then
@@ -65,20 +65,23 @@ resource "aws_ecs_task_definition" "app" {
           fi
         fi
 
-        # Start Redis server with persistence settings
-        echo "[Redis] Starting server..."
+        # Start Redis with persistence configuration
         exec redis-server \
           --appendonly yes \
+          --appendfsync everysec \
+          --auto-aof-rewrite-percentage 100 \
+          --auto-aof-rewrite-min-size 64mb \
+          --aof-load-truncated yes \
+          --aof-use-rdb-preamble yes \
           --protected-mode no \
           --bind 0.0.0.0 \
           --dir /data \
           --timeout 30 \
           --tcp-keepalive 60 \
-          --appendfsync everysec \
-          --auto-aof-rewrite-percentage 100 \
-          --auto-aof-rewrite-min-size 64mb \
-          --aof-load-truncated yes \
-          --aof-use-rdb-preamble yes
+          --maxmemory-policy allkeys-lru \
+          --maxmemory 95% \
+          --save "" \
+          --stop-writes-on-bgsave-error no
         EOT
       ]
       healthCheck = {
