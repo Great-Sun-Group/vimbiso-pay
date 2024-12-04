@@ -85,7 +85,6 @@ resource "aws_route_table_association" "public" {
 # NAT Gateway with Elastic IPs
 resource "aws_eip" "nat" {
   count      = var.az_count
-  domain     = "vpc"
   depends_on = [aws_internet_gateway.main]
 
   tags = merge(var.tags, {
