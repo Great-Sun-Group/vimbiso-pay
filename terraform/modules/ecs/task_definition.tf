@@ -160,7 +160,7 @@ resource "aws_ecs_task_definition" "app" {
         echo "[App] Redis is ready"
 
         # Run migrations only in production
-        if [ "${DJANGO_ENV}" = "production" ]; then
+        if [ "$${DJANGO_ENV}" = "production" ]; then
           python manage.py migrate --noinput
           python manage.py collectstatic --noinput
         fi
