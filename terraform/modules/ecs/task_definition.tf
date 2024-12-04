@@ -143,7 +143,8 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f --max-time 15 --retry 3 --retry-delay 5 --retry-max-time 60 -k https://localhost:8000/health/ || exit 1"]
+        # Internal health check using HTTP since it's localhost only
+        command     = ["CMD-SHELL", "curl -f --max-time 15 --retry 3 --retry-delay 5 --retry-max-time 60 http://127.0.0.1:8000/health/ || exit 1"]
         interval    = 30
         timeout     = 15
         retries     = 3
