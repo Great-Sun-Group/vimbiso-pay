@@ -121,12 +121,12 @@ resource "aws_ecs_task_definition" "app" {
         { name = "LC_ALL", value = "en_US.UTF-8" },
         { name = "AWS_REGION", value = var.aws_region },
         { name = "TZ", value = "UTC" },
-        { name = "PORT", value = tostring(var.app_port) }
+        { name = "PORT", value = "8000" }  # Fixed port to match security group
       ]
       portMappings = [
         {
-          containerPort = var.app_port
-          hostPort      = var.app_port
+          containerPort = 8000  # Fixed port to match security group
+          hostPort      = 8000
           protocol      = "tcp"
         }
       ]
@@ -135,7 +135,7 @@ resource "aws_ecs_task_definition" "app" {
         options = {
           awslogs-group         = aws_cloudwatch_log_group.app.name
           awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "app"
+          awslogs-stream-prefix = "vimbiso-pay-${var.environment}"  # Fixed prefix to match container name
           awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
           awslogs-create-group  = "true"
           mode                  = "non-blocking"
@@ -143,7 +143,7 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f --max-time 10 http://localhost:${var.app_port}/health/ || exit 1"]
+        command     = ["CMD-SHELL", "curl -f --max-time 10 --retry 3 --retry-delay 5 http://localhost:8000/health/ || exit 1"]
         interval    = 20
         timeout     = 10
         retries     = 3
@@ -247,7 +247,7 @@ EOF
 
         echo "[App] Starting Gunicorn..."
         exec gunicorn config.wsgi:application \
-          --bind "0.0.0.0:$${PORT}" \
+          --bind "0.0.0.0:8000" \
           --workers "$${GUNICORN_WORKERS:-2}" \
           --worker-class sync \
           --preload \
@@ -260,7 +260,8 @@ EOF
           --enable-stdio-inheritance \
           --timeout "$${GUNICORN_TIMEOUT:-120}" \
           --graceful-timeout 30 \
-          --keep-alive 65
+          --keep-alive 65 \
+          --forwarded-allow-ips "*"  # Trust X-Forwarded-* headers
         EOT
       ]
       dependsOn = [

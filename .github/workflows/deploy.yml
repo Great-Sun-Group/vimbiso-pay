@@ -181,7 +181,7 @@ jobs:
             echo "===================="
             aws logs get-log-events \
               --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
-              --log-stream-name "${CONTAINER_NAME}/${CONTAINER_NAME}/${TASK_ID}" \
+              --log-stream-name "$([ "$CONTAINER_NAME" = "redis" ] && echo "redis" || echo "vimbiso-pay-${ENVIRONMENT}")/${CONTAINER_NAME}/${TASK_ID}" \
               --start-time ${START_TIME}000 \
               --limit $LINES \
               --query 'events[].message' \
