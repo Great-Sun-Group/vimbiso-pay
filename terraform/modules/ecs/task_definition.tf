@@ -14,7 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "root"  # Changed to root to handle permissions
+      user         = "root"  # Need root for initial setup
       portMappings = [
         {
           containerPort = var.redis_port
@@ -51,6 +51,9 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
+        # Install gosu for proper user switching
+        apk add --no-cache gosu
+
         # Initialize Redis data directory
         mkdir -p /redis/data/appendonlydir
         chown -R redis:redis /redis/data
@@ -66,7 +69,7 @@ resource "aws_ecs_task_definition" "app" {
         fi
 
         # Start Redis with proper user and fixed memory limit
-        exec su-exec redis redis-server \
+        exec gosu redis redis-server \
           --appendonly yes \
           --appendfsync everysec \
           --auto-aof-rewrite-percentage 100 \
