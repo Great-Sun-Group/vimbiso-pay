@@ -75,7 +75,7 @@ resource "aws_route53_health_check" "app" {
   resource_path     = var.health_check_path
   failure_threshold = "3"
   request_interval  = "30"
-  regions          = ["af-south-1", "eu-west-1", "us-east-1"]  # Using multiple regions for redundancy
+  regions          = ["us-east-1", "eu-west-1", "ap-southeast-1"]  # Using allowed regions
 
   tags = merge(var.tags, {
     Name = "vimbiso-pay-health-${var.environment}"
