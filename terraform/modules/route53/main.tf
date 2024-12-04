@@ -11,8 +11,9 @@ resource "aws_route53_zone" "app" {
 
 # Data source to fetch existing zone when not creating
 data "aws_route53_zone" "existing" {
-  count = var.create_dns_records ? 0 : 1
-  name  = var.domain_name
+  count        = var.create_dns_records ? 0 : 1
+  name         = var.domain_name
+  private_zone = false  # Added to specifically look for public zone
 }
 
 locals {
