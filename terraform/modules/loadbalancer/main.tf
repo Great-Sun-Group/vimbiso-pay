@@ -223,8 +223,8 @@ resource "aws_lb_target_group" "app" {
     path                = var.health_check_path
     port                = "traffic-port"
     protocol            = "HTTP"  # Keep as HTTP since ALB handles SSL termination
-    timeout             = 15
-    unhealthy_threshold = 10  # Increased to be more lenient during startup
+    timeout             = 5  # Reduced from 15
+    unhealthy_threshold = 3  # Reduced from 10
   }
 
   stickiness {
@@ -234,7 +234,7 @@ resource "aws_lb_target_group" "app" {
   }
 
   # Slow start gives targets time to warm up before receiving full share of requests
-  slow_start = 60  # Reduced from 300 to 60 seconds to speed up health check
+  slow_start = 30  # Reduced from 60 seconds
 
   tags = merge(var.tags, {
     Name = "vimbiso-pay-tg-${var.environment}"
