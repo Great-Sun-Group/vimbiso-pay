@@ -144,11 +144,11 @@ resource "aws_ecs_task_definition" "app" {
       }
       healthCheck = {
         # Internal health check using HTTP since it's localhost only
-        command     = ["CMD-SHELL", "curl -f --max-time 15 --retry 3 --retry-delay 5 --retry-max-time 60 http://127.0.0.1:8000/health/ || exit 1"]
+        command     = ["CMD-SHELL", "curl -f --max-time 15 --retry 5 --retry-delay 10 --retry-max-time 90 http://127.0.0.1:8000/health/ || exit 1"]
         interval    = 30
         timeout     = 15
         retries     = 3
-        startPeriod = 180
+        startPeriod = 300  # Increased to 5 minutes to match target group slow start
       }
       mountPoints = [
         {

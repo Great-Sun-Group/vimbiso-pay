@@ -223,9 +223,9 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     # Enable SSL redirect but exempt health check
     SECURE_SSL_REDIRECT = True
-    # Exempt health check from SSL redirect and allow both HTTP and HTTPS
+    # Allow both HTTP and HTTPS for health check
     SECURE_REDIRECT_EXEMPT = [r'^health/?$']
-    # Disable SSL redirect for health check endpoint
+    # Trust X-Forwarded headers from ALB
     USE_X_FORWARDED_HOST = True
     USE_X_FORWARDED_PORT = True
 

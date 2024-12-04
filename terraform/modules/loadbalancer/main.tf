@@ -224,7 +224,7 @@ resource "aws_lb_target_group" "app" {
     port                = "traffic-port"
     protocol            = "HTTP"  # Keep as HTTP since ALB handles SSL termination
     timeout             = 15
-    unhealthy_threshold = 5
+    unhealthy_threshold = 10  # Increased to be more lenient during startup
   }
 
   stickiness {
@@ -234,7 +234,7 @@ resource "aws_lb_target_group" "app" {
   }
 
   # Slow start gives targets time to warm up before receiving full share of requests
-  slow_start = 60
+  slow_start = 300  # 5 minutes to give containers time to warm up
 
   tags = merge(var.tags, {
     Name = "vimbiso-pay-tg-${var.environment}"
@@ -279,8 +279,12 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
-    type = "forward"  # Changed to forward for health checks
-    target_group_arn = aws_lb_target_group.app.arn
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
   }
 
   lifecycle {
