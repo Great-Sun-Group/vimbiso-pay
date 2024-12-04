@@ -1,11 +1,22 @@
 # Create the hosted zone for the environment
 resource "aws_route53_zone" "app" {
-  name = var.domain_name
+  count = var.create_dns_records ? 1 : 0  # Only create zone when create_dns_records is true
+  name  = var.domain_name
 
   tags = merge(var.tags, {
     Name        = "vimbiso-pay-zone-${var.environment}"
     Environment = var.environment
   })
+}
+
+# Data source to fetch existing zone when not creating
+data "aws_route53_zone" "existing" {
+  count = var.create_dns_records ? 0 : 1
+  name  = var.domain_name
+}
+
+locals {
+  zone_id = var.create_dns_records ? aws_route53_zone.app[0].zone_id : data.aws_route53_zone.existing[0].zone_id
 }
 
 # Create ACM certificate
@@ -28,7 +39,7 @@ resource "aws_route53_record" "cert_validation" {
   name            = tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_name
   records         = [tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_value]
   type            = tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_type
-  zone_id         = aws_route53_zone.app.zone_id
+  zone_id         = local.zone_id
   ttl             = 60
 }
 
@@ -42,7 +53,7 @@ resource "aws_acm_certificate_validation" "app" {
 resource "aws_route53_record" "app" {
   count = var.create_dns_records ? 1 : 0
 
-  zone_id = aws_route53_zone.app.zone_id
+  zone_id = local.zone_id
   name    = var.domain_name
   type    = "A"
 

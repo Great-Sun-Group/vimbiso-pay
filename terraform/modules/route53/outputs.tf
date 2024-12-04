@@ -1,16 +1,16 @@
 output "zone_id" {
   description = "The ID of the hosted zone"
-  value       = aws_route53_zone.app.zone_id
+  value       = local.zone_id
 }
 
 output "name_servers" {
   description = "The name servers for the hosted zone. These values need to be provided to the root domain administrator."
-  value       = aws_route53_zone.app.name_servers
+  value       = var.create_dns_records ? aws_route53_zone.app[0].name_servers : data.aws_route53_zone.existing[0].name_servers
 }
 
 output "domain_name" {
   description = "The domain name of the hosted zone"
-  value       = aws_route53_zone.app.name
+  value       = var.domain_name
 }
 
 output "certificate_arn" {
