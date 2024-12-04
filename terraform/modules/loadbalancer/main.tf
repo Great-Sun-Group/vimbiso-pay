@@ -269,7 +269,7 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-# HTTP Listener for health checks and redirect
+# HTTP Listener (redirects to HTTPS)
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
@@ -277,7 +277,6 @@ resource "aws_lb_listener" "http" {
 
   default_action {
     type = "redirect"
-
     redirect {
       port        = "443"
       protocol    = "HTTPS"
@@ -292,6 +291,3 @@ resource "aws_lb_listener" "http" {
     ]
   }
 }
-
-# Get current AWS account for ALB access logs
-data "aws_elb_service_account" "current" {}
