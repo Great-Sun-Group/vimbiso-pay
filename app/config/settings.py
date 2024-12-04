@@ -73,8 +73,8 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        # Changed path to ensure proper permissions
-        "NAME": BASE_DIR / "data/db/db.sqlite3",
+        # Updated path to match EFS mount point
+        "NAME": "/efs-vols/app-data/data/db/db.sqlite3",
         "ATOMIC_REQUESTS": True,
         "OPTIONS": {
             "timeout": 60,  # Increased timeout
@@ -93,8 +93,8 @@ CACHES = {
         "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SOCKET_CONNECT_TIMEOUT": 15,       # Increased from 5
-            "SOCKET_TIMEOUT": 15,               # Increased from 5
+            "SOCKET_CONNECT_TIMEOUT": 30,       # Increased timeout
+            "SOCKET_TIMEOUT": 30,               # Increased timeout
             "RETRY_ON_TIMEOUT": True,
             "MAX_CONNECTIONS": 20,
             "CONNECTION_POOL_KWARGS": {
@@ -149,11 +149,11 @@ USE_TZ = True
 
 # Static files (CSS JavaScript Images)
 STATIC_URL = "/static/"
-# Changed path to ensure proper permissions
-STATIC_ROOT = Path.joinpath(BASE_DIR, "data/static")
+# Updated path to match EFS mount point
+STATIC_ROOT = "/efs-vols/app-data/data/static"
 
-# Changed path to ensure proper permissions
-MEDIA_ROOT = Path.joinpath(BASE_DIR, "data/media")
+# Updated path to match EFS mount point
+MEDIA_ROOT = "/efs-vols/app-data/data/media"
 MEDIA_URL = "/media/"
 
 # Default primary key field type
@@ -240,33 +240,33 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "json",
-            "level": "INFO",
+            "level": "DEBUG",  # Changed to DEBUG for more detail during startup
         },
     },
     "loggers": {
         "django": {
             "handlers": ["console"],
-            "level": env("DJANGO_LOG_LEVEL", default="INFO"),
+            "level": env("DJANGO_LOG_LEVEL", default="DEBUG"),  # Changed to DEBUG
             "propagate": False,
         },
         "core": {
             "handlers": ["console"],
-            "level": env("APP_LOG_LEVEL", default="INFO"),
+            "level": env("APP_LOG_LEVEL", default="DEBUG"),  # Changed to DEBUG
             "propagate": False,
         },
-        "django_redis": {  # Enhanced Redis logging
+        "django_redis": {
             "handlers": ["console"],
-            "level": "DEBUG",  # Changed to DEBUG for more detail
+            "level": "DEBUG",
             "propagate": False,
         },
-        "redis": {  # Added specific Redis client logging
+        "redis": {
             "handlers": ["console"],
-            "level": "DEBUG",  # Changed to DEBUG for more detail
+            "level": "DEBUG",
             "propagate": False,
         },
     },
     "root": {
         "handlers": ["console"],
-        "level": "INFO",
+        "level": "DEBUG",  # Changed to DEBUG
     },
 }

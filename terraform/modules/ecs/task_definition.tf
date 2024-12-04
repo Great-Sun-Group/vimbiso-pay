@@ -62,21 +62,23 @@ resource "aws_ecs_task_definition" "app" {
         chown -R redis:redis /data
         chmod 755 /data /data/appendonlydir
 
-        # Start Redis server as redis user
+        # Start Redis server as redis user with increased timeouts
         echo "[Redis] Starting server as redis user..."
         exec su-exec redis:redis redis-server \
           --appendonly yes \
           --protected-mode no \
           --bind 0.0.0.0 \
-          --dir /data
+          --dir /data \
+          --timeout 30 \
+          --tcp-keepalive 60
         EOT
       ]
       healthCheck = {
         command     = ["CMD", "redis-cli", "ping"]
-        interval    = 15
-        timeout     = 5
+        interval    = 30
+        timeout     = 10
         retries     = 3
-        startPeriod = 20
+        startPeriod = 60
       }
     },
     {
@@ -102,6 +104,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
+        { name = "APP_LOG_LEVEL", value = "DEBUG" },
         { name = "REDIS_URL", value = "redis://localhost:${var.redis_port}/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
@@ -131,11 +134,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f --max-time 10 http://localhost:${var.app_port}/health/ || exit 1"]
-        interval    = 30
-        timeout     = 10
+        command     = ["CMD-SHELL", "curl -f --max-time 30 http://localhost:${var.app_port}/health/ || exit 1"]
+        interval    = 60
+        timeout     = 30
         retries     = 3
-        startPeriod = 120
+        startPeriod = 300  # Increased to match service grace period
       }
       mountPoints = [
         {
@@ -166,28 +169,26 @@ resource "aws_ecs_task_definition" "app" {
 
         echo "[App] Waiting for Redis..."
         until nc -z localhost ${var.redis_port}; do
-          echo "[App] Redis is unavailable - sleeping 2s"
-          sleep 2
+          echo "[App] Redis is unavailable - sleeping 5s"
+          sleep 5
         done
 
-        # Verify Redis is actually responding to commands
-        max_attempts=30
+        # Verify Redis is actually responding to commands with increased retries
+        max_attempts=60
         attempt=1
         until redis-cli -h localhost ping >/dev/null 2>&1; do
           if [ $attempt -ge $max_attempts ]; then
-            echo "[App] ERROR: Redis not accepting commands after 60 seconds"
+            echo "[App] ERROR: Redis not accepting commands after 300 seconds"
             exit 1
           fi
           echo "[App] Waiting for Redis to accept commands... attempt $attempt/$max_attempts"
           attempt=$((attempt + 1))
-          sleep 2
+          sleep 5
         done
         echo "[App] Redis is ready and accepting commands"
 
-        # Create SQLite database directory if it doesn't exist
-        mkdir -p /app/data/db
-        chown -R 10001:10001 /app/data
-        chmod 777 /app/data/db
+        # Create symlink for app data directory
+        ln -sfn /efs-vols/app-data/data /app/data
 
         # Switch to app user and start the application
         echo "[App] Starting application as appuser..."
