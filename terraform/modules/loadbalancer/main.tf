@@ -204,7 +204,7 @@ resource "aws_wafv2_web_acl_association" "main" {
   }
 }
 
-# Target Group
+# Target Group for application
 resource "aws_lb_target_group" "app" {
   name        = "vimbiso-pay-tg-${var.environment}"
   port        = var.health_check_port
@@ -224,13 +224,14 @@ resource "aws_lb_target_group" "app" {
     unhealthy_threshold = 5
   }
 
-  deregistration_delay = 30
-
   stickiness {
     type            = "lb_cookie"
     cookie_duration = 86400
     enabled         = true
   }
+
+  # Slow start gives targets time to warm up before receiving full share of requests
+  slow_start = 60
 
   tags = merge(var.tags, {
     Name = "vimbiso-pay-tg-${var.environment}"
@@ -240,7 +241,6 @@ resource "aws_lb_target_group" "app" {
     create_before_destroy = true
     ignore_changes = [
       tags,
-      health_check,
       stickiness
     ]
   }
@@ -269,7 +269,7 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-# HTTP Listener (redirects to HTTPS)
+# HTTP Listener for health checks and redirect
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"

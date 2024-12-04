@@ -23,7 +23,7 @@ resource "aws_ecs_service" "app" {
   network_configuration {
     security_groups  = [var.ecs_tasks_security_group_id]
     subnets         = var.private_subnet_ids
-    assign_public_ip = false
+    assign_public_ip = false  # Tasks in private subnets
   }
 
   load_balancer {

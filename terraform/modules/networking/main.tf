@@ -61,17 +61,31 @@ resource "aws_internet_gateway" "main" {
   })
 }
 
-# Route the public subnet traffic through the IGW
-resource "aws_route" "internet_access" {
-  route_table_id         = aws_vpc.main.main_route_table_id
-  destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = aws_internet_gateway.main.id
+# Public route table
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = merge(var.tags, {
+    Name = "vimbiso-pay-public-route-${var.environment}"
+  })
+}
+
+# Associate public subnets with public route table
+resource "aws_route_table_association" "public" {
+  count          = var.az_count
+  subnet_id      = element(aws_subnet.public[*].id, count.index)
+  route_table_id = aws_route_table.public.id
 }
 
 # NAT Gateway with Elastic IPs
 resource "aws_eip" "nat" {
   count      = var.az_count
-  vpc        = true
+  domain     = "vpc"
   depends_on = [aws_internet_gateway.main]
 
   tags = merge(var.tags, {
