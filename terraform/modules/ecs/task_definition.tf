@@ -14,7 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "root"  # Run as root to handle permissions
+      user         = "root"  # Keep root to handle EFS mount permissions
       portMappings = [
         {
           containerPort = var.redis_port
@@ -51,16 +51,16 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        # Clean up any existing data files
-        rm -rf /data/*
+        # Install su-exec if not present
+        apk add --no-cache su-exec
 
-        # Create fresh directory with correct permissions
+        # Ensure data directory exists with correct permissions
         mkdir -p /data
         chown -R redis:redis /data
         chmod 755 /data
 
         echo "[Redis] Starting Redis server..."
-        su-exec redis redis-server --appendonly yes --protected-mode no --bind 0.0.0.0 --dir /data
+        exec su-exec redis redis-server --appendonly yes --protected-mode no --bind 0.0.0.0 --dir /data
         EOT
       ]
       healthCheck = {
