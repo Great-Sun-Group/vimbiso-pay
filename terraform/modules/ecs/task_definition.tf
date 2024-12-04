@@ -14,7 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "999:999"  # Explicitly set Redis UID:GID to match EFS access point
+      user         = "root"  # Start as root to set up permissions
       portMappings = [
         {
           containerPort = var.redis_port
@@ -51,14 +51,18 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
+        # Install su-exec for proper user switching
+        apk add --no-cache su-exec
+
         # Create required directories with correct ownership
         mkdir -p /data/appendonlydir
         touch /data/appendonly.aof
         chown -R redis:redis /data
         chmod 755 /data /data/appendonlydir
 
-        # Start Redis server
-        redis-server \
+        # Start Redis server as redis user
+        echo "[Redis] Starting server as redis user..."
+        exec su-exec redis:redis redis-server \
           --appendonly yes \
           --protected-mode no \
           --bind 0.0.0.0 \
@@ -106,21 +110,21 @@ resource "aws_ecs_task_definition" "app" {
       ]
       portMappings = [
         {
-          containerPort = var.app_port
-          hostPort      = var.app_port
+          containerPort = var.app_port,
+          hostPort      = var.app_port,
           protocol      = "tcp"
         }
       ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.app.name
-          awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "app"
-          awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
-          awslogs-create-group  = "true"
-          awslogs-multiline-pattern = "^\\[\\d{4}-\\d{2}-\\d{2}"
-          mode                  = "non-blocking"
+          awslogs-group         = aws_cloudwatch_log_group.app.name,
+          awslogs-region        = var.aws_region,
+          awslogs-stream-prefix = "app",
+          awslogs-datetime-format = "%Y-%m-%d %H:%M:%S",
+          awslogs-create-group  = "true",
+          awslogs-multiline-pattern = "^\\[\\d{4}-\\d{2}-\\d{2}",
+          mode                  = "non-blocking",
           max-buffer-size       = "4m"
         }
       }
@@ -133,8 +137,8 @@ resource "aws_ecs_task_definition" "app" {
       }
       mountPoints = [
         {
-          sourceVolume  = "app-data"
-          containerPath = "/efs-vols/app-data"
+          sourceVolume  = "app-data",
+          containerPath = "/efs-vols/app-data",
           readOnly     = false
         }
       ]
@@ -147,7 +151,8 @@ resource "aws_ecs_task_definition" "app" {
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
           curl \
           iproute2 \
-          netcat-traditional && \
+          netcat-traditional \
+          dnsutils && \
         rm -rf /var/lib/apt/lists/*
 
         # Set up directories with proper permissions
@@ -156,25 +161,31 @@ resource "aws_ecs_task_definition" "app" {
         chmod 755 /efs-vols/app-data
         chmod 777 /efs-vols/app-data/data/db  # Ensure SQLite has write access
 
-        echo "[App] Waiting for Redis..."
-        until (echo > /dev/tcp/redis.vimbiso-pay-${var.environment}.local/${var.redis_port}) >/dev/null 2>&1; do
+        echo "[App] Waiting for Redis DNS resolution..."
+        until host redis.vimbiso-pay-${var.environment}.local >/dev/null 2>&1; do
+          echo "[App] Waiting for Redis DNS - sleeping 2s"
+          sleep 2
+        done
+
+        echo "[App] Waiting for Redis connection..."
+        until redis-cli -h redis.vimbiso-pay-${var.environment}.local ping >/dev/null 2>&1; do
           echo "[App] Redis is unavailable - sleeping 2s"
           sleep 2
         done
 
-        # Additional Redis connectivity check
+        # Verify Redis is actually responding to commands
         max_attempts=30
         attempt=1
-        until redis-cli -h redis.vimbiso-pay-${var.environment}.local ping > /dev/null 2>&1; do
+        until redis-cli -h redis.vimbiso-pay-${var.environment}.local set health_check test >/dev/null 2>&1; do
           if [ $attempt -ge $max_attempts ]; then
-            echo "[App] ERROR: Redis not responding after 60 seconds"
+            echo "[App] ERROR: Redis not accepting commands after 60 seconds"
             exit 1
           fi
-          echo "[App] Waiting for Redis to accept connections... attempt $attempt/$max_attempts"
+          echo "[App] Waiting for Redis to accept commands... attempt $attempt/$max_attempts"
           attempt=$((attempt + 1))
           sleep 2
         done
-        echo "[App] Redis is ready"
+        echo "[App] Redis is ready and accepting commands"
 
         # Create SQLite database directory if it doesn't exist
         mkdir -p /app/data/db
@@ -182,12 +193,13 @@ resource "aws_ecs_task_definition" "app" {
         chmod 777 /app/data/db
 
         # Switch to app user and start the application
+        echo "[App] Starting application as appuser..."
         exec su-exec 10001:10001 ./start_app.sh
         EOT
       ]
       dependsOn = [
         {
-          containerName = "redis"
+          containerName = "redis",
           condition     = "HEALTHY"
         }
       ]
