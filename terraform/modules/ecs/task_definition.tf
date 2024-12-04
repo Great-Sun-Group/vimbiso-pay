@@ -54,8 +54,19 @@ resource "aws_ecs_task_definition" "app" {
         # Install su-exec if not present
         apk add --no-cache su-exec
 
-        # Ensure data directory exists with correct permissions
-        mkdir -p /data
+        # Create Redis data directory structure
+        mkdir -p /tmp/redis-data
+        chown -R redis:redis /tmp/redis-data
+        chmod 755 /tmp/redis-data
+
+        # Copy existing data if any
+        if [ -d "/data" ] && [ "$(ls -A /data)" ]; then
+          cp -a /data/. /tmp/redis-data/
+        fi
+
+        # Move temp directory to mount point
+        rm -rf /data/*
+        mv /tmp/redis-data/* /data/
         chown -R redis:redis /data
         chmod 755 /data
 
