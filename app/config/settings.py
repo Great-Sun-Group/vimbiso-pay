@@ -78,7 +78,7 @@ DATABASES = {
         "ATOMIC_REQUESTS": True,
         "OPTIONS": {
             "timeout": 60,  # Increased timeout
-            "isolation_level": "READ_COMMITTED"
+            "isolation_level": "IMMEDIATE"  # Changed from READ_COMMITTED to IMMEDIATE
         },
         "CONN_MAX_AGE": 60
     }
