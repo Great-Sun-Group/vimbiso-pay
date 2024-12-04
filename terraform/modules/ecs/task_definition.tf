@@ -169,7 +169,8 @@ resource "aws_ecs_task_definition" "app" {
           iproute2 \
           netcat-traditional \
           dnsutils \
-          gosu
+          gosu \
+          redis-tools
         rm -rf /var/lib/apt/lists/*
 
         # Wait for network readiness
@@ -187,21 +188,54 @@ resource "aws_ecs_task_definition" "app" {
 
         echo "[App] Waiting for Redis..."
         until nc -z localhost ${var.redis_port}; do
-          echo "[App] Redis is unavailable - sleeping 5s"
+          echo "[App] Redis port not available - sleeping 5s"
           sleep 5
         done
 
-        # Verify Redis is accepting connections
-        until redis-cli -h localhost ping >/dev/null 2>&1; do
-          echo "[App] Redis not accepting connections - sleeping 5s"
+        # Test Redis connectivity with detailed output
+        echo "[App] Testing Redis connectivity..."
+        max_attempts=30
+        attempt=1
+        while [ $attempt -le $max_attempts ]; do
+          echo "[App] Redis connection attempt $attempt/$max_attempts"
+
+          if redis-cli -h localhost ping; then
+            echo "[App] Redis PING successful"
+            echo "[App] Redis INFO:"
+            redis-cli -h localhost info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
+            break
+          else
+            echo "[App] Redis PING failed"
+            if [ $attempt -eq $max_attempts ]; then
+              echo "[App] Redis connection attempts exhausted"
+              exit 1
+            fi
+          fi
+
+          attempt=$((attempt + 1))
           sleep 5
         done
 
-        # Create symlink for app data directory
-        echo "[App] Setting up data directory..."
-        ln -sfn /efs-vols/app-data/data /app/data
-
+        # Test Django Redis connection
+        echo "[App] Testing Django Redis connection..."
         cd /app
+        python << EOF
+import redis
+from django.conf import settings
+import sys
+
+print("[App] Attempting to connect to Redis using settings.REDIS_URL:", settings.REDIS_URL)
+try:
+    r = redis.from_url(settings.REDIS_URL)
+    r.ping()
+    print("[App] Django Redis connection successful")
+except Exception as e:
+    print("[App] Django Redis connection failed:", str(e))
+    sys.exit(1)
+EOF
+
+        echo "[App] Creating data symlink..."
+        ln -sfn /efs-vols/app-data/data /app/data
 
         echo "[App] Running migrations..."
         python manage.py migrate --noinput
