@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/prod' || github.ref == 'refs/heads/stage'
     environment: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
-    timeout-minutes: 30
+    timeout-minutes: 30  # Back to original 30 minutes
 
     env:
       ENVIRONMENT: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
@@ -153,10 +153,10 @@ jobs:
       - name: Wait for Deployment
         run: |
           echo "Waiting for deployment to complete..."
-          MAX_ATTEMPTS=40  # 20 minutes total
+          MAX_ATTEMPTS=40  # 20 minutes total with 30s interval
           ATTEMPTS=0
           DEPLOYMENT_DONE=false
-          GRACE_PERIOD=180  # 3 minutes for container health
+          GRACE_PERIOD=300  # 5 minutes for container health
 
           function check_container_health() {
             local TASK_ARN=$1
@@ -175,7 +175,7 @@ jobs:
             local TASK_ID=$1
             local CONTAINER_NAME=$2
             local START_TIME=$3
-            local LINES=${4:-100}  # Default to 100 lines
+            local LINES=${4:-200}  # Default to 200 lines
 
             echo "${CONTAINER_NAME} Container Logs:"
             echo "===================="
@@ -190,12 +190,12 @@ jobs:
 
           function check_health_endpoint() {
             local ALB_DNS=$1
-            local MAX_RETRIES=3  # Try health check up to 3 times
+            local MAX_RETRIES=5  # Try health check up to 5 times
             local RETRY=0
 
             while [ $RETRY -lt $MAX_RETRIES ]; do
               echo "Health check attempt $((RETRY + 1))/$MAX_RETRIES..."
-              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${ALB_DNS}/health/")
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "http://${ALB_DNS}/health/")
 
               if [ "$HTTP_CODE" = "200" ]; then
                 echo "Health endpoint check passed!"
@@ -203,7 +203,7 @@ jobs:
               else
                 echo "Health check failed with HTTP code: $HTTP_CODE"
                 RETRY=$((RETRY + 1))
-                [ $RETRY -lt $MAX_RETRIES ] && sleep 5
+                [ $RETRY -lt $MAX_RETRIES ] && sleep 10
               fi
             done
             return 1
@@ -321,7 +321,10 @@ jobs:
                     get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
                   done
                 fi
-                exit 1
+                # Don't exit immediately on health check failure if within grace period
+                if [ $ELAPSED_TIME -gt $GRACE_PERIOD ]; then
+                  exit 1
+                fi
               fi
             fi
 

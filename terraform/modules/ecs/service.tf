@@ -8,7 +8,7 @@ resource "aws_ecs_service" "app" {
   deployment_maximum_percent        = 200
   scheduling_strategy               = "REPLICA"
   force_new_deployment             = true
-  health_check_grace_period_seconds = 300  # 5 minutes for startup
+  health_check_grace_period_seconds = 360  # 6 minutes for startup (matching ALB + buffer)
 
   # Keep rollback disabled for debugging
   deployment_circuit_breaker {
