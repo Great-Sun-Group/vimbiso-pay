@@ -109,7 +109,6 @@ CACHES = {
                 "health_check_interval": 30,
             },
             "PARSER_CLASS": "redis.connection.HiredisParser",
-            "COMPRESSOR": None,
             "IGNORE_EXCEPTIONS": True,  # Changed to True to prevent cascading failures
         },
         "KEY_PREFIX": "vimbiso",
