@@ -140,12 +140,18 @@ resource "aws_ecs_task_definition" "app" {
         "-c",
         <<-EOT
         # Install required packages
-        apt-get update && apt-get install -y curl iproute2 netcat-traditional && rm -rf /var/lib/apt/lists/*
+        apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+          curl \
+          iproute2 \
+          netcat-traditional && \
+        rm -rf /var/lib/apt/lists/*
 
         # Set up directories with proper permissions
-        mkdir -p /efs-vols/app-data
+        mkdir -p /efs-vols/app-data/data/{db,static,media,logs}
         chown -R 10001:10001 /efs-vols/app-data
         chmod 755 /efs-vols/app-data
+        chmod 777 /efs-vols/app-data/data/db  # Ensure SQLite has write access
 
         echo "[App] Waiting for Redis..."
         timeout=60
@@ -159,11 +165,10 @@ resource "aws_ecs_task_definition" "app" {
         done
         echo "[App] Redis is ready"
 
-        # Run migrations only in production
-        if [ "$${DJANGO_ENV}" = "production" ]; then
-          python manage.py migrate --noinput
-          python manage.py collectstatic --noinput
-        fi
+        # Create SQLite database directory if it doesn't exist
+        mkdir -p /app/data/db
+        chown -R 10001:10001 /app/data
+        chmod 777 /app/data/db
 
         exec ./start_app.sh
         EOT
