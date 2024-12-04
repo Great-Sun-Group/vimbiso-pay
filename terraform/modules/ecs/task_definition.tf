@@ -14,7 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "redis"  # Run as redis user directly
+      user         = "redis"
       portMappings = [
         {
           containerPort = var.redis_port
@@ -86,7 +86,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 30
         timeout     = 10
         retries     = 3
-        startPeriod = 300  # Matches service grace period
+        startPeriod = 300
       }
     },
     {
@@ -95,12 +95,12 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.65)
       cpu          = floor(var.task_cpu * 0.65)
-      user         = "10001"  # Run as appuser directly
+      user         = "root"  # Need root for initial setup
       environment  = [
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_env.django_secret },
         { name = "DEBUG", value = tostring(var.django_env.debug) },
-        { name = "ALLOWED_HOSTS", value = "*" },  # Allow all hosts during startup
+        { name = "ALLOWED_HOSTS", value = "*" },
         { name = "MYCREDEX_APP_URL", value = var.django_env.mycredex_app_url },
         { name = "CLIENT_API_KEY", value = var.django_env.client_api_key },
         { name = "WHATSAPP_API_URL", value = var.django_env.whatsapp_api_url },
@@ -145,7 +145,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 60
         timeout     = 30
         retries     = 3
-        startPeriod = 300  # Matches service grace period
+        startPeriod = 300
       }
       mountPoints = [
         {
@@ -158,6 +158,18 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
+        set -e
+
+        # Install required packages
+        apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+          curl \
+          iproute2 \
+          netcat-traditional \
+          dnsutils \
+          gosu && \
+        rm -rf /var/lib/apt/lists/*
+
         # Wait for network readiness
         echo "[App] Waiting for network readiness..."
         until getent hosts localhost >/dev/null 2>&1; do
@@ -167,7 +179,8 @@ resource "aws_ecs_task_definition" "app" {
 
         # Set up directories with proper permissions
         mkdir -p /efs-vols/app-data/data/{db,static,media,logs} || true
-        chmod 777 /efs-vols/app-data/data/db || true  # Ensure SQLite has write access
+        chown -R 10001:10001 /efs-vols/app-data || true
+        chmod 777 /efs-vols/app-data/data/db || true
 
         echo "[App] Waiting for Redis..."
         until nc -z localhost ${var.redis_port}; do
@@ -184,9 +197,29 @@ resource "aws_ecs_task_definition" "app" {
         # Create symlink for app data directory
         ln -sfn /efs-vols/app-data/data /app/data || true
 
-        # Start the application
-        echo "[App] Starting application..."
-        exec ./start_app.sh
+        # Run migrations and collect static files
+        cd /app
+        gosu 10001:10001 python manage.py migrate --noinput
+        gosu 10001:10001 python manage.py collectstatic --noinput
+
+        # Start Gunicorn with proper logging
+        echo "[App] Starting Gunicorn..."
+        exec gosu 10001:10001 gunicorn config.wsgi:application \
+          --bind "0.0.0.0:$PORT" \
+          --workers "$${GUNICORN_WORKERS:-2}" \
+          --worker-class sync \
+          --preload \
+          --max-requests 1000 \
+          --max-requests-jitter 50 \
+          --log-level debug \
+          --access-logfile - \
+          --error-logfile - \
+          --capture-output \
+          --enable-stdio-inheritance \
+          --timeout "$${GUNICORN_TIMEOUT:-120}" \
+          --graceful-timeout 30 \
+          --keep-alive 65 \
+          --max-child-requests 1000
         EOT
       ]
       dependsOn = [
