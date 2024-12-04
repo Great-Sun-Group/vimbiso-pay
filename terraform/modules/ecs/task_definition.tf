@@ -77,6 +77,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.65)
       cpu          = floor(var.task_cpu * 0.65)
+      user         = "root"  # Run as root initially for setup
       environment  = [
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_env.django_secret },
@@ -93,7 +94,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
-        { name = "REDIS_URL", value = "redis://redis:${var.redis_port}/0" },  # Changed to use container name
+        { name = "REDIS_URL", value = "redis://redis:${var.redis_port}/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" },
@@ -178,7 +179,8 @@ resource "aws_ecs_task_definition" "app" {
         chown -R 10001:10001 /app/data
         chmod 777 /app/data/db
 
-        exec ./start_app.sh
+        # Switch to app user and start the application
+        exec su-exec 10001:10001 ./start_app.sh
         EOT
       ]
       dependsOn = [
