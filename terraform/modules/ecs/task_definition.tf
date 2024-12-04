@@ -265,7 +265,8 @@ EOF
           --timeout "$${GUNICORN_TIMEOUT:-120}" \
           --graceful-timeout 30 \
           --keep-alive 65 \
-          --forwarded-allow-ips "*"
+          --forwarded-allow-ips "*" \
+          --access-logformat '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" "%({X-Forwarded-For}i)s" "%({X-Forwarded-Proto}i)s"'
         EOT
       ]
       dependsOn = [
