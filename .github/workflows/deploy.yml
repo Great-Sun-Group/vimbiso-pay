@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/prod' || github.ref == 'refs/heads/stage'
     environment: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
-    timeout-minutes: 30
+    timeout-minutes: 45  # Increased to account for longer grace periods
 
     env:
       ENVIRONMENT: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
@@ -153,9 +153,10 @@ jobs:
       - name: Wait for Deployment
         run: |
           echo "Waiting for deployment to complete..."
-          MAX_ATTEMPTS=40
+          MAX_ATTEMPTS=60  # Increased to account for 300s grace period
           ATTEMPTS=0
           DEPLOYMENT_DONE=false
+          GRACE_PERIOD=300  # 5 minutes grace period
 
           function check_container_health() {
             local TASK_ARN=$1
@@ -174,6 +175,7 @@ jobs:
             local TASK_ID=$1
             local CONTAINER_NAME=$2
             local START_TIME=$3
+            local LINES=${4:-100}  # Default to 100 lines, can be overridden
 
             echo "${CONTAINER_NAME} Container Logs:"
             echo "===================="
@@ -181,12 +183,18 @@ jobs:
               --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
               --log-stream-name "${CONTAINER_NAME}/${CONTAINER_NAME}/${TASK_ID}" \
               --start-time ${START_TIME}000 \
-              --limit 100 \
+              --limit $LINES \
               --query 'events[].message' \
               --output text || echo "No ${CONTAINER_NAME} logs available"
           }
 
+          # Record deployment start time
+          DEPLOY_START_TIME=$(date +%s)
+
           while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED_TIME=$((CURRENT_TIME - DEPLOY_START_TIME))
+
             SERVICE_JSON=$(aws ecs describe-services \
               --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
               --service "vimbiso-pay-service-$ENVIRONMENT" \
@@ -198,7 +206,7 @@ jobs:
             FAILED_TASKS=$(echo $PRIMARY_DEPLOYMENT | jq -r '.failedTasks')
             PENDING_COUNT=$(echo $PRIMARY_DEPLOYMENT | jq -r '.pendingCount')
 
-            echo "Deployment Status:"
+            echo "Deployment Status (Elapsed: ${ELAPSED_TIME}s):"
             echo "  Running Count: $RUNNING_COUNT"
             echo "  Desired Count: $DESIRED_COUNT"
             echo "  Failed Tasks: $FAILED_TASKS"
@@ -227,15 +235,15 @@ jobs:
                   APP_HEALTH=$(check_container_health "$TASK_ARN" "vimbiso-pay-${ENVIRONMENT}")
                   echo "App Health Status: $APP_HEALTH"
 
-                  # If either container is unhealthy, get logs
-                  if [ "$REDIS_HEALTH" != "HEALTHY" ] || [ "$APP_HEALTH" != "HEALTHY" ]; then
-                    echo "Unhealthy containers detected. Fetching logs..."
-                    START_TIME=$(($(date +%s) - 300))
+                  # If containers are unhealthy after grace period, get logs
+                  if [ $ELAPSED_TIME -gt $GRACE_PERIOD ] && { [ "$REDIS_HEALTH" != "HEALTHY" ] || [ "$APP_HEALTH" != "HEALTHY" ]; }; then
+                    echo "Unhealthy containers detected after grace period. Fetching logs..."
+                    START_TIME=$(($(date +%s) - 600))  # Get last 10 minutes of logs
 
-                    get_container_logs "$TASK_ID" "redis" "$START_TIME"
-                    get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME"
+                    get_container_logs "$TASK_ID" "redis" "$START_TIME" 200
+                    get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
 
-                    echo "Deployment failed due to unhealthy containers"
+                    echo "Deployment failed due to unhealthy containers after grace period"
                     exit 1
                   fi
                 fi
@@ -256,50 +264,49 @@ jobs:
                 echo "$TASKS" | xargs -n1 | while read -r TASK_ARN; do
                   if [ ! -z "$TASK_ARN" ]; then
                     TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
-                    START_TIME=$(($(date +%s) - 300))
+                    START_TIME=$(($(date +%s) - 600))  # Get last 10 minutes of logs
 
-                    get_container_logs "$TASK_ID" "redis" "$START_TIME"
-                    get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME"
+                    get_container_logs "$TASK_ID" "redis" "$START_TIME" 200
+                    get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
                   fi
                 done
               fi
-              echo "Deployment failed due to task failures"
-              exit 1
+              # Only fail if we're past the grace period
+              if [ $ELAPSED_TIME -gt $GRACE_PERIOD ]; then
+                echo "Deployment failed due to task failures after grace period"
+                exit 1
+              fi
             fi
 
             if [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ] && [ "$DESIRED_COUNT" -gt 0 ] && [ "$PENDING_COUNT" = "0" ]; then
-              echo "Tasks are running, verifying health endpoint..."
+              # Only check health endpoint if we're past grace period
+              if [ $ELAPSED_TIME -gt $GRACE_PERIOD ]; then
+                echo "Tasks are running, verifying health endpoint..."
 
-              # Get the ALB DNS name
-              ALB_DNS=$(cd terraform && terraform output -raw alb_dns_name)
+                # Get the ALB DNS name
+                ALB_DNS=$(cd terraform && terraform output -raw alb_dns_name)
 
-              # Check the health endpoint
-              HEALTH_CHECK_URL="http://${ALB_DNS}/health/"
-              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_CHECK_URL")
+                # Check the health endpoint
+                HEALTH_CHECK_URL="http://${ALB_DNS}/health/"
+                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$HEALTH_CHECK_URL")
 
-              if [ "$HTTP_CODE" = "200" ]; then
-                echo "Health endpoint check passed!"
-                DEPLOYMENT_DONE=true
-                break
-              else
-                echo "Health endpoint check failed with HTTP code: $HTTP_CODE"
-                # Get logs from running tasks
-                RUNNING_TASKS=$(aws ecs list-tasks \
-                  --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
-                  --service-name "vimbiso-pay-service-$ENVIRONMENT" \
-                  --desired-status RUNNING \
-                  --query 'taskArns[]' \
-                  --output text)
-
-                if [ ! -z "$RUNNING_TASKS" ]; then
-                  echo "$RUNNING_TASKS" | xargs -n1 | while read -r TASK_ARN; do
-                    TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
-                    START_TIME=$(($(date +%s) - 300))
-                    get_container_logs "$TASK_ID" "redis" "$START_TIME"
-                    get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME"
-                  done
+                if [ "$HTTP_CODE" = "200" ]; then
+                  echo "Health endpoint check passed!"
+                  DEPLOYMENT_DONE=true
+                  break
+                else
+                  echo "Health endpoint check failed with HTTP code: $HTTP_CODE"
+                  # Get logs from running tasks
+                  if [ ! -z "$RUNNING_TASKS" ]; then
+                    echo "$RUNNING_TASKS" | xargs -n1 | while read -r TASK_ARN; do
+                      TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
+                      START_TIME=$(($(date +%s) - 600))
+                      get_container_logs "$TASK_ID" "redis" "$START_TIME" 200
+                      get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
+                    done
+                  fi
+                  exit 1
                 fi
-                exit 1
               fi
             fi
 
@@ -311,7 +318,7 @@ jobs:
           done
 
           if [ "$DEPLOYMENT_DONE" != "true" ]; then
-            echo "Deployment timeout"
+            echo "Deployment timeout after $(($MAX_ATTEMPTS * 30)) seconds"
             exit 1
           fi
 

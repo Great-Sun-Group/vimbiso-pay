@@ -78,7 +78,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 30
         timeout     = 10
         retries     = 3
-        startPeriod = 60
+        startPeriod = 300  # Increased to match service grace period
       }
     },
     {
@@ -138,7 +138,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 60
         timeout     = 30
         retries     = 3
-        startPeriod = 300  # Increased to match service grace period
+        startPeriod = 300  # Matches service grace period
       }
       mountPoints = [
         {
@@ -172,20 +172,6 @@ resource "aws_ecs_task_definition" "app" {
           echo "[App] Redis is unavailable - sleeping 5s"
           sleep 5
         done
-
-        # Verify Redis is actually responding to commands with increased retries
-        max_attempts=60
-        attempt=1
-        until redis-cli -h localhost ping >/dev/null 2>&1; do
-          if [ $attempt -ge $max_attempts ]; then
-            echo "[App] ERROR: Redis not accepting commands after 300 seconds"
-            exit 1
-          fi
-          echo "[App] Waiting for Redis to accept commands... attempt $attempt/$max_attempts"
-          attempt=$((attempt + 1))
-          sleep 5
-        done
-        echo "[App] Redis is ready and accepting commands"
 
         # Create symlink for app data directory
         ln -sfn /efs-vols/app-data/data /app/data

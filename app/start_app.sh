@@ -10,11 +10,11 @@ echo "REDIS_URL from environment: ${REDIS_URL:-not set}"
 REDIS_HOST=$(echo "${REDIS_URL:-redis://localhost:6379/0}" | sed -E 's|redis://([^:/]+).*|\1|')
 echo "Extracted Redis host: $REDIS_HOST"
 
-# Test Redis connectivity
+# Test Redis connectivity with increased attempts to match task definition grace period
 echo "Waiting for Redis to be ready..."
-max_attempts=20
+max_attempts=60  # Increased to match 300s grace period (5s * 60 = 300s)
 attempt=1
-wait_time=1
+wait_time=5  # Fixed 5s interval for predictable timing
 
 while true; do
     if [ $attempt -gt $max_attempts ]; then
@@ -48,12 +48,6 @@ while true; do
         echo "Retrying in ${wait_time}s..."
         sleep $wait_time
         attempt=$((attempt + 1))
-        # More gradual exponential backoff
-        if [ $attempt -le 5 ]; then
-            wait_time=$((wait_time * 2))
-        else
-            wait_time=$((wait_time + 1))
-        fi
     fi
 done
 

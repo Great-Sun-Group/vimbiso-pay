@@ -87,8 +87,8 @@ RUN mkdir -p \
 # Note: Not switching to appuser here since task definition handles user switching
 # This allows the entrypoint script to run as root and switch users as needed
 
-# Health check with increased start period
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+# Health check aligned with task definition and service grace period
+HEALTHCHECK --interval=30s --timeout=10s --start-period=300s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health/ || exit 1
 
 # Expose port
