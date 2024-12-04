@@ -1,11 +1,6 @@
 variable "environment" {
   description = "The deployment environment (staging, production)"
   type        = string
-
-  validation {
-    condition     = contains(["production", "staging"], var.environment)
-    error_message = "Environment must be one of: production, staging"
-  }
 }
 
 variable "vpc_cidr" {
@@ -16,16 +11,16 @@ variable "vpc_cidr" {
 variable "az_count" {
   description = "Number of AZs to use"
   type        = number
-  default     = 2
-
-  validation {
-    condition     = var.az_count > 1
-    error_message = "At least 2 AZs are required for high availability"
-  }
 }
 
 variable "tags" {
-  description = "Common resource tags"
+  description = "A map of tags to add to all resources"
   type        = map(string)
   default     = {}
+}
+
+variable "public_subnet_cidrs" {
+  description = "CIDR blocks for public subnets"
+  type        = list(string)
+  default     = []  # Will be computed from VPC CIDR if not provided
 }

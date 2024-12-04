@@ -49,6 +49,15 @@ resource "aws_security_group" "ecs_tasks" {
     description     = "Allow inbound traffic from ALB"
   }
 
+  # Also allow inbound traffic from ALB's subnet CIDR blocks
+  ingress {
+    protocol    = "tcp"
+    from_port   = 8000
+    to_port     = 8000
+    cidr_blocks = var.public_subnet_cidrs
+    description = "Allow inbound traffic from ALB subnets"
+  }
+
   # Allow Redis traffic between tasks
   ingress {
     protocol    = "tcp"

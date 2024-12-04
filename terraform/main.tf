@@ -5,7 +5,12 @@ module "networking" {
   environment = var.environment
   vpc_cidr    = local.current_env.vpc_cidr
   az_count    = local.current_env.az_count
-  tags        = local.common_tags
+  # Calculate public subnet CIDRs from VPC CIDR
+  public_subnet_cidrs = [
+    for i in range(local.current_env.az_count) :
+    cidrsubnet(local.current_env.vpc_cidr, 8, local.current_env.az_count + i)
+  ]
+  tags = local.common_tags
 }
 
 # Route53 Module - First part: Certificate only
