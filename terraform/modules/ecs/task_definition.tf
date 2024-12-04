@@ -10,11 +10,11 @@ resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([
     {
       name         = "redis"
-      image        = "public.ecr.aws/docker/library/redis:7.0-alpine"  # Using official Redis image from AWS Public ECR
+      image        = "public.ecr.aws/docker/library/redis:7.0-alpine"
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "999:999"  # Redis user/group
+      user         = "root"  # Run as root to handle permissions
       portMappings = [
         {
           containerPort = var.redis_port
@@ -51,12 +51,16 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
+        # Clean up any existing data files
+        rm -rf /data/*
+
+        # Create fresh directory with correct permissions
         mkdir -p /data
         chown -R redis:redis /data
         chmod 755 /data
 
         echo "[Redis] Starting Redis server..."
-        exec redis-server --appendonly yes --protected-mode no --bind 0.0.0.0 --dir /data
+        su-exec redis redis-server --appendonly yes --protected-mode no --bind 0.0.0.0 --dir /data
         EOT
       ]
       healthCheck = {
