@@ -14,7 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "root"
+      user         = "999:999"  # Explicitly set Redis UID:GID to match EFS access point
       portMappings = [
         {
           containerPort = var.redis_port
@@ -51,31 +51,22 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        # Install su-exec if not present
-        apk add --no-cache su-exec
-
-        # Create Redis data directory structure
-        mkdir -p /tmp/redis-data
-        chown -R redis:redis /tmp/redis-data
-        chmod 755 /tmp/redis-data
-
-        # Copy existing data if any
-        if [ -d "/data" ] && [ "$(ls -A /data)" ]; then
-          cp -a /data/. /tmp/redis-data/
-        fi
-
-        # Move temp directory to mount point
-        rm -rf /data/*
-        mv /tmp/redis-data/* /data/
+        # Create required directories with correct ownership
+        mkdir -p /data/appendonlydir
+        touch /data/appendonly.aof
         chown -R redis:redis /data
-        chmod 755 /data
+        chmod 755 /data /data/appendonlydir
 
-        echo "[Redis] Starting Redis server..."
-        exec su-exec redis redis-server --appendonly yes --protected-mode no --bind 0.0.0.0 --dir /data
+        # Start Redis server
+        redis-server \
+          --appendonly yes \
+          --protected-mode no \
+          --bind 0.0.0.0 \
+          --dir /data
         EOT
       ]
       healthCheck = {
-        command     = ["CMD-SHELL", "redis-cli ping | grep -q PONG || exit 1"]
+        command     = ["CMD", "redis-cli", "ping"]
         interval    = 15
         timeout     = 5
         retries     = 3
