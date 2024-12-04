@@ -14,7 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "root"  # Keep as root for EFS permissions
+      user         = "redis"  # Run as redis user directly
       portMappings = [
         {
           containerPort = var.redis_port
@@ -51,12 +51,9 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        # Install su-exec for proper user switching
-        apk add --no-cache su-exec
-
-        # Create required directories and fix permissions
-        mkdir -p /data/appendonlydir
-        touch /data/appendonly.aof
+        # Create required directories
+        mkdir -p /data/appendonlydir || true
+        touch /data/appendonly.aof || true
 
         # Fix any corrupted AOF files
         if [ -f /data/appendonlydir/appendonly.aof.1.incr.aof ]; then
@@ -68,15 +65,8 @@ resource "aws_ecs_task_definition" "app" {
           fi
         fi
 
-        # Ensure proper ownership
-        chown -R redis:redis /data
-        chmod 755 /data /data/appendonlydir
-
-        # Enable overcommit_memory
-        echo 1 > /proc/sys/vm/overcommit_memory || true
-
-        # Start Redis server as redis user with increased timeouts
-        echo "[Redis] Starting server as redis user..."
+        # Start Redis server with persistence settings
+        echo "[Redis] Starting server..."
         exec redis-server \
           --appendonly yes \
           --protected-mode no \
@@ -105,7 +95,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.65)
       cpu          = floor(var.task_cpu * 0.65)
-      user         = "root"  # Run as root initially for setup
+      user         = "10001"  # Run as appuser directly
       environment  = [
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_env.django_secret },
@@ -146,7 +136,6 @@ resource "aws_ecs_task_definition" "app" {
           awslogs-stream-prefix = "app"
           awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
           awslogs-create-group  = "true"
-          awslogs-multiline-pattern = "^\\[\\d{4}-\\d{2}-\\d{2}|^[A-Z][a-z]{2} [A-Z][a-z]{2} \\d{1,2}"
           mode                  = "non-blocking"
           max-buffer-size       = "4m"
         }
@@ -169,16 +158,6 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        # Install required packages
-        apt-get update && \
-        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-          curl \
-          iproute2 \
-          netcat-traditional \
-          dnsutils \
-          gosu && \
-        rm -rf /var/lib/apt/lists/*
-
         # Wait for network readiness
         echo "[App] Waiting for network readiness..."
         until getent hosts localhost >/dev/null 2>&1; do
@@ -187,10 +166,8 @@ resource "aws_ecs_task_definition" "app" {
         done
 
         # Set up directories with proper permissions
-        mkdir -p /efs-vols/app-data/data/{db,static,media,logs}
-        chown -R 10001:10001 /efs-vols/app-data
-        chmod 755 /efs-vols/app-data
-        chmod 777 /efs-vols/app-data/data/db  # Ensure SQLite has write access
+        mkdir -p /efs-vols/app-data/data/{db,static,media,logs} || true
+        chmod 777 /efs-vols/app-data/data/db || true  # Ensure SQLite has write access
 
         echo "[App] Waiting for Redis..."
         until nc -z localhost ${var.redis_port}; do
@@ -205,11 +182,11 @@ resource "aws_ecs_task_definition" "app" {
         done
 
         # Create symlink for app data directory
-        ln -sfn /efs-vols/app-data/data /app/data
+        ln -sfn /efs-vols/app-data/data /app/data || true
 
-        # Switch to app user and start the application
-        echo "[App] Starting application as appuser..."
-        exec gosu 10001:10001 ./start_app.sh
+        # Start the application
+        echo "[App] Starting application..."
+        exec ./start_app.sh
         EOT
       ]
       dependsOn = [
