@@ -37,7 +37,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "redis-data"
-          containerPath = "/data"
+          containerPath = "/redis/data"  # Updated to match EFS access point path
           readOnly     = false
         }
       ]
@@ -52,19 +52,22 @@ resource "aws_ecs_task_definition" "app" {
         "-c",
         <<-EOT
         # Initialize Redis data directory
-        mkdir -p /data/appendonlydir
+        mkdir -p /redis/data/appendonlydir
 
         # Check and repair AOF files if needed
-        if [ -f /data/appendonlydir/appendonly.aof.1.incr.aof ]; then
+        if [ -f /redis/data/appendonlydir/appendonly.aof.1.incr.aof ]; then
           echo "Checking AOF file integrity..."
-          if ! redis-check-aof --fix /data/appendonlydir/appendonly.aof.1.incr.aof; then
+          if ! redis-check-aof --fix /redis/data/appendonlydir/appendonly.aof.1.incr.aof; then
             echo "AOF file corrupted, removing and starting fresh..."
-            rm -f /data/appendonlydir/appendonly.aof.1.incr.aof
-            rm -f /data/appendonlydir/appendonly.aof.manifest
+            rm -f /redis/data/appendonlydir/appendonly.aof.1.incr.aof
+            rm -f /redis/data/appendonlydir/appendonly.aof.manifest
           fi
         fi
 
-        # Start Redis with fixed memory limit
+        # Ensure proper permissions
+        chown -R redis:redis /redis/data
+
+        # Start Redis with fixed memory limit and updated directory
         exec redis-server \
           --appendonly yes \
           --appendfsync everysec \
@@ -74,7 +77,7 @@ resource "aws_ecs_task_definition" "app" {
           --aof-use-rdb-preamble yes \
           --protected-mode no \
           --bind 0.0.0.0 \
-          --dir /data \
+          --dir /redis/data \
           --timeout 30 \
           --tcp-keepalive 60 \
           --maxmemory-policy allkeys-lru \
@@ -88,7 +91,7 @@ resource "aws_ecs_task_definition" "app" {
         interval    = 30
         timeout     = 15
         retries     = 3
-        startPeriod = 180
+        startPeriod = 300  # Increased to 5 minutes to match app startup time
       }
     },
     {
@@ -121,11 +124,11 @@ resource "aws_ecs_task_definition" "app" {
         { name = "LC_ALL", value = "en_US.UTF-8" },
         { name = "AWS_REGION", value = var.aws_region },
         { name = "TZ", value = "UTC" },
-        { name = "PORT", value = "8000" }  # Fixed port to match security group
+        { name = "PORT", value = "8000" }
       ]
       portMappings = [
         {
-          containerPort = 8000  # Fixed port to match security group
+          containerPort = 8000
           hostPort      = 8000
           protocol      = "tcp"
         }
@@ -135,7 +138,7 @@ resource "aws_ecs_task_definition" "app" {
         options = {
           awslogs-group         = aws_cloudwatch_log_group.app.name
           awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "vimbiso-pay-${var.environment}"  # Fixed prefix to match container name
+          awslogs-stream-prefix = "vimbiso-pay-${var.environment}"
           awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
           awslogs-create-group  = "true"
           mode                  = "non-blocking"
@@ -143,12 +146,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        # Internal health check using HTTP since it's localhost only
         command     = ["CMD-SHELL", "curl -f --max-time 15 --retry 5 --retry-delay 10 --retry-max-time 90 http://127.0.0.1:8000/health/ || exit 1"]
         interval    = 30
         timeout     = 15
         retries     = 3
-        startPeriod = 300  # Increased to 5 minutes to match target group slow start
+        startPeriod = 300
       }
       mountPoints = [
         {
@@ -262,7 +264,7 @@ EOF
           --timeout "$${GUNICORN_TIMEOUT:-120}" \
           --graceful-timeout 30 \
           --keep-alive 65 \
-          --forwarded-allow-ips "*"  # Trust X-Forwarded-* headers
+          --forwarded-allow-ips "*"
         EOT
       ]
       dependsOn = [
