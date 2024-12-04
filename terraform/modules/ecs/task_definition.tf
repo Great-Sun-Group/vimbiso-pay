@@ -98,7 +98,8 @@ resource "aws_ecs_task_definition" "app" {
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" },
         { name = "AWS_REGION", value = var.aws_region },
-        { name = "TZ", value = "UTC" }
+        { name = "TZ", value = "UTC" },
+        { name = "PORT", value = tostring(var.app_port) }
       ]
       portMappings = [
         {
@@ -138,6 +139,10 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
+        # Install required packages
+        apt-get update && apt-get install -y curl iproute2 netcat-traditional && rm -rf /var/lib/apt/lists/*
+
+        # Set up directories with proper permissions
         mkdir -p /efs-vols/app-data
         chown -R 10001:10001 /efs-vols/app-data
         chmod 755 /efs-vols/app-data
@@ -154,8 +159,11 @@ resource "aws_ecs_task_definition" "app" {
         done
         echo "[App] Redis is ready"
 
-        # Install curl for health checks
-        apt-get update && apt-get install -y curl
+        # Run migrations only in production
+        if [ "${DJANGO_ENV}" = "production" ]; then
+          python manage.py migrate --noinput
+          python manage.py collectstatic --noinput
+        fi
 
         exec ./start_app.sh
         EOT
