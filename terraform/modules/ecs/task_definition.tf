@@ -14,7 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
-      user         = "root"  # Keep as root to handle EFS permissions
+      user         = "root"  # Keep as root for EFS permissions
       portMappings = [
         {
           containerPort = var.redis_port
@@ -110,7 +110,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_env.django_secret },
         { name = "DEBUG", value = tostring(var.django_env.debug) },
-        { name = "ALLOWED_HOSTS", value = "${var.allowed_hosts} localhost 127.0.0.1 0.0.0.0" },
+        { name = "ALLOWED_HOSTS", value = "*" },  # Allow all hosts during startup
         { name = "MYCREDEX_APP_URL", value = var.django_env.mycredex_app_url },
         { name = "CLIENT_API_KEY", value = var.django_env.client_api_key },
         { name = "WHATSAPP_API_URL", value = var.django_env.whatsapp_api_url },
@@ -146,7 +146,7 @@ resource "aws_ecs_task_definition" "app" {
           awslogs-stream-prefix = "app"
           awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
           awslogs-create-group  = "true"
-          awslogs-multiline-pattern = "^\\[\\d{4}-\\d{2}-\\d{2}"
+          awslogs-multiline-pattern = "^\\[\\d{4}-\\d{2}-\\d{2}|^[A-Z][a-z]{2} [A-Z][a-z]{2} \\d{1,2}"
           mode                  = "non-blocking"
           max-buffer-size       = "4m"
         }
@@ -179,6 +179,13 @@ resource "aws_ecs_task_definition" "app" {
           gosu && \
         rm -rf /var/lib/apt/lists/*
 
+        # Wait for network readiness
+        echo "[App] Waiting for network readiness..."
+        until getent hosts localhost >/dev/null 2>&1; do
+          echo "[App] Network not ready - sleeping 2s"
+          sleep 2
+        done
+
         # Set up directories with proper permissions
         mkdir -p /efs-vols/app-data/data/{db,static,media,logs}
         chown -R 10001:10001 /efs-vols/app-data
@@ -188,6 +195,12 @@ resource "aws_ecs_task_definition" "app" {
         echo "[App] Waiting for Redis..."
         until nc -z localhost ${var.redis_port}; do
           echo "[App] Redis is unavailable - sleeping 5s"
+          sleep 5
+        done
+
+        # Verify Redis is accepting connections
+        until redis-cli -h localhost ping >/dev/null 2>&1; do
+          echo "[App] Redis not accepting connections - sleeping 5s"
           sleep 5
         done
 
