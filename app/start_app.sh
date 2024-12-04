@@ -7,7 +7,7 @@ echo "Port: $PORT"
 
 # Debug Redis configuration
 echo "REDIS_URL from environment: ${REDIS_URL:-not set}"
-REDIS_HOST=$(echo "${REDIS_URL:-redis://redis:6379/0}" | sed -E 's|redis://([^:/]+).*|\1|')
+REDIS_HOST=$(echo "${REDIS_URL:-redis://redis.vimbiso-pay-staging.local:6379/0}" | sed -E 's|redis://([^:/]+).*|\1|')
 echo "Extracted Redis host: $REDIS_HOST"
 
 # Test network connectivity
