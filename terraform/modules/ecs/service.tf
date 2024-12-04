@@ -4,11 +4,11 @@ resource "aws_ecs_service" "app" {
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = var.min_capacity
-  deployment_minimum_healthy_percent = 100  # Keep at least one task running
+  deployment_minimum_healthy_percent = 0  # Allow all tasks to be replaced
   deployment_maximum_percent        = 200
   scheduling_strategy               = "REPLICA"
   force_new_deployment             = true
-  health_check_grace_period_seconds = 360  # 6 minutes for startup (matching ALB + buffer)
+  health_check_grace_period_seconds = 600  # 10 minutes for startup
 
   # Keep rollback disabled for debugging
   deployment_circuit_breaker {
