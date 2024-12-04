@@ -53,7 +53,6 @@ resource "aws_ecs_task_definition" "app" {
         <<-EOT
         # Initialize Redis data directory
         mkdir -p /data/appendonlydir
-        chown -R redis:redis /data
 
         # Check and repair AOF files if needed
         if [ -f /data/appendonlydir/appendonly.aof.1.incr.aof ]; then
@@ -65,7 +64,7 @@ resource "aws_ecs_task_definition" "app" {
           fi
         fi
 
-        # Start Redis with persistence configuration
+        # Start Redis with fixed memory limit
         exec redis-server \
           --appendonly yes \
           --appendfsync everysec \
@@ -79,7 +78,7 @@ resource "aws_ecs_task_definition" "app" {
           --timeout 30 \
           --tcp-keepalive 60 \
           --maxmemory-policy allkeys-lru \
-          --maxmemory 95% \
+          --maxmemory ${floor(var.task_memory * 0.35 * 0.95)}mb \
           --save "" \
           --stop-writes-on-bgsave-error no
         EOT
