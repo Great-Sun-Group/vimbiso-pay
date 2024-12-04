@@ -1,3 +1,16 @@
+# S3 bucket for ALB logs
+resource "aws_s3_bucket" "alb_logs" {
+  bucket        = "vimbiso-pay-alb-logs-${var.environment}"
+  force_destroy = var.environment != "production"
+
+  tags = merge(var.tags, {
+    Name = "vimbiso-pay-alb-logs-${var.environment}"
+  })
+}
+
+# Data source for ELB service account
+data "aws_elb_service_account" "current" {}
+
 # Target Group for application
 resource "aws_lb_target_group" "app" {
   name        = "vimbiso-pay-tg-${var.environment}"
