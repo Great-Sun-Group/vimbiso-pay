@@ -210,7 +210,7 @@ resource "aws_wafv2_web_acl_association" "main" {
 # Target Group for application
 resource "aws_lb_target_group" "app" {
   name        = "vimbiso-pay-tg-${var.environment}"
-  port        = var.health_check_port
+  port        = 8000  # Match container port
   protocol    = "HTTP"  # Keep as HTTP since ALB handles SSL termination
   vpc_id      = var.vpc_id
   target_type = "ip"
@@ -279,12 +279,8 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
-    type = "redirect"
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
-    }
+    type = "forward"  # Keep as forward for health checks
+    target_group_arn = aws_lb_target_group.app.arn
   }
 
   lifecycle {

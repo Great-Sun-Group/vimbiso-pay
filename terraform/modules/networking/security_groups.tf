@@ -75,6 +75,15 @@ resource "aws_security_group" "ecs_tasks" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Allow inbound health checks from VPC CIDR
+  ingress {
+    protocol    = "tcp"
+    from_port   = 8000
+    to_port     = 8000
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow health checks from VPC"
+  }
+
   lifecycle {
     create_before_destroy = true
   }
