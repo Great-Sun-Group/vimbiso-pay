@@ -121,11 +121,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:${var.app_port}/health/ || exit 1"]
+        command     = ["CMD-SHELL", "curl -f --max-time 5 http://localhost:${var.app_port}/health/ || exit 1"]
         interval    = 30
-        timeout     = 10
+        timeout     = 6
         retries     = 3
-        startPeriod = 120
+        startPeriod = 180  # Increased to allow more time for initial startup
       }
       mountPoints = [
         {
@@ -153,6 +153,9 @@ resource "aws_ecs_task_definition" "app" {
           sleep 1
         done
         echo "[App] Redis is ready"
+
+        # Install curl for health checks
+        apt-get update && apt-get install -y curl
 
         exec ./start_app.sh
         EOT
