@@ -10,7 +10,7 @@ resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([
     {
       name         = "redis"
-      image        = "public.ecr.aws/ubuntu/redis:7.0-22.04_beta"  # Using AWS Public ECR image
+      image        = "public.ecr.aws/docker/library/redis:7.0-alpine"  # Using official Redis image from AWS Public ECR
       essential    = true
       memory       = floor(var.task_memory * 0.35)
       cpu          = floor(var.task_cpu * 0.35)
@@ -51,7 +51,6 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        # Ensure Redis data directory exists and has correct permissions
         mkdir -p /data
         chown -R redis:redis /data
         chmod 755 /data
@@ -127,7 +126,7 @@ resource "aws_ecs_task_definition" "app" {
       mountPoints = [
         {
           sourceVolume  = "app-data"
-          containerPath = "/app/data"
+          containerPath = "/efs-vols/app-data"
           readOnly     = false
         }
       ]
@@ -135,10 +134,9 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        # Ensure app data directory exists and has correct permissions
-        mkdir -p /app/data
-        chown -R 10001:10001 /app/data
-        chmod 755 /app/data
+        mkdir -p /efs-vols/app-data
+        chown -R 10001:10001 /efs-vols/app-data
+        chmod 755 /efs-vols/app-data
 
         echo "[App] Waiting for Redis..."
         timeout=60
@@ -168,7 +166,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "app-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/app/data"
+      root_directory = "/"
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.app_access_point_id
@@ -181,7 +179,7 @@ resource "aws_ecs_task_definition" "app" {
     name = "redis-data"
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
-      root_directory = "/data"
+      root_directory = "/"
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.redis_access_point_id
