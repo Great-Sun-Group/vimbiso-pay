@@ -222,7 +222,7 @@ resource "aws_lb_target_group" "app" {
     matcher             = "200"
     path                = var.health_check_path
     port                = "traffic-port"
-    protocol            = "HTTP"
+    protocol            = "HTTPS"  # Changed to HTTPS for ALB health checks
     timeout             = 15
     unhealthy_threshold = 5
   }
