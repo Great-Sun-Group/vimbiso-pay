@@ -155,19 +155,21 @@ resource "aws_ecs_task_definition" "app" {
         }
       ]
       command = [
-        "sh",
+        "bash",
         "-c",
         <<-EOT
-        set -e
+        set -ex
+
+        echo "[App] Starting initialization..."
 
         # Install required packages
-        apt-get update && \
+        apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
           curl \
           iproute2 \
           netcat-traditional \
           dnsutils \
-          gosu && \
+          gosu
         rm -rf /var/lib/apt/lists/*
 
         # Wait for network readiness
@@ -178,9 +180,10 @@ resource "aws_ecs_task_definition" "app" {
         done
 
         # Set up directories with proper permissions
-        mkdir -p /efs-vols/app-data/data/{db,static,media,logs} || true
-        chown -R 10001:10001 /efs-vols/app-data || true
-        chmod 777 /efs-vols/app-data/data/db || true
+        echo "[App] Setting up directories..."
+        mkdir -p /efs-vols/app-data/data/{db,static,media,logs}
+        chown -R 10001:10001 /efs-vols/app-data
+        chmod 777 /efs-vols/app-data/data/db
 
         echo "[App] Waiting for Redis..."
         until nc -z localhost ${var.redis_port}; do
@@ -195,31 +198,33 @@ resource "aws_ecs_task_definition" "app" {
         done
 
         # Create symlink for app data directory
-        ln -sfn /efs-vols/app-data/data /app/data || true
+        echo "[App] Setting up data directory..."
+        ln -sfn /efs-vols/app-data/data /app/data
 
-        # Run migrations and collect static files
         cd /app
-        gosu 10001:10001 python manage.py migrate --noinput
-        gosu 10001:10001 python manage.py collectstatic --noinput
 
-        # Start Gunicorn with proper logging
+        echo "[App] Running migrations..."
+        python manage.py migrate --noinput
+
+        echo "[App] Collecting static files..."
+        python manage.py collectstatic --noinput
+
         echo "[App] Starting Gunicorn..."
-        exec gosu 10001:10001 gunicorn config.wsgi:application \
-          --bind "0.0.0.0:$PORT" \
+        exec gunicorn config.wsgi:application \
+          --bind "0.0.0.0:$${PORT}" \
           --workers "$${GUNICORN_WORKERS:-2}" \
           --worker-class sync \
           --preload \
           --max-requests 1000 \
           --max-requests-jitter 50 \
           --log-level debug \
-          --access-logfile - \
           --error-logfile - \
+          --access-logfile - \
           --capture-output \
           --enable-stdio-inheritance \
           --timeout "$${GUNICORN_TIMEOUT:-120}" \
           --graceful-timeout 30 \
-          --keep-alive 65 \
-          --max-child-requests 1000
+          --keep-alive 65
         EOT
       ]
       dependsOn = [
