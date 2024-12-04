@@ -211,7 +211,7 @@ resource "aws_wafv2_web_acl_association" "main" {
 resource "aws_lb_target_group" "app" {
   name        = "vimbiso-pay-tg-${var.environment}"
   port        = var.health_check_port
-  protocol    = "HTTP"
+  protocol    = "HTTP"  # Keep as HTTP since ALB handles SSL termination
   vpc_id      = var.vpc_id
   target_type = "ip"
 
@@ -222,7 +222,7 @@ resource "aws_lb_target_group" "app" {
     matcher             = "200"
     path                = var.health_check_path
     port                = "traffic-port"
-    protocol            = "HTTPS"  # Changed to HTTPS for ALB health checks
+    protocol            = "HTTP"  # Keep as HTTP since ALB handles SSL termination
     timeout             = 15
     unhealthy_threshold = 5
   }
@@ -249,7 +249,7 @@ resource "aws_lb_target_group" "app" {
   }
 }
 
-# HTTPS Listener
+# HTTPS Listener with SSL termination
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
@@ -279,12 +279,8 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
-    type = "redirect"
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
-    }
+    type = "forward"  # Changed to forward for health checks
+    target_group_arn = aws_lb_target_group.app.arn
   }
 
   lifecycle {

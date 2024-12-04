@@ -219,11 +219,15 @@ SECURE_HSTS_PRELOAD = True
 if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True
-    # Conditionally enable SSL redirect
-    SECURE_SSL_REDIRECT = True
-    # Match both with and without trailing slash
-    SECURE_REDIRECT_EXEMPT = [r'^health/?$']
+    # Trust ALB's X-Forwarded-Proto header
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    # Enable SSL redirect but exempt health check
+    SECURE_SSL_REDIRECT = True
+    # Exempt health check from SSL redirect and allow both HTTP and HTTPS
+    SECURE_REDIRECT_EXEMPT = [r'^health/?$']
+    # Disable SSL redirect for health check endpoint
+    USE_X_FORWARDED_HOST = True
+    USE_X_FORWARDED_PORT = True
 
 # Logging configuration - Modified for container-friendly setup
 LOGGING = {
