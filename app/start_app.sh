@@ -84,8 +84,7 @@ if [ "${DJANGO_ENV:-development}" = "production" ]; then
         --error-logfile - \
         --timeout ${GUNICORN_TIMEOUT:-120} \
         --graceful-timeout 30 \
-        --keep-alive 65 \
-        --max-child-requests 1000
+        --keep-alive 65
 else
     echo "Starting Django development server..."
     exec python manage.py runserver 0.0.0.0:${PORT:-8000}
