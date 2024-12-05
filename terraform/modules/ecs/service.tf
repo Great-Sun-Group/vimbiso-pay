@@ -10,10 +10,10 @@ resource "aws_ecs_service" "app" {
   force_new_deployment             = true
   health_check_grace_period_seconds = 900  # 15 minutes for complete startup
 
-  # Keep rollback disabled for debugging
   deployment_circuit_breaker {
     enable   = true
-    rollback = false  # Disabled to preserve logs and debug info
+    //rollback = false  # Use `false` to preserve logs and debug info (NOT FOR PROD)
+    rollback = true  # Use `true` to enable automatic rollback for failed deployments
   }
 
   deployment_controller {
