@@ -1,11 +1,11 @@
 terraform {
   backend "s3" {
-    region = "af-south-1"
-    encrypt = true
-    key    = "terraform.tfstate"
+    region         = "af-south-1"
+    encrypt        = true
+    key            = "terraform.tfstate"
     # Bucket and DynamoDB table names are set via backend-config during terraform init:
-    # staging:    vimbiso-pay-terraform-state-staging / vimbiso-pay-terraform-state-lock-staging
-    # production: vimbiso-pay-terraform-state-production / vimbiso-pay-terraform-state-lock-production
+    # staging:    vimbiso-pay-terraform-state-staging-195275664440 / vimbiso-pay-terraform-state-lock-staging-195275664440
+    # production: vimbiso-pay-terraform-state-production-195275664440 / vimbiso-pay-terraform-state-lock-production-195275664440
   }
 
   required_providers {
@@ -16,10 +16,5 @@ terraform {
   }
 }
 
-provider "aws" {
-  region = local.current_env.aws_region
-
-  default_tags {
-    tags = local.common_tags
-  }
-}
+# Get current AWS account ID
+data "aws_caller_identity" "current" {}

@@ -8,7 +8,9 @@
             ],
             "Resource": [
                 "arn:aws:s3:::vimbiso-pay-terraform-state-*",
-                "arn:aws:s3:::vimbiso-pay-terraform-state-*/*"
+                "arn:aws:s3:::vimbiso-pay-terraform-state-*/*",
+                "arn:aws:s3:::vimbiso-pay-alb-logs-*",
+                "arn:aws:s3:::vimbiso-pay-alb-logs-*/*"
             ]
         },
         {
@@ -32,7 +34,8 @@
                 "ec2:Associate*",
                 "ec2:Disassociate*",
                 "ec2:Allocate*",
-                "ec2:Release*"
+                "ec2:Release*",
+                "ec2:GetSecurityGroupsForVpc"
             ],
             "Resource": "*"
         },
@@ -67,7 +70,11 @@
         {
             "Effect": "Allow",
             "Action": [
-                "ecr:GetAuthorizationToken"
+                "ecr:GetAuthorizationToken",
+                "ecr:PutRegistryScanningConfiguration",
+                "ecr:GetRegistryScanningConfiguration",
+                "inspector2:Enable",
+                "inspector2:Disable"
             ],
             "Resource": "*"
         },
@@ -79,6 +86,7 @@
                 "iam:GetRole",
                 "iam:PutRolePolicy",
                 "iam:DeleteRolePolicy",
+                "iam:GetRolePolicy",
                 "iam:AttachRolePolicy",
                 "iam:DetachRolePolicy",
                 "iam:TagRole",
@@ -91,7 +99,17 @@
                 "iam:GetInstanceProfile",
                 "iam:AddRoleToInstanceProfile",
                 "iam:RemoveRoleFromInstanceProfile",
-                "iam:CreateServiceLinkedRole"
+                "iam:CreateServiceLinkedRole",
+                "iam:CreatePolicy",
+                "iam:DeletePolicy",
+                "iam:GetPolicy",
+                "iam:ListPolicyVersions",
+                "iam:CreatePolicyVersion",
+                "iam:DeletePolicyVersion",
+                "iam:GetPolicyVersion",
+                "iam:SetDefaultPolicyVersion",
+                "iam:TagPolicy",
+                "iam:UntagPolicy"
             ],
             "Resource": "*"
         },
@@ -120,6 +138,27 @@
             "Effect": "Allow",
             "Action": [
                 "elasticfilesystem:*"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "wafv2:*"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "servicediscovery:*"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "cloudwatch:*"
             ],
             "Resource": "*"
         }

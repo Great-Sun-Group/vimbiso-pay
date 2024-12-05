@@ -1,5 +1,4 @@
 -r base.txt
 
 # Production-specific dependencies
-uvicorn[standard]==0.32.1
-gunicorn[gevent]==23.0.0
+gunicorn==23.0.0  # Using sync workers for better memory efficiency

@@ -2,6 +2,8 @@ from corsheaders.defaults import default_headers
 from decouple import config as env
 from pathlib import Path
 from datetime import timedelta
+import redis
+import socket
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -12,7 +14,7 @@ SECRET_KEY = env("DJANGO_SECRET")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env("DEBUG", default=False, cast=bool)
 
-ALLOWED_HOSTS = env("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = env("ALLOWED_HOSTS", default="localhost 127.0.0.1").split(" ")
 
 # Application definition
 INSTALLED_APPS = [
@@ -62,7 +64,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
             ],
         },
-    },
+    }
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
@@ -71,39 +73,60 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "data/db.sqlite3",
-        "ATOMIC_REQUESTS": True,  # Ensures database integrity
+        # Updated path to match EFS mount point
+        "NAME": "/efs-vols/app-data/data/db/db.sqlite3",
+        "ATOMIC_REQUESTS": True,
         "OPTIONS": {
-            "timeout": 20,  # Increase timeout for better concurrent access handling
-            "isolation_level": "IMMEDIATE",  # Better concurrency control
+            "timeout": 60,  # Increased timeout
+            "isolation_level": "IMMEDIATE",  # Changed from READ_COMMITTED to IMMEDIATE
         },
+        "CONN_MAX_AGE": 60,
     }
 }
 
-# Cache configuration using Redis for session storage
+# Redis configuration - Use localhost by default since Redis is in same task
+REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": env("REDIS_URL", default="redis://redis:6379/0"),
+        "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SOCKET_CONNECT_TIMEOUT": 5,
-            "SOCKET_TIMEOUT": 5,
+            "SOCKET_CONNECT_TIMEOUT": 30,       # Increased timeout
+            "SOCKET_TIMEOUT": 30,               # Increased timeout
             "RETRY_ON_TIMEOUT": True,
-            "MAX_CONNECTIONS": 1000,
-            "CONNECTION_POOL_KWARGS": {"max_connections": 100},
+            "MAX_CONNECTIONS": 20,
+            "CONNECTION_POOL_KWARGS": {
+                "max_connections": 20,
+                "retry_on_timeout": True,
+                "retry_on_error": [
+                    redis.ConnectionError,
+                    redis.TimeoutError,
+                    socket.timeout,
+                    socket.error,
+                ],
+                "health_check_interval": 30,
+            },
+            "IGNORE_EXCEPTIONS": True,  # Changed to True to prevent cascading failures
         },
+        "KEY_PREFIX": "vimbiso",
     }
 }
 
-# Use Redis for session storage
+# Use Redis for session storage with optimized settings
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 SESSION_CACHE_ALIAS = "default"
+SESSION_COOKIE_AGE = 86400  # 24 hours
+SESSION_SAVE_EVERY_REQUEST = False
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+        "NAME": (
+            "django.contrib.auth.password_validation"
+            ".UserAttributeSimilarityValidator"
+        ),
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
@@ -122,11 +145,13 @@ TIME_ZONE = "Africa/Harare"
 USE_I18N = True
 USE_TZ = True
 
-# Static files (CSS, JavaScript, Images)
+# Static files (CSS JavaScript Images)
 STATIC_URL = "/static/"
-STATIC_ROOT = Path.joinpath(BASE_DIR, "static")
+# Updated path to match EFS mount point
+STATIC_ROOT = "/efs-vols/app-data/data/static"
 
-MEDIA_ROOT = Path.joinpath(BASE_DIR, "media")
+# Updated path to match EFS mount point
+MEDIA_ROOT = "/efs-vols/app-data/data/media"
 MEDIA_URL = "/media/"
 
 # Default primary key field type
@@ -194,10 +219,17 @@ SECURE_HSTS_PRELOAD = True
 if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = True
+    # Trust ALB's X-Forwarded-Proto header
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    # Enable SSL redirect but exempt health check
+    SECURE_SSL_REDIRECT = True
+    # Allow both HTTP and HTTPS for health check
+    SECURE_REDIRECT_EXEMPT = [r'^health/?$']
+    # Trust X-Forwarded headers from ALB
+    USE_X_FORWARDED_HOST = True
+    USE_X_FORWARDED_PORT = True
 
-# Logging configuration
+# Logging configuration - Modified for container-friendly setup
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -211,30 +243,33 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "json",
-            "level": "INFO",
-        },
-        "file": {
-            "class": "logging.handlers.RotatingFileHandler",
-            "filename": str(BASE_DIR / "data/logs/application.log"),
-            "maxBytes": 1024 * 1024 * 5,  # 5 MB
-            "backupCount": 5,
-            "formatter": "json",
+            "level": "DEBUG",  # Changed to DEBUG for more detail during startup
         },
     },
     "loggers": {
         "django": {
-            "handlers": ["console", "file"],
-            "level": env("DJANGO_LOG_LEVEL", default="INFO"),
-            "propagate": True,
+            "handlers": ["console"],
+            "level": env("DJANGO_LOG_LEVEL", default="DEBUG"),  # Changed to DEBUG
+            "propagate": False,
         },
         "core": {
-            "handlers": ["console", "file"],
-            "level": env("APP_LOG_LEVEL", default="INFO"),
+            "handlers": ["console"],
+            "level": env("APP_LOG_LEVEL", default="DEBUG"),  # Changed to DEBUG
+            "propagate": False,
+        },
+        "django_redis": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "redis": {
+            "handlers": ["console"],
+            "level": "DEBUG",
             "propagate": False,
         },
     },
     "root": {
         "handlers": ["console"],
-        "level": "INFO",
+        "level": "DEBUG",  # Changed to DEBUG
     },
 }
