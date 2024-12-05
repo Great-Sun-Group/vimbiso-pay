@@ -47,15 +47,6 @@ The application will be available at http://localhost:8000
   - Offer cancellation
   - Review of incoming/outgoing offers
 
-### Transaction Commands
-- Quick transaction shortcuts:
-  - `0.5=>handle` for secured CredEx
-  - `0.5->handle` for unsecured CredEx
-  - `0.5->handle=2024-02-01` for dated unsecured CredEx
-- Menu-based transaction creation
-- Bulk transaction handling
-- Transaction validation and confirmation
-
 ### WhatsApp Interface
 - Interactive menus and buttons
 - Form-based data collection with validation
@@ -63,7 +54,7 @@ The application will be available at http://localhost:8000
 - State-based conversation flow with Redis persistence:
   - 5-minute session timeout
   - Automatic state cleanup
-  - Cross-device state sync
+  - Cross-device state sync(?)
 - Time-aware greetings and messages
 - Navigation commands:
   - `menu` - Return to main menu
@@ -90,13 +81,12 @@ The application will be available at http://localhost:8000
 ### Prerequisites
 - Docker and Docker Compose
 - Python 3.10+
-- Access to Credex Core API
-- WhatsApp Business API credentials
+- Access to Credex Core API development server
+- WhatsApp Business API credentials from Meta
 
 ### Development Features
 - Live code reloading
 - Django Debug Toolbar
-- SQLite database
 - Redis for state management
 - Console email backend
 - Comprehensive logging
@@ -116,6 +106,7 @@ pytest --cov=app
 ```
 
 ## Production Deployment
+See [Deployment Documentation](docs/deployment.md).
 
 ### Docker Configuration
 - Multi-stage builds
