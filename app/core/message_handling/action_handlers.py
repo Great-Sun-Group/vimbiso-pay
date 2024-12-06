@@ -1,42 +1,55 @@
-from pprint import pprint
-
-from core.message_handling.whatsapp_forms import registration_form, offer_credex
 import logging
-
-from django.contrib.messages import success
+from ..utils.utils import wrap_text
+from core.message_handling.whatsapp_forms import registration_form, offer_credex
+from datetime import datetime, timedelta
 
 from .screens import (
     UNSERCURED_BALANCES,
     CONFIRM_SECURED_CREDEX,
-    ACCOUNT_SELECTION,
+    CONFIRM_UNSECURED_CREDEX,
     BALANCE,
-    AGENTS,
     HOME_1,
     HOME_2,
     OFFER_CREDEX,
-    OFFER_FAILED,
     OFFER_SUCCESSFUL,
     ACCEPT_CREDEX,
     OUTGOING_CREDEX,
     CREDEX,
 )
-from ..utils.utils import wrap_text, get_greeting
-from ..config.constants import *
+from ..config.constants import (
+    INVALID_ACTION,
+    CachedUser,
+    CredexBotService,
+)
 from serializers.members import MemberDetailsSerializer
 from serializers.offers import OfferCredexSerializer
-from core.utils.utils import CredexWhatsappService
 
 
 class ActionHandler:
+    """Handles various actions for the WhatsApp bot service."""
 
     def __init__(self, service: "CredexBotService"):
+        """Initialize the action handler with a bot service.
+
+        Args:
+            service: The CredexBotService instance to use for handling actions
+        """
         self.service = service
 
     def handle_action_register(self, register=False):
+        """Handle user registration action.
+
+        Args:
+            register: Whether this is a new registration
+
+        Returns:
+            Response message or form
+        """
         if register:
             return registration_form(
                 self.service.user.mobile_number,
-                "*Welcome To Credex!*\n\nIt looks like you're new here. Let's get you \nset up.",
+                "*Welcome To Credex!*\n\nIt looks like you're new here. "
+                "Let's get you \nset up.",
             )
 
         if self.service.message["type"] == "nfm_reply":
@@ -61,17 +74,21 @@ class ActionHandler:
                 else:
                     return wrap_text(message, self.service.user.mobile_number)
             else:
-                # Handle invalid serializer
-                pass
-
-        print("Rest of the implementation")
-        # Rest of the implementation
+                logging.error("Invalid registration data")
 
     def handle_action_menu(self, message=None, login=False):
-        """Implementation for handling menu actions"""
+        """Handle menu action and display appropriate menu options.
 
+        Args:
+            message: Optional message to display
+            login: Whether this is a login action
+
+        Returns:
+            Menu response
+        """
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(user)
+
         if not current_state.get("profile") or login:
             response = self.service.refresh(reset=True)
             current_state = user.state.get_state(user)
@@ -84,76 +101,6 @@ class ActionHandler:
                 )
                 return response
 
-        # {
-        #     'member': {
-        #         'memberID': '93af87ee-4f1d-4341-a224-826598407793',
-        #         'firstname': 'Takudzwa',
-        #         'lastname': 'Sharara',
-        #         'memberHandle': '263719624032',
-        #         'defaultDenom': 'USD',
-        #         'memberTier': {
-        #             'low': 1,
-        #             'high': 0
-        #         },
-        #         'remainingAvailableUSD': None
-        #     },
-        #     'memberDashboard': {
-        #         'memberTier': {
-        #             'low': 1,
-        #             'high': 0
-        #         },
-        #         'remainingAvailableUSD': None,
-        #         'accounts': [
-        #             {
-        #                 'success': True,
-        #                 'data': {
-        #                     'accountID': 'd3a68139-81de-4bdb-875a-494f747863fb',
-        #                     'accountName': 'Takudzwa Sharara Personal',
-        #                     'accountHandle': '263719624032',
-        #                     'defaultDenom': 'USD',
-        #                     'isOwnedAccount': True,
-        #                     'authFor': [
-        #                         {
-        #                             'lastname': 'Sharara',
-        #                             'firstname': 'Takudzwa',
-        #                             'memberID': '93af87ee-4f1d-4341-a224-826598407793'
-        #                         }
-        #                     ],
-        #                     'balanceData': {
-        #                         'success': True,
-        #                         'data': {
-        #                             'securedNetBalancesByDenom': ['99.76 USD'],
-        #                             'unsecuredBalancesInDefaultDenom': {
-        #                                 'totalPayables': '0.00 USD',
-        #                                 'totalReceivables': '0.00 USD',
-        #                                 'netPayRec': '0.00 USD'
-        #                             },
-        #                             'netCredexAssetsInDefaultDenom': '99.76 USD'
-        #                         },
-        #                         'message': 'Account balances retrieved successfully'
-        #                     },
-        #                     'pendingInData': {
-        #                         'success': True,
-        #                         'data': [],
-        #                         'message': 'No pending offers found'
-        #                     },
-        #                     'pendingOutData': {
-        #                         'success': True, 'data': [],
-        #                         'message': 'No pending outgoing offers found'
-        #                     },
-        #                     'sendOffersTo': {
-        #                         'memberID': '93af87ee-4f1d-4341-a224-826598407793',
-        #                         'firstname': 'Takudzwa',
-        #                         'lastname': 'Sharara'
-        #                     }
-        #                 },
-        #                 'message': 'Dashboard retrieved successfully'
-        #             }
-        #         ]
-        #     }
-        # }
-
-        # Get the member tier & currently selected account to render the menu
         member_tier = (
             current_state.get("profile", {})
             .get("memberDashboard", {})
@@ -166,9 +113,7 @@ class ActionHandler:
             return self.handle_action_select_profile()
 
         if not selected_account:
-            selected_account = current_state["profile"]["memberDashboard"]["accounts"][
-                0
-            ]
+            selected_account = current_state["profile"]["memberDashboard"]["accounts"][0]
             current_state["current_account"] = selected_account
             try:
                 user.state.update_state(
@@ -184,7 +129,7 @@ class ActionHandler:
                     option="handle_action_menu",
                 )
             except Exception as e:
-                print("ERROR : ", e)
+                logging.error(f"Error updating state: {e}")
 
         pending = ""
         pending_in = 0
@@ -199,11 +144,78 @@ class ActionHandler:
         balances = ""
         secured = ""
 
-        balance_data = selected_account["data"]["balanceData"]["data"]
+        balance_data = selected_account.get("data", {}).get("balanceData", {}).get("data", {})
         is_owned_account = selected_account["data"].get("isOwnedAccount")
         for bal in balance_data["securedNetBalancesByDenom"]:
             balances += f"- {bal}\n"
             secured += f" *{bal}* \n"
+
+        unsecured_balance = (
+            UNSERCURED_BALANCES.format(
+                totalPayables=balance_data["unsecuredBalancesInDefaultDenom"][
+                    "totalPayables"
+                ],
+                totalReceivables=balance_data["unsecuredBalancesInDefaultDenom"][
+                    "totalReceivables"
+                ],
+                netPayRec=balance_data["unsecuredBalancesInDefaultDenom"]["netPayRec"],
+            )
+            if member_tier > 2
+            else (
+                f"Free tier remaining daily spend limit\n"
+                f"    *{current_state['profile'].get('remainingAvailableUSD', '0.00')} "
+                f"USD*\n{pending}\n"
+            )
+        )
+
+        balance_text = BALANCE.format(
+            securedNetBalancesByDenom=(balances if balances else "    $0.00\n"),
+            unsecured_balance=unsecured_balance,
+            netCredexAssetsInDefaultDenom=balance_data["netCredexAssetsInDefaultDenom"],
+        )
+
+        menu_text = (HOME_2 if is_owned_account else HOME_1).format(
+            message=message if message else "",
+            account=current_state.get("current_account", {}).get(
+                "accountName", "Personal Account"
+            ),
+            balance=balance_text,
+            handle=current_state["current_account"]["data"]["accountHandle"],
+        )
+
+        base_menu_rows = [
+            {
+                "id": "handle_action_offer_credex",
+                "title": "💸 Offer Secured Credex",
+            },
+            {
+                "id": "handle_action_pending_offers_in",
+                "title": f"📥 Pending Offers ({pending_in})",
+            },
+            {
+                "id": "handle_action_pending_offers_out",
+                "title": f"📤 Review Outgoing ({pending_out})",
+            },
+            {
+                "id": "handle_action_transactions",
+                "title": "📒 Review Transactions",
+            },
+        ]
+
+        extended_menu_rows = base_menu_rows + [
+            {
+                "id": "handle_action_authorize_member",
+                "title": "👥 Manage Members",
+            },
+            {
+                "id": "handle_action_notifications",
+                "title": "🛎️ Notifications",
+            },
+            {
+                "id": "handle_action_switch_account",
+                "title": "🏡 Member Dashboard",
+            },
+        ]
 
         return {
             "messaging_product": "whatsapp",
@@ -212,95 +224,16 @@ class ActionHandler:
             "type": "interactive",
             "interactive": {
                 "type": "list",
-                "body": {
-                    "text": (HOME_2 if is_owned_account else HOME_1).format(
-                        message=message if message else "",
-                        account=current_state.get("current_account", {}).get(
-                            "accountName", "Personal Account"
-                        ),
-                        balance=BALANCE.format(
-                            securedNetBalancesByDenom=(
-                                balances if balances else "    $0.00\n"
-                            ),
-                            unsecured_balance=(
-                                UNSERCURED_BALANCES.format(
-                                    totalPayables=balance_data[
-                                        "unsecuredBalancesInDefaultDenom"
-                                    ]["totalPayables"],
-                                    totalReceivables=balance_data[
-                                        "unsecuredBalancesInDefaultDenom"
-                                    ]["totalReceivables"],
-                                    netPayRec=balance_data[
-                                        "unsecuredBalancesInDefaultDenom"
-                                    ]["netPayRec"],
-                                )
-                                if member_tier > 2
-                                else f"Free tier remaining daily spend limit\n    *{current_state['profile'].get('remainingAvailableUSD', '0.00')} USD*\n{pending}\n"
-                            ),
-                            netCredexAssetsInDefaultDenom=balance_data[
-                                "netCredexAssetsInDefaultDenom"
-                            ],
-                        ),
-                        handle=current_state["current_account"]["data"][
-                            "accountHandle"
-                        ],
-                    )
-                },
+                "body": {"text": menu_text},
                 "action": {
                     "button": "🕹️ Options",
                     "sections": [
                         {
                             "title": "Options",
                             "rows": (
-                                [
-                                    {
-                                        "id": "handle_action_offer_credex",
-                                        "title": f"💸 Offer Secured Credex",
-                                    },
-                                    {
-                                        "id": "handle_action_pending_offers_in",
-                                        "title": f"📥 Pending Offers ({pending_in})",
-                                    },
-                                    {
-                                        "id": "handle_action_pending_offers_out",
-                                        "title": f"📤 Review Outgoing ({pending_out})",
-                                    },
-                                    {
-                                        "id": "handle_action_transactions",
-                                        "title": f"📒 Review Transactions",
-                                    },
-                                ]
-                                if not (is_owned_account and member_tier > 2)
-                                else [
-                                    {
-                                        "id": "handle_action_offer_credex",
-                                        "title": f"💸 Offer Secured Credex",
-                                    },
-                                    {
-                                        "id": "handle_action_pending_offers_in",
-                                        "title": f"📥 Pending Offers ({pending_in})",
-                                    },
-                                    {
-                                        "id": "handle_action_pending_offers_out",
-                                        "title": f"📤 Review Outgoing ({pending_out})",
-                                    },
-                                    {
-                                        "id": "handle_action_transactions",
-                                        "title": f"📒 Review Transactions",
-                                    },
-                                    {
-                                        "id": "handle_action_authorize_member",
-                                        "title": f"👥 Manage Members",
-                                    },
-                                    {
-                                        "id": "handle_action_notifications",
-                                        "title": f"🛎️ Notifications",
-                                    },
-                                    {
-                                        "id": "handle_action_switch_account",
-                                        "title": f"🏡 Member Dashboard",
-                                    },
-                                ]
+                                extended_menu_rows
+                                if is_owned_account and member_tier > 2
+                                else base_menu_rows
                             ),
                         }
                     ],
@@ -309,11 +242,11 @@ class ActionHandler:
         }
 
     def handle_action_select_profile(self, message=None):
-        # Implementation for selecting a profile
+        """Handle profile selection action."""
         pass
 
     def handle_action_pending_offers_in(self):
-        """THIS METHOD HANDLES DISPLAYING INCOMING OFFERS"""
+        """Handle displaying incoming offers."""
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(self.service.user)
 
@@ -393,11 +326,15 @@ class ActionHandler:
                 .get("data", [])
             )
             for count, item in enumerate(data[:10], start=1):
-                menu_string += f"\n{count}. *Total Credex Amount :* {item.get('formattedInitialAmount')}\n        *From :* {item.get('counterpartyAccountName')}\n"
+                menu_string += (
+                    f"\n{count}. *Total Credex Amount :* "
+                    f"{item.get('formattedInitialAmount')}\n"
+                    f"        *From :* {item.get('counterpartyAccountName')}\n"
+                )
                 rows.append(
                     {
                         "id": item.get("credexID"),
-                        "title": f"{item.get('formattedInitialAmount')}",
+                        "title": item.get("formattedInitialAmount"),
                         "description": f"from {item.get('counterpartyAccountName')}",
                     }
                 )
@@ -447,8 +384,7 @@ class ActionHandler:
                 return self.handle_action_accept_all_incoming_offers()
 
     def handle_action_accept_offer(self):
-        """This method handles accepting an offer"""
-
+        """Handle accepting an offer."""
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(self.service.user)
 
@@ -472,7 +408,7 @@ class ActionHandler:
             for bal in balance_lists.keys():
                 balances += f"- {bal} {balance_lists[bal]}\n"
 
-            message = BALANCE.format(
+            balance_data = BALANCE.format(
                 securedNetBalancesByDenom=secured if secured else "    $0.00\n",
                 unsecured_balance=balances,
                 netCredexAssetsInDefaultDenom=message["data"]["dashboard"]["data"][
@@ -481,7 +417,8 @@ class ActionHandler:
             )
 
             return wrap_text(
-                message=f"> 💸 *SUCCESS* \n\n{message}\n*Successfully Accepted Credex*\n",
+                message=f"> 💸 *SUCCESS* \n\n{balance_data}\n"
+                "*Successfully Accepted Credex*\n",
                 user_mobile_number=self.service.user.mobile_number,
                 extra_rows=[],
             )
@@ -493,7 +430,7 @@ class ActionHandler:
             )
 
     def handle_action_decline_offer(self):
-        """THIS METHOD HANDLES DECLINING AN OFFER"""
+        """Handle declining an offer."""
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(self.service.user)
 
@@ -519,7 +456,7 @@ class ActionHandler:
             )
 
     def handle_action_cancel_offer(self):
-        """THIS METHOD HANDLES CANCELLING A SINGLE OFFER"""
+        """Handle cancelling a single offer."""
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(self.service.user)
 
@@ -533,7 +470,8 @@ class ActionHandler:
         successful, _ = self.service.api_interactions.cancel_credex(payload)
         if successful:
             return wrap_text(
-                message="> *Cancelled by issuer*\n\n*Credex has been cancelled successfully*",
+                message="> *Cancelled by issuer*\n\n"
+                "*Credex has been cancelled successfully*",
                 user_mobile_number=self.service.user.mobile_number,
                 extra_rows=[],
             )
@@ -545,14 +483,15 @@ class ActionHandler:
             )
 
     def handle_action_accept_all_incoming_offers(self):
-        """THIS METHOD HANDLES ACCEPTING ALL INCOMING OFFERS"""
+        """Handle accepting all incoming offers."""
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(self.service.user)
 
         data = (
-            current_state.get("current_account", {}).get("pendingInData")
-            if current_state.get("current_account", {}).get("pendingInData")
-            else []
+            current_state.get("current_account", {})
+            .get("data", {})
+            .get("pendingInData", {})
+            .get("data", [])
         )
         payload = {
             "signerID": current_state["profile"]["member"].get("memberID"),
@@ -588,7 +527,8 @@ class ActionHandler:
                 option="handle_action_menu",
             )
             return wrap_text(
-                message=f"> 💸 *SUCCESS* \n\n{message}\n *All offers accepted successfully*",
+                message=f"> 💸 *SUCCESS* \n\n{message}\n"
+                " *All offers accepted successfully*",
                 user_mobile_number=self.service.user.mobile_number,
                 x_is_menu=True,
             )
@@ -600,130 +540,10 @@ class ActionHandler:
             )
 
     def handle_action_pending_offers_out(self):
-        """THIS METHOD HANDLES DISPLAYING OUTGOING OFFERS"""
+        """Handle displaying outgoing offers."""
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(self.service.user)
 
-        print("ENTERED PENDING OUTGOING", self.service.body, user.state.option)
-        # {
-        #     "success": true,
-        #     "data": {
-        #         "accountID": "d3a68139-81de-4bdb-875a-494f747863fb",
-        #         "accountName": "Takudzwa Sharara Personal",
-        #         "accountHandle": "263719624032",
-        #         "defaultDenom": "USD",
-        #         "isOwnedAccount": true,
-        #         "authFor": [
-        #             {
-        #                 "lastname": "Sharara",
-        #                 "firstname": "Takudzwa",
-        #                 "memberID": "93af87ee-4f1d-4341-a224-826598407793"
-        #             }
-        #         ],
-        #         "balanceData": {
-        #             "success": true,
-        #             "data": {
-        #                 "securedNetBalancesByDenom": ["98.63 USD"],
-        #                 "unsecuredBalancesInDefaultDenom": {
-        #                     "totalPayables": "0.00 USD",
-        #                     "totalReceivables": "0.00 USD",
-        #                     "netPayRec": "0.00 USD"
-        #                 },
-        #                 "netCredexAssetsInDefaultDenom": "99.76 USD"
-        #             },
-        #             "message": "Account balances retrieved successfully"
-        #         },
-        #         "pendingInData": {
-        #             "success": true,
-        #             "data": [],
-        #             "message": "No pending offers found"
-        #         },
-        #         "pendingOutData": {
-        #             "success": true,
-        #             "data": [
-        #                 {
-        #                     "credexID": "afe3109c-29d5-43ce-8264-d08107701fbf",
-        #                     "formattedInitialAmount": "-0.30 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 },
-        #                 {
-        #                     "credexID": "6dfcdb28-9ca3-42fa-8fce-326577708b15",
-        #                     "formattedInitialAmount": "-0.02 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 },
-        #                 {
-        #                     "credexID": "349fa922-4fbb-468a-8016-18527c7af718",
-        #                     "formattedInitialAmount": "-0.20 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 },
-        #                 {
-        #                     "credexID": "d63680bc-7343-4c96-8203-2856d2da5699",
-        #                     "formattedInitialAmount": "-0.01 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 },
-        #                 {
-        #                     "credexID": "5056d5aa-8695-477b-a2e6-e7cbe7d74819",
-        #                     "formattedInitialAmount": "-0.02 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 },
-        #                 {
-        #                     "credexID": "21f708b2-0655-4e5b-8d0a-1e32a1ad614c",
-        #                     "formattedInitialAmount": "-0.02 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 },
-        #                 {
-        #                     "credexID": "56a64ea3-d69e-4b04-b3ea-d525fa6772e5",
-        #                     "formattedInitialAmount": "-0.02 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 },
-        #                 {
-        #                     "credexID": "fed8f896-c949-4604-b279-e243436ed711",
-        #                     "formattedInitialAmount": "-0.02 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 },
-        #                 {
-        #                     "credexID": "4c6b5039-0a95-44fe-81b0-ffd551984c59",
-        #                     "formattedInitialAmount": "-0.02 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 },
-        #                 {
-        #                     "credexID": "80148a09-a2f3-490a-a7f6-b341307659ea",
-        #                     "formattedInitialAmount": "-0.02 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 },
-        #                 {
-        #                     "credexID": "6b09726d-2f9b-4551-82f2-1a813e005be5",
-        #                     "formattedInitialAmount": "-0.25 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 },
-        #                 {
-        #                     "credexID": "511288df-29ac-473b-9166-91dfb971071f",
-        #                     "formattedInitialAmount": "-0.23 USD",
-        #                     "counterpartyAccountName": "Garnet Sharara Personal",
-        #                     "secured": true
-        #                 }
-        #             ],
-        #             "message": "Retrieved 12 pending outgoing offers"
-        #         },
-        #         "sendOffersTo": {
-        #             "memberID": "93af87ee-4f1d-4341-a224-826598407793",
-        #             "firstname": "Takudzwa",
-        #             "lastname": "Sharara"
-        #         }
-        #     },
-        #     "message": "Dashboard retrieved successfully"
-        # }
         if user.state.option == "handle_action_display_offers":
             data = (
                 current_state.get("current_account", {})
@@ -731,19 +551,16 @@ class ActionHandler:
                 .get("pendingOutData", {})
                 .get("data", [])
             )
-            print("DATA ", data)
             if (
                 self.service.body in [str(i) for i in range(1, len(data) + 1)]
                 or self.service.message["type"] == "interactive"
             ):
-                print("DATA : ", data)
                 if data:
                     item = None
                     if self.service.body.isdigit():
                         item = data[int(self.service.body) - 1]
                     else:
                         for row in data:
-                            print("ROW : ", row)
                             if row.get("credexID") == self.service.body:
                                 item = row
                                 break
@@ -792,11 +609,15 @@ class ActionHandler:
             )
             for item in data[:10]:
                 counterparty = item.get("counterpartyAccountName")
-                menu_string += f"{count}. *{item.get('formattedInitialAmount')}* outgoing offer sent to\n        {counterparty}\n"
+                menu_string += (
+                    f"{count}. *{item.get('formattedInitialAmount')}* "
+                    f"outgoing offer sent to\n"
+                    f"        {counterparty}\n"
+                )
                 rows.append(
                     {
                         "id": item.get("credexID"),
-                        "title": f"{item.get('formattedInitialAmount')}",
+                        "title": item.get("formattedInitialAmount"),
                         "description": f"to {item.get('counterpartyAccountName')}",
                     }
                 )
@@ -833,7 +654,7 @@ class ActionHandler:
             }
 
     def handle_action_transactions(self):
-        """THIS METHOD FETCHES AND DISPLAYS TRANSACTIONS WITH PAGINATION"""
+        """Handle fetching and displaying transactions with pagination."""
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(self.service.user)
 
@@ -907,7 +728,6 @@ class ActionHandler:
                 user_mobile_number=self.service.user.mobile_number,
                 x_is_menu=True,
             )
-        print(">>>>>>", page_number)
 
         payload = {
             "accountID": current_state["current_account"].get("accountID"),
@@ -924,18 +744,29 @@ class ActionHandler:
             for txn in transactions:
                 if "Next" in txn.get("formattedInitialAmount"):
                     continue
-                # if count > 8:
-                #     break
+
                 nl = "\n"
-                menu_string += f"*{count}.* *{txn.get('formattedInitialAmount')}* {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName').replace('Personal', f'{nl}     Personal')}\n\n"
+                menu_string += (
+                    f"*{count}.* *{txn.get('formattedInitialAmount')}* "
+                    f"{'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}"
+                    f"{txn.get('counterpartyAccountName').replace('Personal', f'{nl}     Personal')}\n\n"
+                )
                 rows.append(
                     {
                         "id": txn.get("credexID"),
-                        "title": f"{txn.get('formattedInitialAmount').replace('-', '')} {'DEBIT ' if '-' in txn.get('formattedInitialAmount') else 'CREDIT '}",
-                        "description": f"{txn.get('formattedInitialAmount')} {'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}{txn.get('counterpartyAccountName')}",
+                        "title": (
+                            f"{txn.get('formattedInitialAmount').replace('-', '')} "
+                            f"{'DEBIT ' if '-' in txn.get('formattedInitialAmount') else 'CREDIT '}"
+                        ),
+                        "description": (
+                            f"{txn.get('formattedInitialAmount')} "
+                            f"{'to ' if '-' in txn.get('formattedInitialAmount') else 'from '}"
+                            f"{txn.get('counterpartyAccountName')}"
+                        ),
                     }
                 )
                 count += 1
+
             current_state["page_number"] = page_number
             current_state["current_page"] = rows
             user.state.update_state(
@@ -944,15 +775,14 @@ class ActionHandler:
                 update_from="handle_action_transactions",
                 option="handle_action_transactions",
             )
+
             if page_number > 1:
                 rows.append({"id": "Prev", "title": "< Prev", "description": "< Prev"})
 
             if has_next:
                 rows.append({"id": "Next", "title": "Next >", "description": "Next >"})
 
-            print(len(rows))
-
-            if len(rows):
+            if rows:
                 return {
                     "messaging_product": "whatsapp",
                     "recipient_type": "individual",
@@ -961,7 +791,7 @@ class ActionHandler:
                     "interactive": {
                         "type": "list",
                         "body": {
-                            "text": menu_string + f"Send *'Menu'* to go back to Menu"
+                            "text": menu_string + "Send *'Menu'* to go back to Menu"
                         },
                         "action": {
                             "button": "🕹️ Options",
@@ -993,81 +823,8 @@ class ActionHandler:
         pass
 
     def handle_action_offer_credex(self):
-        """
-            Handling credex offers
-        :return:
-        """
+        """Handle credex offers."""
 
-        # {
-        #     'member': {
-        #         'memberID': '93af87ee-4f1d-4341-a224-826598407793',
-        #         'firstname': 'Takudzwa',
-        #         'lastname': 'Sharara',
-        #         'memberHandle': '263719624032',
-        #         'defaultDenom': 'USD',
-        #         'memberTier': {
-        #             'low': 1,
-        #             'high': 0
-        #         },
-        #         'remainingAvailableUSD': None
-        #     },
-        #     'memberDashboard': {
-        #         'memberTier': {
-        #             'low': 1,
-        #             'high': 0
-        #         },
-        #         'remainingAvailableUSD': None,
-        #         'accounts': [
-        #             {
-        #                 'success': True,
-        #                 'data': {
-        #                     'accountID': 'd3a68139-81de-4bdb-875a-494f747863fb',
-        #                     'accountName': 'Takudzwa Sharara Personal',
-        #                     'accountHandle': '263719624032',
-        #                     'defaultDenom': 'USD',
-        #                     'isOwnedAccount': True,
-        #                     'authFor': [
-        #                         {
-        #                             'lastname': 'Sharara',
-        #                             'firstname': 'Takudzwa',
-        #                             'memberID': '93af87ee-4f1d-4341-a224-826598407793'
-        #                         }
-        #                     ],
-        #                     'balanceData': {
-        #                         'success': True,
-        #                         'data': {
-        #                             'securedNetBalancesByDenom': ['99.76 USD'],
-        #                             'unsecuredBalancesInDefaultDenom': {
-        #                                 'totalPayables': '0.00 USD',
-        #                                 'totalReceivables': '0.00 USD',
-        #                                 'netPayRec': '0.00 USD'
-        #                             },
-        #                             'netCredexAssetsInDefaultDenom': '99.76 USD'
-        #                         },
-        #                         'message': 'Account balances retrieved successfully'
-        #                     },
-        #                     'pendingInData': {
-        #                         'success': True,
-        #                         'data': [],
-        #                         'message': 'No pending offers found'
-        #                     },
-        #                     'pendingOutData': {
-        #                         'success': True, 'data': [],
-        #                         'message': 'No pending outgoing offers found'
-        #                     },
-        #                     'sendOffersTo': {
-        #                         'memberID': '93af87ee-4f1d-4341-a224-826598407793',
-        #                         'firstname': 'Takudzwa',
-        #                         'lastname': 'Sharara'
-        #                     }
-        #                 },
-        #                 'message': 'Dashboard retrieved successfully'
-        #             }
-        #         ]
-        #     }
-        # }
-
-        # Get current user state
         user = CachedUser(self.service.user.mobile_number)
         current_state = user.state.get_state(self.service.user)
 
@@ -1120,8 +877,6 @@ class ActionHandler:
             or self.service.message["type"] == "nfm_reply"
         ):
             if self.service.message["type"] == "nfm_reply":
-                from datetime import datetime, timedelta
-
                 payload = {
                     "authorizer_member_id": current_state["profile"]
                     .get("member", {})
@@ -1176,8 +931,9 @@ class ActionHandler:
 
                     except ValueError:
                         # If a ValueError is raised, the date string is not in the correct format
-                        return self.wrap_text(
+                        return wrap_text(
                             OFFER_CREDEX.format(message="*Invalid Due Date❗*"),
+                            user_mobile_number=self.service.user.mobile_number,
                             x_is_menu=True,
                         )
                 else:
@@ -1216,7 +972,7 @@ class ActionHandler:
                 accounts = []
                 available_accounts = []
                 count = 1
-                account_string = f""
+                account_string = ""
                 print(
                     "PASSED VALIDATION : ",
                     current_state["profile"]["memberDashboard"]["accounts"],
@@ -1513,6 +1269,3 @@ class ActionHandler:
             line_length += len(word) + 1
 
         return formatted_synopsis.strip()
-
-
-# Add other action handling methods as needed
