@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WhatsApp Mock Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .chat-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            height: 500px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .message {
+            margin: 10px;
+            padding: 10px;
+            border-radius: 10px;
+            max-width: 70%;
+        }
+        .user-message {
+            background: #dcf8c6;
+            margin-left: auto;
+        }
+        .bot-message {
+            background: #e8e8e8;
+        }
+        .input-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input, select, button {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        input {
+            flex-grow: 1;
+        }
+        button {
+            background: #25d366;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #128c7e;
+        }
+    </style>
+</head>
+<body>
+    <h1>WhatsApp Mock Interface</h1>
+
+    <div class="input-container">
+        <input type="text" id="phoneNumber" placeholder="Phone Number" value="1234567890">
+        <input type="text" id="userName" placeholder="User Name" value="Test User">
+    </div>
+
+    <div class="input-container">
+        <select id="messageType">
+            <option value="text">Text Message</option>
+            <option value="button">Button Response</option>
+            <option value="interactive">Interactive Response</option>
+        </select>
+    </div>
+
+    <div class="chat-container" id="chatContainer"></div>
+
+    <div class="input-container">
+        <input type="text" id="messageInput" placeholder="Type a message...">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+        const WHATSAPP_PHONE_NUMBER_ID = '123456789'; // Mock ID
+
+        function getCurrentTimestamp() {
+            return Math.floor(Date.now() / 1000);
+        }
+
+        function createWhatsAppPayload(messageText, messageType) {
+            const phoneNumber = document.getElementById('phoneNumber').value;
+            const userName = document.getElementById('userName').value;
+
+            let message = {
+                type: messageType,
+                timestamp: getCurrentTimestamp()
+            };
+
+            switch(messageType) {
+                case 'text':
+                    message.text = { body: messageText };
+                    break;
+                case 'button':
+                    message.button = { payload: messageText };
+                    break;
+                case 'interactive':
+                    message.interactive = {
+                        type: 'button_reply',
+                        button_reply: { id: messageText }
+                    };
+                    break;
+            }
+
+            return {
+                entry: [{
+                    changes: [{
+                        value: {
+                            metadata: {
+                                phone_number_id: WHATSAPP_PHONE_NUMBER_ID,
+                                display_phone_number: '15550123456'
+                            },
+                            contacts: [{
+                                wa_id: phoneNumber,
+                                profile: {
+                                    name: userName
+                                }
+                            }],
+                            messages: [message]
+                        }
+                    }]
+                }]
+            };
+        }
+
+        function addMessageToChat(text, isUser) {
+            const chatContainer = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            messageDiv.textContent = text;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const messageType = document.getElementById('messageType').value;
+            const messageText = messageInput.value;
+
+            if (!messageText) return;
+
+            // Add user message to chat
+            addMessageToChat(messageText, true);
+
+            // Create WhatsApp-style payload
+            const payload = createWhatsAppPayload(messageText, messageType);
+
+            try {
+                // Send to webhook endpoint
+                const response = await fetch('/webhook', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                // Simulate bot response
+                if (data.message) {
+                    setTimeout(() => {
+                        addMessageToChat(data.message, false);
+                    }, 1000);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                addMessageToChat('Error sending message', false);
+            }
+
+            messageInput.value = '';
+        }
+
+        // Handle Enter key
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

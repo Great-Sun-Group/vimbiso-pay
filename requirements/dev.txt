@@ -11,6 +11,7 @@ mypy==1.13.0
 django-debug-toolbar==4.4.6
 django-browser-reload==1.17.0
 ipython==8.30.0
+watchdog==6.0.0  # For mock WhatsApp server hot reload
 
 # Type stubs for better development experience
 types-requests==2.32.0.20241016

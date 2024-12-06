@@ -31,6 +31,47 @@ make prod-down
 
 The application will be available at http://localhost:8000
 
+### Development Tools
+
+#### Mock WhatsApp Interface
+A development tool for testing the WhatsApp bot without needing real WhatsApp credentials:
+
+```bash
+# Start the mock WhatsApp interface (with hot reload)
+make mockery
+
+# Stop the mock WhatsApp interface
+make mockery-down
+```
+
+The mock interface will be available at http://localhost:8001 and provides:
+- Custom phone numbers and usernames for testing different users
+- Support for text, button, and interactive messages
+- Real-time conversation history
+- WhatsApp-style chat interface
+- Detailed message logging in the server console
+- Hot reload - server automatically restarts when code changes
+
+##### CLI Interface
+You can also interact with the mock WhatsApp interface through the command line:
+
+```bash
+# Send a basic text message
+./mock/cli.py "Hello, world!"
+
+# Send a message with custom phone and username
+./mock/cli.py --phone 1234567890 --username "Test User" "Hello!"
+
+# Send a button response
+./mock/cli.py --type button "button_1"
+
+# Send an interactive message
+./mock/cli.py --type interactive "menu_option_1"
+
+# Use a different port (if mock server is running on different port)
+./mock/cli.py --port 8002 "Hello!"
+```
+
 ## Core Features
 
 ### Financial Operations
@@ -90,6 +131,8 @@ The application will be available at http://localhost:8000
 - Redis for state management
 - Console email backend
 - Comprehensive logging
+- Mock WhatsApp interface for testing (web and CLI)
+- Hot reload for mock server
 
 ### Code Quality
 ```bash
@@ -147,11 +190,13 @@ docker run -d \
    - Verify API credentials
    - Test webhook configuration
    - Check message templates
+   - Use mock interface (web or CLI) for local testing
 
 3. State Management
    - Verify Redis connection
    - Check session timeouts (5 minutes)
    - Monitor state transitions
+   - Test state flows using mock interface
 
 ### Debug Mode
 - Django Debug Toolbar at /__debug__/
@@ -159,6 +204,7 @@ docker run -d \
 - Auto-reload on code changes
 - Console email backend
 - Comprehensive logging
+- Mock WhatsApp interface for testing scenarios
 
 ## Future Improvements
 
