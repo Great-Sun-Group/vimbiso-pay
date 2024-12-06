@@ -550,9 +550,10 @@ class ActionHandler:
         current_state = user.state.get_state(self.service.user)
 
         data = (
-            current_state.get("current_account", {}).get("pendingInData")
-            if current_state.get("current_account", {}).get("pendingInData")
-            else []
+            current_state.get("current_account", {})
+            .get("data", {})
+            .get("pendingInData", {})
+            .get("data", [])
         )
         payload = {
             "signerID": current_state["profile"]["member"].get("memberID"),
