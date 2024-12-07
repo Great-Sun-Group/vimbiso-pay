@@ -33,6 +33,23 @@ The application will be available at http://localhost:8000
 
 ### Development Tools
 
+#### AI-Assisted Merge Summaries
+A tool for generating detailed branch comparison summaries, designed to be used with AI systems for creating intelligent merge descriptions:
+
+```bash
+# Generate a diff between two branches
+make diff source=<source_branch> target=<target_branch>
+```
+
+This command:
+- Fetches the latest changes from the remote repository
+- Compares the specified branches
+- Generates a detailed diff output
+- Saves the comparison to projects/diff_output.txt in a format optimized for AI processing
+- Displays a summary of changes in the terminal
+
+The output is structured to help AI systems understand and describe the changes between branches, making it easier to generate meaningful merge commit messages and pull request descriptions.
+
 #### Mock WhatsApp Interface
 A development tool for testing the WhatsApp bot without needing real WhatsApp credentials:
 
