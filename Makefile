@@ -44,7 +44,7 @@ diff:
 		echo "Usage: make diff <source_branch> <target_branch>"; \
 		exit 1; \
 	fi
-	./projects/getDiff.sh $(word 1,$(MAKECMDGOALS)) $(word 2,$(MAKECMDGOALS))
+	bash projects/getDiff.sh $(word 1,$(MAKECMDGOALS)) $(word 2,$(MAKECMDGOALS))
 
 %:
 	@:
