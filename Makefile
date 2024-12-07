@@ -1,4 +1,4 @@
-.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down mockery mockery-down
+.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down mockery mockery-down merge
 
 # Build for development
 dev-build:
@@ -37,3 +37,11 @@ mockery:
 # Stop the mock WhatsApp interface
 mockery-down:
 	pkill -f "python mock/server.py" || true
+
+# Get diff between two branches
+merge:
+	@if [ -z "$(source)" ] || [ -z "$(target)" ]; then \
+		echo "Usage: make merge source=<source_branch> target=<target_branch>"; \
+		exit 1; \
+	fi
+	./projects/getDiff.sh $(source) $(target)
