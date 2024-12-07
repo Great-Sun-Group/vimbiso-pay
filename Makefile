@@ -40,11 +40,11 @@ mockery-down:
 
 # Get diff between two branches
 diff:
-	@if [ "$(word 2,$(MAKECMDGOALS))" = "" ]; then \
+	@if [ "$(filter-out $@,$(MAKECMDGOALS))" = "" ]; then \
 		echo "Usage: make diff <source_branch> <target_branch>"; \
 		exit 1; \
 	fi
-	bash projects/getDiff.sh $(word 1,$(MAKECMDGOALS)) $(word 2,$(MAKECMDGOALS))
+	bash projects/getDiff.sh $(filter-out $@,$(MAKECMDGOALS))
 
 %:
 	@:
