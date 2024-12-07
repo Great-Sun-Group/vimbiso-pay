@@ -17,6 +17,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class CredexCloudApiWebhook(APIView):
     """Cloud Api Webhook"""
 
@@ -32,8 +33,12 @@ class CredexCloudApiWebhook(APIView):
             payload = request.data.get("entry")[0].get("changes")[0].get("value")
             logger.info(f"Webhook payload metadata: {payload.get('metadata', {})}")
 
-            if payload["metadata"]["phone_number_id"] != config("WHATSAPP_PHONE_NUMBER_ID"):
-                logger.warning(f"Mismatched phone_number_id: {payload['metadata']['phone_number_id']}")
+            if payload["metadata"]["phone_number_id"] != config(
+                "WHATSAPP_PHONE_NUMBER_ID"
+            ):
+                logger.warning(
+                    f"Mismatched phone_number_id: {payload['metadata']['phone_number_id']}"
+                )
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             if payload.get("messages"):
@@ -52,7 +57,9 @@ class CredexCloudApiWebhook(APIView):
                     or phone_number_id != config("WHATSAPP_PHONE_NUMBER_ID")
                 ):
                     logger.info("Ignoring system message")
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+                    return JsonResponse(
+                        {"message": "received"}, status=status.HTTP_200_OK
+                    )
 
                 if message_type == "text":
                     payload["body"] = message["text"]["body"]
@@ -63,7 +70,9 @@ class CredexCloudApiWebhook(APIView):
                 elif message_type == "interactive":
                     if message.get("interactive"):
                         if message["interactive"]["type"] == "button_reply":
-                            payload["body"] = message["interactive"]["button_reply"]["id"]
+                            payload["body"] = message["interactive"]["button_reply"][
+                                "id"
+                            ]
                         elif message["interactive"].get("type") == "nfm_reply":
                             message_type = "nfm_reply"
                             payload["body"] = json.loads(
@@ -83,7 +92,9 @@ class CredexCloudApiWebhook(APIView):
 
                 elif message_type == "image":
                     image_id = message["image"]["id"]
-                    headers = {"Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")}
+                    headers = {
+                        "Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")
+                    }
                     file = requests.request(
                         "GET",
                         url=f"https://graph.facebook.com/v20.0/{image_id}",
@@ -100,7 +111,9 @@ class CredexCloudApiWebhook(APIView):
 
                 elif message_type == "document":
                     document_id = message["document"]["id"]
-                    headers = {"Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")}
+                    headers = {
+                        "Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")
+                    }
                     file = requests.request(
                         "GET",
                         url=f"https://graph.facebook.com/v20.0/{document_id}",
@@ -113,7 +126,9 @@ class CredexCloudApiWebhook(APIView):
 
                 elif message_type == "video":
                     video_id = message["video"]["id"]
-                    headers = {"Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")}
+                    headers = {
+                        "Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")
+                    }
                     file = requests.request(
                         "GET",
                         url=f"https://graph.facebook.com/v20.0/{video_id}",
@@ -128,7 +143,9 @@ class CredexCloudApiWebhook(APIView):
                         payload["caption"] = caption
                 elif message_type == "audio":
                     audio_id = message["audio"]["id"]
-                    headers = {"Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")}
+                    headers = {
+                        "Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")
+                    }
                     file = requests.request(
                         "GET",
                         url=f"https://graph.facebook.com/v20.0/{audio_id}",
@@ -157,7 +174,9 @@ class CredexCloudApiWebhook(APIView):
                         phone_number_id=payload["metadata"]["phone_number_id"],
                     ).notify()
 
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+                    return JsonResponse(
+                        {"message": "received"}, status=status.HTTP_200_OK
+                    )
 
                 elif message_type == "reaction":
                     payload["body"] = message["reaction"].get("emoji")
@@ -186,7 +205,9 @@ class CredexCloudApiWebhook(APIView):
 
                 if not contact:
                     logger.warning("No contact information in payload")
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+                    return JsonResponse(
+                        {"message": "received"}, status=status.HTTP_200_OK
+                    )
 
                 # Format the message
                 formatted_message = {
@@ -207,7 +228,9 @@ class CredexCloudApiWebhook(APIView):
                 message_stamp = datetime.fromtimestamp(int(message["timestamp"]))
                 if (datetime.now() - message_stamp).total_seconds() > 20:
                     logger.info(f"Ignoring old webhook from {message_stamp}")
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+                    return JsonResponse(
+                        {"message": "received"}, status=status.HTTP_200_OK
+                    )
 
                 logger.info(
                     f"Credex [{state.stage}<|>{state.option}] RECEIVED -> {payload['body']} "
@@ -223,13 +246,17 @@ class CredexCloudApiWebhook(APIView):
                     logger.info(f"WhatsApp API Response: {response}")
                 except Exception as e:
                     logger.error(f"Error processing message: {str(e)}", exc_info=True)
-                logger.info(f"Processing took {(datetime.now() - message_stamp).total_seconds()}s")
+                logger.info(
+                    f"Processing took {(datetime.now() - message_stamp).total_seconds()}s"
+                )
 
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
             return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Webhook error: {str(e)}", exc_info=True)
-            return JsonResponse({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return JsonResponse(
+                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def get(self, request, *args, **kwargs):
         logger.info(f"Webhook verification request: {request.query_params}")
