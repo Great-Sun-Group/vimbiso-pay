@@ -9,7 +9,7 @@ The warning we encounter:
 WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328.
 ```
 
-This warning indicates potential issues with Redis memory allocation and background save operations. Because of the challenges in solving this issue in the deployed environment, additional layers of resilience have been added.
+This warning indicates potential issues with Redis memory allocation and background save operations. Because of the challenges in solving this issue at the container level in both development and deployed environments, we have built in resilience at the app layer to decrease the potential for error.
 
 ## Solution Layers
 
@@ -65,7 +65,22 @@ Key features:
 
 ### 3. Development Environment (Docker Compose)
 
-In the development environment (`compose.yaml`), we use similar Redis configurations through environment variables and container settings.
+In the development environment (`compose.yaml`), we use Redis configuration flags to manage memory:
+
+```yaml
+redis:
+  command: >
+    redis-server
+    --maxmemory 256mb
+    --maxmemory-policy allkeys-lru
+    --appendonly no
+    --save ""
+```
+
+Note: While the warning about memory overcommit will still appear in development, our configuration ensures:
+- Memory usage is limited and managed through Redis configuration
+- Automatic eviction of keys when memory limits are reached
+- No background saves that could fail due to memory issues
 
 ## Impact Analysis
 
