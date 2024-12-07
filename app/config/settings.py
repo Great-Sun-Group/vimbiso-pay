@@ -87,14 +87,15 @@ DATABASES = {
 # Redis configuration - Use localhost by default since Redis is in same task
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 
+# Enhanced Redis Cache Configuration
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
         "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SOCKET_CONNECT_TIMEOUT": 30,       # Increased timeout
-            "SOCKET_TIMEOUT": 30,               # Increased timeout
+            "SOCKET_CONNECT_TIMEOUT": 30,
+            "SOCKET_TIMEOUT": 30,
             "RETRY_ON_TIMEOUT": True,
             "MAX_CONNECTIONS": 20,
             "CONNECTION_POOL_KWARGS": {
@@ -108,9 +109,25 @@ CACHES = {
                 ],
                 "health_check_interval": 30,
             },
-            "IGNORE_EXCEPTIONS": True,  # Changed to True to prevent cascading failures
+            "IGNORE_EXCEPTIONS": True,
+            "PARSER_CLASS": "redis.connection.HiredisParser",  # Using hiredis for better performance
+            "REDIS_CLIENT_KWARGS": {
+                # Disable persistence to prevent background saves
+                "save": "",  # Disable RDB persistence
+                "appendonly": "no",  # Disable AOF persistence
+                # Memory management
+                "maxmemory": "256mb",  # Limit Redis memory usage
+                "maxmemory-policy": "allkeys-lru",  # Evict least recently used keys when memory is full
+                "maxmemory-samples": 10,  # Higher sample size for better LRU approximation
+                # Connection optimizations
+                "tcp-keepalive": 60,
+                "tcp-backlog": 511,
+            },
+            "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",  # Enable compression
+            "SERIALIZER": "django_redis.serializers.json.JSONSerializer",  # Use JSON serializer for better compatibility
         },
         "KEY_PREFIX": "vimbiso",
+        "TIMEOUT": 300,  # 5 minutes default timeout for cache keys
     }
 }
 
@@ -224,7 +241,7 @@ if not DEBUG:
     # Enable SSL redirect but exempt health check
     SECURE_SSL_REDIRECT = True
     # Allow both HTTP and HTTPS for health check
-    SECURE_REDIRECT_EXEMPT = [r'^health/?$']
+    SECURE_REDIRECT_EXEMPT = [r"^health/?$"]
     # Trust X-Forwarded headers from ALB
     USE_X_FORWARDED_HOST = True
     USE_X_FORWARDED_PORT = True
