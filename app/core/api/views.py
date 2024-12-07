@@ -4,8 +4,6 @@ from datetime import datetime
 import requests
 from core.api.models import Message
 from core.config.constants import CachedUser
-
-# Use absolute imports
 from core.message_handling.credex_bot_service import CredexBotService
 from core.utils.utils import CredexWhatsappService
 from decouple import config
@@ -14,6 +12,16 @@ from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
 import logging
+import sys
+from django.core.cache import cache
+
+
+# Configure logging to output to stdout
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +34,12 @@ class CredexCloudApiWebhook(APIView):
 
     @staticmethod
     def post(request):
+        # Early debug logging
+        logger.debug("==== START OF WEBHOOK REQUEST ====")
+        logger.debug(f"Request META: {request.META}")
+        logger.debug(f"Request Headers: {request.headers}")
+        logger.debug(f"Request Body: {request.body}")
+
         try:
             logger.info("Received webhook request")
             logger.debug(f"Request data: {request.data}")
@@ -227,7 +241,26 @@ class CredexCloudApiWebhook(APIView):
                     "fileid": payload.get("file_id", None),
                     "caption": payload.get("caption", None),
                 }
+
+                # Debug Redis connection
+                logger.info("Testing Redis connection...")
+                try:
+                    test_key = "test_redis_connection"
+                    cache.set(test_key, "test_value", timeout=10)
+                    test_value = cache.get(test_key)
+                    logger.info(f"Redis test - Set and get successful: {test_value}")
+                except Exception as e:
+                    logger.error(f"Redis connection error: {str(e)}")
+                    return JsonResponse(
+                        {"error": "Redis connection failed"},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+
+                # Create CachedUser with debug logging
+                logger.info(f"Creating CachedUser for phone: {formatted_message.get('from')}")
                 user = CachedUser(formatted_message.get("from"))
+                logger.info(f"CachedUser created with state: {user.state.__dict__}")
+
                 state = user.state
 
                 # Calculate the time difference in seconds
@@ -244,7 +277,9 @@ class CredexCloudApiWebhook(APIView):
                 )
 
                 try:
+                    logger.info("Creating CredexBotService...")
                     service = CredexBotService(payload=formatted_message, user=user)
+                    logger.info("Sending response via WhatsApp service...")
                     response = CredexWhatsappService(
                         payload=service.response,
                         phone_number_id=payload["metadata"]["phone_number_id"],
@@ -252,10 +287,16 @@ class CredexCloudApiWebhook(APIView):
                     logger.info(f"WhatsApp API Response: {response}")
                 except Exception as e:
                     logger.error(f"Error processing message: {str(e)}", exc_info=True)
+                    # Return error response instead of silently continuing
+                    return JsonResponse(
+                        {"error": str(e)},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+
                 logger.info(
                     f"Processing took {(datetime.now() - message_stamp).total_seconds()}s"
                 )
-
+                logger.debug("==== END OF WEBHOOK REQUEST ====")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
             return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
         except Exception as e:

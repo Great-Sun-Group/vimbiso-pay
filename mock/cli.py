@@ -76,7 +76,14 @@ def send_message(args):
 
     try:
         response = requests.post(
-            url, json=payload, headers={"Content-Type": "application/json"}
+            url,
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Mock-Testing": "true"
+            },
+            timeout=30
         )
         response.raise_for_status()
 
