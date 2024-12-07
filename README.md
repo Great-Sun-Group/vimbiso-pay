@@ -38,7 +38,7 @@ A tool for generating detailed branch comparison summaries, designed to be used 
 
 ```bash
 # Generate a diff between two branches
-make diff source=<source_branch> target=<target_branch>
+make diff <source_branch> <target_branch>
 ```
 
 This command:

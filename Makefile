@@ -40,8 +40,11 @@ mockery-down:
 
 # Get diff between two branches
 diff:
-	@if [ -z "$(source)" ] || [ -z "$(target)" ]; then \
-		echo "Usage: make diff source=<source_branch> target=<target_branch>"; \
+	@if [ "$(word 2,$(MAKECMDGOALS))" = "" ]; then \
+		echo "Usage: make diff <source_branch> <target_branch>"; \
 		exit 1; \
 	fi
-	./projects/getDiff.sh $(source) $(target)
+	./projects/getDiff.sh $(word 1,$(MAKECMDGOALS)) $(word 2,$(MAKECMDGOALS))
+
+%:
+	@:
