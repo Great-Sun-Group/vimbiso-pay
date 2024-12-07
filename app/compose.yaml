@@ -43,6 +43,8 @@ services:
       - ./data/redis:/data
     ports:
       - "6379:6379"
+    sysctls:
+      - vm.overcommit_memory=1
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
