@@ -110,21 +110,9 @@ CACHES = {
                 "health_check_interval": 30,
             },
             "IGNORE_EXCEPTIONS": True,
-            "PARSER_CLASS": "redis.connection.HiredisParser",  # Using hiredis for better performance
-            "REDIS_CLIENT_KWARGS": {
-                # Disable persistence to prevent background saves
-                "save": "",  # Disable RDB persistence
-                "appendonly": "no",  # Disable AOF persistence
-                # Memory management
-                "maxmemory": "256mb",  # Limit Redis memory usage
-                "maxmemory-policy": "allkeys-lru",  # Evict least recently used keys when memory is full
-                "maxmemory-samples": 10,  # Higher sample size for better LRU approximation
-                # Connection optimizations
-                "tcp-keepalive": 60,
-                "tcp-backlog": 511,
-            },
-            "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",  # Enable compression
-            "SERIALIZER": "django_redis.serializers.json.JSONSerializer",  # Use JSON serializer for better compatibility
+            # Removed server-side Redis configurations from client kwargs
+            "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
+            "SERIALIZER": "django_redis.serializers.json.JSONSerializer",
         },
         "KEY_PREFIX": "vimbiso",
         "TIMEOUT": 300,  # 5 minutes default timeout for cache keys

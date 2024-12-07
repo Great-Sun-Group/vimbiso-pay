@@ -10,6 +10,7 @@ django-environ==0.11.2
 
 # Database and Caching
 redis==5.2.0
+hiredis==2.3.2
 async-timeout==5.0.1
 
 # Utils

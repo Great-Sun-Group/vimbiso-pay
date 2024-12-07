@@ -33,13 +33,19 @@ class CredexCloudApiWebhook(APIView):
             payload = request.data.get("entry")[0].get("changes")[0].get("value")
             logger.info(f"Webhook payload metadata: {payload.get('metadata', {})}")
 
-            if payload["metadata"]["phone_number_id"] != config(
-                "WHATSAPP_PHONE_NUMBER_ID"
-            ):
-                logger.warning(
-                    f"Mismatched phone_number_id: {payload['metadata']['phone_number_id']}"
-                )
-                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+            # Check for mock testing header
+            is_mock_testing = request.headers.get('X-Mock-Testing', '').lower() == 'true'
+            logger.debug(f"Mock testing mode: {is_mock_testing}")
+
+            # Only validate phone_number_id for real WhatsApp requests
+            if not is_mock_testing:
+                if payload["metadata"]["phone_number_id"] != config(
+                    "WHATSAPP_PHONE_NUMBER_ID"
+                ):
+                    logger.warning(
+                        f"Mismatched phone_number_id: {payload['metadata']['phone_number_id']}"
+                    )
+                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             if payload.get("messages"):
                 phone_number_id = payload["metadata"].get("phone_number_id")
@@ -54,7 +60,7 @@ class CredexCloudApiWebhook(APIView):
                 if (
                     message_type == "system"
                     or message.get("system")
-                    or phone_number_id != config("WHATSAPP_PHONE_NUMBER_ID")
+                    or (not is_mock_testing and phone_number_id != config("WHATSAPP_PHONE_NUMBER_ID"))
                 ):
                     logger.info("Ignoring system message")
                     return JsonResponse(

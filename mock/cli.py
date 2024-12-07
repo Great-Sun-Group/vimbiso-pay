@@ -4,10 +4,11 @@ import json
 import requests
 import sys
 from datetime import datetime
+from urllib.parse import urlencode
 
 
 def create_whatsapp_payload(
-    phone_number, username, message_type, message_text, phone_number_id
+    phone_number, username, message_type, message_text, phone_number_id, target
 ):
     """Create a WhatsApp-style payload."""
     payload = {
@@ -40,7 +41,8 @@ def create_whatsapp_payload(
     print(f"From: {username} ({phone_number})")
     print(f"Message: {message_text}")
     print(f"Type: {message_type}")
-    print(f"Phone Number ID: {phone_number_id}\n")
+    print(f"Phone Number ID: {phone_number_id}")
+    print(f"Target: {target}\n")
     return payload
 
 
@@ -65,10 +67,12 @@ def get_message_content(message_type, message_text):
 def send_message(args):
     """Send a message to the mock WhatsApp server."""
     payload = create_whatsapp_payload(
-        args.phone, args.username, args.type, args.message, args.phone_number_id
+        args.phone, args.username, args.type, args.message, args.phone_number_id, args.target
     )
 
-    url = f"http://localhost:{args.port}/webhook"
+    # Add target to URL query params
+    params = {'target': args.target}
+    url = f"http://localhost:{args.port}/webhook?{urlencode(params)}"
 
     try:
         response = requests.post(
@@ -87,7 +91,9 @@ def send_message(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Mock WhatsApp CLI Client")
+    parser = argparse.ArgumentParser(
+        description="Mock WhatsApp CLI Client - Send test messages to local or staging chatbot"
+    )
     parser.add_argument(
         "--phone", default="1234567890", help="Phone number (default: 1234567890)"
     )
@@ -107,6 +113,12 @@ def main():
         "--phone_number_id",
         default="123456789",
         help="WhatsApp Phone Number ID (default: 123456789)",
+    )
+    parser.add_argument(
+        "--target",
+        choices=["local", "staging"],
+        default="local",
+        help="Target environment (default: local)",
     )
     parser.add_argument("message", help="Message to send")
 

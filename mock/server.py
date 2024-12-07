@@ -1,75 +1,38 @@
-import django
 import json
 import logging
 import os
-import sys
-import time
-import traceback
+import requests
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from pathlib import Path
-
-# Add the parent directory to sys.path and initialize Django
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-django.setup()
-
-try:
-    from watchdog.observers import Observer
-    from watchdog.events import FileSystemEventHandler
-except ImportError:
-    print("\nError: watchdog package is required for hot reload.")
-    print("Please install it with: pip install watchdog")
-    print(
-        "Or install all development requirements with: "
-        "pip install -r requirements/dev.txt\n"
-    )
-    sys.exit(1)
-
-from core.config.constants import CachedUser  # noqa: E402
-from core.message_handling.credex_bot_service import CredexBotService  # noqa: E402
+from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
 
-# Global server instance for reloading
-httpd = None
-
-
-class MockWhatsAppService:
-    """Mock version of CredexWhatsappService for testing."""
-
-    def __init__(self, payload, phone_number_id=None):
-        self.phone_number_id = phone_number_id
-        self.payload = payload
-
-    def send_message(self):
-        """Simulate sending a WhatsApp message."""
-        print(f"\nMock WhatsApp would send: {json.dumps(self.payload, indent=2)}")
-        return {
-            "messaging_product": "whatsapp",
-            "contacts": [
-                {"input": self.payload.get("to"), "wa_id": self.payload.get("to")}
-            ],
-            "messages": [{"id": "mock_message_id"}],
-        }
-
-    def notify(self):
-        """Simulate sending a notification."""
-        return self.send_message()
+# Target environments
+TARGETS = {
+    'local': 'http://localhost:8000/bot/webhook',
+    'staging': 'https://stage.whatsapp.vimbisopay.africa/bot/webhook'
+}
 
 
 class MockWhatsAppHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
-        if self.path == "/webhook":
+        # Parse URL to get target from query params
+        parsed_url = urlparse(self.path)
+        params = parse_qs(parsed_url.query)
+        target = params.get('target', ['local'])[0]
+
+        base_path = parsed_url.path
+        if base_path == "/webhook":
+            # Read the incoming request
             content_length = int(self.headers["Content-Length"])
             post_data = self.rfile.read(content_length)
             payload = json.loads(post_data.decode("utf-8"))
 
-            # Extract the message from the WhatsApp-style payload
+            # Log the incoming request
             message_data = payload["entry"][0]["changes"][0]["value"]
             message = message_data["messages"][0]
             contact = message_data["contacts"][0]
-
-            # Get the message text based on type
             message_type = message["type"]
             if message_type == "text":
                 text = message["text"]["body"]
@@ -83,117 +46,77 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             print(f"\nReceived message: {text}")
             print(f"From: {contact['profile']['name']}")
             print(f"Phone: {contact['wa_id']}")
-            print(f"Type: {message_type}\n")
-
-            # Format the message for the bot service
-            formatted_message = {
-                "to": message_data["metadata"]["display_phone_number"],
-                "phone_number_id": message_data["metadata"]["phone_number_id"],
-                "from": contact["wa_id"],
-                "username": contact["profile"]["name"],
-                "type": message_type,
-                "message": text,
-            }
+            print(f"Type: {message_type}")
+            print(f"Target: {target}\n")
 
             try:
-                # Process message through bot service
-                user = CachedUser(formatted_message.get("from"))
-                service = CredexBotService(payload=formatted_message, user=user)
-                bot_response = service.response
-                print(f"Bot response: {bot_response}")
+                # Forward request to selected target
+                print(f"\nForwarding request to {target} server...")
 
-                # Send response through mock WhatsApp service
-                whatsapp_service = MockWhatsAppService(
-                    payload=bot_response,
-                    phone_number_id=message_data["metadata"]["phone_number_id"],
-                )
-                whatsapp_response = whatsapp_service.send_message()
-                print(f"Mock WhatsApp response: {whatsapp_response}")
-
-                # Return both responses to the client
-                response_data = {
-                    "bot_response": bot_response,
-                    "whatsapp_response": whatsapp_response,
+                # Add mock testing header
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-Mock-Testing": "true"
                 }
 
-                self.send_response(200)
+                target_url = TARGETS.get(target, TARGETS['local'])
+                chatbot_response = requests.post(
+                    target_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=30
+                )
+                chatbot_response.raise_for_status()
+
+                # Log and forward the response
+                print("\nChatbot server response:")
+                print(f"Status: {chatbot_response.status_code}")
+                print(f"Response: {chatbot_response.text}\n")
+
+                self.send_response(chatbot_response.status_code)
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps(response_data).encode())
+                self.wfile.write(chatbot_response.content)
                 return
 
-            except Exception as e:
-                print(f"Error processing message: {str(e)}")
-                print("Traceback:")
-                traceback.print_exc()
-                self.send_response(500)
-                self.send_header("Content-type", "application/json")
-                self.end_headers()
-                self.wfile.write(
-                    json.dumps(
-                        {"error": str(e), "traceback": traceback.format_exc()}
-                    ).encode()
-                )
+            except requests.exceptions.RequestException as e:
+                print(f"\nError forwarding request to {target}: {str(e)}")
+                if hasattr(e, 'response'):
+                    print(f"Response status: {e.response.status_code}")
+                    print(f"Response content: {e.response.text}")
+                self.send_error(502, "Bad Gateway", f"Could not connect to {target} server")
                 return
 
         return super().do_POST()
 
     def do_GET(self):
         # Serve the index.html file
-        if self.path == "/":
-            self.path = "/index.html"
-        return SimpleHTTPRequestHandler.do_GET(self)
-
-
-class FileChangeHandler(FileSystemEventHandler):
-    def on_modified(self, event):
-        if event.src_path.endswith(".py"):
-            print(f"\nDetected change in {event.src_path}")
-            print("Restarting server...\n")
-            if httpd:
-                httpd.shutdown()
+        if self.path == "/" or self.path == "/index.html":
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            with open(os.path.join(os.path.dirname(__file__), "index.html"), "rb") as f:
+                self.wfile.write(f.read())
+            return
+        return super().do_GET()
 
 
 def run_server(port=8001):
-    global httpd
+    print(f"\nStarting mock WhatsApp server on port {port}")
+    print("\nAvailable targets:")
+    for name, url in TARGETS.items():
+        print(f"- {name}: {url}")
+    print("\nOpen http://localhost:8001 in your browser")
 
-    # Change to the directory containing index.html
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
-    # Set up file watching
-    event_handler = FileChangeHandler()
-    observer = Observer()
-    observer.schedule(
-        event_handler, path=str(Path(__file__).resolve().parent), recursive=True
-    )
-    observer.start()
+    server_address = ("", port)
+    httpd = HTTPServer(server_address, MockWhatsAppHandler)
 
     try:
-        while True:
-            print(f"Starting mock WhatsApp server on port {port}...")
-            print(f"Open http://localhost:{port} in your browser")
-            print("Hot reload is active - server will restart on file changes")
-
-            server_address = ("", port)
-            httpd = HTTPServer(server_address, MockWhatsAppHandler)
-
-            try:
-                httpd.serve_forever()
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                print(f"Server error: {e}")
-                print("Restarting in 2 seconds...")
-                time.sleep(2)
-                continue
-
+        httpd.serve_forever()
     except KeyboardInterrupt:
         print("\nShutting down...")
     finally:
-        observer.stop()
-        observer.join()
-        if httpd:
-            httpd.server_close()
+        httpd.server_close()
 
 
 if __name__ == "__main__":

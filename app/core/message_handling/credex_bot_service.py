@@ -1,8 +1,6 @@
 import logging
-from ..utils.utils import wrap_text
 from .action_handlers import ActionHandler
 from .offer_credex_handler import OfferCredexHandler
-from ..config.constants import INVALID_ACTION
 from ..api.api_interactions import APIInteractions
 from ..state.state_management import StateManager
 from ..utils.exceptions import InvalidInputException
@@ -45,7 +43,7 @@ class CredexBotService:
     @error_decorator
     def handle(self):
         logger.info(f"Entry point: {self.state.stage}")
-        return self.message_handler.handle_action()
+        return self.message_handler.handle_message()
 
     @error_decorator
     def refresh(self, reset=True, silent=True, init=False):
