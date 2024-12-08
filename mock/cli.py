@@ -64,6 +64,18 @@ def get_message_content(message_type, message_text):
         sys.exit(1)
 
 
+def format_json_response(response_text):
+    """Format JSON response with proper indentation and commas."""
+    try:
+        # Parse the response text as JSON
+        data = json.loads(response_text)
+        # Re-encode with proper formatting
+        return json.dumps(data, indent=2, ensure_ascii=False, separators=(',', ': '))
+    except json.JSONDecodeError:
+        # If parsing fails, return the original text
+        return response_text
+
+
 def send_message(args):
     """Send a message to the mock WhatsApp server."""
     payload = create_whatsapp_payload(
@@ -88,7 +100,9 @@ def send_message(args):
         response.raise_for_status()
 
         print("Server Response:")
-        print(json.dumps(response.json(), indent=2))
+        # Format the response JSON before printing
+        formatted_response = format_json_response(response.text)
+        print(formatted_response)
 
     except requests.exceptions.RequestException as e:
         print(f"Error sending message: {e}")

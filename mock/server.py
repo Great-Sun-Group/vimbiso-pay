@@ -1,17 +1,18 @@
 import json
 import logging
 import os
-import requests
+import socketserver
 from http.server import SimpleHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
-import socketserver
+
+import requests
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
-# Target environments - using Docker service names
+# Target environments - using localhost for local testing
 TARGETS = {
-    'local': 'http://app:8000/bot/webhook',  # Using Docker service name
+    'local': 'http://localhost:8000/bot/webhook',  # Using localhost for local testing
     'staging': 'https://stage.whatsapp.vimbisopay.africa/bot/webhook'
 }
 
@@ -21,6 +22,24 @@ class ReuseAddressHTTPServer(socketserver.TCPServer):
 
 
 class MockWhatsAppHandler(SimpleHTTPRequestHandler):
+    def format_json_response(self, response_text):
+        """Ensure response is properly formatted JSON."""
+        try:
+            # Parse the response text
+            data = json.loads(response_text)
+
+            # If it's a WhatsApp response wrapped in "response" key
+            if 'response' in data:
+                whatsapp_response = data['response']
+                # Re-encode with proper formatting
+                return json.dumps(whatsapp_response, indent=2, ensure_ascii=False, separators=(',', ': '))
+
+            # Otherwise return the original data formatted
+            return json.dumps(data, indent=2, ensure_ascii=False, separators=(',', ': '))
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {str(e)}")
+            return response_text
+
     def do_POST(self):
         try:
             # Parse URL to get target from query params
@@ -86,11 +105,14 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
                         chatbot_response.raise_for_status()
 
-                        # Forward the response
+                        # Forward the response back to the client
                         self.send_response(chatbot_response.status_code)
                         self.send_header("Content-type", "application/json")
                         self.end_headers()
-                        self.wfile.write(chatbot_response.content)
+
+                        # Format the response
+                        formatted_response = self.format_json_response(chatbot_response.text)
+                        self.wfile.write(formatted_response.encode('utf-8'))
                         return
 
                     except requests.exceptions.Timeout:

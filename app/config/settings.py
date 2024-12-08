@@ -1,9 +1,11 @@
+import os
+import socket
+from datetime import timedelta
+from pathlib import Path
+
+import redis
 from corsheaders.defaults import default_headers
 from decouple import config as env
-from pathlib import Path
-from datetime import timedelta
-import redis
-import socket
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -69,12 +71,28 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# Database - Optimized SQLite configuration for light production use
+# Database configuration with environment-aware paths
+DEPLOYED_TO_AWS = env('DEPLOYED_TO_AWS', default=False, cast=bool)
+
+if DEPLOYED_TO_AWS:
+    # Use EFS paths for production/staging
+    DB_PATH = "/efs-vols/app-data/data/db/db.sqlite3"
+    STATIC_ROOT = "/efs-vols/app-data/data/static"
+    MEDIA_ROOT = "/efs-vols/app-data/data/media"
+else:
+    # Use local paths for development
+    DB_PATH = BASE_DIR / 'data' / 'db' / 'db.sqlite3'
+    STATIC_ROOT = BASE_DIR / 'data' / 'static'
+    MEDIA_ROOT = BASE_DIR / 'data' / 'media'
+    # Create necessary directories
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    os.makedirs(STATIC_ROOT, exist_ok=True)
+    os.makedirs(MEDIA_ROOT, exist_ok=True)
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        # Updated path to match EFS mount point
-        "NAME": "/efs-vols/app-data/data/db/db.sqlite3",
+        "NAME": DB_PATH,
         "ATOMIC_REQUESTS": True,
         "OPTIONS": {
             "timeout": 60,  # Increased timeout
@@ -152,11 +170,6 @@ USE_TZ = True
 
 # Static files (CSS JavaScript Images)
 STATIC_URL = "/static/"
-# Updated path to match EFS mount point
-STATIC_ROOT = "/efs-vols/app-data/data/static"
-
-# Updated path to match EFS mount point
-MEDIA_ROOT = "/efs-vols/app-data/data/media"
 MEDIA_URL = "/media/"
 
 # Default primary key field type

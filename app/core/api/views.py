@@ -1,4 +1,6 @@
 import json
+import logging
+import sys
 from datetime import datetime
 
 import requests
@@ -7,14 +9,11 @@ from core.config.constants import CachedUser
 from core.message_handling.credex_bot_service import CredexBotService
 from core.utils.utils import CredexWhatsappService
 from decouple import config
+from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
 from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
-import logging
-import sys
-from django.core.cache import cache
-
 
 # Configure logging to output to stdout
 logging.basicConfig(
@@ -279,12 +278,21 @@ class CredexCloudApiWebhook(APIView):
                 try:
                     logger.info("Creating CredexBotService...")
                     service = CredexBotService(payload=formatted_message, user=user)
+
+                    # For mock testing, return the response directly
+                    if is_mock_testing:
+                        logger.info("Mock testing mode: Returning response without sending to WhatsApp")
+                        return JsonResponse({"response": service.response}, status=status.HTTP_200_OK)
+
+                    # For real requests, send via WhatsApp
                     logger.info("Sending response via WhatsApp service...")
                     response = CredexWhatsappService(
                         payload=service.response,
                         phone_number_id=payload["metadata"]["phone_number_id"],
                     ).send_message()
                     logger.info(f"WhatsApp API Response: {response}")
+                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
                 except Exception as e:
                     logger.error(f"Error processing message: {str(e)}", exc_info=True)
                     # Return error response instead of silently continuing
@@ -293,11 +301,6 @@ class CredexCloudApiWebhook(APIView):
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR
                     )
 
-                logger.info(
-                    f"Processing took {(datetime.now() - message_stamp).total_seconds()}s"
-                )
-                logger.debug("==== END OF WEBHOOK REQUEST ====")
-                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
             return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Webhook error: {str(e)}", exc_info=True)

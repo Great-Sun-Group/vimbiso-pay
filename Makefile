@@ -1,4 +1,4 @@
-.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down mockery mockery-down diff
+.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down diff
 
 # Build for development
 dev-build:
@@ -29,14 +29,6 @@ prod-up:
 # Stop the server (production)
 prod-down:
 	DJANGO_ENV=production docker compose -f app/compose.yaml down
-
-# Start the mock WhatsApp interface
-mockery:
-	python mock/server.py
-
-# Stop the mock WhatsApp interface
-mockery-down:
-	pkill -f "python mock/server.py" || true
 
 # Get diff between two branches
 diff:
