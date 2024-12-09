@@ -12,7 +12,7 @@ from .serializers import company, members, offers
 from .handlers import WebhookHandler
 from .validation import WebhookValidator
 from .exceptions import WebhookError, WebhookValidationError
-from ..core.utils.error_handler import handle_api_error
+from core.utils.error_handler import handle_api_error
 
 
 @api_view(['POST'])

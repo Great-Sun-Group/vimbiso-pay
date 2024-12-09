@@ -25,15 +25,15 @@ class AuthActionHandler(BaseActionHandler):
                 "*Welcome To Credex!*\n\nIt looks like you're new here. Let's get you \nset up.",
             )
 
-        if self.service.message["type"] == "nfm_reply":
+        if self.service.message_type == "nfm_reply":
             payload = {
                 "first_name": self.service.body.get("firstName"),
                 "last_name": self.service.body.get("lastName"),
-                "phone_number": self.service.message["from"],
+                "phone_number": self.service.user.mobile_number,
             }
             serializer = MemberDetailsSerializer(data=payload)
             if serializer.is_valid():
-                successful, message = self.service.api_interactions.register_member(
+                successful, message = self.service.credex_service.register_member(
                     serializer.validated_data
                 )
                 if successful:
@@ -62,17 +62,23 @@ class AuthActionHandler(BaseActionHandler):
         user = self.service.user
         current_state = user.state.get_state(user)
 
+        # Initialize profile if needed
         if not current_state.get("profile") or login:
             response = self.service.refresh(reset=True)
-            current_state = user.state.get_state(user)
             if response and "error" in str(response).lower():
-                self.service.state_manager.update_state(
-                    new_state=self.service.current_state,
-                    update_from="handle_action_menu",
+                self.service.state.update_state(
+                    self.service.current_state,
                     stage="handle_action_register",
+                    update_from="handle_action_menu",
                     option="handle_action_register",
                 )
-                return response
+                return self.get_response_template(response)
+
+            # Get updated state after refresh
+            current_state = user.state.get_state(user)
+            if not current_state.get("profile"):
+                # If still no profile, show registration form
+                return self.handle_action_register(register=True)
 
         # Get member tier & selected account
         member_tier = (
@@ -87,84 +93,84 @@ class AuthActionHandler(BaseActionHandler):
             return self.handle_action_select_profile()
 
         if not selected_account:
-            selected_account = current_state["profile"]["memberDashboard"]["accounts"][0]
-            current_state["current_account"] = selected_account
             try:
+                selected_account = current_state["profile"]["memberDashboard"]["accounts"][0]
+                current_state["current_account"] = selected_account
                 user.state.update_state(
                     state=current_state,
                     stage="handle_action_menu",
                     update_from="handle_action_menu",
                     option="handle_action_menu",
                 )
-                self.service.state_manager.update_state(
-                    new_state=current_state,
-                    stage="handle_action_menu",
-                    update_from="handle_action_menu",
-                    option="handle_action_menu",
-                )
-            except Exception as e:
-                print("ERROR : ", e)
+            except (KeyError, IndexError):
+                # If no accounts available, show registration form
+                return self.handle_action_register(register=True)
 
-        # Get pending offers counts
-        pending_in = len(selected_account["data"]["pendingInData"].get("data", []))
-        pending_out = len(selected_account["data"]["pendingOutData"].get("data", []))
-        pending = f"    Pending Offers ({pending_in})" if pending_in else ""
+        try:
+            # Get pending offers counts
+            pending_in = len(selected_account["data"]["pendingInData"].get("data", []))
+            pending_out = len(selected_account["data"]["pendingOutData"].get("data", []))
+            pending = f"    Pending Offers ({pending_in})" if pending_in else ""
 
-        # Format balances
-        balances = ""
-        secured = ""
-        balance_data = selected_account["data"]["balanceData"]["data"]
-        is_owned_account = selected_account["data"].get("isOwnedAccount")
+            # Format balances
+            balances = ""
+            secured = ""
+            balance_data = selected_account["data"]["balanceData"]["data"]
+            is_owned_account = selected_account["data"].get("isOwnedAccount")
 
-        for bal in balance_data["securedNetBalancesByDenom"]:
-            balances += f"- {bal}\n"
-            secured += f" *{bal}* \n"
+            for bal in balance_data["securedNetBalancesByDenom"]:
+                balances += f"- {bal}\n"
+                secured += f" *{bal}* \n"
 
-        # Build menu response
-        return {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": self.service.user.mobile_number,
-            "type": "interactive",
-            "interactive": {
-                "type": "list",
-                "body": {
-                    "text": (HOME_2 if is_owned_account else HOME_1).format(
-                        message=message if message else "",
-                        account=current_state.get("current_account", {}).get(
-                            "accountName", "Personal Account"
-                        ),
-                        balance=BALANCE.format(
-                            securedNetBalancesByDenom=(
-                                balances if balances else "    $0.00\n"
+            # Build menu response
+            return {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": self.service.user.mobile_number,
+                "type": "interactive",
+                "interactive": {
+                    "type": "list",
+                    "body": {
+                        "text": (HOME_2 if is_owned_account else HOME_1).format(
+                            message=message if message else "",
+                            account=current_state.get("current_account", {}).get(
+                                "accountName", "Personal Account"
                             ),
-                            unsecured_balance=(
-                                UNSERCURED_BALANCES.format(
-                                    totalPayables=balance_data[
-                                        "unsecuredBalancesInDefaultDenom"
-                                    ]["totalPayables"],
-                                    totalReceivables=balance_data[
-                                        "unsecuredBalancesInDefaultDenom"
-                                    ]["totalReceivables"],
-                                    netPayRec=balance_data[
-                                        "unsecuredBalancesInDefaultDenom"
-                                    ]["netPayRec"],
-                                )
-                                if member_tier > 2
-                                else f"Free tier remaining daily spend limit\n    *{current_state['profile'].get('remainingAvailableUSD', '0.00')} USD*\n{pending}\n"
+                            balance=BALANCE.format(
+                                securedNetBalancesByDenom=(
+                                    balances if balances else "    $0.00\n"
+                                ),
+                                unsecured_balance=(
+                                    UNSERCURED_BALANCES.format(
+                                        totalPayables=balance_data[
+                                            "unsecuredBalancesInDefaultDenom"
+                                        ]["totalPayables"],
+                                        totalReceivables=balance_data[
+                                            "unsecuredBalancesInDefaultDenom"
+                                        ]["totalReceivables"],
+                                        netPayRec=balance_data[
+                                            "unsecuredBalancesInDefaultDenom"
+                                        ]["netPayRec"],
+                                    )
+                                    if member_tier > 2
+                                    else f"Free tier remaining daily spend limit\n    *{current_state['profile'].get('remainingAvailableUSD', '0.00')} USD*\n{pending}\n"
+                                ),
+                                netCredexAssetsInDefaultDenom=balance_data[
+                                    "netCredexAssetsInDefaultDenom"
+                                ],
                             ),
-                            netCredexAssetsInDefaultDenom=balance_data[
-                                "netCredexAssetsInDefaultDenom"
+                            handle=current_state["current_account"]["data"][
+                                "accountHandle"
                             ],
-                        ),
-                        handle=current_state["current_account"]["data"][
-                            "accountHandle"
-                        ],
-                    )
+                        )
+                    },
+                    "action": self._get_menu_actions(is_owned_account, member_tier, pending_in, pending_out),
                 },
-                "action": self._get_menu_actions(is_owned_account, member_tier, pending_in, pending_out),
-            },
-        }
+            }
+        except Exception as e:
+            # If any error occurs while building menu, show registration form
+            print(f"Error building menu: {str(e)}")
+            return self.handle_action_register(register=True)
 
     def _get_menu_actions(
         self,

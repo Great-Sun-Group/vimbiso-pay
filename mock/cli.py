@@ -84,7 +84,7 @@ def send_message(args):
 
     # Add target to URL query params
     params = {'target': args.target}
-    url = f"http://localhost:{args.port}/webhook?{urlencode(params)}"
+    url = f"http://localhost:{args.port}/bot/webhook?{urlencode(params)}"  # Updated endpoint path
 
     try:
         response = requests.post(

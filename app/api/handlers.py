@@ -5,7 +5,7 @@ Implements handlers for different webhook types with validation and error handli
 from typing import Any, Dict
 
 from .serializers import company, members, offers
-from ..core.utils.error_handler import APIError, handle_api_error
+from core.utils.error_handler import APIException, handle_api_error
 
 
 class WebhookHandler:
@@ -20,7 +20,7 @@ class WebhookHandler:
         """Process incoming webhook based on type."""
         try:
             if not self.validate_signature(payload.get('signature', ''), payload):
-                raise APIError("Invalid webhook signature")
+                raise APIException("Invalid webhook signature")
 
             handlers = {
                 'company_update': self.handle_company_update,
@@ -30,7 +30,7 @@ class WebhookHandler:
 
             handler = handlers.get(webhook_type)
             if not handler:
-                raise APIError(f"Unsupported webhook type: {webhook_type}")
+                raise APIException(f"Unsupported webhook type: {webhook_type}")
 
             return handler(payload)
 

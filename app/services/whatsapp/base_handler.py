@@ -1,13 +1,14 @@
 from core.utils.utils import wrap_text
+
 from .screens import INVALID_ACTION
-from .types import CredexBotService, WhatsAppMessage
+from .types import BotServiceInterface, WhatsAppMessage
 
 
 class BaseActionHandler:
     """Base class for WhatsApp action handlers"""
 
-    def __init__(self, service: "CredexBotService"):
-        """Initialize the handler with a CredexBotService instance
+    def __init__(self, service: BotServiceInterface):
+        """Initialize the handler with a BotServiceInterface instance
 
         Args:
             service: Service instance for handling bot interactions

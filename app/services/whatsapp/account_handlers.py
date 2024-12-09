@@ -25,7 +25,7 @@ class AccountActionHandler(BaseActionHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.account_service = create_account_service(
-            api_client=self.service.api_interactions
+            api_client=self.service.credex_service
         )
 
     def handle_action_authorize_member(self) -> WhatsAppMessage:
@@ -34,12 +34,12 @@ class AccountActionHandler(BaseActionHandler):
         current_state = user.state.get_state(user)
 
         if not current_state.get("profile"):
-            response = self.service.api_interactions.refresh_member_info()
+            response = self.service.refresh(reset=True)
             if response:
-                self.service.state_manager.update_state(
-                    new_state=self.service.current_state,
-                    update_from="handle_action_authorize_member",
+                self.service.state.update_state(
+                    self.service.current_state,
                     stage="handle_action_register",
+                    update_from="handle_action_authorize_member",
                     option="handle_action_register",
                 )
                 return response
@@ -48,8 +48,8 @@ class AccountActionHandler(BaseActionHandler):
         if not selected_profile:
             selected_profile = current_state["profile"]["memberDashboard"]["accounts"][0]
             current_state["current_account"] = selected_profile
-            self.service.state_manager.update_state(
-                new_state=current_state,
+            self.service.state.update_state(
+                state=current_state,
                 stage="handle_action_authorize_member",
                 update_from="handle_action_authorize_member",
                 option="handle_action_authorize_member",
@@ -74,12 +74,12 @@ class AccountActionHandler(BaseActionHandler):
         current_state = user.state.get_state(user)
 
         if not current_state.get("profile"):
-            response = self.service.api_interactions.refresh_member_info()
+            response = self.service.refresh(reset=True)
             if response:
-                self.service.state_manager.update_state(
-                    new_state=self.service.current_state,
-                    update_from="handle_action_notifications",
+                self.service.state.update_state(
+                    self.service.current_state,
                     stage="handle_action_register",
+                    update_from="handle_action_notifications",
                     option="handle_action_register",
                 )
                 return response
@@ -88,8 +88,8 @@ class AccountActionHandler(BaseActionHandler):
         if not selected_profile:
             selected_profile = current_state["profile"]["memberDashboard"]["accounts"][0]
             current_state["current_account"] = selected_profile
-            self.service.state_manager.update_state(
-                new_state=current_state,
+            self.service.state.update_state(
+                state=current_state,
                 stage="handle_action_notifications",
                 update_from="handle_action_notifications",
                 option="handle_action_notifications",
@@ -141,7 +141,7 @@ class AccountActionHandler(BaseActionHandler):
         """Handle member authorization form submission"""
         try:
             member_handle = self.service.body.get("handle")
-            success, member_data = self.service.api_interactions.validate_handle(member_handle)
+            success, member_data = self.service.credex_service.validate_handle(member_handle)
 
             if not success:
                 return self.get_response_template(
@@ -164,8 +164,8 @@ class AccountActionHandler(BaseActionHandler):
                 "account_id": account_id,
             }
 
-            self.service.state_manager.update_state(
-                new_state=current_state,
+            self.service.state.update_state(
+                state=current_state,
                 stage="handle_action_authorize_member",
                 update_from="handle_action_authorize_member",
                 option="handle_action_confirm_authorization",

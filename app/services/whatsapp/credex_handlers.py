@@ -23,7 +23,7 @@ class CredexActionHandler(BaseActionHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.transaction_service = create_transaction_service(
-            api_client=self.service.api_interactions
+            api_client=self.service.credex_service
         )
 
     def handle_action_offer_credex(self) -> WhatsAppMessage:
@@ -36,12 +36,12 @@ class CredexActionHandler(BaseActionHandler):
 
         if not current_state.get("profile"):
             # Refresh the user state
-            response = self.service.api_interactions.refresh_member_info()
+            response = self.service.refresh(reset=True)
             if response:
-                self.service.state_manager.update_state(
-                    new_state=self.service.current_state,
-                    update_from="handle_action_offer_credex",
+                self.service.state.update_state(
+                    self.service.current_state,
                     stage="handle_action_register",
+                    update_from="handle_action_offer_credex",
                     option="handle_action_register",
                 )
                 return response
@@ -49,8 +49,8 @@ class CredexActionHandler(BaseActionHandler):
         if not selected_profile:
             selected_profile = current_state["profile"]["memberDashboard"]["accounts"][0]
             current_state["current_account"] = selected_profile
-            self.service.state_manager.update_state(
-                new_state=current_state,
+            self.service.state.update_state(
+                state=current_state,
                 stage="handle_action_offer_credex",
                 update_from="handle_action_offer_credex",
                 option="handle_action_offer_credex",

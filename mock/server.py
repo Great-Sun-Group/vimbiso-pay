@@ -52,7 +52,7 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             target = params.get('target', ['local'])[0]
 
             base_path = parsed_url.path
-            if base_path == "/webhook":
+            if base_path == "/bot/webhook":  # Updated to match Django endpoint
                 # Read the incoming request
                 content_length = int(self.headers["Content-Length"])
                 post_data = self.rfile.read(content_length)
@@ -97,6 +97,11 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                     # Make request with detailed error handling
                     try:
                         logger.info("\nSending request...")
+                        # Log exact request being sent
+                        logger.info(f"Final request URL: {target_url}")
+                        logger.info(f"Final request headers: {headers}")
+                        logger.info(f"Final request payload: {json.dumps(payload, indent=2)}")
+
                         chatbot_response = requests.post(
                             target_url,
                             json=payload,
@@ -141,7 +146,18 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                     self.send_error(500, "Internal Server Error", str(e))
                     return
 
-            return super().do_POST()
+            # Serve index.html for root path
+            elif self.path == "/" or self.path == "/index.html":
+                self.send_response(200)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                with open(os.path.join(os.path.dirname(__file__), "index.html"), "rb") as f:
+                    self.wfile.write(f.read())
+                return
+            else:
+                # Handle unknown paths with 404
+                self.send_error(404, "Not Found", f"Path {base_path} not found")
+                return
 
         except Exception as e:
             logger.error(f"\nGlobal error handler: {str(e)}")
@@ -149,7 +165,7 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             return
 
     def do_GET(self):
-        # Serve the index.html file
+        # Serve index.html for root path
         if self.path == "/" or self.path == "/index.html":
             self.send_response(200)
             self.send_header("Content-type", "text/html")
@@ -157,7 +173,10 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             with open(os.path.join(os.path.dirname(__file__), "index.html"), "rb") as f:
                 self.wfile.write(f.read())
             return
-        return super().do_GET()
+        else:
+            # Handle unknown paths with 404
+            self.send_error(404, "Not Found", f"Path {self.path} not found")
+            return
 
 
 def run_server(port=8001):

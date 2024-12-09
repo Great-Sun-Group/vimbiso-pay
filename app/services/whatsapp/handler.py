@@ -1,13 +1,111 @@
+"""
+WhatsApp bot service implementation.
+Handles message routing and bot interactions.
+"""
+import logging
+from typing import Dict, Any, Optional
+
+from core.utils.exceptions import InvalidInputException
+from core.utils.error_handler import error_decorator
+from core.config.constants import CachedUser, get_greeting
+from services.credex.service import CredExService
+from .types import BotServiceInterface, WhatsAppMessage
 from .account_handlers import AccountActionHandler
 from .auth_handlers import AuthActionHandler
 from .credex_handlers import CredexActionHandler
-from .types import WhatsAppMessage, CredexBotService
+
+logger = logging.getLogger(__name__)
+
+
+class CredexBotService(BotServiceInterface):
+    """Service for handling WhatsApp bot interactions"""
+
+    def __init__(self, payload: Dict[str, Any], user: CachedUser) -> None:
+        """Initialize the bot service.
+
+        Args:
+            payload: Message payload from WhatsApp
+            user: CachedUser instance
+        """
+        logger.debug(f"Initializing CredexBotService with payload: {payload}")
+        if user is None:
+            logger.error("User object is required")
+            raise InvalidInputException("User object is required")
+
+        # Initialize base service
+        super().__init__(payload, user)
+        logger.debug(f"Message type: {self.message_type}")
+        logger.debug(f"Message body: {self.body}")
+        logger.debug(f"Current state: {self.current_state}")
+
+        # Initialize handlers and services
+        self.credex_service = CredExService()
+        self.action_handler = WhatsAppActionHandler(self)
+
+        # Initialize state if empty
+        if not self.current_state:
+            logger.debug("Initializing empty state")
+            self.state.update_state(
+                state={},
+                stage="handle_action_menu",
+                update_from="init",
+                option="handle_action_menu",
+                direction="OUT"
+            )
+            self.current_state = self.state.get_state(self.user)
+
+        self.response = self.handle()
+        logger.debug(f"Final response: {self.response}")
+
+    def refresh(self, reset: bool = True, silent: bool = True) -> Optional[str]:
+        """Refresh user profile and state information.
+
+        Args:
+            reset: Whether to reset state
+            silent: Whether to suppress notifications
+
+        Returns:
+            Optional[str]: Error message if any
+        """
+        return self.credex_service.refresh_member_info(
+            phone=self.user.mobile_number,
+            reset=reset,
+            silent=silent
+        )
+
+    @error_decorator
+    def handle(self) -> Dict[str, Any]:
+        """Process the incoming message and generate response.
+
+        Returns:
+            Dict[str, Any]: Response message
+        """
+        logger.info(f"Entry point: {self.state.stage}")
+
+        # Handle greeting messages
+        if self.message_type == "text" and self.body.lower() in ["hi", "hello", "hey"]:
+            greeting = get_greeting(self.user.first_name)
+            self.state.update_state(
+                state=self.current_state,
+                stage="handle_action_menu",
+                update_from="greeting",
+                option="handle_action_menu"
+            )
+            return {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": self.user.mobile_number,
+                "type": "text",
+                "text": {"body": greeting}
+            }
+
+        return self.action_handler.handle_action(self.state.stage)
 
 
 class WhatsAppActionHandler:
     """Main handler for WhatsApp actions"""
 
-    def __init__(self, service: "CredexBotService"):
+    def __init__(self, service: CredexBotService):
         """Initialize handlers
 
         Args:

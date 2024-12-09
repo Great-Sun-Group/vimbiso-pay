@@ -104,20 +104,6 @@ def _handle_credex_action(self, action: str) -> WhatsAppMessage:
     return handler_map.get(action, self.credex_handler.handle_default_action)()
 ```
 
-### Adding New Message Templates
-
-Add new templates to `screens.py`:
-
-```python
-NEW_TEMPLATE = """
-⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
-
-{message}
-
-⚠️⚠️⚠️ CREDEX DEMO ⚠️⚠️⚠️
-"""
-```
-
 ## Best Practices
 
 1. Use type hints consistently

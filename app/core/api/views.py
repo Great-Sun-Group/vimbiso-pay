@@ -6,7 +6,7 @@ from datetime import datetime
 import requests
 from core.api.models import Message
 from core.config.constants import CachedUser
-from core.message_handling.credex_bot_service import CredexBotService
+from services.whatsapp.handler import CredexBotService
 from core.utils.utils import CredexWhatsappService
 from decouple import config
 from django.core.cache import cache
@@ -106,7 +106,7 @@ class CredexCloudApiWebhook(APIView):
                 elif message_type == "location":
                     payload["body"] = (
                         message["location"]["latitude"],
-                        message["location"]["longitude"],
+                        message["location"]["longitude"]
                     )
 
                 elif message_type == "image":
@@ -118,7 +118,7 @@ class CredexCloudApiWebhook(APIView):
                         "GET",
                         url=f"https://graph.facebook.com/v20.0/{image_id}",
                         headers=headers,
-                        data={},
+                        data={}
                     ).json()
 
                     caption = message["image"].get("caption")
@@ -137,7 +137,7 @@ class CredexCloudApiWebhook(APIView):
                         "GET",
                         url=f"https://graph.facebook.com/v20.0/{document_id}",
                         headers=headers,
-                        data={},
+                        data={}
                     ).json()
                     payload["body"] = file.get("url")
                     payload["file_name"] = file.get("name")
@@ -152,7 +152,7 @@ class CredexCloudApiWebhook(APIView):
                         "GET",
                         url=f"https://graph.facebook.com/v20.0/{video_id}",
                         headers=headers,
-                        data={},
+                        data={}
                     ).json()
                     payload["body"] = file.get("url")
                     payload["file_name"] = file.get("name")
@@ -169,7 +169,7 @@ class CredexCloudApiWebhook(APIView):
                         "GET",
                         url=f"https://graph.facebook.com/v20.0/{audio_id}",
                         headers=headers,
-                        data={},
+                        data={}
                     ).json()
                     payload["body"] = file.get("url")
                     payload["file_name"] = file.get("name")
@@ -188,9 +188,9 @@ class CredexCloudApiWebhook(APIView):
                             "recipient_type": "individual",
                             "to": contact["wa_id"],
                             "type": "text",
-                            "text": {"body": "🙏"},
+                            "text": {"body": "🙏"}
                         },
-                        phone_number_id=payload["metadata"]["phone_number_id"],
+                        phone_number_id=payload["metadata"]["phone_number_id"]
                     ).notify()
 
                     return JsonResponse(
@@ -205,7 +205,7 @@ class CredexCloudApiWebhook(APIView):
                         "❤️",
                         "ok",
                         "thanks",
-                        "thank you",
+                        "thank you"
                     ]:
                         logger.info("Sending reaction response")
                         CredexWhatsappService(
@@ -214,9 +214,9 @@ class CredexCloudApiWebhook(APIView):
                                 "recipient_type": "individual",
                                 "to": contact["wa_id"],
                                 "type": "text",
-                                "text": {"body": "🙏"},
+                                "text": {"body": "🙏"}
                             },
-                            phone_number_id=payload["metadata"]["phone_number_id"],
+                            phone_number_id=payload["metadata"]["phone_number_id"]
                         ).notify()
                         return JsonResponse(
                             {"message": "received"}, status=status.HTTP_200_OK
@@ -238,7 +238,7 @@ class CredexCloudApiWebhook(APIView):
                     "message": payload["body"],
                     "filename": payload.get("file_name", None),
                     "fileid": payload.get("file_id", None),
-                    "caption": payload.get("caption", None),
+                    "caption": payload.get("caption", None)
                 }
 
                 # Debug Redis connection
@@ -252,7 +252,7 @@ class CredexCloudApiWebhook(APIView):
                     logger.error(f"Redis connection error: {str(e)}")
                     return JsonResponse(
                         {"error": "Redis connection failed"},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
                     )
 
                 # Create CachedUser with debug logging
@@ -279,16 +279,16 @@ class CredexCloudApiWebhook(APIView):
                     logger.info("Creating CredexBotService...")
                     service = CredexBotService(payload=formatted_message, user=user)
 
-                    # For mock testing, return the response directly
+                    # For mock testing return the response directly
                     if is_mock_testing:
                         logger.info("Mock testing mode: Returning response without sending to WhatsApp")
                         return JsonResponse({"response": service.response}, status=status.HTTP_200_OK)
 
-                    # For real requests, send via WhatsApp
+                    # For real requests send via WhatsApp
                     logger.info("Sending response via WhatsApp service...")
                     response = CredexWhatsappService(
                         payload=service.response,
-                        phone_number_id=payload["metadata"]["phone_number_id"],
+                        phone_number_id=payload["metadata"]["phone_number_id"]
                     ).send_message()
                     logger.info(f"WhatsApp API Response: {response}")
                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
@@ -374,16 +374,16 @@ class CredexSendMessageWebhook(APIView):
                                 "parameters": [
                                     {
                                         "type": "text",
-                                        "text": request.data.get("memberName"),
+                                        "text": request.data.get("memberName")
                                     },
                                     {
                                         "type": "text",
-                                        "text": request.data.get("message"),
-                                    },
-                                ],
+                                        "text": request.data.get("message")
+                                    }
+                                ]
                             }
-                        ],
-                    },
+                        ]
+                    }
                 }
 
                 response = CredexWhatsappService(payload=payload).notify()
@@ -391,5 +391,5 @@ class CredexSendMessageWebhook(APIView):
                 return JsonResponse(response, status=status.HTTP_200_OK)
         return JsonResponse(
             {"status": "Successful", "message": "Missing API KEY"},
-            status=status.HTTP_400_BAD_REQUEST,
+            status=status.HTTP_400_BAD_REQUEST
         )
