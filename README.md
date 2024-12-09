@@ -2,240 +2,106 @@
 
 A WhatsApp bot service that facilitates financial transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in a secure WhatsApp chat.
 
-### Quick Start
-After cloning and setting up environment variables, or activation of a codespace:
+## Documentation
 
-Development environment:
+### User Guide
+- [User Flows](docs/flows/user-flows.md) - Detailed guide to all user interactions and flows
+
+### Technical Documentation
+- [API Integration](docs/technical/api-integration.md) - Integration with credex-core API
+- [State Management](docs/technical/state-management.md) - Conversation and session management
+- [Testing Guide](docs/technical/testing.md) - Testing infrastructure and tools
+- [Security](docs/technical/security.md) - Security measures and best practices
+- [Deployment](docs/deployment.md) - Deployment process and infrastructure
+- [Redis Management](docs/redis-memory-management.md) - Redis configuration and management
+
+## Quick Start
+
+### Development Environment
 ```bash
-# Build development environment
+# Build and start services
 make dev-build
-
-# Start development server
 make dev-up
 
-# Stop development server
+# Access services (from host machine)
+Application: http://localhost:8000
+Mock WhatsApp: http://localhost:8001
+
+# Note: Within Docker network, services communicate using:
+- App service: http://app:8000
+- Redis: redis://redis:6379
+- Mock WhatsApp: http://mock:8001
+
+# Stop services
 make dev-down
 ```
 
-Production environment:
+### Production Environment
 ```bash
-# Build production environment
+# Build and start
 make prod-build
-
-# Start production server (detached mode)
 make prod-up
 
-# Stop production server
+# Stop services
 make prod-down
-```
-
-The application will be available at http://localhost:8000
-
-### Development Tools
-
-#### AI-Assisted Merge Summaries
-A tool for generating detailed branch comparison summaries, designed to be used with AI systems for creating intelligent merge descriptions:
-
-```bash
-# Generate a diff between two branches
-make diff <source_branch> <target_branch>
-```
-
-This command:
-- Fetches the latest changes from the remote repository
-- Compares the specified branches
-- Generates a detailed diff output
-- Saves the comparison to projects/diff_output.txt in a format optimized for AI processing
-- Displays a summary of changes in the terminal
-
-The output is structured to help AI systems understand and describe the changes between branches, making it easier to generate meaningful merge commit messages and pull request descriptions.
-
-#### Mock WhatsApp Interface
-A development tool for testing the WhatsApp bot without needing real WhatsApp credentials:
-
-```bash
-# Start the mock WhatsApp interface (with hot reload)
-make mockery
-
-# Stop the mock WhatsApp interface
-make mockery-down
-```
-
-The mock interface will be available at http://localhost:8001 and provides:
-- Custom phone numbers and usernames for testing different users
-- Support for text, button, and interactive messages
-- Real-time conversation history
-- WhatsApp-style chat interface
-- Detailed message logging in the server console
-- Hot reload - server automatically restarts when code changes
-
-##### CLI Interface
-You can also interact with the mock WhatsApp interface through the command line:
-
-```bash
-# Send a basic text message
-./mock/cli.py "Hello, world!"
-
-# Send a message with custom phone and username
-./mock/cli.py --phone 1234567890 --username "Test User" "Hello!"
-
-# Send a button response
-./mock/cli.py --type button "button_1"
-
-# Send an interactive message
-./mock/cli.py --type interactive "menu_option_1"
-
-# Use a different port (if mock server is running on different port)
-./mock/cli.py --port 8002 "Hello!"
 ```
 
 ## Core Features
 
 ### Financial Operations
 - Secured credex transactions with immediate settlement
-- Unsecured credex with configurable due dates (up to 5 weeks)
+- Unsecured credex with configurable due dates
 - Multi-tier account system:
   - Personal accounts with basic features
   - Business accounts with advanced capabilities
   - Member authorization management
 - Balance tracking with denomination support
 - Transaction history with pagination
-- Pending offers management:
-  - Individual and bulk acceptance
-  - Offer cancellation
-  - Review of incoming/outgoing offers
+- Pending offers management
 
 ### WhatsApp Interface
 - Interactive menus and buttons
-- Form-based data collection with validation
-- Rich message formatting with emojis
-- State-based conversation flow with Redis persistence:
-  - 5-minute session timeout
-  - Automatic state cleanup
-  - Cross-device state sync(?)
-- Time-aware greetings and messages
-- Navigation commands:
-  - `menu` - Return to main menu
-  - `x` or `c` - Cancel current operation
-  - `home` - Return to account dashboard
-- Custom message templates for:
-  - Account balances and limits
-  - Transaction history
-  - Offer confirmations
-  - Error messages
-  - Status updates
-- Notification preferences per account
+- Form-based data collection
+- Rich message formatting
+- State-based conversation flow
+- Time-aware greetings
+- Navigation commands
+- Custom message templates
 
 ### Security
-- JWT authentication with configurable lifetimes
-- Rate limiting (100/day anonymous, 1000/day authenticated)
-- XSS protection and HSTS
-- CORS configuration
-- Input validation and sanitization
+- JWT authentication
+- Rate limiting
+- Input validation
 - Secure state management
 
-## Development Setup
+## Development Tools
 
-### Prerequisites
-- Docker and Docker Compose
-- Python 3.10+
-- Access to Credex Core API development server
-- WhatsApp Business API credentials from Meta
+### Mock WhatsApp Interface
+Test the WhatsApp bot without real WhatsApp credentials:
 
-### Development Features
-- Live code reloading
-- Django Debug Toolbar
-- Redis for state management
-- Console email backend
-- Comprehensive logging
-- Mock WhatsApp interface for testing (web and CLI)
-- Hot reload for mock server
-
-### Code Quality
 ```bash
-# Format and lint
-black .
-isort .
-flake8
+# Start all services including mock server
+make dev-up
 
-# Type checking
-mypy .
-
-# Run tests
-pytest --cov=app
+# CLI testing (from host machine)
+./mock/cli.py "Hello, world!"
+./mock/cli.py --type button "button_1"
 ```
 
-## Production Deployment
-See [Deployment Documentation](docs/deployment.md).
+### AI-Assisted Merge Summaries
+Generate branch comparison summaries:
 
-### Docker Configuration
-- Multi-stage builds
-- Security-hardened production image
-- Non-privileged user
-- Gunicorn with gevent workers
-- Health monitoring
-
-### Server Configuration
 ```bash
-# Build production image
-docker build --target production -t vimbiso-pay:latest .
-
-# Run with production settings
-docker run -d \
-  --name vimbiso-pay \
-  -p 8000:8000 \
-  -e DJANGO_ENV=production \
-  [additional environment variables]
-  vimbiso-pay:latest
+make diff <source_branch> <target_branch>
 ```
 
-### Health Monitoring
-- Built-in health checks (30s interval)
-- Redis connection monitoring
-- API integration verification
-- Comprehensive logging
+## Contributing
 
-## Troubleshooting
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
-### Common Issues
-1. API Connection
-   - Verify API URL and credentials
-   - Check network connectivity
-   - Validate JWT token
+## License
 
-2. WhatsApp Integration
-   - Verify API credentials
-   - Test webhook configuration
-   - Check message templates
-   - Use mock interface (web or CLI) for local testing
-
-3. State Management
-   - Verify Redis connection
-   - Check session timeouts (5 minutes)
-   - Monitor state transitions
-   - Test state flows using mock interface
-
-### Debug Mode
-- Django Debug Toolbar at /__debug__/
-- Detailed error pages
-- Auto-reload on code changes
-- Console email backend
-- Comprehensive logging
-- Mock WhatsApp interface for testing scenarios
-
-## Future Improvements
-
-1. Monitoring
-   - JSON logging configuration
-   - Error tracking
-   - Performance metrics
-
-2. Performance
-   - Redis caching strategy
-   - Container optimization
-   - State management tuning
-
-3. Infrastructure
-   - AWS deployment
-   - Terraform configurations
-   - Production deployment guide
+Have at it.

@@ -1,9 +1,19 @@
 #!/bin/bash
 set -e
 
+# Set up logging to file only when not deployed to AWS
+if [ "${DEPLOYED_TO_AWS:-false}" = "false" ]; then
+    LOG_FILE="/app/data/logs/startup.log"
+    mkdir -p /app/data/logs
+    touch "$LOG_FILE"
+    chmod 666 "$LOG_FILE"  # Make log file readable/writable by all users
+    exec 1>"$LOG_FILE" 2>&1
+fi
+
 echo "Starting application..."
 echo "Environment: $DJANGO_ENV"
 echo "Port: $PORT"
+echo "DEPLOYED_TO_AWS: ${DEPLOYED_TO_AWS:-false}"
 
 # Debug Redis configuration
 echo "REDIS_URL from environment: ${REDIS_URL:-not set}"
@@ -53,9 +63,18 @@ done
 
 echo "Redis is ready!"
 
-# Create required directories if they don't exist
-mkdir -p /app/data/{db,static,media,logs}
-chmod -R 755 /app/data
+# Create required directories based on DEPLOYED_TO_AWS setting
+if [ "${DEPLOYED_TO_AWS:-false}" = "true" ]; then
+    echo "Using EFS storage..."
+    # Ensure EFS mount directories exist
+    mkdir -p /efs-vols/app-data/data/{db,static,media,logs}
+    chmod -R 755 /efs-vols/app-data/data
+else
+    echo "Using local storage..."
+    # Create local directories
+    mkdir -p /app/data/{db,static,media,logs}
+    chmod -R 755 /app/data
+fi
 
 # In production run migrations and collect static files
 if [ "${DJANGO_ENV:-development}" = "production" ]; then
@@ -87,5 +106,9 @@ if [ "${DJANGO_ENV:-development}" = "production" ]; then
         --keep-alive 65
 else
     echo "Starting Django development server..."
+    # Always run migrations in development
+    echo "Applying database migrations..."
+    python manage.py migrate --noinput
+
     exec python manage.py runserver 0.0.0.0:${PORT:-8000}
 fi

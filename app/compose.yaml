@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   app:
     build:
@@ -16,13 +14,14 @@ services:
       - ALLOWED_HOSTS=*
       - DJANGO_SECRET=local-secret-key
       - REDIS_URL=redis://redis:6379/0
+      - DEPLOYED_TO_AWS=false
       - WHATSAPP_API_URL=${WHATSAPP_API_URL}
       - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
       - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
       - WHATSAPP_BUSINESS_ID=${WHATSAPP_BUSINESS_ID}
       - WHATSAPP_REGISTRATION_FLOW_ID=${WHATSAPP_REGISTRATION_FLOW_ID}
       - WHATSAPP_COMPANY_REGISTRATION_FLOW_ID=${WHATSAPP_COMPANY_REGISTRATION_FLOW_ID}
-      - MYCREDEX_APP_URL=${MYCREDEX_APP_URL}
+      - MYCREDEX_APP_URL=https://dev.mycredex.dev
       - CLIENT_API_KEY=${CLIENT_API_KEY}
     command: ["./start_app.sh"]
     depends_on:
@@ -55,6 +54,20 @@ services:
       timeout: 3s
       retries: 3
       start_period: 10s
+    networks:
+      - app-network
+
+  mock:
+    build:
+      context: ..
+      target: development
+    volumes:
+      - ../mock:/app/mock
+    ports:
+      - "8001:8001"
+    command: ["python3", "mock/server.py"]
+    depends_on:
+      - app
     networks:
       - app-network
 

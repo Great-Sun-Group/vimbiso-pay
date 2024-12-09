@@ -24,6 +24,7 @@
             padding: 10px;
             border-radius: 10px;
             max-width: 70%;
+            word-wrap: break-word;
         }
         .user-message {
             background: #dcf8c6;
@@ -50,17 +51,60 @@
             color: white;
             border: none;
             cursor: pointer;
+            min-width: 100px;
         }
         button:hover {
             background: #128c7e;
+        }
+        .target-toggle {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .target-toggle label {
+            font-weight: bold;
+            min-width: 80px;
+        }
+        .target-toggle select {
+            flex-grow: 1;
+        }
+        .status {
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            background: #e8e8e8;
+            font-weight: bold;
+        }
+        .status.local {
+            background: #dcf8c6;
+        }
+        .status.staging {
+            background: #ffd3b6;
         }
     </style>
 </head>
 <body>
     <h1>WhatsApp Mock Interface</h1>
 
+    <div class="target-toggle">
+        <label>Target:</label>
+        <select id="target" onchange="updateStatus()">
+            <option value="local">Local (localhost:8000)</option>
+            <option value="staging">Staging (stage.whatsapp.vimbisopay.africa)</option>
+        </select>
+    </div>
+
+    <div class="status" id="status">
+        Connected to: Local Server
+    </div>
+
     <div class="input-container">
-        <input type="text" id="phoneNumber" placeholder="Phone Number" value="1234567890">
+        <input type="text" id="phoneNumber" placeholder="Phone Number" value="263778177125">
         <input type="text" id="userName" placeholder="User Name" value="Test User">
     </div>
 
@@ -80,7 +124,7 @@
     </div>
 
     <script>
-        const WHATSAPP_PHONE_NUMBER_ID = '123456789'; // Mock ID
+        const WHATSAPP_PHONE_NUMBER_ID = '123456789';
 
         function getCurrentTimestamp() {
             return Math.floor(Date.now() / 1000);
@@ -140,22 +184,33 @@
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
+        function updateStatus() {
+            const target = document.getElementById('target').value;
+            const status = document.getElementById('status');
+            const text = target === 'local' ? 'Local Server (localhost:8000)' : 'Staging Server (stage.whatsapp.vimbisopay.africa)';
+            status.textContent = `Connected to: ${text}`;
+            status.className = `status ${target}`;
+        }
+
+        document.getElementById('target').addEventListener('change', updateStatus);
+
         async function sendMessage() {
             const messageInput = document.getElementById('messageInput');
             const messageType = document.getElementById('messageType').value;
+            const target = document.getElementById('target').value;
             const messageText = messageInput.value;
 
             if (!messageText) return;
 
             // Add user message to chat
-            addMessageToChat(messageText, true);
+            addMessageToChat(`${messageText} (to ${target})`, true);
 
             // Create WhatsApp-style payload
             const payload = createWhatsAppPayload(messageText, messageType);
 
             try {
-                // Send to webhook endpoint
-                const response = await fetch('/webhook', {
+                // Send to webhook endpoint with target parameter
+                const response = await fetch(`/webhook?target=${target}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -165,7 +220,7 @@
 
                 const data = await response.json();
 
-                // Simulate bot response
+                // Display response
                 if (data.message) {
                     setTimeout(() => {
                         addMessageToChat(data.message, false);
@@ -173,7 +228,7 @@
                 }
             } catch (error) {
                 console.error('Error:', error);
-                addMessageToChat('Error sending message', false);
+                addMessageToChat(`Error: ${error.message}`, false);
             }
 
             messageInput.value = '';
@@ -185,6 +240,9 @@
                 sendMessage();
             }
         });
+
+        // Initialize status
+        updateStatus();
     </script>
 </body>
 </html>

@@ -92,7 +92,7 @@ class ActionHandler:
         if not current_state.get("profile") or login:
             response = self.service.refresh(reset=True)
             current_state = user.state.get_state(user)
-            if response:
+            if response and "error" in str(response).lower():
                 self.service.state_manager.update_state(
                     new_state=self.service.current_state,
                     update_from="handle_action_menu",
