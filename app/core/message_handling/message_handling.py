@@ -37,6 +37,7 @@ class MessageHandler:
         self.bot_service = bot_service
 
     def handle_message(self):
+        logger.debug("Entering handle_message()")
         if self.bot_service.body is None:
             logger.warning("Empty message body received")
             return self.bot_service.action_handler.handle_default_action()
@@ -44,11 +45,18 @@ class MessageHandler:
         try:
             sanitized_body = sanitize_input(self.bot_service.body)
             validate_input(sanitized_body)
+            logger.debug(f"Sanitized message body: {sanitized_body}")
 
             if self.is_greeting(sanitized_body):
-                return self.handle_greeting()
+                logger.debug("Message is a greeting, handling greeting")
+                response = self.handle_greeting()
+                logger.debug(f"handle_greeting() returned: {response}")
+                return response
 
-            return router.handle(sanitized_body, self.bot_service)
+            logger.debug("Message is not a greeting, routing to handler")
+            response = router.handle(sanitized_body, self.bot_service)
+            logger.debug(f"router.handle() returned: {response}")
+            return response
         except InvalidInputException as e:
             logger.error(f"Input validation failed: {str(e)}")
             return wrap_text(
@@ -64,20 +72,22 @@ class MessageHandler:
         print(self.bot_service.state.get_state())
 
     def handle_greeting(self):
-        logger.info("Handling greeting")
+        logger.debug("Entering handle_greeting()")
         success, message = self.bot_service.api_interactions.login()
+        logger.debug(f"Login result - success: {success}, message: {message}")
 
         if success:
+            # After successful login, update state and fetch dashboard
             self.bot_service.state.update_state(
                 self.bot_service.current_state,
-                "handle_action_select_profile",
+                "handle_action_menu",
                 "handle",
                 "handle_greeting",
             )
-            return wrap_text(
-                f"Welcome back! {message}\nHow can I assist you today?",
-                self.bot_service.user.mobile_number,
-            )
+            # Return the menu with dashboard data
+            response = self.bot_service.action_handler.handle_action_menu(login=True)
+            logger.debug(f"handle_action_menu() returned: {response}")
+            return response
         else:
             if "new user" in message.lower() or "invalid phone" in message.lower():
                 self.bot_service.state.update_state(
@@ -86,11 +96,13 @@ class MessageHandler:
                     "handle",
                     "handle_greeting",
                 )
-                return wrap_text(
+                response = wrap_text(
                     REGISTER.format(message=message),
                     self.bot_service.user.mobile_number,
                     extra_rows=[{"id": "1", "title": "Become a member"}],
                 )
+                logger.debug(f"Returning registration message: {response}")
+                return response
             else:
                 self.bot_service.state.update_state(
                     self.bot_service.current_state,
@@ -98,10 +110,11 @@ class MessageHandler:
                     "handle",
                     "handle_greeting",
                 )
-                return registration_form(
+                response = registration_form(
                     self.bot_service.user.mobile_number, message=message
                 )
-            # wrap_text(f"Login failed: {message}\nPlease try again later or contact support.", )
+                logger.debug(f"Returning registration form: {response}")
+                return response
 
     def handle_offer_credex(self):
         logger.info("Handling offer credex action")

@@ -7,7 +7,7 @@ if [ "${DEPLOYED_TO_AWS:-false}" = "false" ]; then
     mkdir -p /app/data/logs
     touch "$LOG_FILE"
     chmod 666 "$LOG_FILE"  # Make log file readable/writable by all users
-    exec 1>>"$LOG_FILE" 2>&1
+    exec 1>"$LOG_FILE" 2>&1
 fi
 
 echo "Starting application..."

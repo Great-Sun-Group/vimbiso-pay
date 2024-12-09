@@ -7,12 +7,16 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
+# Set up detailed logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
 
-# Target environments - using localhost for local testing
+# Target environments - using app service name for Docker networking
 TARGETS = {
-    'local': 'http://localhost:8000/bot/webhook',  # Using localhost for local testing
+    'local': 'http://app:8000/bot/webhook',  # Using Docker service name
     'staging': 'https://stage.whatsapp.vimbisopay.africa/bot/webhook'
 }
 
@@ -68,18 +72,18 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 else:
                     text = "Unsupported message type"
 
-                print(f"\nReceived message: {text}")
-                print(f"From: {contact['profile']['name']}")
-                print(f"Phone: {contact['wa_id']}")
-                print(f"Type: {message_type}")
-                print(f"Target: {target}\n")
+                logger.info(f"\nReceived message: {text}")
+                logger.info(f"From: {contact['profile']['name']}")
+                logger.info(f"Phone: {contact['wa_id']}")
+                logger.info(f"Type: {message_type}")
+                logger.info(f"Target: {target}\n")
 
                 try:
                     # Forward request to selected target
-                    print(f"\nForwarding request to {target} server...")
-                    print(f"Target URL: {TARGETS[target]}")
-                    print(f"Request Headers: {dict(self.headers)}")
-                    print(f"Request Payload: {json.dumps(payload, indent=2)}")
+                    logger.info(f"\nForwarding request to {target} server...")
+                    logger.info(f"Target URL: {TARGETS[target]}")
+                    logger.info(f"Request Headers: {dict(self.headers)}")
+                    logger.info(f"Request Payload: {json.dumps(payload, indent=2)}")
 
                     # Add mock testing header and content type
                     headers = {
@@ -92,16 +96,16 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
                     # Make request with detailed error handling
                     try:
-                        print("\nSending request...")
+                        logger.info("\nSending request...")
                         chatbot_response = requests.post(
                             target_url,
                             json=payload,
                             headers=headers,
                             timeout=30
                         )
-                        print(f"\nResponse Status Code: {chatbot_response.status_code}")
-                        print(f"Response Headers: {dict(chatbot_response.headers)}")
-                        print(f"Response Content: {chatbot_response.text}")
+                        logger.info(f"\nResponse Status Code: {chatbot_response.status_code}")
+                        logger.info(f"Response Headers: {dict(chatbot_response.headers)}")
+                        logger.info(f"Response Content: {chatbot_response.text}")
 
                         chatbot_response.raise_for_status()
 
@@ -116,31 +120,31 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                         return
 
                     except requests.exceptions.Timeout:
-                        print("\nError: Request timed out")
+                        logger.error("\nError: Request timed out")
                         self.send_error(504, "Gateway Timeout")
                         return
                     except requests.exceptions.ConnectionError as e:
-                        print(f"\nError: Connection failed - {str(e)}")
-                        print("Make sure the Django server is running and accessible")
+                        logger.error(f"\nError: Connection failed - {str(e)}")
+                        logger.error("Make sure the Django server is running and accessible")
                         self.send_error(502, "Bad Gateway", f"Connection to {target} server failed")
                         return
                     except requests.exceptions.RequestException as e:
-                        print(f"\nError: Request failed - {str(e)}")
+                        logger.error(f"\nError: Request failed - {str(e)}")
                         if hasattr(e, 'response'):
-                            print(f"Response status: {e.response.status_code}")
-                            print(f"Response content: {e.response.text}")
+                            logger.error(f"Response status: {e.response.status_code}")
+                            logger.error(f"Response content: {e.response.text}")
                         self.send_error(500, "Internal Server Error", str(e))
                         return
 
                 except Exception as e:
-                    print(f"\nUnexpected error forwarding request: {str(e)}")
+                    logger.error(f"\nUnexpected error forwarding request: {str(e)}")
                     self.send_error(500, "Internal Server Error", str(e))
                     return
 
             return super().do_POST()
 
         except Exception as e:
-            print(f"\nGlobal error handler: {str(e)}")
+            logger.error(f"\nGlobal error handler: {str(e)}")
             self.send_error(500, "Internal Server Error", str(e))
             return
 
@@ -157,11 +161,11 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
 
 def run_server(port=8001):
-    print(f"\nStarting mock WhatsApp server on port {port}")
-    print("\nAvailable targets:")
+    logger.info(f"\nStarting mock WhatsApp server on port {port}")
+    logger.info("\nAvailable targets:")
     for name, url in TARGETS.items():
-        print(f"- {name}: {url}")
-    print("\nOpen http://localhost:8001 in your browser")
+        logger.info(f"- {name}: {url}")
+    logger.info("\nOpen http://localhost:8001 in your browser")
 
     server_address = ("", port)
     httpd = ReuseAddressHTTPServer(server_address, MockWhatsAppHandler)
@@ -169,7 +173,7 @@ def run_server(port=8001):
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down...")
+        logger.info("\nShutting down...")
     finally:
         httpd.server_close()
 
