@@ -115,8 +115,10 @@ def wrap_text(
 
 class CredexWhatsappService:
     def __init__(self, payload, phone_number_id=None):
-        self.phone_number_id = phone_number_id
+        self.phone_number_id = phone_number_id or config('WHATSAPP_PHONE_NUMBER_ID')
         self.payload = payload
+        # Update API version to v20.0
+        self.api_url = config('WHATSAPP_API_URL', default='https://graph.facebook.com/v20.0/')
 
     def send_message(self):
         # Implementation for sending WhatsApp message
@@ -125,9 +127,15 @@ class CredexWhatsappService:
             "Authorization": f"Bearer {config('WHATSAPP_ACCESS_TOKEN')}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, json=self.payload, headers=headers)
-        print(response.json())
-        return response.json()
+        try:
+            response = requests.post(url, json=self.payload, headers=headers)
+            print("WhatsApp API Response:", response.json())
+            if response.status_code != 200:
+                print(f"WhatsApp API Error: {response.status_code}", response.text)
+            return response.json()
+        except Exception as e:
+            print(f"Error sending WhatsApp message: {str(e)}")
+            return {"error": str(e)}
 
     def notify(self):
         # Implementation for sending notification
