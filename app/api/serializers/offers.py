@@ -1,6 +1,5 @@
 from rest_framework import serializers
-import json, os, requests, re
-from decouple import config
+import re
 
 from core.utils.utils import convert_timestamp_to_date
 
@@ -28,24 +27,6 @@ class OfferCredexSerializer(serializers.Serializer):
                 attrs.get("handle").lower()
             )
             print(success, data)
-            # {
-            #     'message': 'Account found successfully',
-            #     'data': {
-            #         'action': {
-            #             'id': '001ae1dc-6c4d-4e8f-b50a-bd3793727341',
-            #             'type': 'ACCOUNT_FOUND',
-            #             'timestamp': '2024-11-21T05:03:33.388Z',
-            #             'actor': 'system',
-            #             'details': {
-            #                 'accountID': '001ae1dc-6c4d-4e8f-b50a-bd3793727341',
-            #                 'accountName': 'Garnet Sharara Personal',
-            #                 'accountHandle': '263782624032',
-            #                 'defaultDenom': 'USD'
-            #             }
-            #         },
-            #         'dashboard': {}
-            #     }
-            # }
             try:
                 if success:
                     if data.get("message") == "Account found successfully":

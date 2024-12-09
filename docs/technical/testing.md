@@ -256,3 +256,45 @@ headers = {
    - Verify message format
    - Check state transitions
    - Validate responses
+
+## Future Implementation Needs
+
+### API Testing Infrastructure
+
+The following testing infrastructure needs to be implemented to support the new API layer:
+
+1. **Webhook Testing**
+   - Test harness for webhook endpoints
+   - Webhook signature validation tests
+   - Event type validation
+   - Payload validation for:
+     * Company updates
+     * Member updates
+     * Offer updates
+   - Error handling tests
+
+2. **Internal API Testing**
+   - Authentication test suite
+   - Company endpoint tests
+   - Member endpoint tests
+   - Offer endpoint tests
+   - Response format validation
+   - Error handling scenarios
+
+3. **Integration Tests**
+   - End-to-end webhook processing
+   - API endpoint integration with CredEx core
+   - State management verification
+   - Transaction flow validation
+
+4. **Test Data Management**
+   - Mock data generators
+   - Test database fixtures
+   - State cleanup utilities
+
+5. **CI/CD Integration**
+   - Automated API test runs
+   - Webhook validation in staging
+   - Performance testing suite
+
+These testing components should be implemented to ensure the reliability and correctness of the new API layer.

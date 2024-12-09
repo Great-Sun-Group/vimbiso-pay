@@ -59,6 +59,19 @@ make prod-down
 - Transaction history with pagination
 - Pending offers management
 
+### API & Integration
+- Direct integration with CredEx core API
+- Webhook support for real-time updates:
+  - Company updates
+  - Member updates
+  - Offer status changes
+- Internal API endpoints for:
+  - Company management
+  - Member operations
+  - Offer handling
+- Comprehensive validation and error handling
+- Type-safe request/response handling
+
 ### WhatsApp Interface
 - Interactive menus and buttons
 - Form-based data collection
@@ -73,6 +86,8 @@ make prod-down
 - Rate limiting
 - Input validation
 - Secure state management
+- Webhook signature validation
+- Request payload validation
 
 ## Development Tools
 
@@ -86,6 +101,31 @@ make dev-up
 # CLI testing (from host machine)
 ./mock/cli.py "Hello, world!"
 ./mock/cli.py --type button "button_1"
+```
+
+### API Testing
+Test API endpoints and webhooks:
+
+```bash
+# Test webhook endpoint
+curl -X POST http://localhost:8000/api/webhooks/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "metadata": {
+      "webhook_id": "test",
+      "event_type": "company_update",
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    "payload": {
+      "company_id": "123",
+      "name": "Test Company",
+      "status": "active"
+    }
+  }'
+
+# Test internal API (requires authentication)
+curl -X GET http://localhost:8000/api/companies/ \
+  -H "Authorization: Bearer your-token"
 ```
 
 ### AI-Assisted Merge Summaries

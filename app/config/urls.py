@@ -1,10 +1,6 @@
 from core.api.tests import test_integrations
-from core.api.views import (
-    CredexCloudApiWebhook,
-    CredexSendMessageWebhook,
-    WelcomeMessage,
-    WipeCache,
-)
+from core.api.views import (CredexCloudApiWebhook, CredexSendMessageWebhook,
+                            WelcomeMessage, WipeCache)
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
@@ -13,6 +9,16 @@ from django.http import JsonResponse
 from django.urls import include, path
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
+from rest_framework import routers
+
+from api import views
+
+
+# Create a router and register our viewsets with it
+router = routers.DefaultRouter()
+router.register(r'companies', views.CompanyViewSet, basename='company')
+router.register(r'members', views.MemberViewSet, basename='member')
+router.register(r'offers', views.OfferViewSet, basename='offer')
 
 
 # Health check endpoint with improved error handling and logging
@@ -58,6 +64,9 @@ urlpatterns = [
     path("bot/notify", CredexSendMessageWebhook.as_view(), name="notify"),
     path("bot/welcome/message", WelcomeMessage.as_view(), name="welcome_message"),
     path("bot/wipe", WipeCache.as_view(), name="wipe"),
+    # New API endpoints
+    path("api/", include(router.urls)),
+    path("api/webhooks/", views.webhook_handler, name="webhook-handler"),
 ]
 
 if settings.DEBUG:

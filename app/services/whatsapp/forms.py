@@ -1,10 +1,19 @@
-from decouple import config
 from datetime import datetime, timedelta
-from ..config.constants import REGISTER
-from .screens import OFFER_CREDEX
+
+from .screens import REGISTER, OFFER_CREDEX
+from .types import WhatsAppMessage
 
 
-def registration_form(mobile_number, message):
+def registration_form(mobile_number: str, message: str) -> WhatsAppMessage:
+    """Create a WhatsApp registration form message
+
+    Args:
+        mobile_number: The recipient's mobile number
+        message: Custom message to include in the form
+
+    Returns:
+        WhatsAppMessage: Formatted WhatsApp message with registration form
+    """
     return {
         "messaging_product": "whatsapp",
         "to": mobile_number,
@@ -28,7 +37,16 @@ def registration_form(mobile_number, message):
     }
 
 
-def offer_credex(mobile_number, message):
+def offer_credex(mobile_number: str, message: str) -> WhatsAppMessage:
+    """Create a WhatsApp credex offer form message
+
+    Args:
+        mobile_number: The recipient's mobile number
+        message: Custom message to include in the form
+
+    Returns:
+        WhatsAppMessage: Formatted WhatsApp message with credex offer form
+    """
     return {
         "messaging_product": "whatsapp",
         "to": mobile_number,
