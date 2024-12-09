@@ -1,4 +1,4 @@
-.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down mockery mockery-down
+.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down mockery mockery-down diff
 
 # Build for development
 dev-build:
@@ -37,3 +37,14 @@ mockery:
 # Stop the mock WhatsApp interface
 mockery-down:
 	pkill -f "python mock/server.py" || true
+
+# Get diff between two branches
+diff:
+	@if [ "$(filter-out $@,$(MAKECMDGOALS))" = "" ]; then \
+		echo "Usage: make diff <source_branch> <target_branch>"; \
+		exit 1; \
+	fi
+	bash projects/getDiff.sh $(filter-out $@,$(MAKECMDGOALS))
+
+%:
+	@:

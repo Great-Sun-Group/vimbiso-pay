@@ -115,10 +115,12 @@ def wrap_text(
 
 class CredexWhatsappService:
     def __init__(self, payload, phone_number_id=None):
-        self.phone_number_id = phone_number_id or config('WHATSAPP_PHONE_NUMBER_ID')
+        self.phone_number_id = phone_number_id or config("WHATSAPP_PHONE_NUMBER_ID")
         self.payload = payload
         # Update API version to v20.0
-        self.api_url = config('WHATSAPP_API_URL', default='https://graph.facebook.com/v20.0/')
+        self.api_url = config(
+            "WHATSAPP_API_URL", default="https://graph.facebook.com/v20.0/"
+        )
 
     def send_message(self):
         # Implementation for sending WhatsApp message
