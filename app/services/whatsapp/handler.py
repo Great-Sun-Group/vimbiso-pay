@@ -3,12 +3,13 @@ WhatsApp bot service implementation.
 Handles message routing and bot interactions.
 """
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 from core.utils.exceptions import InvalidInputException
 from core.utils.error_handler import error_decorator
-from core.config.constants import CachedUser, get_greeting
+from core.config.constants import CachedUser, get_greeting, GREETINGS
 from services.credex.service import CredExService
+from services.state.service import StateStage
 from .types import BotServiceInterface, WhatsAppMessage
 from .account_handlers import AccountActionHandler
 from .auth_handlers import AuthActionHandler
@@ -36,26 +37,33 @@ class CredexBotService(BotServiceInterface):
         super().__init__(payload, user)
         logger.debug(f"Message type: {self.message_type}")
         logger.debug(f"Message body: {self.body}")
-        logger.debug(f"Current state: {self.current_state}")
 
-        # Initialize handlers and services
+        # Initialize services
         self.credex_service = CredExService()
         self.action_handler = WhatsAppActionHandler(self)
 
-        # Initialize state if empty
-        if not self.current_state:
-            logger.debug("Initializing empty state")
-            self.state.update_state(
-                state={},
-                stage="handle_action_menu",
-                update_from="init",
-                option="handle_action_menu",
-                direction="OUT"
-            )
-            self.current_state = self.state.get_state(self.user)
+        # Initialize state if needed
+        self._initialize_state()
+        logger.debug(f"Current state: {self.current_state}")
 
         self.response = self.handle()
         logger.debug(f"Final response: {self.response}")
+
+    def _initialize_state(self) -> None:
+        """Initialize state if empty with proper error handling"""
+        try:
+            self.current_state = self.state.get_state(self.user)
+        except Exception as e:
+            logger.info(f"No existing state found: {str(e)}")
+            # Initialize fresh state
+            self.state.update_state(
+                user_id=self.user,
+                new_state={},
+                stage=StateStage.INIT.value,
+                update_from="init",
+                option="handle_action_menu"
+            )
+            self.current_state = self.state.get_state(self.user)
 
     def refresh(self, reset: bool = True, silent: bool = True) -> Optional[str]:
         """Refresh user profile and state information.
@@ -67,11 +75,111 @@ class CredexBotService(BotServiceInterface):
         Returns:
             Optional[str]: Error message if any
         """
-        return self.credex_service.refresh_member_info(
-            phone=self.user.mobile_number,
-            reset=reset,
-            silent=silent
-        )
+        try:
+            # First refresh member info
+            result = self.credex_service.refresh_member_info(
+                phone=self.user.mobile_number,
+                reset=reset,
+                silent=silent
+            )
+
+            # Then refresh state if needed
+            if reset:
+                self.state.reset_state(self.user, preserve_auth=True)
+                self._initialize_state()
+
+            return result
+        except Exception as e:
+            logger.error(f"Error refreshing state: {str(e)}")
+            return str(e)
+
+    def _handle_greeting(self) -> Dict[str, Any]:
+        """Handle greeting messages with proper state management.
+
+        Returns:
+            Dict[str, Any]: Response message
+        """
+        logger.info("Handling greeting message")
+
+        try:
+            # First try to login
+            success, login_msg = self._attempt_login()
+            if not success:
+                return self._handle_login_failure(login_msg)
+
+            # Get fresh dashboard data
+            success, data = self._get_dashboard_data()
+            if not success:
+                return self.get_response_template(data.get("message", "Failed to load profile"))
+
+            # Update state with fresh data
+            self._update_state_with_dashboard(data)
+
+            # Get fresh menu with greeting
+            return self._get_greeting_menu()
+
+        except Exception as e:
+            logger.error(f"Error handling greeting: {str(e)}")
+            return self.get_response_template("Sorry, something went wrong. Please try again.")
+
+    def _attempt_login(self) -> Tuple[bool, str]:
+        """Attempt to login user with proper error handling"""
+        try:
+            return self.credex_service._auth.login(self.user.mobile_number)
+        except Exception as e:
+            logger.error(f"Login error: {str(e)}")
+            return False, str(e)
+
+    def _handle_login_failure(self, login_msg: str) -> Dict[str, Any]:
+        """Handle login failure scenarios"""
+        if any(phrase in login_msg.lower() for phrase in ["new user", "new here"]):
+            return self.action_handler.auth_handler.handle_action_register(register=True)
+        return self.get_response_template(login_msg)
+
+    def _get_dashboard_data(self) -> Tuple[bool, Dict[str, Any]]:
+        """Get dashboard data with proper error handling"""
+        try:
+            return self.credex_service._member.get_dashboard(self.user.mobile_number)
+        except Exception as e:
+            logger.error(f"Dashboard error: {str(e)}")
+            return False, {"message": str(e)}
+
+    def _update_state_with_dashboard(self, data: Dict[str, Any]) -> None:
+        """Update state with dashboard data atomically"""
+        try:
+            self.state.update_state(
+                user_id=self.user,
+                new_state={"profile": data},
+                stage=StateStage.MENU.value,
+                update_from="greeting",
+                option="handle_action_menu"
+            )
+            self.current_state = self.state.get_state(self.user)
+        except Exception as e:
+            logger.error(f"Error updating state with dashboard: {str(e)}")
+            raise
+
+    def _get_greeting_menu(self) -> Dict[str, Any]:
+        """Get greeting menu with proper formatting"""
+        try:
+            menu_response = self.action_handler._handle_auth_action("handle_action_menu")
+            greeting = get_greeting(self.user.first_name)
+
+            if isinstance(menu_response, dict) and menu_response.get("interactive", {}).get("body", {}).get("text"):
+                menu_text = menu_response["interactive"]["body"]["text"]
+                menu_response["interactive"]["body"]["text"] = f"{greeting}\n\n{menu_text}"
+                return menu_response
+
+            return {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": self.user.mobile_number,
+                "type": "text",
+                "text": {"body": greeting}
+            }
+        except Exception as e:
+            logger.error(f"Error getting greeting menu: {str(e)}")
+            return self.get_response_template(get_greeting(self.user.first_name))
 
     @error_decorator
     def handle(self) -> Dict[str, Any]:
@@ -80,26 +188,19 @@ class CredexBotService(BotServiceInterface):
         Returns:
             Dict[str, Any]: Response message
         """
-        logger.info(f"Entry point: {self.state.stage}")
+        try:
+            # Handle greeting messages
+            if self.message_type == "text" and self.body.lower() in GREETINGS:
+                return self._handle_greeting()
 
-        # Handle greeting messages
-        if self.message_type == "text" and self.body.lower() in ["hi", "hello", "hey"]:
-            greeting = get_greeting(self.user.first_name)
-            self.state.update_state(
-                state=self.current_state,
-                stage="handle_action_menu",
-                update_from="greeting",
-                option="handle_action_menu"
-            )
-            return {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": self.user.mobile_number,
-                "type": "text",
-                "text": {"body": greeting}
-            }
+            # Use message body for action if it's a handler action
+            action = self.body if self.body and self.body.startswith("handle_action_") else self.state.get_stage(self.user)
+            logger.info(f"Entry point: {action}")
+            return self.action_handler.handle_action(action)
 
-        return self.action_handler.handle_action(self.state.stage)
+        except Exception as e:
+            logger.error(f"Error handling message: {str(e)}")
+            return self.get_response_template("Sorry, something went wrong. Please try again.")
 
 
 class WhatsAppActionHandler:
@@ -117,7 +218,7 @@ class WhatsAppActionHandler:
         self.account_handler = AccountActionHandler(service)
 
     def handle_action(self, action: str) -> WhatsAppMessage:
-        """Route action to appropriate handler
+        """Route action to appropriate handler with proper state validation
 
         Args:
             action: Action to handle
@@ -125,46 +226,56 @@ class WhatsAppActionHandler:
         Returns:
             WhatsAppMessage: Response message
         """
-        # Authentication and menu actions
-        if action in ["handle_action_register", "handle_action_menu"]:
-            return self._handle_auth_action(action)
+        try:
+            # Authentication and menu actions
+            if action in ["handle_action_register", "handle_action_menu"]:
+                return self._handle_auth_action(action)
 
-        # Credex-related actions
-        if action in [
-            "handle_action_offer_credex",
-            "handle_action_pending_offers_in",
-            "handle_action_pending_offers_out",
-            "handle_action_transactions",
-        ]:
-            return self._handle_credex_action(action)
+            # Credex-related actions
+            if action in [
+                "handle_action_offer_credex",
+                "handle_action_pending_offers_in",
+                "handle_action_pending_offers_out",
+                "handle_action_transactions",
+            ]:
+                return self._handle_credex_action(action)
 
-        # Account management actions
-        if action in [
-            "handle_action_authorize_member",
-            "handle_action_notifications",
-            "handle_action_switch_account",
-        ]:
-            return self._handle_account_action(action)
+            # Account management actions
+            if action in [
+                "handle_action_authorize_member",
+                "handle_action_notifications",
+                "handle_action_switch_account",
+            ]:
+                return self._handle_account_action(action)
 
-        return self.auth_handler.handle_default_action()
+            return self.auth_handler.handle_default_action()
 
-    def _handle_auth_action(self, action: str) -> WhatsAppMessage:
-        """Handle authentication and menu actions
+        except Exception as e:
+            logger.error(f"Error handling action {action}: {str(e)}")
+            return self.auth_handler.handle_default_action()
+
+    def _handle_auth_action(self, action: str, login: bool = False) -> WhatsAppMessage:
+        """Handle authentication and menu actions with proper state transitions
 
         Args:
             action: Action to handle
+            login: Whether to force login refresh
 
         Returns:
             WhatsAppMessage: Response message
         """
-        handler_map = {
-            "handle_action_register": self.auth_handler.handle_action_register,
-            "handle_action_menu": self.auth_handler.handle_action_menu,
-        }
-        return handler_map.get(action, self.auth_handler.handle_default_action)()
+        try:
+            if action == "handle_action_menu":
+                return self.auth_handler.handle_action_menu(login=login)
+            elif action == "handle_action_register":
+                return self.auth_handler.handle_action_register()
+            return self.auth_handler.handle_default_action()
+        except Exception as e:
+            logger.error(f"Error handling auth action {action}: {str(e)}")
+            return self.auth_handler.handle_default_action()
 
     def _handle_credex_action(self, action: str) -> WhatsAppMessage:
-        """Handle credex-related actions
+        """Handle credex-related actions with proper state validation
 
         Args:
             action: Action to handle
@@ -172,18 +283,20 @@ class WhatsAppActionHandler:
         Returns:
             WhatsAppMessage: Response message
         """
-        handler_map = {
-            "handle_action_offer_credex": self.credex_handler.handle_action_offer_credex,
-            "handle_action_pending_offers_in": self.credex_handler.handle_default_action,
-            "handle_action_pending_offers_out": self.credex_handler.handle_default_action,
-            "handle_action_transactions": self.credex_handler.handle_default_action,
-        }
-        return handler_map.get(action, self.credex_handler.handle_default_action)()
+        try:
+            handler_map = {
+                "handle_action_offer_credex": self.credex_handler.handle_action_offer_credex,
+                "handle_action_pending_offers_in": self.credex_handler.handle_default_action,
+                "handle_action_pending_offers_out": self.credex_handler.handle_default_action,
+                "handle_action_transactions": self.credex_handler.handle_default_action,
+            }
+            return handler_map.get(action, self.credex_handler.handle_default_action)()
+        except Exception as e:
+            logger.error(f"Error handling credex action {action}: {str(e)}")
+            return self.credex_handler.handle_default_action()
 
     def _handle_account_action(self, action: str) -> WhatsAppMessage:
-        """Handle account management actions
-
-        Args:
+        """Handle account management actions with proper state validation
 
         Args:
             action: Action to handle
@@ -191,10 +304,13 @@ class WhatsAppActionHandler:
         Returns:
             WhatsAppMessage: Response message
         """
-        handler_map = {
-            "handle_action_offer_credex": self.credex_handler.handle_action_offer_credex,
-            "handle_action_pending_offers_in": self.credex_handler.handle_default_action,
-            "handle_action_pending_offers_out": self.credex_handler.handle_default_action,
-            "handle_action_transactions": self.credex_handler.handle_default_action,
-        }
-        return handler_map.get(action, self.credex_handler.handle_default_action)()
+        try:
+            handler_map = {
+                "handle_action_authorize_member": self.account_handler.handle_action_authorize_member,
+                "handle_action_notifications": self.account_handler.handle_action_notifications,
+                "handle_action_switch_account": self.account_handler.handle_action_switch_account,
+            }
+            return handler_map.get(action, self.account_handler.handle_default_action)()
+        except Exception as e:
+            logger.error(f"Error handling account action {action}: {str(e)}")
+            return self.account_handler.handle_default_action()

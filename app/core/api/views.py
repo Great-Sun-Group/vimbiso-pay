@@ -88,17 +88,26 @@ class CredexCloudApiWebhook(APIView):
 
                 elif message_type == "interactive":
                     if message.get("interactive"):
-                        if message["interactive"]["type"] == "button_reply":
-                            payload["body"] = message["interactive"]["button_reply"][
-                                "id"
-                            ]
-                        elif message["interactive"].get("type") == "nfm_reply":
+                        interactive_type = message["interactive"]["type"]
+                        if interactive_type == "button_reply":
+                            payload["body"] = message["interactive"]["button_reply"]["id"]
+                        elif interactive_type == "nfm_reply":
                             message_type = "nfm_reply"
                             payload["body"] = json.loads(
                                 message["interactive"]["nfm_reply"]["response_json"]
                             )
-                        else:
+                        elif interactive_type == "flow":
+                            # Handle flow type messages
+                            action = message["interactive"]["action"]
+                            if action["name"] == "flow":
+                                payload["body"] = action["parameters"]["flow_action_payload"]["screen"]
+                        elif interactive_type == "list_reply":
                             payload["body"] = message["interactive"]["list_reply"]["id"]
+                        else:
+                            logger.warning(f"Unknown interactive type: {interactive_type}")
+                            return JsonResponse(
+                                {"message": "received"}, status=status.HTTP_200_OK
+                            )
                     else:
                         return JsonResponse(
                             {"message": "received"}, status=status.HTTP_200_OK

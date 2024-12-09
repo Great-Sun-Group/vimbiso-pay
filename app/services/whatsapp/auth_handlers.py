@@ -1,17 +1,21 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 from .base_handler import BaseActionHandler
 from .forms import registration_form
 from .screens import HOME_1, HOME_2, BALANCE, UNSERCURED_BALANCES
 from .types import WhatsAppMessage
 from api.serializers.members import MemberDetailsSerializer
+from services.state.service import StateStage
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AuthActionHandler(BaseActionHandler):
     """Handler for authentication and menu-related actions"""
 
     def handle_action_register(self, register: bool = False) -> WhatsAppMessage:
-        """Handle user registration flow
+        """Handle user registration flow with proper state management
 
         Args:
             register: Whether this is a new registration
@@ -19,77 +23,133 @@ class AuthActionHandler(BaseActionHandler):
         Returns:
             WhatsAppMessage: Registration form or menu response
         """
-        if register:
-            return registration_form(
-                self.service.user.mobile_number,
-                "*Welcome To Credex!*\n\nIt looks like you're new here. Let's get you \nset up.",
-            )
-
-        if self.service.message_type == "nfm_reply":
-            payload = {
-                "first_name": self.service.body.get("firstName"),
-                "last_name": self.service.body.get("lastName"),
-                "phone_number": self.service.user.mobile_number,
-            }
-            serializer = MemberDetailsSerializer(data=payload)
-            if serializer.is_valid():
-                successful, message = self.service.credex_service.register_member(
-                    serializer.validated_data
+        try:
+            if register:
+                # Update state to registration flow
+                self.service.state.update_state(
+                    user_id=self.service.user,
+                    new_state={"registration_started": True},
+                    stage=StateStage.AUTH.value,
+                    update_from="registration_start",
+                    option="registration"
                 )
-                if successful:
-                    self.service.state.update_state(
-                        self.service.current_state,
-                        stage="handle_action_menu",
-                        update_from="handle_action_menu",
-                        option="handle_action_menu",
-                    )
-                    return self.handle_action_menu(message=f"\n{message}\n\n")
-                else:
-                    return self.get_response_template(message)
+                return registration_form(
+                    self.service.user.mobile_number,
+                    "*Welcome To Credex!*\n\nIt looks like you're new here. Let's get you \nset up.",
+                )
 
-        return self.handle_default_action()
+            if self.service.message_type == "nfm_reply":
+                payload = {
+                    "first_name": self.service.body.get("firstName"),
+                    "last_name": self.service.body.get("lastName"),
+                    "phone_number": self.service.user.mobile_number,
+                }
+                serializer = MemberDetailsSerializer(data=payload)
+                if serializer.is_valid():
+                    successful, message = self.service.credex_service.register_member(
+                        serializer.validated_data
+                    )
+                    if successful:
+                        # Update state after successful registration
+                        self.service.state.update_state(
+                            user_id=self.service.user,
+                            new_state={"registration_complete": True},
+                            stage=StateStage.MENU.value,
+                            update_from="registration_complete",
+                            option="handle_action_menu"
+                        )
+                        return self.handle_action_menu(message=f"\n{message}\n\n")
+                    else:
+                        return self.get_response_template(message)
+
+            return self.handle_default_action()
+        except Exception as e:
+            logger.error(f"Error in registration flow: {str(e)}")
+            return self.get_response_template("Registration failed. Please try again.")
+
+    def _attempt_login(self) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        """Attempt to login and get dashboard data
+
+        Returns:
+            Tuple[bool, str, Optional[Dict]]: Success flag, message, and dashboard data
+        """
+        try:
+            # Try to login
+            success, login_msg = self.service.credex_service._auth.login(
+                self.service.user.mobile_number
+            )
+            if not success:
+                return False, login_msg, None
+
+            # Get dashboard data
+            success, data = self.service.credex_service._member.get_dashboard(
+                self.service.user.mobile_number
+            )
+            if not success:
+                return False, data.get("message", "Failed to load profile"), None
+
+            return True, "Success", data
+        except Exception as e:
+            logger.error(f"Login attempt failed: {str(e)}")
+            return False, str(e), None
 
     def handle_action_menu(self, message: Optional[str] = None, login: bool = False) -> WhatsAppMessage:
-        """Handle main menu display and navigation
+        """Handle main menu display and navigation with proper state management
 
         Args:
             message: Optional message to display
-            login: Whether this is after a login
+            login: Whether to force login refresh
 
         Returns:
             WhatsAppMessage: Menu response
         """
-        user = self.service.user
-        current_state = user.state.get_state(user)
+        try:
+            user = self.service.user
 
-        # Initialize profile if needed
-        if not current_state.get("profile") or login:
-            # Try to login - this will set the JWT token if successful
-            success, login_msg = self.service.credex_service._auth.login(user.mobile_number)
-            if not success:
-                if "new user" in login_msg.lower() or "new here" in login_msg.lower():
-                    return self.handle_action_register(register=True)
-                return self.get_response_template(login_msg)
+            # Always get fresh data when login=True or no profile exists
+            if login or not self.service.current_state.get("profile"):
+                success, msg, data = self._attempt_login()
+                if not success:
+                    if any(phrase in msg.lower() for phrase in ["new user", "new here"]):
+                        return self.handle_action_register(register=True)
+                    return self.get_response_template(msg)
 
-            # Get dashboard data using the token that was just set
-            success, data = self.service.credex_service._member.get_dashboard(user.mobile_number)
-            if not success:
-                return self.get_response_template(data.get("message", "Failed to load profile"))
+                # Update state with fresh dashboard data
+                new_state = {
+                    "profile": data,
+                    "last_refresh": True
+                }
+                self.service.state.update_state(
+                    user_id=user,
+                    new_state=new_state,
+                    stage=StateStage.MENU.value,
+                    update_from="menu_refresh",
+                    option="handle_action_menu"
+                )
 
-            # Update state with dashboard data
-            current_state["profile"] = data
-            self.service.state.update_state(
-                state=current_state,
-                stage="handle_action_menu",
-                update_from="handle_action_menu",
-                option="handle_action_menu"
-            )
+            # Get selected account
+            selected_account = self._get_selected_account()
+            if isinstance(selected_account, WhatsAppMessage):
+                return selected_account
 
-        # Get selected account
-        selected_account = current_state.get("current_account")
+            # Build and return menu
+            return self._build_menu_response(selected_account, message)
 
-        if not selected_account:
-            try:
+        except Exception as e:
+            logger.error(f"Error handling menu action: {str(e)}")
+            return self.get_response_template("Failed to load menu. Please try again.")
+
+    def _get_selected_account(self) -> Any:
+        """Get selected account with proper error handling
+
+        Returns:
+            Union[Dict, WhatsAppMessage]: Selected account or error message
+        """
+        try:
+            current_state = self.service.current_state
+            selected_account = current_state.get("current_account")
+
+            if not selected_account:
                 accounts = current_state["profile"]["data"]["dashboard"]["accounts"]
                 if not accounts:
                     return self.get_response_template("No accounts found. Please try again later.")
@@ -97,21 +157,41 @@ class AuthActionHandler(BaseActionHandler):
                 # Find personal account
                 for account in accounts:
                     if (account.get("success") and
-                            account["data"].get("accountHandle") == user.mobile_number):
+                            account["data"].get("accountHandle") == self.service.user.mobile_number):
                         selected_account = account
+                        # Update state with selected account
                         current_state["current_account"] = selected_account
-                        user.state.update_state(
-                            state=current_state,
-                            stage="handle_action_menu",
-                            update_from="handle_action_menu",
-                            option="handle_action_menu",
+                        self.service.state.update_state(
+                            user_id=self.service.user,
+                            new_state=current_state,
+                            stage=StateStage.MENU.value,
+                            update_from="account_select",
+                            option="handle_action_menu"
                         )
                         break
                 else:
                     return self.get_response_template("Personal account not found. Please try again later.")
-            except (KeyError, IndexError):
-                return self.get_response_template("No accounts found. Please try again later.")
 
+            return selected_account
+
+        except (KeyError, IndexError) as e:
+            logger.error(f"Error getting selected account: {str(e)}")
+            return self.get_response_template("Error loading account information. Please try again.")
+
+    def _build_menu_response(
+        self,
+        selected_account: Dict[str, Any],
+        message: Optional[str] = None
+    ) -> WhatsAppMessage:
+        """Build menu response with proper error handling
+
+        Args:
+            selected_account: Selected account data
+            message: Optional message to display
+
+        Returns:
+            WhatsAppMessage: Menu response
+        """
         try:
             # Get pending offers counts
             pending_in = len(selected_account["data"]["pendingInData"].get("data", []))
@@ -120,13 +200,11 @@ class AuthActionHandler(BaseActionHandler):
 
             # Format balances
             balances = ""
-            secured = ""
             balance_data = selected_account["data"]["balanceData"]["data"]
             is_owned_account = selected_account["data"].get("isOwnedAccount")
 
             for bal in balance_data["securedNetBalancesByDenom"]:
                 balances += f"- {bal}\n"
-                secured += f" *{bal}* \n"
 
             # Build menu response
             return {
@@ -157,7 +235,7 @@ class AuthActionHandler(BaseActionHandler):
                                         ]["netPayRec"],
                                     )
                                     if pending_in > 0
-                                    else f"Free tier remaining daily spend limit\n    *{current_state['profile'].get('remainingAvailableUSD', '0.00')} USD*\n{pending}\n"
+                                    else f"Free tier remaining daily spend limit\n    *{self.service.current_state['profile'].get('remainingAvailableUSD', '0.00')} USD*\n{pending}\n"
                                 ),
                                 netCredexAssetsInDefaultDenom=balance_data[
                                     "netCredexAssetsInDefaultDenom"
@@ -170,7 +248,7 @@ class AuthActionHandler(BaseActionHandler):
                 },
             }
         except Exception as e:
-            print(f"Error building menu: {str(e)}")
+            logger.error(f"Error building menu response: {str(e)}")
             return self.get_response_template("Failed to load menu. Please try again later.")
 
     def _get_menu_actions(
@@ -214,6 +292,18 @@ class AuthActionHandler(BaseActionHandler):
         }
 
     def handle_action_select_profile(self) -> WhatsAppMessage:
-        """Handle profile selection"""
-        # Implementation for selecting a profile
-        return self.get_response_template("Profile selection not implemented")
+        """Handle profile selection with proper state management"""
+        try:
+            # Update state for profile selection
+            self.service.state.update_state(
+                user_id=self.service.user,
+                new_state={"selecting_profile": True},
+                stage=StateStage.ACCOUNT.value,
+                update_from="profile_select",
+                option="profile_selection"
+            )
+            # Implementation for selecting a profile
+            return self.get_response_template("Profile selection not implemented")
+        except Exception as e:
+            logger.error(f"Error in profile selection: {str(e)}")
+            return self.get_response_template("Profile selection failed. Please try again.")

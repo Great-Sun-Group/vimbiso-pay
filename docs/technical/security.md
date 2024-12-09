@@ -1,239 +1,133 @@
-# Security Documentation
+# Security
 
 ## Overview
 
-VimbisoPay implements multiple layers of security to protect user data, ensure secure communications, and maintain system integrity. This document outlines the security measures implemented across different components of the system.
+VimbisoPay implements multi-layered security for:
+- WhatsApp communication
+- API integrations
+- User data protection
+- System integrity
 
-## Authentication & Authorization
+## Authentication
 
-### JWT Authentication
+### JWT Tokens
 ```python
 headers = {
-    "Content-Type": "application/json",
-    "x-client-api-key": config("CLIENT_API_KEY"),
-    "Authorization": f"Bearer {jwt_token}"
+    "Authorization": f"Bearer {jwt_token}",
+    "x-client-api-key": config("CLIENT_API_KEY")
 }
 ```
 
-Key features:
-- JWT tokens for API authentication
-- 5-minute token expiration
-- Automatic token refresh
-- Secure token storage in Redis
+Features:
+- 5-minute expiration
+- Automatic refresh
+- Redis storage
+- Session binding
 
-### Session Management
+### WhatsApp Verification
 ```python
-# Redis session storage with timeout
-cache.set(f"{mobile_number}_jwt_token", jwt_token, timeout=60 * 5)
-cache.set(f"{mobile_number}_stage", stage, timeout=60 * 5)
+def validate_webhook(request):
+    signature = request.headers.get("X-Hub-Signature-256")
+    if not verify_signature(signature, request.body):
+        raise SecurityException("Invalid signature")
 ```
 
-Features:
+## Data Protection
+
+### State Management
+- User state isolation
 - 5-minute session timeout
-- Redis-based session storage
-- Secure state management
-- Cross-device session handling
+- Secure transitions
+- Automatic cleanup
+
+### Sensitive Data
+- Data minimization
+- TLS encryption
+- Secure storage
+- No sensitive logs
 
 ## API Security
 
 ### Request Validation
-1. **Headers**
-   - Content-Type validation
-   - API key verification
-   - JWT token validation
-
-2. **Input Sanitization**
-   ```python
-   # Phone number validation
-   if not validate_phone_number(phone):
-       raise InvalidInputException("Invalid phone number format")
-
-   # Amount validation
-   if not validate_amount(amount):
-       raise InvalidInputException("Invalid amount format")
-   ```
-
-3. **Rate Limiting**
-   - 100 requests/day for anonymous users
-   - 1000 requests/day for authenticated users
-   - Per-user rate limiting
-
-### Response Security
-1. **Headers**
-   ```python
-   response.headers.update({
-       'X-Content-Type-Options': 'nosniff',
-       'X-Frame-Options': 'DENY',
-       'X-XSS-Protection': '1; mode=block'
-   })
-   ```
-
-2. **Error Handling**
-   ```python
-   # Sanitized error responses
-   return {
-       "error": sanitize_error_message(error),
-       "status": "error",
-       "code": error_code
-   }
-   ```
-
-## Data Protection
-
-### Sensitive Data Handling
-1. **Data Minimization**
-   - Only essential data stored
-   - Automatic data cleanup
-   - No sensitive data in logs
-
-2. **Data Encryption**
-   - TLS for all communications
-   - Encrypted Redis storage
-   - Secure environment variables
-
-### State Protection
 ```python
-class CachedUserState:
-    def __init__(self, user):
-        self.state = cache.get(f"{user.mobile_number}", {})
-        self.jwt_token = cache.get(f"{user.mobile_number}_jwt_token")
+# Input validation
+validate_phone_number(phone)
+validate_amount(amount)
+validate_handle(handle)
+
+# Headers
+validate_content_type(headers)
+validate_api_key(headers)
+validate_token(headers)
 ```
 
-Features:
-- Isolated user states
-- Secure state transitions
-- Automatic state cleanup
-- Session binding
+### Rate Limiting
+- 100 requests/day anonymous
+- 1000 requests/day authenticated
+- Per-user tracking
 
-## WhatsApp Integration Security
+## Error Handling
 
-### Message Validation
+### Secure Responses
 ```python
-def validate_webhook(request):
-    # Verify WhatsApp signature
-    signature = request.headers.get("X-Hub-Signature-256")
-    if not verify_signature(signature, request.body):
-        raise SecurityException("Invalid webhook signature")
-```
-
-### Mock Testing Security
-```python
-headers = {
-    "Content-Type": "application/json",
-    "X-Mock-Testing": "true",
-    "Accept": "application/json"
+{
+    "error": "Error description",
+    "details": {
+        "field": "Error details"
+    }
 }
 ```
 
-Features:
-- Mock testing header required
-- Environment-specific validation
-- Debug mode restrictions
-
-## Environment Security
-
-### Configuration Management
+### Logging
 ```python
-# Environment variables
-DJANGO_ENV=production
-DEBUG=False
-ALLOWED_HOSTS=*.vimbisopay.africa
-DJANGO_SECRET=secure-secret-key
-```
-
-### Production Hardening
-1. **Django Settings**
-   ```python
-   # Security middleware
-   MIDDLEWARE = [
-       'django.middleware.security.SecurityMiddleware',
-       'django.middleware.csrf.CsrfViewMiddleware',
-   ]
-
-   # Security settings
-   SECURE_SSL_REDIRECT = True
-   SESSION_COOKIE_SECURE = True
-   CSRF_COOKIE_SECURE = True
-   SECURE_BROWSER_XSS_FILTER = True
-   ```
-
-2. **Server Configuration**
-   - HTTPS enforcement
-   - Secure headers
-   - CORS configuration
-   - Rate limiting
-
-## Error Handling & Logging
-
-### Secure Logging
-```python
-logger.info(f"User action: {sanitize_log_message(action)}")
+logger.info(f"Action: {sanitize_log_message(action)}")
 logger.error(f"Error: {sanitize_error_message(error)}")
 ```
 
-Features:
-- No sensitive data in logs
-- Sanitized error messages
-- Structured logging format
-- Log level control
+## Environment Security
 
-### Error Responses
+### Configuration
 ```python
-def handle_error(e):
-    if isinstance(e, SecurityException):
-        # Log security incident
-        notify_security_team(e)
-    return sanitized_error_response(e)
+DJANGO_ENV=production
+DEBUG=False
+ALLOWED_HOSTS=*.vimbisopay.africa
 ```
 
-## Security Best Practices
+### Production Settings
+```python
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+]
 
-### 1. Authentication
-- Enforce strong JWT configuration
-- Implement proper token management
-- Use secure session handling
-- Validate all authentication attempts
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+```
 
-### 2. Data Protection
-- Minimize data collection
-- Implement proper encryption
-- Secure data in transit and at rest
-- Regular data cleanup
+## Best Practices
 
-### 3. Input Validation
-- Validate all user input
-- Sanitize data before processing
-- Implement proper error handling
-- Use parameterized queries
+1. **Authentication**
+   - Strong JWT config
+   - Secure sessions
+   - Token validation
 
-### 4. API Security
-- Use proper authentication
-- Implement rate limiting
-- Validate request headers
-- Secure error responses
+2. **Data Protection**
+   - Minimal collection
+   - Proper encryption
+   - Regular cleanup
 
-### 5. Environment Security
-- Use secure configuration
-- Implement proper logging
-- Regular security updates
-- Environment isolation
+3. **Input Validation**
+   - Sanitize all input
+   - Validate formats
+   - Secure responses
 
-## Security Monitoring
+4. **Monitoring**
+   - Security logging
+   - Error tracking
+   - Access monitoring
+   - Regular audits
 
-### 1. Logging
-- Security event logging
-- Error monitoring
-- Access logging
-- Rate limit tracking
-
-### 2. Alerts
-- Security incident alerts
-- Rate limit violations
-- Authentication failures
-- API errors
-
-### 3. Auditing
-- Regular security audits
-- Code reviews
-- Dependency checks
-- Configuration validation
+For more details on:
+- WhatsApp security: [WhatsApp](whatsapp.md)
+- API security: [API Integration](api-integration.md)
+- Testing security: [Testing](testing.md)

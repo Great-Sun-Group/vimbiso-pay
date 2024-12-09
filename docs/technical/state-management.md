@@ -2,61 +2,92 @@
 
 ## Overview
 
-VimbisoPay implements a Redis-based state management service to handle:
-- User context and conversation state
-- Session management with timeouts
-- JWT token management
-- Conversation flow control
+VimbisoPay uses Redis-based state management to handle WhatsApp conversations and user sessions. This enables:
+- Stateful conversations with context
+- Multi-step form handling
+- Menu navigation tracking
+- Session timeouts
+- Token management
 
 ## Architecture
 
-State management is implemented as a dedicated service:
 ```
 app/services/state/
-├── interface.py    # Service interface definition
-├── service.py      # Main implementation
-├── exceptions.py   # Custom exceptions
-└── config.py      # Redis configuration
+├── interface.py    # Service interface
+├── service.py     # Implementation
+├── exceptions.py  # Error handling
+└── config.py      # Configuration
 ```
 
-## Core Components
+## Core Features
 
-### State Service
-- Provides interface for state operations (get, set, update, delete)
-- Handles Redis interactions and timeouts
-- Manages session expiry and cleanup
+### Conversation State
+```python
+{
+    "stage": "handle_action_menu",
+    "option": "handle_action_offer_credex",
+    "direction": "OUT",
+    "profile": {
+        "member": {...},
+        "accounts": [...]
+    },
+    "current_account": {...}
+}
+```
 
-### User State
-- Tracks conversation stage and direction
-- Stores user profile and preferences
-- Manages authentication tokens
-- Handles menu navigation state
+### State Flow
+1. **Initial Contact**
+   - Create new state
+   - Set default menu stage
+   - Initialize user context
 
-## Redis Structure
+2. **Menu Navigation**
+   - Track selected options
+   - Store menu context
+   - Handle back navigation
 
-- User-specific keys with 5-minute timeout
-- Stores conversation state and context
-- Manages JWT tokens
-- Handles session data
+3. **Form Handling**
+   - Store partial submissions
+   - Validate inputs
+   - Track completion
 
-## Service Integration
+4. **Transaction Context**
+   - Store offer details
+   - Track confirmation steps
+   - Handle timeouts
 
-The state service integrates with:
-- WhatsApp service for conversation handling
-- Transaction service for operation context
-- Account service for user data
-- Core messaging service for communication
+## Redis Integration
 
-## Error Handling
+### Key Structure
+- User-specific: `user:{phone_number}:state`
+- Session-based: `session:{id}:data`
+- Token storage: `token:{phone_number}`
 
-- Automatic session cleanup on timeout
-- State validation on updates
-- Recovery mechanisms for failed operations
-- Comprehensive error logging
+### Timeouts
+- Session: 5 minutes
+- Tokens: 30 minutes
+- Forms: 10 minutes
+
+## Error Recovery
+
+1. **Session Expiry**
+   - Clear expired state
+   - Return to menu
+   - Preserve critical data
+
+2. **Failed Operations**
+   - State rollback
+   - Error logging
+   - User notification
 
 ## Security
 
-- 5-minute session timeouts
+- Automatic session cleanup
 - Secure token storage
-- State isolation per user
 - Input validation
+- State isolation
+
+For more details on:
+- WhatsApp integration: [WhatsApp](whatsapp.md)
+- API integration: [API Integration](api-integration.md)
+- Redis configuration: [Redis Management](../redis-memory-management.md)

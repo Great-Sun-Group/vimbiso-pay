@@ -7,6 +7,8 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
+from whatsapp_utils import extract_message_text
+
 # Set up detailed logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -26,24 +28,6 @@ class ReuseAddressHTTPServer(socketserver.TCPServer):
 
 
 class MockWhatsAppHandler(SimpleHTTPRequestHandler):
-    def format_json_response(self, response_text):
-        """Ensure response is properly formatted JSON."""
-        try:
-            # Parse the response text
-            data = json.loads(response_text)
-
-            # If it's a WhatsApp response wrapped in "response" key
-            if 'response' in data:
-                whatsapp_response = data['response']
-                # Re-encode with proper formatting
-                return json.dumps(whatsapp_response, indent=2, ensure_ascii=False, separators=(',', ': '))
-
-            # Otherwise return the original data formatted
-            return json.dumps(data, indent=2, ensure_ascii=False, separators=(',', ': '))
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error: {str(e)}")
-            return response_text
-
     def do_POST(self):
         try:
             # Parse URL to get target from query params
@@ -62,20 +46,14 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 message_data = payload["entry"][0]["changes"][0]["value"]
                 message = message_data["messages"][0]
                 contact = message_data["contacts"][0]
-                message_type = message["type"]
-                if message_type == "text":
-                    text = message["text"]["body"]
-                elif message_type == "button":
-                    text = message["button"]["payload"]
-                elif message_type == "interactive":
-                    text = message["interactive"]["button_reply"]["id"]
-                else:
-                    text = "Unsupported message type"
+
+                # Extract message text using shared utility
+                text = extract_message_text(message)
 
                 logger.info(f"\nReceived message: {text}")
                 logger.info(f"From: {contact['profile']['name']}")
                 logger.info(f"Phone: {contact['wa_id']}")
-                logger.info(f"Type: {message_type}")
+                logger.info(f"Type: {message['type']}")
                 logger.info(f"Target: {target}\n")
 
                 try:
@@ -119,9 +97,15 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                         self.send_header("Content-type", "application/json")
                         self.end_headers()
 
-                        # Format the response
-                        formatted_response = self.format_json_response(chatbot_response.text)
-                        self.wfile.write(formatted_response.encode('utf-8'))
+                        # Parse the response and send it back
+                        response_data = json.loads(chatbot_response.text)
+                        if isinstance(response_data, dict) and 'response' in response_data:
+                            # If response is already wrapped, send it as is
+                            self.wfile.write(chatbot_response.text.encode('utf-8'))
+                        else:
+                            # If response is not wrapped, wrap it
+                            wrapped_response = {"response": response_data}
+                            self.wfile.write(json.dumps(wrapped_response).encode('utf-8'))
                         return
 
                     except requests.exceptions.Timeout:

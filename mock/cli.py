@@ -3,88 +3,60 @@ import argparse
 import json
 import requests
 import sys
-from datetime import datetime
 from urllib.parse import urlencode
 
-
-def create_whatsapp_payload(
-    phone_number, username, message_type, message_text, phone_number_id, target
-):
-    """Create a WhatsApp-style payload."""
-    payload = {
-        "entry": [
-            {
-                "changes": [
-                    {
-                        "value": {
-                            "metadata": {
-                                "phone_number_id": phone_number_id,
-                                "display_phone_number": "15550123456",
-                            },
-                            "contacts": [
-                                {"wa_id": phone_number, "profile": {"name": username}}
-                            ],
-                            "messages": [
-                                {
-                                    "type": message_type,
-                                    "timestamp": int(datetime.now().timestamp()),
-                                    **get_message_content(message_type, message_text),
-                                }
-                            ],
-                        }
-                    }
-                ]
-            }
-        ]
-    }
-    print("\nSending message:")
-    print(f"From: {username} ({phone_number})")
-    print(f"Message: {message_text}")
-    print(f"Type: {message_type}")
-    print(f"Phone Number ID: {phone_number_id}")
-    print(f"Target: {target}\n")
-    return payload
+from whatsapp_utils import create_whatsapp_payload, format_json_response
 
 
-def get_message_content(message_type, message_text):
-    """Get the appropriate message content based on type."""
-    if message_type == "text":
-        return {"text": {"body": message_text}}
-    elif message_type == "button":
-        return {"button": {"payload": message_text}}
-    elif message_type == "interactive":
-        return {
-            "interactive": {
-                "type": "button_reply",
-                "button_reply": {"id": message_text},
-            }
-        }
+def format_display_text(response):
+    """Format response for display.
+
+    Args:
+        response: Response object from format_json_response
+
+    Returns:
+        str: Formatted text for display
+    """
+    if isinstance(response, str):
+        return response
+
+    # Format based on message type
+    if response.get("type") == "interactive":
+        interactive = response.get("interactive", {})
+        text_parts = []
+
+        # Add body text if present
+        if interactive.get("body", {}).get("text"):
+            text_parts.append(interactive["body"]["text"])
+
+        # Add button text if present
+        if interactive.get("action", {}).get("button"):
+            text_parts.append(f"\n[Button: {interactive['action']['button']}]")
+
+        # Add options if present
+        if interactive.get("action", {}).get("sections"):
+            for section in interactive["action"]["sections"]:
+                if section.get("title"):
+                    text_parts.append(f"\n{section['title']}:")
+                for row in section.get("rows", []):
+                    text_parts.append(f"- {row['title']}")
+
+        return "\n".join(text_parts)
+    elif response.get("type") == "text":
+        return response.get("text", {}).get("body", "")
     else:
-        print(f"Unsupported message type: {message_type}")
-        sys.exit(1)
-
-
-def format_json_response(response_text):
-    """Format JSON response with proper indentation and commas."""
-    try:
-        # Parse the response text as JSON
-        data = json.loads(response_text)
-        # Re-encode with proper formatting
-        return json.dumps(data, indent=2, ensure_ascii=False, separators=(',', ': '))
-    except json.JSONDecodeError:
-        # If parsing fails, return the original text
-        return response_text
+        return json.dumps(response, indent=2, ensure_ascii=False)
 
 
 def send_message(args):
     """Send a message to the mock WhatsApp server."""
     payload = create_whatsapp_payload(
-        args.phone, args.username, args.type, args.message, args.phone_number_id, args.target
+        args.phone, args.username, args.type, args.message, args.phone_number_id
     )
 
     # Add target to URL query params
     params = {'target': args.target}
-    url = f"http://localhost:{args.port}/bot/webhook?{urlencode(params)}"  # Updated endpoint path
+    url = f"http://localhost:{args.port}/bot/webhook?{urlencode(params)}"
 
     try:
         response = requests.post(
@@ -100,9 +72,9 @@ def send_message(args):
         response.raise_for_status()
 
         print("Server Response:")
-        # Format the response JSON before printing
         formatted_response = format_json_response(response.text)
-        print(formatted_response)
+        display_text = format_display_text(formatted_response)
+        print(display_text)
 
     except requests.exceptions.RequestException as e:
         print(f"Error sending message: {e}")
@@ -113,35 +85,65 @@ def send_message(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Mock WhatsApp CLI Client - Send test messages to local or staging chatbot"
+        description="Mock WhatsApp CLI Client - Send test messages to local or staging chatbot",
+        epilog="""
+Examples:
+  # Text message
+  %(prog)s "Hello, world!"
+
+  # Menu option selection
+  %(prog)s --type interactive "handleactionoffercredex"
+
+  # Flow navigation
+  %(prog)s --type interactive "flow:MAKE_SECURE_OFFER"
+
+  # Button response
+  %(prog)s --type button "accept_offer_123"
+        """
     )
     parser.add_argument(
-        "--phone", default="1234567890", help="Phone number (default: 1234567890)"
+        "--phone",
+        default="1234567890",
+        help="Phone number (default: 1234567890)"
     )
     parser.add_argument(
-        "--username", default="CLI User", help="Username (default: CLI User)"
+        "--username",
+        default="CLI User",
+        help="Username (default: CLI User)"
     )
     parser.add_argument(
         "--type",
         choices=["text", "button", "interactive"],
         default="text",
-        help="Message type (default: text)",
+        help="""Message type (default: text). For interactive messages:
+        - Menu options: Use the option ID directly (e.g., "handleactionoffercredex")
+        - Flow navigation: Use "flow:SCREEN_NAME" format
+        """
     )
     parser.add_argument(
-        "--port", type=int, default=8001, help="Server port (default: 8001)"
+        "--port",
+        type=int,
+        default=8001,
+        help="Server port (default: 8001)"
     )
     parser.add_argument(
         "--phone_number_id",
         default="123456789",
-        help="WhatsApp Phone Number ID (default: 123456789)",
+        help="WhatsApp Phone Number ID (default: 123456789)"
     )
     parser.add_argument(
         "--target",
         choices=["local", "staging"],
         default="local",
-        help="Target environment (default: local)",
+        help="Target environment (default: local)"
     )
-    parser.add_argument("message", help="Message to send")
+    parser.add_argument(
+        "message",
+        help="""Message to send. For interactive messages:
+        - Menu options: The option ID (e.g., "handleactionoffercredex")
+        - Flow navigation: "flow:SCREEN_NAME" (e.g., "flow:MAKE_SECURE_OFFER")
+        """
+    )
 
     args = parser.parse_args()
     send_message(args)

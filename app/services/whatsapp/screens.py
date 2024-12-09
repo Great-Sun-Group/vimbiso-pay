@@ -159,11 +159,17 @@ form.
 """
 
 OFFER_CREDEX = """
+> *💰 New Secured Credex*
 
- To issue a secured credex enter the
- details of the transfer into this form.
+Please fill out the following form to
+create a new secured credex offer.
 
- {message}
+You'll need to provide:
+- Amount and currency
+- Recipient's handle
+- Source account
+
+{message}
 """
 
 ACCOUNT_REGISTRATION_COMPLETE = """

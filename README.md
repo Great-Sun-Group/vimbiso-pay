@@ -8,10 +8,12 @@ A WhatsApp bot service that facilitates financial transactions through the [cred
 - [User Flows](docs/flows/user-flows.md) - Detailed guide to all user interactions and flows
 
 ### Technical Documentation
+- [WhatsApp Integration](docs/technical/whatsapp.md) - WhatsApp bot implementation
 - [API Integration](docs/technical/api-integration.md) - Integration with credex-core API
 - [State Management](docs/technical/state-management.md) - Conversation and session management
 - [Testing Guide](docs/technical/testing.md) - Testing infrastructure and tools
 - [Security](docs/technical/security.md) - Security measures and best practices
+- [Docker](docs/technical/docker.md) - Docker configuration and services
 - [Deployment](docs/deployment.md) - Deployment process and infrastructure
 - [Redis Management](docs/redis-memory-management.md) - Redis configuration and management
 
@@ -48,6 +50,15 @@ make prod-down
 
 ## Core Features
 
+### WhatsApp Interface
+- Interactive menus and buttons
+- Form-based data collection
+- Rich message formatting
+- State-based conversation flow
+- Time-aware greetings
+- Navigation commands
+- Custom message templates
+
 ### Financial Operations
 - Secured credex transactions with immediate settlement
 - Unsecured credex with configurable due dates
@@ -71,15 +82,6 @@ make prod-down
   - Offer handling
 - Comprehensive validation and error handling
 - Type-safe request/response handling
-
-### WhatsApp Interface
-- Interactive menus and buttons
-- Form-based data collection
-- Rich message formatting
-- State-based conversation flow
-- Time-aware greetings
-- Navigation commands
-- Custom message templates
 
 ### Security
 - JWT authentication

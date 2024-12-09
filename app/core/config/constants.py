@@ -43,19 +43,35 @@ class CachedUserState:
     def __init__(self, user) -> None:
         self.user = user
         print("USER", user)
-        # Initialize with defaults if not set
-        if not cache.get(f"{self.user.mobile_number}_direction"):
-            cache.set(f"{self.user.mobile_number}_direction", "OUT", timeout=60 * 5)
-        if not cache.get(f"{self.user.mobile_number}_stage"):
-            cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu", timeout=60 * 5)
-        if not cache.get(f"{self.user.mobile_number}"):
-            cache.set(f"{self.user.mobile_number}", {}, timeout=60 * 5)
 
+        # Get existing state values
+        existing_direction = cache.get(f"{self.user.mobile_number}_direction")
+        existing_stage = cache.get(f"{self.user.mobile_number}_stage")
+        existing_option = cache.get(f"{self.user.mobile_number}_option")
+        existing_state = cache.get(f"{self.user.mobile_number}")
+        self.jwt_token = cache.get(f"{self.user.mobile_number}_jwt_token")
+
+        # Initialize with defaults only if no state exists at all
+        if not any([existing_direction, existing_stage, existing_option, existing_state]):
+            cache.set(f"{self.user.mobile_number}_direction", "OUT", timeout=60 * 5)
+            cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu", timeout=60 * 5)
+            cache.set(f"{self.user.mobile_number}", {}, timeout=60 * 5)
+        else:
+            # Refresh expiry for existing values
+            if existing_direction:
+                cache.set(f"{self.user.mobile_number}_direction", existing_direction, timeout=60 * 5)
+            if existing_stage:
+                cache.set(f"{self.user.mobile_number}_stage", existing_stage, timeout=60 * 5)
+            if existing_option:
+                cache.set(f"{self.user.mobile_number}_option", existing_option, timeout=60 * 5)
+            if existing_state:
+                cache.set(f"{self.user.mobile_number}", existing_state, timeout=60 * 5)
+
+        # Load current values
         self.direction = cache.get(f"{self.user.mobile_number}_direction")
         self.stage = cache.get(f"{self.user.mobile_number}_stage")
         self.option = cache.get(f"{self.user.mobile_number}_option")
         self.state = cache.get(f"{self.user.mobile_number}")
-        self.jwt_token = cache.get(f"{self.user.mobile_number}_jwt_token")
 
     def update_state(
         self, state: dict, update_from, stage=None, option=None, direction=None
@@ -80,19 +96,35 @@ class CachedUserState:
         return self.state
 
     def set_jwt_token(self, jwt_token):
-        cache.set(f"{self.user.mobile_number}_jwt_token", jwt_token, timeout=60 * 5)
-        # print("SETTING JWT TOKEN", jwt_token)
-        self.jwt_token = cache.get(f"{self.user.mobile_number}_jwt_token")
+        if jwt_token:
+            cache.set(f"{self.user.mobile_number}_jwt_token", jwt_token, timeout=60 * 5)
+            self.jwt_token = jwt_token
 
     def reset_state(self):
-        state = cache.get(f"{self.user.mobile_number}", {})
-        state["state"] = {}
-        cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu")
+        """Reset all user state to defaults."""
+        # Save current JWT token
+        current_jwt = self.jwt_token
+
+        # Clear all existing state
+        cache.delete(f"{self.user.mobile_number}")
+        cache.delete(f"{self.user.mobile_number}_stage")
         cache.delete(f"{self.user.mobile_number}_option")
+        cache.delete(f"{self.user.mobile_number}_direction")
+
+        # Set default values with timeouts
         cache.set(f"{self.user.mobile_number}", {}, timeout=60 * 5)
-        self.state = cache.get(f"{self.user.mobile_number}")
-        self.stage = cache.get(f"{self.user.mobile_number}_stage")
-        self.option = cache.get(f"{self.user.mobile_number}_option")
+        cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu", timeout=60 * 5)
+        cache.set(f"{self.user.mobile_number}_direction", "OUT", timeout=60 * 5)
+
+        # Update instance variables
+        self.state = {}
+        self.stage = "handle_action_menu"
+        self.option = None
+        self.direction = "OUT"
+
+        # Restore JWT token if it exists
+        if current_jwt:
+            self.set_jwt_token(current_jwt)
 
 
 class CachedUser:
