@@ -184,14 +184,17 @@ class WhatsAppActionHandler:
         """Handle account management actions
 
         Args:
+
+        Args:
             action: Action to handle
 
         Returns:
             WhatsAppMessage: Response message
         """
         handler_map = {
-            "handle_action_authorize_member": self.account_handler.handle_action_authorize_member,
-            "handle_action_notifications": self.account_handler.handle_action_notifications,
-            "handle_action_switch_account": self.account_handler.handle_default_action,
+            "handle_action_offer_credex": self.credex_handler.handle_action_offer_credex,
+            "handle_action_pending_offers_in": self.credex_handler.handle_default_action,
+            "handle_action_pending_offers_out": self.credex_handler.handle_default_action,
+            "handle_action_transactions": self.credex_handler.handle_default_action,
         }
-        return handler_map.get(action, self.account_handler.handle_default_action)()
+        return handler_map.get(action, self.credex_handler.handle_default_action)()

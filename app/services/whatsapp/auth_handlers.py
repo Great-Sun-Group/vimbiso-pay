@@ -64,47 +64,53 @@ class AuthActionHandler(BaseActionHandler):
 
         # Initialize profile if needed
         if not current_state.get("profile") or login:
-            response = self.service.refresh(reset=True)
-            if response and "error" in str(response).lower():
-                self.service.state.update_state(
-                    self.service.current_state,
-                    stage="handle_action_register",
-                    update_from="handle_action_menu",
-                    option="handle_action_register",
-                )
-                return self.get_response_template(response)
+            # Try to login - this will set the JWT token if successful
+            success, login_msg = self.service.credex_service._auth.login(user.mobile_number)
+            if not success:
+                if "new user" in login_msg.lower() or "new here" in login_msg.lower():
+                    return self.handle_action_register(register=True)
+                return self.get_response_template(login_msg)
 
-            # Get updated state after refresh
-            current_state = user.state.get_state(user)
-            if not current_state.get("profile"):
-                # If still no profile, show registration form
-                return self.handle_action_register(register=True)
+            # Get dashboard data using the token that was just set
+            success, data = self.service.credex_service._member.get_dashboard(user.mobile_number)
+            if not success:
+                return self.get_response_template(data.get("message", "Failed to load profile"))
 
-        # Get member tier & selected account
-        member_tier = (
-            current_state.get("profile", {})
-            .get("memberDashboard", {})
-            .get("memberTier", {})
-            .get("low", 1)
-        )
+            # Update state with dashboard data
+            current_state["profile"] = data
+            self.service.state.update_state(
+                state=current_state,
+                stage="handle_action_menu",
+                update_from="handle_action_menu",
+                option="handle_action_menu"
+            )
+
+        # Get selected account
         selected_account = current_state.get("current_account")
-
-        if member_tier >= 2 and not selected_account:
-            return self.handle_action_select_profile()
 
         if not selected_account:
             try:
-                selected_account = current_state["profile"]["memberDashboard"]["accounts"][0]
-                current_state["current_account"] = selected_account
-                user.state.update_state(
-                    state=current_state,
-                    stage="handle_action_menu",
-                    update_from="handle_action_menu",
-                    option="handle_action_menu",
-                )
+                accounts = current_state["profile"]["data"]["dashboard"]["accounts"]
+                if not accounts:
+                    return self.get_response_template("No accounts found. Please try again later.")
+
+                # Find personal account
+                for account in accounts:
+                    if (account.get("success") and
+                            account["data"].get("accountHandle") == user.mobile_number):
+                        selected_account = account
+                        current_state["current_account"] = selected_account
+                        user.state.update_state(
+                            state=current_state,
+                            stage="handle_action_menu",
+                            update_from="handle_action_menu",
+                            option="handle_action_menu",
+                        )
+                        break
+                else:
+                    return self.get_response_template("Personal account not found. Please try again later.")
             except (KeyError, IndexError):
-                # If no accounts available, show registration form
-                return self.handle_action_register(register=True)
+                return self.get_response_template("No accounts found. Please try again later.")
 
         try:
             # Get pending offers counts
@@ -133,9 +139,7 @@ class AuthActionHandler(BaseActionHandler):
                     "body": {
                         "text": (HOME_2 if is_owned_account else HOME_1).format(
                             message=message if message else "",
-                            account=current_state.get("current_account", {}).get(
-                                "accountName", "Personal Account"
-                            ),
+                            account=selected_account["data"].get("accountName", "Personal Account"),
                             balance=BALANCE.format(
                                 securedNetBalancesByDenom=(
                                     balances if balances else "    $0.00\n"
@@ -152,38 +156,33 @@ class AuthActionHandler(BaseActionHandler):
                                             "unsecuredBalancesInDefaultDenom"
                                         ]["netPayRec"],
                                     )
-                                    if member_tier > 2
+                                    if pending_in > 0
                                     else f"Free tier remaining daily spend limit\n    *{current_state['profile'].get('remainingAvailableUSD', '0.00')} USD*\n{pending}\n"
                                 ),
                                 netCredexAssetsInDefaultDenom=balance_data[
                                     "netCredexAssetsInDefaultDenom"
                                 ],
                             ),
-                            handle=current_state["current_account"]["data"][
-                                "accountHandle"
-                            ],
+                            handle=selected_account["data"]["accountHandle"],
                         )
                     },
-                    "action": self._get_menu_actions(is_owned_account, member_tier, pending_in, pending_out),
+                    "action": self._get_menu_actions(is_owned_account, pending_in, pending_out),
                 },
             }
         except Exception as e:
-            # If any error occurs while building menu, show registration form
             print(f"Error building menu: {str(e)}")
-            return self.handle_action_register(register=True)
+            return self.get_response_template("Failed to load menu. Please try again later.")
 
     def _get_menu_actions(
         self,
         is_owned_account: bool,
-        member_tier: int,
         pending_in: int,
         pending_out: int
     ) -> Dict[str, Any]:
-        """Get menu actions based on account type and member tier
+        """Get menu actions based on account type
 
         Args:
             is_owned_account: Whether account is owned by user
-            member_tier: User's member tier
             pending_in: Count of pending incoming offers
             pending_out: Count of pending outgoing offers
 
@@ -208,22 +207,6 @@ class AuthActionHandler(BaseActionHandler):
                 "title": "📒 Review Transactions",
             },
         ]
-
-        if is_owned_account and member_tier > 2:
-            base_options.extend([
-                {
-                    "id": "handle_action_authorize_member",
-                    "title": "👥 Manage Members",
-                },
-                {
-                    "id": "handle_action_notifications",
-                    "title": "🛎️ Notifications",
-                },
-                {
-                    "id": "handle_action_switch_account",
-                    "title": "🏡 Member Dashboard",
-                },
-            ])
 
         return {
             "button": "🕹️ Options",
