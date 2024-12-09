@@ -83,9 +83,6 @@ Test the WhatsApp bot without real WhatsApp credentials:
 # Start all services including mock server
 make dev-up
 
-# Or start mock server separately
-make mockery
-
 # CLI testing (from host machine)
 ./mock/cli.py "Hello, world!"
 ./mock/cli.py --type button "button_1"
@@ -107,4 +104,4 @@ make diff <source_branch> <target_branch>
 
 ## License
 
-[License details here]
+Have at it.
