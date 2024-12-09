@@ -23,9 +23,14 @@ A WhatsApp bot service that facilitates financial transactions through the [cred
 make dev-build
 make dev-up
 
-# Access services
-- Application: http://localhost:8000
-- Mock WhatsApp: http://localhost:8001
+# Access services (from host machine)
+Application: http://localhost:8000
+Mock WhatsApp: http://localhost:8001
+
+# Note: Within Docker network, services communicate using:
+- App service: http://app:8000
+- Redis: redis://redis:6379
+- Mock WhatsApp: http://mock:8001
 
 # Stop services
 make dev-down
@@ -75,10 +80,13 @@ make prod-down
 Test the WhatsApp bot without real WhatsApp credentials:
 
 ```bash
-# Start mock interface
+# Start all services including mock server
+make dev-up
+
+# Or start mock server separately
 make mockery
 
-# CLI testing
+# CLI testing (from host machine)
 ./mock/cli.py "Hello, world!"
 ./mock/cli.py --type button "button_1"
 ```
