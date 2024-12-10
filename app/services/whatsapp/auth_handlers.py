@@ -39,7 +39,6 @@ class AuthActionHandler(BaseActionHandler):
                 )
                 return registration_form(
                     self.service.user.mobile_number,
-                    "*Welcome To Credex!*\n\nIt looks like you're new here. Let's get you \nset up.",
                 )
 
             if self.service.message_type == "nfm_reply":

@@ -66,18 +66,10 @@ CREDEX = """*💰 Credex*
 
 Type *'Menu'* to return to dashboard"""
 
-REGISTER = """*👤  Registration*
+REGISTER = """*👤  Welcome to VimbisoPay*
+~ Your portal to the credex accounting and payment ecosystem
 
-I'm VimbisoPay. I'm a WhatsApp
-chatbot. It's my job to connect
-you to the credex ecosystem.
-
-I'll show you around and you
-can message me to interact with
-your credex accounts.
-
-Would you like to become a
-member of the credex ecosystem?
+Once you've created your free account below, just message us at this number to manage your accounts and payments, and to be first in line for new features.
 {message}"""
 
 MORE_ABOUT_CREDEX = """*About Us*
