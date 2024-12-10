@@ -1,22 +1,13 @@
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from .exceptions import (
-    TransactionValidationError,
-    InvalidTransactionTypeError,
-    InvalidAccountError,
-    TransactionProcessingError,
-    InvalidTransactionCommandError,
-)
+from .exceptions import (InvalidAccountError, InvalidTransactionCommandError,
+                         InvalidTransactionTypeError,
+                         TransactionProcessingError,
+                         TransactionValidationError)
 from .interface import TransactionServiceInterface
-from .types import (
-    Transaction,
-    TransactionOffer,
-    TransactionResult,
-    TransactionStatus,
-    TransactionType,
-    Account,
-)
+from .types import (Account, Transaction, TransactionOffer, TransactionResult,
+                    TransactionStatus, TransactionType)
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +70,7 @@ class BaseTransactionService(TransactionServiceInterface):
 
         try:
             self._validate_member_ids(offer.authorizer_member_id, offer.issuer_member_id)
-            self._validate_amount(offer.amount, offer.currency)
+            self._validate_amount(offer.amount, offer.denomination)
             self._validate_transaction_type(offer.type)
 
             if offer.type == TransactionType.UNSECURED_CREDEX and not offer.due_date:
@@ -132,12 +123,12 @@ class BaseTransactionService(TransactionServiceInterface):
         if authorizer_id == issuer_id:
             raise InvalidAccountError("Authorizer and issuer cannot be the same")
 
-    def _validate_amount(self, amount: float, currency: str) -> None:
+    def _validate_amount(self, amount: float, denomination: str) -> None:
         """Validate transaction amount"""
         if amount <= 0:
             raise TransactionValidationError("Amount must be greater than 0")
-        if not currency:
-            raise TransactionValidationError("Currency is required")
+        if not denomination:
+            raise TransactionValidationError("Denomination is required")
 
     def _validate_transaction_type(self, type_: TransactionType) -> None:
         """Validate transaction type"""

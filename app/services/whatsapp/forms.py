@@ -1,4 +1,4 @@
-from .screens import REGISTER, OFFER_CREDEX
+from .screens import REGISTER
 from .types import WhatsAppMessage
 
 
@@ -60,27 +60,32 @@ def offer_credex(mobile_number: str, message: str) -> WhatsAppMessage:
         "type": "interactive",
         "interactive": {
             "type": "nfm",
-            "body": {"text": OFFER_CREDEX.format(message=message)},
+            "body": {
+                "text": """
+*🔄 New Secured Credex*
+
+Enter amount in USD (default) or specify another denomination:
+USD: United States Dollar (e.g. "100")
+ZWG: Gold (Zimbabwe Gold) (e.g. "ZWG 100")
+XAU: Gold (Troy Ounce) (e.g. "XAU 1")
+CAD: Canadian Dollar (e.g. "CAD 100")
+
+"""
+            },
             "action": {
                 "name": "credex_offer_form",
                 "parameters": {
                     "fields": [
                         {
-                            "type": "number",
+                            "type": "text",
                             "name": "amount",
-                            "label": "Amount",
+                            "label": "Amount (with optional denomination)",
                             "required": True
                         },
                         {
                             "type": "text",
-                            "name": "currency",
-                            "label": "Currency (e.g. USD)",
-                            "required": True
-                        },
-                        {
-                            "type": "text",
-                            "name": "handle",
-                            "label": "Recipient Handle",
+                            "name": "recipientAccountHandle",
+                            "label": "Recipient Account Handle",
                             "required": True
                         }
                     ]

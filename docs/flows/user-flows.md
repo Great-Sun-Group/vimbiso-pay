@@ -68,7 +68,7 @@ Confirmation flow:
 Success message:
 ```
 Transaction Complete!!
-$[amount] [currency] [type] to [recipient]
+$[amount] [denomination] [type] to [recipient]
 From: [source]
 ```
 

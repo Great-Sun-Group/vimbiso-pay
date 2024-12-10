@@ -1,7 +1,7 @@
-from rest_framework import serializers
 import re
 
 from core.utils.utils import convert_timestamp_to_date
+from rest_framework import serializers
 
 
 class OfferCredexSerializer(serializers.Serializer):
@@ -10,7 +10,7 @@ class OfferCredexSerializer(serializers.Serializer):
     handle = serializers.CharField(required=True)
     amount = serializers.FloatField(required=True)
     dueDate = serializers.FloatField(required=True)
-    currency = serializers.CharField(required=True)
+    denomination = serializers.CharField(required=True)
     securedCredex = serializers.BooleanField(required=True)
 
     def validate(self, attrs):
@@ -35,7 +35,7 @@ class OfferCredexSerializer(serializers.Serializer):
                             "issuerAccountID": attrs.get("authorizer_member_id"),
                             "memberID": attrs.get("issuer_member_id"),
                             "receiverAccountID": data["accountID"],
-                            "Denomination": attrs.get("currency"),
+                            "Denomination": attrs.get("denomination"),
                             "InitialAmount": attrs.get("amount"),
                             "dueDate": convert_timestamp_to_date(attrs.get("dueDate")),
                             "securedCredex": attrs.get("securedCredex"),

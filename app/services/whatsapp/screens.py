@@ -165,7 +165,7 @@ Please fill out the following form to
 create a new secured credex offer.
 
 You'll need to provide:
-- Amount and currency
+- Amount and denomination
 - Recipient's handle
 - Source account
 
@@ -216,7 +216,7 @@ place.
 CONFIRM_SECURED_CREDEX = """
 > *💰 Account to Send From*
 
-Offer ${amount} {currency} {secured} credex
+Offer ${amount} {denomination} {secured} credex
 to *{party}*
 
 """
@@ -224,7 +224,7 @@ to *{party}*
 CONFIRM_OFFER_CREDEX = """
 > *💰 Offer Confirmation*
 
-Offer ${amount} {currency} {secured} credex to
+Offer ${amount} {denomination} {secured} credex to
 *{party}* from
 account *{source}*
 
@@ -236,7 +236,7 @@ account *{source}*
 CONFIRM_UNSECURED_CREDEX = """
 > *💰 Account to Send From*
 
-Offer ${amount} {currency} {secured} credex to
+Offer ${amount} {denomination} {secured} credex to
 *{party}* from
 account *{source}*
 
@@ -267,7 +267,7 @@ OFFER_SUCCESSFUL = """
 *Transaction Complete!!*
 
 You have successfully offered
-${amount} {currency} {secured} to
+${amount} {denomination} {secured} to
 {recipient}.
 
 From: {source}

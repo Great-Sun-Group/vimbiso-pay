@@ -39,17 +39,25 @@ class CredExConfig:
         """Get headers with optional JWT token"""
         headers = self.default_headers.copy()
         if jwt_token:
-            headers["Authorization"] = f"Bearer {jwt_token}"
+            # Ensure token format is correct
+            if not jwt_token.startswith("Bearer "):
+                jwt_token = f"Bearer {jwt_token}"
+            headers["Authorization"] = jwt_token
         return headers
 
 
 # API Endpoints
 class CredExEndpoints:
     """CredEx API endpoints"""
+    # Authentication endpoints
     LOGIN = "login"
     REGISTER = "onboardMember"
+
+    # Member endpoints
     DASHBOARD = "getMemberDashboardByPhone"
     VALIDATE_HANDLE = "getAccountByHandle"
+
+    # CredEx transaction endpoints
     CREATE_CREDEX = "createCredex"
     ACCEPT_CREDEX = "acceptCredex"
     ACCEPT_BULK_CREDEX = "acceptCredexBulk"
@@ -57,3 +65,14 @@ class CredExEndpoints:
     CANCEL_CREDEX = "cancelCredex"
     GET_CREDEX = "getCredex"
     GET_LEDGER = "getLedger"
+
+    # List of endpoints that don't require authentication
+    NO_AUTH_ENDPOINTS = {
+        LOGIN,
+        REGISTER
+    }
+
+    @classmethod
+    def requires_auth(cls, endpoint: str) -> bool:
+        """Check if endpoint requires authentication"""
+        return endpoint not in cls.NO_AUTH_ENDPOINTS

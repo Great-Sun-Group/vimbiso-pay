@@ -13,7 +13,7 @@ from services.state.service import StateStage
 from .types import BotServiceInterface, WhatsAppMessage
 from .account_handlers import AccountActionHandler
 from .auth_handlers import AuthActionHandler
-from .credex_handlers import CredexActionHandler
+from .handlers import CredexActionHandler
 
 logger = logging.getLogger(__name__)
 
@@ -52,18 +52,25 @@ class CredexBotService(BotServiceInterface):
     def _initialize_state(self) -> None:
         """Initialize state if empty with proper error handling"""
         try:
-            self.current_state = self.state.get_state(self.user)
+            self.current_state = self.state.get_state(self.user.mobile_number)
         except Exception as e:
             logger.info(f"No existing state found: {str(e)}")
-            # Initialize fresh state
+            # Initialize fresh state with required fields
+            initial_state = {
+                "stage": StateStage.INIT.value,
+                "option": "handle_action_menu",
+                "last_updated": None,
+                "profile": None,
+                "current_account": None
+            }
             self.state.update_state(
-                user_id=self.user,
-                new_state={},
+                user_id=self.user.mobile_number,
+                new_state=initial_state,
                 stage=StateStage.INIT.value,
                 update_from="init",
                 option="handle_action_menu"
             )
-            self.current_state = self.state.get_state(self.user)
+            self.current_state = self.state.get_state(self.user.mobile_number)
 
     def refresh(self, reset: bool = True, silent: bool = True) -> Optional[str]:
         """Refresh user profile and state information.
@@ -85,8 +92,22 @@ class CredexBotService(BotServiceInterface):
 
             # Then refresh state if needed
             if reset:
-                self.state.reset_state(self.user, preserve_auth=True)
-                self._initialize_state()
+                initial_state = {
+                    "stage": StateStage.INIT.value,
+                    "option": "handle_action_menu",
+                    "last_updated": None,
+                    "profile": None,
+                    "current_account": None
+                }
+                self.state.reset_state(self.user.mobile_number, preserve_auth=True)
+                self.state.update_state(
+                    user_id=self.user.mobile_number,
+                    new_state=initial_state,
+                    stage=StateStage.INIT.value,
+                    update_from="refresh",
+                    option="handle_action_menu"
+                )
+                self.current_state = self.state.get_state(self.user.mobile_number)
 
             return result
         except Exception as e:
@@ -102,6 +123,9 @@ class CredexBotService(BotServiceInterface):
         logger.info("Handling greeting message")
 
         try:
+            # Reset state to ensure fresh start
+            self.state.reset_state(self.user.mobile_number, preserve_auth=True)
+
             # First try to login
             success, login_msg = self._attempt_login()
             if not success:
@@ -112,11 +136,28 @@ class CredexBotService(BotServiceInterface):
             if not success:
                 return self.get_response_template(data.get("message", "Failed to load profile"))
 
-            # Update state with fresh data
-            self._update_state_with_dashboard(data)
+            # Initialize state with dashboard data
+            initial_state = {
+                "stage": StateStage.MENU.value,
+                "option": "handle_action_menu",
+                "profile": data,
+                "current_account": None,
+                "last_updated": None
+            }
+            self.state.update_state(
+                user_id=self.user.mobile_number,
+                new_state=initial_state,
+                stage=StateStage.MENU.value,
+                update_from="greeting",
+                option="handle_action_menu"
+            )
+            self.current_state = self.state.get_state(self.user.mobile_number)
 
-            # Get fresh menu with greeting
-            return self._get_greeting_menu()
+            # Format greeting
+            greeting = f"*{get_greeting(self.user.first_name)}*\n\n"
+
+            # Get menu and combine with greeting
+            return self.action_handler.auth_handler.handle_action_menu(message=greeting)
 
         except Exception as e:
             logger.error(f"Error handling greeting: {str(e)}")
@@ -144,43 +185,6 @@ class CredexBotService(BotServiceInterface):
             logger.error(f"Dashboard error: {str(e)}")
             return False, {"message": str(e)}
 
-    def _update_state_with_dashboard(self, data: Dict[str, Any]) -> None:
-        """Update state with dashboard data atomically"""
-        try:
-            self.state.update_state(
-                user_id=self.user,
-                new_state={"profile": data},
-                stage=StateStage.MENU.value,
-                update_from="greeting",
-                option="handle_action_menu"
-            )
-            self.current_state = self.state.get_state(self.user)
-        except Exception as e:
-            logger.error(f"Error updating state with dashboard: {str(e)}")
-            raise
-
-    def _get_greeting_menu(self) -> Dict[str, Any]:
-        """Get greeting menu with proper formatting"""
-        try:
-            menu_response = self.action_handler._handle_auth_action("handle_action_menu")
-            greeting = get_greeting(self.user.first_name)
-
-            if isinstance(menu_response, dict) and menu_response.get("interactive", {}).get("body", {}).get("text"):
-                menu_text = menu_response["interactive"]["body"]["text"]
-                menu_response["interactive"]["body"]["text"] = f"{greeting}\n\n{menu_text}"
-                return menu_response
-
-            return {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": self.user.mobile_number,
-                "type": "text",
-                "text": {"body": greeting}
-            }
-        except Exception as e:
-            logger.error(f"Error getting greeting menu: {str(e)}")
-            return self.get_response_template(get_greeting(self.user.first_name))
-
     @error_decorator
     def handle(self) -> Dict[str, Any]:
         """Process the incoming message and generate response.
@@ -193,8 +197,24 @@ class CredexBotService(BotServiceInterface):
             if self.message_type == "text" and self.body.lower() in GREETINGS:
                 return self._handle_greeting()
 
-            # Use message body for action if it's a handler action
-            action = self.body if self.body and self.body.startswith("handle_action_") else self.state.get_stage(self.user)
+            # Get current stage from state
+            current_stage = self.state.get_stage(self.user.mobile_number)
+
+            # Handle form submissions
+            if self.message_type == "nfm_reply":
+                # For form submissions, use current stage and handler
+                if current_stage == StateStage.CREDEX.value:
+                    return self.action_handler.credex_handler.handle_action_offer_credex()
+                else:
+                    logger.error(f"Invalid stage for form submission: {current_stage}")
+                    return self.get_response_template("Invalid form submission. Please try again.")
+
+            # For other messages, check if body is an action command
+            action = (
+                self.body if isinstance(self.body, str) and self.body.startswith("handle_action_")
+                else current_stage
+            )
+
             logger.info(f"Entry point: {action}")
             return self.action_handler.handle_action(action)
 
@@ -237,6 +257,7 @@ class WhatsAppActionHandler:
                 "handle_action_pending_offers_in",
                 "handle_action_pending_offers_out",
                 "handle_action_transactions",
+                StateStage.CREDEX.value,
             ]:
                 return self._handle_credex_action(action)
 
@@ -289,6 +310,7 @@ class WhatsAppActionHandler:
                 "handle_action_pending_offers_in": self.credex_handler.handle_default_action,
                 "handle_action_pending_offers_out": self.credex_handler.handle_default_action,
                 "handle_action_transactions": self.credex_handler.handle_default_action,
+                StateStage.CREDEX.value: self.credex_handler.handle_action_offer_credex,
             }
             return handler_map.get(action, self.credex_handler.handle_default_action)()
         except Exception as e:

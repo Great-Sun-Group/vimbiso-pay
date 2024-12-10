@@ -2,8 +2,8 @@
 Type definitions for webhook handling.
 Defines data structures and types used in webhook processing.
 """
-from typing import TypedDict, Optional, List, Union
 from datetime import datetime
+from typing import List, Optional, TypedDict, Union
 
 
 class WebhookMetadata(TypedDict):
@@ -38,7 +38,7 @@ class OfferUpdatePayload(TypedDict):
     company_id: str
     status: str
     amount: float
-    currency: str
+    denomination: str
     expiry: datetime
     metadata: Optional[dict]
 

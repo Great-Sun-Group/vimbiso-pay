@@ -13,17 +13,37 @@ class CredExService(CredExServiceInterface):
     def __init__(self, config: Optional[CredExConfig] = None):
         """Initialize the CredEx service with all sub-services"""
         self.config = config or CredExConfig.from_env()
+        self._jwt_token = None
+
+        # Initialize sub-services with parent reference
         self._auth = CredExAuthService(config=self.config)
+        self._auth._parent_service = self
+
         self._member = CredExMemberService(config=self.config)
+        self._member._parent_service = self
+
         self._offers = CredExOffersService(config=self.config)
+        self._offers._parent_service = self
 
     def login(self, phone: str) -> Tuple[bool, str]:
         """Authenticate user with the CredEx API"""
-        return self._auth.login(phone)
+        success, msg = self._auth.login(phone)
+        if success:
+            # Propagate token to all services
+            self._jwt_token = self._auth.jwt_token
+            self._member.jwt_token = self._jwt_token
+            self._offers.jwt_token = self._jwt_token
+        return success, msg
 
     def register_member(self, member_data: Dict[str, Any]) -> Tuple[bool, str]:
         """Register a new member"""
-        return self._auth.register_member(member_data)
+        success, msg = self._auth.register_member(member_data)
+        if success:
+            # Propagate token to all services
+            self._jwt_token = self._auth.jwt_token
+            self._member.jwt_token = self._jwt_token
+            self._offers.jwt_token = self._jwt_token
+        return success, msg
 
     def get_dashboard(self, phone: str) -> Tuple[bool, Dict[str, Any]]:
         """Fetch member's dashboard information"""
@@ -70,11 +90,12 @@ class CredExService(CredExServiceInterface):
     @property
     def jwt_token(self) -> Optional[str]:
         """Get the current JWT token"""
-        return self._auth.jwt_token
+        return self._jwt_token
 
     @jwt_token.setter
     def jwt_token(self, value: str):
         """Set the JWT token across all services"""
+        self._jwt_token = value
         self._auth.jwt_token = value
         self._member.jwt_token = value
         self._offers.jwt_token = value

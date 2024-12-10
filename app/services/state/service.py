@@ -1,3 +1,4 @@
+"""State management service implementation"""
 import logging
 from typing import Any, Dict, Optional
 from enum import Enum
@@ -30,7 +31,7 @@ class StateTransition:
     VALID_TRANSITIONS = {
         StateStage.INIT: [StateStage.AUTH, StateStage.MENU],
         StateStage.AUTH: [StateStage.MENU],
-        StateStage.MENU: [StateStage.CREDEX, StateStage.ACCOUNT, StateStage.AUTH],
+        StateStage.MENU: [StateStage.CREDEX, StateStage.ACCOUNT, StateStage.AUTH, StateStage.MENU],
         StateStage.CREDEX: [StateStage.MENU],
         StateStage.ACCOUNT: [StateStage.MENU]
     }
@@ -39,11 +40,33 @@ class StateTransition:
     def is_valid_transition(cls, from_stage: str, to_stage: str) -> bool:
         """Check if state transition is valid"""
         try:
+            # Handle initial state case
+            if from_stage is None:
+                return True
+
+            # Handle action commands
+            if to_stage.startswith("handle_action_"):
+                # Split the action command
+                parts = to_stage.split("_")
+                if len(parts) >= 3:
+                    # Allow all handle_action transitions
+                    return True
+
+            # Handle credex-specific transitions
+            if from_stage == "handle_action_offer_credex" and to_stage == "credex":
+                return True
+
             from_enum = StateStage(from_stage)
             to_enum = StateStage(to_stage)
+
+            # Allow same stage transitions
+            if from_enum == to_enum:
+                return True
+
             return to_enum in cls.VALID_TRANSITIONS.get(from_enum, [])
         except ValueError:
-            return False
+            # Allow transitions for custom stages not in enum
+            return True
 
 
 class StateService(StateServiceInterface):
@@ -71,13 +94,13 @@ class StateService(StateServiceInterface):
         return f"{self.state_lock_prefix}{user_id}"
 
     def _acquire_lock(self, user_id: str, timeout: int = 10) -> bool:
-        """Acquire lock for state updates with timeout"""
+        """Acquire lock for state updates with timeout using Django cache add"""
         lock_key = self._get_lock_key(user_id)
         end_time = time.time() + timeout
 
         while time.time() < end_time:
-            if self.redis.setnx(lock_key, "1"):
-                self.redis.expire(lock_key, 30)  # Lock expires after 30 seconds
+            # Use add() which only sets if key doesn't exist (atomic operation)
+            if self.redis.add(lock_key, "1", timeout=30):  # Lock expires after 30 seconds
                 return True
             time.sleep(0.1)
         return False
@@ -138,11 +161,15 @@ class StateService(StateServiceInterface):
 
         try:
             state_key = self._get_state_key(user_id)
-            current_state = self.get_state(user_id)
+            try:
+                current_state = self.get_state(user_id)
+                current_stage = current_state.get("stage")
+            except StateNotFoundError:
+                current_stage = None
 
             # Validate state transition
-            if not StateTransition.is_valid_transition(current_state.get("stage"), stage):
-                raise InvalidStageError(f"Invalid state transition from {current_state.get('stage')} to {stage}")
+            if not StateTransition.is_valid_transition(current_stage, stage):
+                raise InvalidStageError(f"Invalid state transition from {current_stage} to {stage}")
 
             # Preserve auth token
             new_state = self._preserve_auth_token(user_id, new_state)
@@ -155,11 +182,11 @@ class StateService(StateServiceInterface):
                 "last_updated": time.time()
             })
 
-            # Store in Redis with TTL
-            self.redis.setex(
+            # Store in Redis with TTL using Django cache set
+            self.redis.set(
                 state_key,
-                self.state_ttl,
-                json.dumps(new_state)
+                json.dumps(new_state),
+                timeout=self.state_ttl
             )
             logger.info(f"Updated state for user {user_id}: stage={stage}, update_from={update_from}")
         except Exception as e:
@@ -179,23 +206,26 @@ class StateService(StateServiceInterface):
             state_key = self._get_state_key(user_id)
 
             if preserve_auth:
-                current_state = self.get_state(user_id)
-                jwt_token = current_state.get("jwt_token")
+                try:
+                    current_state = self.get_state(user_id)
+                    jwt_token = current_state.get("jwt_token")
 
-                if jwt_token:
-                    new_state = {
-                        "stage": StateStage.INIT.value,
-                        "option": "",
-                        "jwt_token": jwt_token,
-                        "last_updated": time.time()
-                    }
-                    self.redis.setex(
-                        state_key,
-                        self.state_ttl,
-                        json.dumps(new_state)
-                    )
-                    logger.info(f"Reset state for user {user_id} preserving JWT token")
-                    return
+                    if jwt_token:
+                        new_state = {
+                            "stage": StateStage.INIT.value,
+                            "option": "",
+                            "jwt_token": jwt_token,
+                            "last_updated": time.time()
+                        }
+                        self.redis.set(
+                            state_key,
+                            json.dumps(new_state),
+                            timeout=self.state_ttl
+                        )
+                        logger.info(f"Reset state for user {user_id} preserving JWT token")
+                        return
+                except StateNotFoundError:
+                    pass
 
             self.redis.delete(state_key)
             logger.info(f"Reset state for user {user_id}")
@@ -217,10 +247,11 @@ class StateService(StateServiceInterface):
 
         try:
             state = self.get_state(user_id)
+            current_stage = state.get("stage")
 
             # Validate state transition
-            if not StateTransition.is_valid_transition(state.get("stage"), stage):
-                raise InvalidStageError(f"Invalid state transition from {state.get('stage')} to {stage}")
+            if not StateTransition.is_valid_transition(current_stage, stage):
+                raise InvalidStageError(f"Invalid state transition from {current_stage} to {stage}")
 
             state["stage"] = stage
             self.update_state(

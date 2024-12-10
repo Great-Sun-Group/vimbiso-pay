@@ -27,7 +27,7 @@ class AuthActionHandler(BaseActionHandler):
             if register:
                 # Update state to registration flow
                 self.service.state.update_state(
-                    user_id=self.service.user,
+                    user_id=self.service.user.mobile_number,
                     new_state={"registration_started": True},
                     stage=StateStage.AUTH.value,
                     update_from="registration_start",
@@ -50,10 +50,13 @@ class AuthActionHandler(BaseActionHandler):
                         serializer.validated_data
                     )
                     if successful:
+                        # Store JWT token in state after successful registration
+                        current_state = self.service.current_state or {}
+                        current_state["jwt_token"] = self.service.credex_service._jwt_token
                         # Update state after successful registration
                         self.service.state.update_state(
-                            user_id=self.service.user,
-                            new_state={"registration_complete": True},
+                            user_id=self.service.user.mobile_number,
+                            new_state=current_state,
                             stage=StateStage.MENU.value,
                             update_from="registration_complete",
                             option="handle_action_menu"
@@ -81,6 +84,21 @@ class AuthActionHandler(BaseActionHandler):
             if not success:
                 return False, login_msg, None
 
+            # Store JWT token after successful login
+            jwt_token = self.service.credex_service._auth._jwt_token
+            if jwt_token:
+                current_state = self.service.current_state or {}
+                current_state["jwt_token"] = jwt_token
+                self.service.state.update_state(
+                    user_id=self.service.user.mobile_number,
+                    new_state=current_state,
+                    stage=StateStage.AUTH.value,
+                    update_from="login",
+                    option="handle_action_menu"
+                )
+                # Set token in credex service
+                self.service.credex_service._jwt_token = jwt_token
+
             # Get dashboard data
             success, data = self.service.credex_service._member.get_dashboard(
                 self.service.user.mobile_number
@@ -105,9 +123,10 @@ class AuthActionHandler(BaseActionHandler):
         """
         try:
             user = self.service.user
+            current_state = self.service.current_state
 
             # Always get fresh data when login=True or no profile exists
-            if login or not self.service.current_state.get("profile"):
+            if login or not current_state.get("profile"):
                 success, msg, data = self._attempt_login()
                 if not success:
                     if any(phrase in msg.lower() for phrase in ["new user", "new here"]):
@@ -115,13 +134,14 @@ class AuthActionHandler(BaseActionHandler):
                     return self.get_response_template(msg)
 
                 # Update state with fresh dashboard data
-                new_state = {
-                    "profile": data,
-                    "last_refresh": True
-                }
+                current_state["profile"] = data
+                current_state["last_refresh"] = True
+                # Preserve JWT token
+                if self.service.credex_service._jwt_token:
+                    current_state["jwt_token"] = self.service.credex_service._jwt_token
                 self.service.state.update_state(
-                    user_id=user,
-                    new_state=new_state,
+                    user_id=user.mobile_number,
+                    new_state=current_state,
                     stage=StateStage.MENU.value,
                     update_from="menu_refresh",
                     option="handle_action_menu"
@@ -161,8 +181,11 @@ class AuthActionHandler(BaseActionHandler):
                         selected_account = account
                         # Update state with selected account
                         current_state["current_account"] = selected_account
+                        # Preserve JWT token
+                        if self.service.credex_service._jwt_token:
+                            current_state["jwt_token"] = self.service.credex_service._jwt_token
                         self.service.state.update_state(
-                            user_id=self.service.user,
+                            user_id=self.service.user.mobile_number,
                             new_state=current_state,
                             stage=StateStage.MENU.value,
                             update_from="account_select",
@@ -295,9 +318,14 @@ class AuthActionHandler(BaseActionHandler):
         """Handle profile selection with proper state management"""
         try:
             # Update state for profile selection
+            current_state = self.service.current_state or {}
+            # Preserve JWT token
+            if self.service.credex_service._jwt_token:
+                current_state["jwt_token"] = self.service.credex_service._jwt_token
+            current_state["selecting_profile"] = True
             self.service.state.update_state(
-                user_id=self.service.user,
-                new_state={"selecting_profile": True},
+                user_id=self.service.user.mobile_number,
+                new_state=current_state,
                 stage=StateStage.ACCOUNT.value,
                 update_from="profile_select",
                 option="profile_selection"

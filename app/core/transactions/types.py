@@ -34,11 +34,26 @@ class TransactionOffer:
     authorizer_member_id: str
     issuer_member_id: str
     amount: float
-    currency: str
+    denomination: str
     type: TransactionType
     handle: Optional[str] = None
+    receiver_account_id: Optional[str] = None
     due_date: Optional[datetime] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert offer to dictionary format"""
+        return {
+            "authorizer_member_id": self.authorizer_member_id,
+            "issuer_member_id": self.issuer_member_id,
+            "amount": self.amount,
+            "denomination": self.denomination,
+            "type": self.type.value,
+            "handle": self.handle,
+            "receiver_account_id": self.receiver_account_id,
+            "due_date": self.due_date.isoformat() if self.due_date else None,
+            "metadata": self.metadata
+        }
 
 
 @dataclass
@@ -52,6 +67,19 @@ class Transaction:
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert transaction to dictionary format"""
+        return {
+            "id": self.id,
+            "offer": self.offer.to_dict(),
+            "status": self.status.value,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "error_message": self.error_message,
+            "metadata": self.metadata
+        }
 
 
 @dataclass

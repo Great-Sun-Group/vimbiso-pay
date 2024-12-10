@@ -2,8 +2,8 @@
 Validation utilities for webhook requests.
 Implements validation logic for different webhook types.
 """
-from typing import Dict, Any, Tuple
 from datetime import datetime
+from typing import Any, Dict, Tuple
 
 
 class WebhookValidator:
@@ -60,7 +60,7 @@ class WebhookValidator:
     @staticmethod
     def validate_offer_update(payload: Dict[str, Any]) -> Tuple[bool, str]:
         """Validate offer update payload."""
-        required_fields = {'offer_id', 'company_id', 'status', 'amount', 'currency', 'expiry'}
+        required_fields = {'offer_id', 'company_id', 'status', 'amount', 'denomination', 'expiry'}
 
         if not all(field in payload for field in required_fields):
             missing = required_fields - set(payload.keys())

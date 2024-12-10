@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional, Tuple
 from .base import BaseCredExService
 from .config import CredExEndpoints
 from .exceptions import (
-    InvalidHandleError,
     MemberNotFoundError,
     ValidationError,
 )
@@ -50,36 +49,56 @@ class CredExMemberService(BaseCredExService):
             return False, {"message": f"Failed to fetch dashboard: {str(e)}"}
 
     def validate_handle(self, handle: str) -> Tuple[bool, Dict[str, Any]]:
-        """Validate a CredEx handle"""
+        """Validate a CredEx handle and get account details"""
         if not handle:
             raise ValidationError("Handle is required")
 
         try:
+            # Log the request details
+            logger.info(f"Validating handle: {handle}")
+
             response = self._make_request(
                 CredExEndpoints.VALIDATE_HANDLE,
                 payload={"accountHandle": handle.lower()}
             )
 
-            data = self._validate_response(response, {
-                400: "Invalid handle format",
-                404: "Handle not found"
-            })
+            # Log the raw response
+            logger.debug(f"Raw API response: {response.text}")
 
-            if response.status_code == 200:
-                if not data.get("Error"):
-                    logger.info("Handle validation successful")
-                    return True, data
-                else:
-                    logger.error("Handle validation failed")
-                    raise InvalidHandleError(data.get("Error", "Invalid handle"))
-            else:
-                error_msg = data.get("message", "Handle validation failed")
-                logger.error(f"Handle validation failed: {error_msg}")
-                return False, {"message": error_msg}
+            # Handle non-200 responses
+            if response.status_code != 200:
+                logger.error(f"Handle validation failed with status {response.status_code}")
+                return False, {"message": "Invalid handle or account not found"}
 
-        except InvalidHandleError as e:
-            logger.warning(f"Invalid handle: {str(e)}")
-            return False, {"message": str(e)}
+            # Parse response
+            data = response.json()
+            logger.debug(f"Parsed response data: {data}")
+
+            # Check for error in response
+            if data.get("error"):
+                logger.error(f"API returned error: {data['error']}")
+                return False, {"message": data["error"]}
+
+            # Extract account details from action.details
+            account_details = data.get("data", {}).get("action", {}).get("details", {})
+            if not account_details:
+                logger.error("No account details in response")
+                return False, {"message": "Account not found"}
+
+            account_id = account_details.get("accountID")
+            if not account_id:
+                logger.error(f"No account ID found in details: {account_details}")
+                return False, {"message": "Could not find account ID"}
+
+            # Return success with account details
+            return True, {
+                "data": {
+                    "accountID": account_id,
+                    "accountName": account_details.get("accountName", ""),
+                    "accountHandle": handle
+                }
+            }
+
         except Exception as e:
             logger.exception(f"Handle validation failed: {str(e)}")
             return False, {"message": f"Failed to validate handle: {str(e)}"}

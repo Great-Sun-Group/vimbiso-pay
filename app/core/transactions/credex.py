@@ -1,21 +1,13 @@
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .base import BaseTransactionService
-from .exceptions import (
-    InvalidTransactionCommandError,
-    TransactionProcessingError,
-)
-from .types import (
-    Account,
-    Transaction,
-    TransactionOffer,
-    TransactionResult,
-    TransactionStatus,
-    TransactionType,
-)
+from .exceptions import (InvalidTransactionCommandError,
+                         TransactionProcessingError)
+from .types import (Account, Transaction, TransactionOffer, TransactionResult,
+                    TransactionStatus, TransactionType)
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +55,7 @@ class CredexTransactionService(BaseTransactionService):
             authorizer_member_id=member_id,
             issuer_member_id=account_id,
             amount=command_data["amount"],
-            currency=denomination,
+            denomination=denomination,
             type=TransactionType.SECURED_CREDEX,
             handle=command_data["handle"],
             due_date=datetime.now() + timedelta(weeks=4),
@@ -72,12 +64,27 @@ class CredexTransactionService(BaseTransactionService):
     def _process_offer(self, offer: TransactionOffer) -> TransactionResult:
         """Process a CredEx transaction offer"""
         try:
+            # First validate the handle if not already validated
+            if not offer.receiver_account_id and offer.handle:
+                success, handle_data = self.api_client._member.validate_handle(offer.handle)
+                if not success:
+                    return TransactionResult(
+                        success=False,
+                        error_message=handle_data.get("message", "Invalid recipient handle")
+                    )
+                offer.receiver_account_id = handle_data.get("data", {}).get("accountID")
+                if not offer.receiver_account_id:
+                    return TransactionResult(
+                        success=False,
+                        error_message="Could not find recipient's account"
+                    )
+
             payload = {
                 "authorizer_member_id": offer.authorizer_member_id,
-                "issuer_member_id": offer.issuer_member_id,
-                "handle": offer.handle,
+                "issuerAccountID": offer.issuer_member_id,
+                "receiverAccountID": offer.receiver_account_id,
                 "amount": offer.amount,
-                "currency": offer.currency,
+                "denomination": offer.denomination,
                 "securedCredex": offer.type == TransactionType.SECURED_CREDEX,
             }
 
@@ -86,15 +93,25 @@ class CredexTransactionService(BaseTransactionService):
 
             response = self.api_client.offer_credex(payload)
 
-            if not response.get("success"):
-                raise TransactionProcessingError(
-                    response.get("error", "Failed to process offer")
+            if not response[0]:  # Check first element of tuple for success
+                return TransactionResult(
+                    success=False,
+                    error_message=response[1].get("error", "Failed to process offer")
                 )
 
-            return self._create_transaction_result(response["data"])
-        except Exception as e:
+            return self._create_transaction_result(response[1].get("data", {}))
+        except TransactionProcessingError as e:
             logger.error(f"Failed to process CredEx offer: {str(e)}")
-            raise TransactionProcessingError(str(e))
+            return TransactionResult(
+                success=False,
+                error_message=str(e)
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error processing CredEx offer: {str(e)}")
+            return TransactionResult(
+                success=False,
+                error_message="An unexpected error occurred. Please try again."
+            )
 
     def _confirm_transaction(
         self, transaction_id: str, issuer_account_id: str
@@ -105,28 +122,32 @@ class CredexTransactionService(BaseTransactionService):
                 transaction_id, issuer_account_id
             )
 
-            if not response.get("success"):
-                raise TransactionProcessingError(
-                    response.get("error", "Failed to confirm transaction")
+            if not response[0]:  # Check first element of tuple for success
+                return TransactionResult(
+                    success=False,
+                    error_message=response[1].get("error", "Failed to confirm transaction")
                 )
 
-            return self._create_transaction_result(response["data"])
+            return self._create_transaction_result(response[1].get("data", {}))
         except Exception as e:
             logger.error(f"Failed to confirm CredEx transaction: {str(e)}")
-            raise TransactionProcessingError(str(e))
+            return TransactionResult(
+                success=False,
+                error_message="Failed to confirm transaction. Please try again."
+            )
 
     def _fetch_member_accounts(self, member_id: str) -> List[Account]:
         """Fetch CredEx accounts for a member"""
         try:
             response = self.api_client.get_member_accounts(member_id)
 
-            if not response.get("success"):
+            if not response[0]:  # Check first element of tuple for success
                 raise TransactionProcessingError(
-                    response.get("error", "Failed to fetch accounts")
+                    response[1].get("error", "Failed to fetch accounts")
                 )
 
             accounts = []
-            for account_data in response.get("data", {}).get("accounts", []):
+            for account_data in response[1].get("data", {}).get("accounts", []):
                 accounts.append(Account(
                     id=account_data["accountID"],
                     name=account_data["accountName"],
@@ -143,12 +164,12 @@ class CredexTransactionService(BaseTransactionService):
         try:
             response = self.api_client.get_transaction_status(transaction_id)
 
-            if not response.get("success"):
+            if not response[0]:  # Check first element of tuple for success
                 raise TransactionProcessingError(
-                    response.get("error", "Failed to fetch transaction status")
+                    response[1].get("error", "Failed to fetch transaction status")
                 )
 
-            return response["data"]
+            return response[1].get("data", {})
         except Exception as e:
             logger.error(f"Failed to fetch CredEx transaction status: {str(e)}")
             raise TransactionProcessingError(str(e))
@@ -172,13 +193,13 @@ class CredexTransactionService(BaseTransactionService):
             }
             response = self.api_client.list_transactions(filters)
 
-            if not response.get("success"):
+            if not response[0]:  # Check first element of tuple for success
                 raise TransactionProcessingError(
-                    response.get("error", "Failed to fetch transactions")
+                    response[1].get("error", "Failed to fetch transactions")
                 )
 
             transactions = []
-            for tx_data in response.get("data", {}).get("transactions", []):
+            for tx_data in response[1].get("data", {}).get("transactions", []):
                 transactions.append(self._create_transaction_from_response(tx_data))
             return transactions
         except Exception as e:
@@ -206,9 +227,10 @@ class CredexTransactionService(BaseTransactionService):
             id=tx_data["transactionID"],
             offer=TransactionOffer(
                 authorizer_member_id=tx_data["authorizerMemberID"],
-                issuer_member_id=tx_data["issuerMemberID"],
+                issuer_member_id=tx_data["issuerAccountID"],
+                receiver_account_id=tx_data.get("receiverAccountID"),
                 amount=float(tx_data["amount"]),
-                currency=tx_data["denomination"],
+                denomination=tx_data["denomination"],  # Use denomination consistently
                 type=TransactionType.SECURED_CREDEX if tx_data.get("securedCredex")
                 else TransactionType.UNSECURED_CREDEX,
                 handle=tx_data.get("handle"),

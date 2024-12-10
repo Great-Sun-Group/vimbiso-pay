@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from .types import Transaction, TransactionResult, TransactionOffer, Account
+from .types import Account, Transaction, TransactionOffer, TransactionResult
 
 
 class TransactionServiceInterface(ABC):
@@ -40,7 +40,7 @@ class TransactionServiceInterface(ABC):
             command: The transaction command to process
             member_id: ID of the member initiating the command
             account_id: ID of the account to use
-            denomination: Currency denomination
+            denomination: Denomination denomination
 
         Returns:
             Result of the command processing
