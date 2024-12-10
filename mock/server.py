@@ -47,13 +47,35 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 message = message_data["messages"][0]
                 contact = message_data["contacts"][0]
 
+                # Extract and validate message data
+                message_type = message.get("type")
+                interactive_type = message.get("interactive", {}).get("type") if message_type == "interactive" else None
+
                 # Extract message text using shared utility
                 text = extract_message_text(message)
 
-                logger.info(f"\nReceived message: {text}")
+                # Enhanced logging for form submissions
+                if message_type == "interactive" and interactive_type == "nfm_reply":
+                    logger.info("\n=== Form Submission Details ===")
+                    logger.info(f"Form Data: {json.dumps(text, indent=2)}")
+                    logger.info(f"Interactive Type: {interactive_type}")
+
+                    # Log form structure
+                    nfm_reply = message.get("interactive", {}).get("nfm_reply", {})
+                    submitted_form = nfm_reply.get("submitted_form_data", {})
+                    form_data = submitted_form.get("form_data", {})
+                    logger.info(f"Form Name: {form_data.get('name')}")
+                    logger.info("Form Fields:")
+                    for field in form_data.get("response_fields", []):
+                        logger.info(f"  - {field.get('field_id')}: {field.get('value')} (Type: {field.get('type')})")
+                else:
+                    logger.info(f"\nReceived message: {text}")
+                    logger.info(f"Message Type: {message_type}")
+                    if interactive_type:
+                        logger.info(f"Interactive Type: {interactive_type}")
+
                 logger.info(f"From: {contact['profile']['name']}")
                 logger.info(f"Phone: {contact['wa_id']}")
-                logger.info(f"Type: {message['type']}")
                 logger.info(f"Target: {target}\n")
 
                 try:
@@ -97,16 +119,26 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                         self.send_header("Content-type", "application/json")
                         self.end_headers()
 
-                        # Parse the response and send it back
-                        response_data = json.loads(chatbot_response.text)
-                        if isinstance(response_data, dict) and 'response' in response_data:
-                            # If response is already wrapped, send it as is
-                            self.wfile.write(chatbot_response.text.encode('utf-8'))
-                        else:
-                            # If response is not wrapped, wrap it
-                            wrapped_response = {"response": response_data}
-                            self.wfile.write(json.dumps(wrapped_response).encode('utf-8'))
-                        return
+                        # Parse and validate the response
+                        try:
+                            response_data = json.loads(chatbot_response.text)
+                            # Validate response structure
+                            if not isinstance(response_data, dict):
+                                logger.error("Invalid response format - not a dictionary")
+                                response_data = {"error": "Invalid response format"}
+
+                            # Ensure response is properly wrapped
+                            if 'response' not in response_data:
+                                response_data = {"response": response_data}
+
+                            # Send response
+                            self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                            return
+
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Error parsing response JSON: {str(e)}")
+                            self.send_error(500, "Internal Server Error", "Invalid JSON response")
+                            return
 
                     except requests.exceptions.Timeout:
                         logger.error("\nError: Request timed out")

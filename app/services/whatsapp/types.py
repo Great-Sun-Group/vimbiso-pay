@@ -65,11 +65,42 @@ class BotServiceInterface:
                 elif "nfm_reply" in interactive:
                     self.message_type = "nfm_reply"
                     try:
-                        response_json = interactive["nfm_reply"].get("response_json", "{}")
-                        self.body = json.loads(response_json)
-                        logger.debug(f"Form response data: {json.dumps(self.body, indent=2)}")
-                    except json.JSONDecodeError:
-                        logger.error("Failed to parse nfm_reply response_json")
+                        # More lenient form data extraction
+                        nfm_reply = interactive["nfm_reply"]
+                        form_data = {}
+
+                        # Try different possible locations for form data
+                        if "submitted_form_data" in nfm_reply:
+                            submitted_form = nfm_reply["submitted_form_data"]
+                            # Try form_data.response_fields path
+                            if "form_data" in submitted_form:
+                                form_data_obj = submitted_form["form_data"]
+                                if "response_fields" in form_data_obj:
+                                    for field in form_data_obj["response_fields"]:
+                                        if "field_id" in field and "value" in field:
+                                            form_data[field["field_id"]] = field["value"]
+                                # Also try response_payload.response_json path
+                                elif "response_payload" in form_data_obj:
+                                    try:
+                                        response_json = form_data_obj["response_payload"].get("response_json")
+                                        if response_json:
+                                            json_data = json.loads(response_json)
+                                            form_data.update(json_data)
+                                    except (json.JSONDecodeError, AttributeError):
+                                        pass
+
+                        # Fallback to direct response_json if exists
+                        if not form_data and "response_json" in nfm_reply:
+                            try:
+                                json_data = json.loads(nfm_reply["response_json"])
+                                form_data.update(json_data)
+                            except (json.JSONDecodeError, AttributeError):
+                                pass
+
+                        self.body = form_data
+                        logger.debug(f"Extracted form data: {json.dumps(self.body, indent=2)}")
+                    except Exception as e:
+                        logger.error(f"Error extracting form data: {str(e)}")
                         self.body = {}
             else:
                 logger.warning(f"Unsupported message type: {self.message_type}")
