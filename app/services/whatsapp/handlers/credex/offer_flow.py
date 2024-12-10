@@ -29,12 +29,18 @@ class OfferFlowMixin(BaseActionHandler):
             logger.debug(f"Message body: {self.service.body}")
             logger.debug(f"Interactive message: {self.service.message.get('interactive', {})}")
 
-            # Check for cancel_offer command first
-            if (self.service.message_type == "text" and
-                isinstance(self.service.body, str) and
-                    self.service.body.startswith("cancel_offer_")):
-                credex_id = self.service.body.replace("cancel_offer_", "")
-                return self._handle_offer_cancellation(current_state, credex_id)
+            # Check for offer commands first
+            if self.service.message_type == "text" and isinstance(self.service.body, str):
+                if self.service.body.startswith("cancel_offer_"):
+                    credex_id = self.service.body.replace("cancel_offer_", "")
+                    return self._handle_offer_cancellation(current_state, credex_id)
+                elif self.service.body.startswith("accept_offer_"):
+                    credex_id = self.service.body.replace("accept_offer_", "")
+                    return self._handle_offer_acceptance(current_state, credex_id)
+                elif self.service.body.startswith("decline_offer_"):
+                    credex_id = self.service.body.replace("decline_offer_", "")
+                    return self._handle_offer_decline(current_state, credex_id)
+
             elif self._is_credex_command(self.service.body):
                 return self._handle_credex_command(current_state, selected_profile)
             elif self.service.message_type == "nfm_reply":
@@ -54,14 +60,125 @@ class OfferFlowMixin(BaseActionHandler):
                         credex_id = selected_id.replace("cancel_offer_", "")
                         logger.debug(f"Cancelling offer with ID: {credex_id}")
                         return self._handle_offer_cancellation(current_state, credex_id)
-            elif self.service.message_type == "text" and self.service.body in ["confirm_offer", "cancel_offer"]:
-                # Handle button responses that come through as text
-                return self._handle_button_response(current_state, selected_profile)
+                    elif selected_id.startswith("accept_offer_"):
+                        credex_id = selected_id.replace("accept_offer_", "")
+                        logger.debug(f"Accepting offer with ID: {credex_id}")
+                        return self._handle_offer_acceptance(current_state, credex_id)
+                    elif selected_id.startswith("decline_offer_"):
+                        credex_id = selected_id.replace("decline_offer_", "")
+                        logger.debug(f"Declining offer with ID: {credex_id}")
+                        return self._handle_offer_decline(current_state, credex_id)
 
             logger.error(f"Unhandled message type: {self.service.message_type}")
             return self._format_error_response("Invalid message type. Please try again.")
         except Exception as e:
             logger.error(f"Error in offer flow: {str(e)}", exc_info=True)
+            return self._format_error_response(str(e))
+
+    def _handle_offer_acceptance(self, current_state: Dict[str, Any], credex_id: str) -> WhatsAppMessage:
+        """Handle offer acceptance with proper state management"""
+        try:
+            logger.debug(f"Accepting offer: {credex_id}")
+            # Ensure JWT token is set
+            if current_state.get("jwt_token"):
+                logger.debug("Setting JWT token from state")
+                self.service.credex_service.jwt_token = current_state["jwt_token"]
+
+            # Accept the offer
+            success, message = self.service.credex_service.accept_credex(credex_id)
+            logger.debug(f"Accept offer result - success: {success}, message: {message}")
+            if not success:
+                return self._format_error_response(f"Failed to accept offer: {message}")
+
+            # Clear offer-related state
+            current_state.pop("offer_flow", None)
+            current_state.pop("form_shown", None)
+            current_state.pop("confirmation_shown", None)
+            current_state.pop("selected_denomination", None)
+
+            # Preserve JWT token
+            if self.service.credex_service.jwt_token:
+                current_state["jwt_token"] = self.service.credex_service.jwt_token
+
+            # Get fresh dashboard data
+            success, data = self.service.credex_service._member.get_dashboard(self.service.user.mobile_number)
+            if not success:
+                return self.get_response_template("Offer accepted successfully. Failed to refresh dashboard.")
+
+            # Update state with fresh dashboard data
+            current_state["profile"] = data
+            current_state["last_refresh"] = True
+            current_state["current_account"] = None  # Force reselection of account with fresh data
+
+            self.service.state.update_state(
+                user_id=self.service.user.mobile_number,
+                new_state=current_state,
+                stage=StateStage.MENU.value,
+                update_from="offer_accept",
+                option="handle_action_menu"
+            )
+
+            # Show success message and updated dashboard
+            return self.service.action_handler.auth_handler.handle_action_menu(
+                message="✅ Offer accepted successfully.\n\n",
+                login=True  # Force fresh data
+            )
+
+        except Exception as e:
+            logger.error(f"Error accepting offer: {str(e)}", exc_info=True)
+            return self._format_error_response(str(e))
+
+    def _handle_offer_decline(self, current_state: Dict[str, Any], credex_id: str) -> WhatsAppMessage:
+        """Handle offer decline with proper state management"""
+        try:
+            logger.debug(f"Declining offer: {credex_id}")
+            # Ensure JWT token is set
+            if current_state.get("jwt_token"):
+                logger.debug("Setting JWT token from state")
+                self.service.credex_service.jwt_token = current_state["jwt_token"]
+
+            # Decline the offer
+            success, message = self.service.credex_service.decline_credex(credex_id)
+            logger.debug(f"Decline offer result - success: {success}, message: {message}")
+            if not success:
+                return self._format_error_response(f"Failed to decline offer: {message}")
+
+            # Clear offer-related state
+            current_state.pop("offer_flow", None)
+            current_state.pop("form_shown", None)
+            current_state.pop("confirmation_shown", None)
+            current_state.pop("selected_denomination", None)
+
+            # Preserve JWT token
+            if self.service.credex_service.jwt_token:
+                current_state["jwt_token"] = self.service.credex_service.jwt_token
+
+            # Get fresh dashboard data
+            success, data = self.service.credex_service._member.get_dashboard(self.service.user.mobile_number)
+            if not success:
+                return self.get_response_template("Offer declined successfully. Failed to refresh dashboard.")
+
+            # Update state with fresh dashboard data
+            current_state["profile"] = data
+            current_state["last_refresh"] = True
+            current_state["current_account"] = None  # Force reselection of account with fresh data
+
+            self.service.state.update_state(
+                user_id=self.service.user.mobile_number,
+                new_state=current_state,
+                stage=StateStage.MENU.value,
+                update_from="offer_decline",
+                option="handle_action_menu"
+            )
+
+            # Show success message and updated dashboard
+            return self.service.action_handler.auth_handler.handle_action_menu(
+                message="✅ Offer declined successfully.\n\n",
+                login=True  # Force fresh data
+            )
+
+        except Exception as e:
+            logger.error(f"Error declining offer: {str(e)}", exc_info=True)
             return self._format_error_response(str(e))
 
     def _handle_button_response(
@@ -128,12 +245,17 @@ class OfferFlowMixin(BaseActionHandler):
     def _start_offer_flow(self, current_state: Dict[str, Any]) -> WhatsAppMessage:
         """Start offer flow with form"""
         try:
-            # Check for cancel_offer command first
-            if (self.service.message_type == "text" and
-                isinstance(self.service.body, str) and
-                    self.service.body.startswith("cancel_offer_")):
-                credex_id = self.service.body.replace("cancel_offer_", "")
-                return self._handle_offer_cancellation(current_state, credex_id)
+            # Check for offer commands first
+            if self.service.message_type == "text" and isinstance(self.service.body, str):
+                if self.service.body.startswith("cancel_offer_"):
+                    credex_id = self.service.body.replace("cancel_offer_", "")
+                    return self._handle_offer_cancellation(current_state, credex_id)
+                elif self.service.body.startswith("accept_offer_"):
+                    credex_id = self.service.body.replace("accept_offer_", "")
+                    return self._handle_offer_acceptance(current_state, credex_id)
+                elif self.service.body.startswith("decline_offer_"):
+                    credex_id = self.service.body.replace("decline_offer_", "")
+                    return self._handle_offer_decline(current_state, credex_id)
 
             # Preserve JWT token
             if self.service.credex_service.jwt_token:
@@ -178,12 +300,17 @@ class OfferFlowMixin(BaseActionHandler):
     ) -> WhatsAppMessage:
         """Handle form submission processing with proper state management"""
         try:
-            # Check for cancel_offer command first
-            if (self.service.message_type == "text" and
-                isinstance(self.service.body, str) and
-                    self.service.body.startswith("cancel_offer_")):
-                credex_id = self.service.body.replace("cancel_offer_", "")
-                return self._handle_offer_cancellation(current_state, credex_id)
+            # Check for offer commands first
+            if self.service.message_type == "text" and isinstance(self.service.body, str):
+                if self.service.body.startswith("cancel_offer_"):
+                    credex_id = self.service.body.replace("cancel_offer_", "")
+                    return self._handle_offer_cancellation(current_state, credex_id)
+                elif self.service.body.startswith("accept_offer_"):
+                    credex_id = self.service.body.replace("accept_offer_", "")
+                    return self._handle_offer_acceptance(current_state, credex_id)
+                elif self.service.body.startswith("decline_offer_"):
+                    credex_id = self.service.body.replace("decline_offer_", "")
+                    return self._handle_offer_decline(current_state, credex_id)
 
             # For nfm_reply, body is already a dict with form data
             form_data = self.service.body

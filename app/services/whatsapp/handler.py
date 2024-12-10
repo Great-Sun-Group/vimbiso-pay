@@ -280,6 +280,8 @@ class WhatsAppActionHandler:
                 "handle_action_offer_credex",
                 "handle_action_pending_offers_in",
                 "handle_action_pending_offers_out",
+                "handle_action_accept_offers",
+                "handle_action_decline_offers",
                 "handle_action_transactions",
                 StateStage.CREDEX.value,
             ]:
@@ -331,8 +333,10 @@ class WhatsAppActionHandler:
         try:
             handler_map = {
                 "handle_action_offer_credex": self.credex_handler.handle_action_offer_credex,
-                "handle_action_pending_offers_in": self.credex_handler.handle_default_action,
+                "handle_action_pending_offers_in": self.credex_handler.handle_action_accept_offers,  # Route to accept flow
                 "handle_action_pending_offers_out": self.credex_handler.handle_action_pending_offers_out,
+                "handle_action_accept_offers": self.credex_handler.handle_action_accept_offers,
+                "handle_action_decline_offers": self.credex_handler.handle_action_decline_offers,
                 "handle_action_transactions": self.credex_handler.handle_default_action,
                 StateStage.CREDEX.value: self.credex_handler.handle_action_offer_credex,
             }

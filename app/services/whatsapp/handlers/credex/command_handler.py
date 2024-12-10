@@ -15,7 +15,9 @@ class CommandHandlerMixin(BaseActionHandler):
     def _is_credex_command(self, body: str) -> bool:
         """Check if message is a credex command"""
         return ("=>" in str(body) or "->" in str(body) or
-                str(body).startswith("cancel_offer_"))
+                str(body).startswith("cancel_offer_") or
+                str(body).startswith("accept_offer_") or
+                str(body).startswith("decline_offer_"))
 
     def _handle_credex_command(
         self, current_state: Dict[str, Any], selected_profile: Dict[str, Any]
@@ -28,6 +30,18 @@ class CommandHandlerMixin(BaseActionHandler):
                 logger.debug(f"Handling cancel offer command for ID: {credex_id}")
                 # Use the shared cancellation logic from OfferFlowMixin
                 return self._handle_offer_cancellation(current_state, credex_id)
+
+            # Handle accept offer commands
+            if str(self.service.body).startswith("accept_offer_"):
+                credex_id = self.service.body.replace("accept_offer_", "")
+                logger.debug(f"Handling accept offer command for ID: {credex_id}")
+                return self._handle_offer_acceptance(current_state, credex_id)
+
+            # Handle decline offer commands
+            if str(self.service.body).startswith("decline_offer_"):
+                credex_id = self.service.body.replace("decline_offer_", "")
+                logger.debug(f"Handling decline offer command for ID: {credex_id}")
+                return self._handle_offer_decline(current_state, credex_id)
 
             # Ensure JWT token is set
             if current_state.get("jwt_token"):

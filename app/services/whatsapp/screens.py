@@ -160,7 +160,7 @@ set to your phone number.
 
 These handles identify you as a
 member and identify accounts for
-others to send payments to.
+sending payments to.
 
 When you make a payment you'll
 need to enter an account handle
@@ -202,6 +202,28 @@ OUTGOING_CREDEX = """*💰 Cancel Offer*
 
   {type} credex to
 - {party}"""
+
+ACCEPT_INCOMING_CREDEX = """*💰 Accept Incoming Offer*
+
+*Accept ${amount} offer*
+
+  {type} credex from
+- {party}
+
+1. ✅ Accept
+2. ❌ Decline"""
+
+DECLINE_INCOMING_CREDEX = """*💰 Decline Offer*
+
+*Decline ${amount} offer*
+
+  {type} credex from
+- {party}
+
+Are you sure you want to decline?
+
+1. ✅ Yes, decline
+2. ❌ No, keep offer"""
 
 OFFER_SUCCESSFUL = """*💰 Complete!*
 

@@ -161,7 +161,8 @@ class CredExOffersService(BaseCredExService):
             )
 
             data = self._validate_response(response)
-            if data.get("status") == "success":
+            if (data.get("message") == "Credex declined successfully" or
+                    data.get("data", {}).get("action", {}).get("type") == "CREDEX_DECLINED"):
                 logger.info("CredEx offer declined successfully")
                 return True, "Decline successful"
             else:

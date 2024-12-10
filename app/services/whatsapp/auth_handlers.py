@@ -303,12 +303,16 @@ class AuthActionHandler(BaseActionHandler):
                 "title": "💸 Offer Secured Credex",
             },
             {
-                "id": "handle_action_pending_offers_in",
-                "title": f"📥 Pending Offers ({pending_in})",
+                "id": "handle_action_accept_offers",
+                "title": f"✅ Accept Offers ({pending_in})",
+            },
+            {
+                "id": "handle_action_decline_offers",
+                "title": f"❌ Decline Offers ({pending_in})",
             },
             {
                 "id": "handle_action_pending_offers_out",
-                "title": f"❌ Cancel Outgoing ({pending_out})",
+                "title": f"📤 Cancel Outgoing ({pending_out})",
             },
             {
                 "id": "handle_action_transactions",
