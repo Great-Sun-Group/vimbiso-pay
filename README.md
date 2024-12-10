@@ -8,6 +8,7 @@ A WhatsApp bot service that facilitates financial transactions through the [cred
 - [User Flows](docs/flows/user-flows.md) - Detailed guide to all user interactions and flows
 
 ### Technical Documentation
+- [Flow Framework](docs/technical/flow-framework.md) - Progressive interaction framework
 - [WhatsApp Integration](docs/technical/whatsapp.md) - WhatsApp bot implementation
 - [API Integration](docs/technical/api-integration.md) - Integration with credex-core API
 - [State Management](docs/technical/state-management.md) - Conversation and session management

@@ -7,7 +7,6 @@ from ...base_handler import BaseActionHandler
 from ...types import WhatsAppMessage
 from .command_handler import CommandHandlerMixin
 from .message_handler import MessageHandlerMixin
-from .offer_flow import OfferFlowMixin
 from .profile import ProfileMixin
 from .progressive_flow import ProgressiveFlowMixin
 
@@ -15,8 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class CredexActionHandler(
-    ProgressiveFlowMixin,  # First to ensure it gets priority
-    OfferFlowMixin,
+    ProgressiveFlowMixin,
     MessageHandlerMixin,
     CommandHandlerMixin,
     ProfileMixin,
@@ -48,27 +46,10 @@ class CredexActionHandler(
             current_state, selected_profile = profile_result
             logger.debug(f"Current state: stage={current_state.get('stage')}, option={current_state.get('option')}")
 
-            # Try progressive flow first if enabled
-            logger.debug("Attempting progressive flow")
+            # Handle with progressive flow
+            logger.debug("Handling with progressive flow")
             handled, response = self._handle_progressive_flow(current_state, selected_profile)
-            if handled:
-                logger.debug("Using progressive flow")
-                return response
-            logger.debug("Progressive flow not used, falling back to old flow")
-
-            # Check for commands first
-            if self.service.message_type == "text" and self._is_credex_command(self.service.body):
-                logger.debug(f"Handling credex command: {self.service.body}")
-                return self._handle_credex_command(current_state, selected_profile)
-
-            # Handle offer flow states
-            if current_state.get("offer_flow"):
-                logger.debug("Handling existing offer flow")
-                return self._handle_offer_flow(current_state, selected_profile)
-
-            # Start new offer flow
-            logger.debug("Starting new offer flow")
-            return self._start_offer_flow(current_state)
+            return response
 
         except Exception as e:
             logger.error(f"Error handling credex offer: {str(e)}")

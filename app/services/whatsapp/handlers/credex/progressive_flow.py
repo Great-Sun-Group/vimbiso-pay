@@ -5,7 +5,6 @@ from typing import Any, Dict, Tuple
 from core.messaging.flow_handler import FlowHandler
 from .offer_flow_v2 import CredexOfferFlow
 from ...types import WhatsAppMessage
-from core.config.constants import USE_PROGRESSIVE_FLOW
 
 logger = logging.getLogger(__name__)
 
@@ -14,29 +13,29 @@ class ProgressiveFlowMixin:
     """Mixin for handling progressive flows"""
 
     def __init__(self, *args, **kwargs):
-        # Remove use_progressive_flow from kwargs before passing to super
-        use_progressive_flow = kwargs.pop('use_progressive_flow', USE_PROGRESSIVE_FLOW)
         super().__init__(*args, **kwargs)
 
-        # Initialize flow handler
+        # Initialize flow handler with service injector
         self.flow_handler = FlowHandler(self.service.state)
-        self.flow_handler.register_flow(CredexOfferFlow)
-        self.use_progressive_flow = use_progressive_flow
-        logger.debug(f"Progressive flow initialized with use_progressive_flow={self.use_progressive_flow}")
+        self.flow_handler.register_flow(
+            CredexOfferFlow,
+            service_injector=self._inject_flow_services
+        )
+        logger.debug("Progressive flow initialized with service injector")
+
+    def _inject_flow_services(self, flow: CredexOfferFlow) -> None:
+        """Inject required services into flow"""
+        flow.transaction_service = self.transaction_service
+        flow.credex_service = self.service.credex_service
+        logger.debug("Services injected into flow")
 
     def _handle_progressive_flow(
         self,
         current_state: Dict[str, Any],
         selected_profile: Dict[str, Any]
-    ) -> Tuple[bool, WhatsAppMessage]:
-        """Handle progressive flow if active"""
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """Handle progressive flow"""
         try:
-            # Check if we should use progressive flow
-            logger.debug(f"Checking progressive flow with use_progressive_flow={self.use_progressive_flow}")
-            if not self.use_progressive_flow:
-                logger.debug("Progressive flow disabled, falling back to old flow")
-                return False, None
-
             # Log message details
             logger.debug(f"Message type: {self.service.message_type}")
             logger.debug(f"Message body: {self.service.body}")
@@ -45,43 +44,128 @@ class ProgressiveFlowMixin:
                 logger.debug(f"Interactive type: {interactive.get('type')}")
                 logger.debug(f"Interactive content: {interactive}")
 
+            # Get member IDs and account info
+            member_id = current_state["profile"]["data"]["action"]["details"]["memberID"]
+            account_id = selected_profile["data"]["accountID"]
+            account_name = selected_profile["data"].get("accountName", "Your Account")
+            logger.debug(f"Member IDs: member={member_id}, account={account_id}")
+            logger.debug(f"Account info: name={account_name}")
+
+            # Check for offer actions first
+            if self.service.message_type == "text" and isinstance(self.service.body, str):
+                # Extract action and credex_id from command
+                action_map = {
+                    "accept_offer_": "accept",
+                    "decline_offer_": "decline",
+                    "cancel_offer_": "cancel"
+                }
+
+                for prefix, action in action_map.items():
+                    if self.service.body.startswith(prefix):
+                        credex_id = self.service.body.replace(prefix, "")
+                        logger.debug(f"Handling offer action: {action} for credex_id: {credex_id}")
+
+                        # Get active flow from state using CredexOfferFlow directly
+                        flow = self.flow_handler.get_flow(
+                            "credex_offer",
+                            current_state.get("flow_data", {}).get("data", {})
+                        )
+                        if flow:
+                            success, message = flow.handle_offer_action(action, credex_id)
+                            if success:
+                                # Clear flow state on success
+                                current_state.pop("flow_data", None)
+                                self.service.state.update_state(
+                                    user_id=self.service.user.mobile_number,
+                                    new_state=current_state,
+                                    stage="menu",
+                                    update_from="flow_complete"
+                                )
+                                # Return to menu with success message
+                                menu_message = self.service.action_handler.auth_handler.handle_action_menu(
+                                    message=f"✅ {message}\n\n",
+                                    login=True  # Force fresh data
+                                )
+                                return True, WhatsAppMessage.from_core_message(menu_message)
+                            else:
+                                error_message = self._format_error_response(message)
+                                return True, WhatsAppMessage.from_core_message(error_message)
+                        break
+
             # Check if there's an active flow
             if "flow_data" in current_state:
                 logger.debug("Found active flow, handling message")
-                return True, self.flow_handler.handle_message(
+                # Ensure member IDs and account info are in flow_data
+                if "data" not in current_state["flow_data"]:
+                    current_state["flow_data"]["data"] = {}
+                current_state["flow_data"]["data"].update({
+                    "authorizer_member_id": member_id,
+                    "issuer_member_id": member_id,  # Set issuer_member_id to memberID
+                    "sender_account": account_name,
+                    "sender_account_id": account_id,
+                    "phone": self.service.user.mobile_number
+                })
+                logger.debug(f"Updated flow_data: {current_state['flow_data']['data']}")
+
+                # Update state before handling message
+                self.service.state.update_state(
+                    user_id=self.service.user.mobile_number,
+                    new_state=current_state,
+                    stage=current_state.get("stage", "credex"),
+                    update_from="flow_update"
+                )
+
+                # Handle message with updated state
+                message = self.flow_handler.handle_message(
                     self.service.user.mobile_number,
                     self.service.message
                 )
+                return True, WhatsAppMessage.from_core_message(message)
 
-            # Check if we're starting a new offer flow
-            # Handle both direct command and interactive message
-            is_offer_command = (
-                current_state.get("stage") == "credex" and
-                current_state.get("option") == "handle_action_offer_credex" and
-                not current_state.get("offer_flow")
+            # Start new flow if none active
+            logger.debug("Starting new progressive flow")
+
+            # Initialize flow_data with member IDs and account info
+            current_state["flow_data"] = {
+                "data": {
+                    "authorizer_member_id": member_id,
+                    "issuer_member_id": member_id,  # Set issuer_member_id to memberID
+                    "sender_account": account_name,
+                    "sender_account_id": account_id,
+                    "phone": self.service.user.mobile_number
+                }
+            }
+            logger.debug(f"Initial flow_data: {current_state['flow_data']['data']}")
+
+            # Update state to ensure member IDs and account info are preserved
+            self.service.state.update_state(
+                user_id=self.service.user.mobile_number,
+                new_state=current_state,
+                stage=current_state.get("stage", "credex"),
+                update_from="flow_init"
             )
 
-            if is_offer_command:
-                logger.debug("Starting new progressive flow")
-                # Start new flow
-                flow = self.flow_handler.start_flow(
-                    "credex_offer",
-                    self.service.user.mobile_number
-                )
-                if isinstance(flow, CredexOfferFlow):
-                    # Inject required services
-                    flow.transaction_service = self.transaction_service
-                    # Set initial state
-                    flow.state.update({
-                        "authorizer_member_id": current_state["profile"]["data"]["action"]["details"]["memberID"],
-                        "issuer_member_id": selected_profile["data"]["accountID"],
-                    })
-                    logger.debug("Flow initialized with transaction service and initial state")
-                return True, flow.current_step.message
+            result = self.flow_handler.start_flow(
+                "credex_offer",
+                self.service.user.mobile_number
+            )
 
-            logger.debug("No flow conditions met, returning False")
-            return False, None
+            # If result is a Flow instance
+            if isinstance(result, CredexOfferFlow):
+                # Set initial state
+                result.state.update(current_state["flow_data"]["data"])
+                logger.debug(f"Flow state after initialization: {result.state}")
+
+                # Get message from current step
+                message = result.current_step.message
+                if callable(message):
+                    message = message(result.state)
+                return True, WhatsAppMessage.from_core_message(message)
+
+            # If result is already a message or dict
+            return True, WhatsAppMessage.from_core_message(result)
 
         except Exception as e:
             logger.exception(f"Error handling progressive flow: {str(e)}")
-            return True, self._format_error_response(str(e))
+            error_message = self._format_error_response(str(e))
+            return True, WhatsAppMessage.from_core_message(error_message)

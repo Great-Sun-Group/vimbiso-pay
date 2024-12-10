@@ -1,13 +1,14 @@
+"""CredEx transaction service implementation"""
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .base import BaseTransactionService
 from .exceptions import (InvalidTransactionCommandError,
                          TransactionProcessingError)
-from .types import (Account, Transaction, TransactionOffer, TransactionResult,
-                    TransactionStatus, TransactionType)
+from .types import (Account, Transaction, TransactionOffer,
+                    TransactionResult, TransactionStatus, TransactionType)
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,41 @@ class CredexTransactionService(BaseTransactionService):
     def __init__(self, api_client):
         """Initialize with CredEx API client"""
         self.api_client = api_client
+
+    def get_available_accounts(self, member_id: str) -> List[Account]:
+        """Get available accounts for a member"""
+        return self._fetch_member_accounts(member_id)
+
+    def validate_offer(self, offer: TransactionOffer) -> Tuple[bool, Optional[Dict[str, List[str]]]]:
+        """Validate a transaction offer"""
+        # First use base class validation
+        is_valid, errors = super().validate_offer(offer)
+        if not is_valid:
+            return False, errors
+
+        # Add CredEx-specific validation
+        errors = {}
+
+        # Validate handle or receiver_account_id
+        if not offer.handle and not offer.receiver_account_id:
+            errors["recipient"] = ["Either handle or receiver account ID is required"]
+
+        return len(errors) == 0, errors if errors else None
+
+    def get_transaction_status(self, transaction_id: str) -> Dict[str, Any]:
+        """Get the status of a transaction"""
+        try:
+            response = self.api_client.get_transaction_status(transaction_id)
+            if not response[0]:  # Check first element of tuple for success
+                error_msg = response[1].get("message", "Failed to fetch transaction status")
+                raise TransactionProcessingError(error_msg)
+            return response[1].get("data", {})
+        except Exception as e:
+            logger.error(f"Failed to fetch transaction status: {str(e)}")
+            return {
+                "status": TransactionStatus.FAILED.value,
+                "error": str(e)
+            }
 
     def process_command(
         self, command: str, member_id: str, account_id: str, denomination: str
@@ -35,9 +71,49 @@ class CredexTransactionService(BaseTransactionService):
                 error_message=str(e)
             )
 
-    def get_available_accounts(self, member_id: str) -> List[Account]:
-        """Get available accounts for a member"""
-        return self._fetch_member_accounts(member_id)
+    def list_transactions(
+        self,
+        member_id: str,
+        account_id: Optional[str] = None,
+        status: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> List[Transaction]:
+        """List transactions matching the given criteria
+
+        Note: This is a placeholder implementation. Transaction listing functionality
+        will be implemented in a future update.
+
+        Args:
+            member_id: ID of the member
+            account_id: Optional account ID to filter by
+            status: Optional status to filter by
+            start_date: Optional start date for filtering
+            end_date: Optional end date for filtering
+
+        Returns:
+            Empty list for now, will return matching transactions in future
+        """
+        logger.info("Transaction listing not yet implemented")
+        return []
+
+    def _confirm_transaction(
+        self, transaction_id: str, issuer_account_id: str
+    ) -> TransactionResult:
+        """Confirm a transaction"""
+        try:
+            response = self.api_client.confirm_credex(transaction_id, issuer_account_id)
+            if not response[0]:  # Check first element of tuple for success
+                error_msg = response[1].get("message", "Failed to confirm transaction")
+                raise TransactionProcessingError(error_msg)
+
+            return TransactionResult(
+                success=True,
+                details=response[1].get("data", {})
+            )
+        except Exception as e:
+            logger.error(f"Failed to confirm transaction: {str(e)}")
+            raise TransactionProcessingError(str(e))
 
     def _parse_command(self, command: str) -> Dict[str, Any]:
         """Parse a CredEx transaction command string
@@ -178,63 +254,6 @@ class CredexTransactionService(BaseTransactionService):
             return accounts
         except Exception as e:
             logger.error(f"Failed to fetch CredEx accounts: {str(e)}")
-            raise TransactionProcessingError(str(e))
-
-    def _fetch_transaction_status(self, credex_id: str) -> Dict[str, Any]:
-        """Fetch status of a CredEx transaction"""
-        try:
-            response = self.api_client.get_transaction_status(credex_id)
-
-            if not response[0]:  # Check first element of tuple for success
-                error_data = response[1]
-                error_msg = (
-                    error_data.get("message") or
-                    error_data.get("error") or
-                    error_data.get("detail") or
-                    "Failed to fetch transaction status"
-                )
-                raise TransactionProcessingError(error_msg)
-
-            return response[1].get("data", {})
-        except Exception as e:
-            logger.error(f"Failed to fetch CredEx transaction status: {str(e)}")
-            raise TransactionProcessingError(str(e))
-
-    def _fetch_transactions(
-        self,
-        member_id: str,
-        account_id: Optional[str] = None,
-        status: Optional[str] = None,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> List[Transaction]:
-        """Fetch CredEx transactions matching criteria"""
-        try:
-            filters = {
-                "member_id": member_id,
-                "account_id": account_id,
-                "status": status,
-                "start_date": start_date,
-                "end_date": end_date
-            }
-            response = self.api_client.list_transactions(filters)
-
-            if not response[0]:  # Check first element of tuple for success
-                error_data = response[1]
-                error_msg = (
-                    error_data.get("message") or
-                    error_data.get("error") or
-                    error_data.get("detail") or
-                    "Failed to fetch transactions"
-                )
-                raise TransactionProcessingError(error_msg)
-
-            transactions = []
-            for tx_data in response[1].get("data", {}).get("transactions", []):
-                transactions.append(self._create_transaction_from_response(tx_data))
-            return transactions
-        except Exception as e:
-            logger.error(f"Failed to fetch CredEx transactions: {str(e)}")
             raise TransactionProcessingError(str(e))
 
     def _create_transaction_result(self, response_data: Dict[str, Any]) -> TransactionResult:

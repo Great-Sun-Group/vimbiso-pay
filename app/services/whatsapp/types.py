@@ -1,7 +1,9 @@
 """WhatsApp service types and interfaces"""
 import json
 import logging
-from typing import Dict, Any
+from typing import Any, Dict, Union
+
+from core.messaging.types import Message as CoreMessage
 from services.state.service import StateService, StateStage
 
 logger = logging.getLogger(__name__)
@@ -9,7 +11,60 @@ logger = logging.getLogger(__name__)
 
 class WhatsAppMessage(Dict[str, Any]):
     """Type for WhatsApp messages"""
-    pass
+
+    @classmethod
+    def from_core_message(cls, message: Union[CoreMessage, Dict[str, Any], 'WhatsAppMessage']) -> Dict[str, Any]:
+        """Convert core message to WhatsApp message format"""
+        try:
+            # If it's already a dict in WhatsApp format, return it
+            if isinstance(message, dict):
+                if "messaging_product" in message:
+                    return message
+                # If it's a dict but not in WhatsApp format, wrap it
+                if "type" not in message:
+                    message["type"] = "text"
+                if message["type"] == "text" and "text" not in message:
+                    message["text"] = {"body": str(message.get("body", ""))}
+                return {
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    **message
+                }
+
+            # If it's a WhatsAppMessage from core, convert it
+            if isinstance(message, CoreMessage):
+                content_type = message.content.type.value
+                content_dict = {}
+                if content_type == "text":
+                    content_dict = {"body": message.content.body}
+                elif content_type == "interactive":
+                    content_dict = message.content.to_dict()
+                else:
+                    content_dict = message.content.to_dict()
+
+                return {
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": message.recipient.phone_number,
+                    "type": content_type,
+                    content_type: content_dict
+                }
+
+            # If it's already a WhatsAppMessage instance, convert to dict
+            if isinstance(message, WhatsAppMessage):
+                return dict(message)
+
+            raise TypeError(f"Cannot convert {type(message)} to WhatsApp message format")
+        except Exception as e:
+            logger.error(f"Error converting message: {str(e)}")
+            return {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "type": "text",
+                "text": {
+                    "body": f"Error converting message: {str(e)}"
+                }
+            }
 
 
 class BotServiceInterface:
@@ -153,14 +208,14 @@ class BotServiceInterface:
             self.message_type = "text"
             self.body = ""
 
-    def get_response_template(self, message_text: str) -> WhatsAppMessage:
+    def get_response_template(self, message_text: str) -> Dict[str, Any]:
         """Get a basic WhatsApp message template
 
         Args:
             message_text: Text content for the message
 
         Returns:
-            WhatsAppMessage: Basic formatted WhatsApp message
+            Dict[str, Any]: Basic formatted WhatsApp message
         """
         return {
             "messaging_product": "whatsapp",

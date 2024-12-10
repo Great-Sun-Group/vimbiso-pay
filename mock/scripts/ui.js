@@ -1,4 +1,4 @@
-import { formatWhatsAppText, createNativeForm } from './handlers.js';
+import { createNativeForm, formatWhatsAppText } from './handlers.js';
 
 export class ChatUI {
     constructor() {

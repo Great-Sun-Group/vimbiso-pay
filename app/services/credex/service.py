@@ -95,6 +95,25 @@ class CredExService(CredExServiceInterface):
         """Get available accounts for a member"""
         return self._member.get_member_accounts(member_id)
 
+    def list_transactions(
+        self,
+        filters: Dict[str, Any]
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """List transactions matching the given criteria
+
+        Args:
+            filters: Dictionary containing filter criteria:
+                - member_id: ID of the member
+                - account_id: Optional account ID to filter by
+                - status: Optional status to filter by
+                - start_date: Optional start date for filtering
+                - end_date: Optional end date for filtering
+
+        Returns:
+            Tuple of (success, response_data)
+        """
+        return self._offers.list_transactions(filters)
+
     @property
     def jwt_token(self) -> Optional[str]:
         """Get the current JWT token"""

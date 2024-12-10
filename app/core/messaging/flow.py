@@ -1,7 +1,7 @@
 """Flow management implementation for progressive WhatsApp interactions"""
-from enum import Enum
-from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, List, Optional, Callable, Union
 
 from services.state.service import StateStage
 from .types import Message as WhatsAppMessage
@@ -20,7 +20,7 @@ class Step:
     id: str
     type: StepType
     stage: str  # Maps to StateStage
-    message: WhatsAppMessage
+    message: Union[WhatsAppMessage, Callable[[Dict[str, Any]], WhatsAppMessage]]
     validation: Optional[Callable[[Any], bool]] = None
     transform: Optional[Callable[[Any], Any]] = None
     condition: Optional[Callable[[Dict[str, Any]], bool]] = None

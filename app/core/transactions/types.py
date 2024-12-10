@@ -29,6 +29,26 @@ class Account:
 
 
 @dataclass
+class Recipient:
+    """Transaction recipient information"""
+    id: str
+    name: str
+    handle: str
+    last_transaction: Optional[datetime] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert recipient to dictionary format"""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "handle": self.handle,
+            "last_transaction": self.last_transaction.isoformat() if self.last_transaction else None,
+            "metadata": self.metadata
+        }
+
+
+@dataclass
 class TransactionOffer:
     """Transaction offer details"""
     authorizer_member_id: str
