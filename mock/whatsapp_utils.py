@@ -154,13 +154,13 @@ def _get_message_content(message_type: str, message_text: Union[str, Dict]) -> D
 
 def _create_form_reply(form_data: Dict[str, Any]) -> Dict[str, Any]:
     """Create form reply structure."""
+    timestamp = str(int(datetime.now().timestamp()))
     return {
         "submitted_form_data": {
-            "response_at": str(int(datetime.now().timestamp())),
+            "response_at": timestamp,
             "form_data": {
                 "version": "1",
                 "screen": "MAIN",
-                "name": "credex_offer_form",
                 "response_payload": {
                     "response_json": json.dumps(form_data),
                     "version": "1"
@@ -200,25 +200,24 @@ def extract_message_text(message: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
 
         # Handle form replies
         if "nfm_reply" in interactive:
-            form_data = (interactive.get("nfm_reply", {})
-                         .get("submitted_form_data", {})
-                         .get("form_data", {}))
+            nfm_reply = interactive.get("nfm_reply", {})
+            submitted_data = nfm_reply.get("submitted_form_data", {})
+            form_data = submitted_data.get("form_data", {})
 
+            # Try to get response from response_payload first
+            if "response_payload" in form_data:
+                try:
+                    return json.loads(form_data["response_payload"]["response_json"])
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+            # Fallback to response_fields
             response_fields = form_data.get("response_fields", [])
-            form_values = {
+            return {
                 field["field_id"]: field["value"]
                 for field in response_fields
-                if field.get("version") == form_data.get("version")
-                and "field_id" in field and "value" in field
+                if "field_id" in field and "value" in field
             }
-
-            # Validate required fields for credex form
-            if (form_data.get("name") == "credex_offer_form" and
-                    not all(k in form_values for k in ["amount", "recipientAccountHandle"])):
-                logger.error("Missing required fields in credex offer form")
-                return {}
-
-            return form_values
 
         return "Unknown interactive type"
 

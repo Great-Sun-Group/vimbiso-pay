@@ -1,11 +1,3 @@
-// Message type handlers
-export const handlerTitles = {
-    "handle_action_offer_credex": "Offer Secured Credex",
-    "handle_action_pending_offers_in": "Pending Offers",
-    "handle_action_pending_offers_out": "Cancel Outgoing",
-    "handle_action_transactions": "Review Transactions"
-};
-
 export function formatWhatsAppText(text) {
     return text
         .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
@@ -87,7 +79,7 @@ export function createMessagePayload(messageType, messageText, phoneNumber) {
                                 type: "button_reply",
                                 button_reply: {
                                     id: messageText,
-                                    title: handlerTitles[messageText] || messageText,
+                                    title: messageText,
                                     selected: true
                                 }
                             }
@@ -100,14 +92,15 @@ export function createMessagePayload(messageType, messageText, phoneNumber) {
     };
 }
 
-export function createFormReply(formData) {
+export function createFormReply(formData, formName) {
+    const timestamp = Math.floor(Date.now() / 1000).toString();
     return {
         submitted_form_data: {
-            response_at: Math.floor(Date.now() / 1000).toString(),
+            response_at: timestamp,
             form_data: {
                 version: "1",
                 screen: "MAIN",
-                name: "credex_offer_form",
+                name: formName,
                 response_payload: {
                     response_json: JSON.stringify(formData),
                     version: "1"

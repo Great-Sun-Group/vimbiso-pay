@@ -1,4 +1,4 @@
-import { handlerTitles, createMessagePayload, createFormReply } from './handlers.js';
+import { createMessagePayload, createFormReply } from './handlers.js';
 import { ChatUI } from './ui.js';
 
 class WhatsAppMock {
@@ -20,17 +20,18 @@ class WhatsAppMock {
 
         if (messageText.startsWith('form:')) {
             messageType = 'interactive';
+            const [, formName, formDataStr] = messageText.split(':');
             const formData = Object.fromEntries(
-                messageText.split(':')[1].split(',').map(pair => {
+                formDataStr.split(',').map(pair => {
                     const [key, value] = pair.split('=');
                     return [key, value];
                 })
             );
-            displayText = `Form data: ${messageText.split(':')[1]}`;
-            processedMessage = createFormReply(formData);
+            displayText = `Form data: ${formDataStr}`;
+            processedMessage = createFormReply(formData, formName);
         } else if (messageText.startsWith('handle')) {
             messageType = 'interactive';
-            displayText = handlerTitles[messageText] || messageText;
+            displayText = messageText;
         } else if (messageText.startsWith('button:')) {
             messageType = 'button';
             displayText = messageText.substring(7);

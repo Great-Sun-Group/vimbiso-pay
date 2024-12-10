@@ -8,6 +8,7 @@ export class ChatUI {
         this.sendButton = document.getElementById('sendButton');
         this.chatContainer = document.getElementById('chatContainer');
         this.statusDiv = document.getElementById('status');
+        this.currentFormName = null; // Track current form name
     }
 
     displayMessage(data) {
@@ -20,6 +21,7 @@ export class ChatUI {
         } else if (messageData.type === 'interactive') {
             messageDiv.className = 'interactive-message';
 
+            // Display message body if present
             if (messageData.interactive?.body?.text) {
                 const bodyDiv = document.createElement('div');
                 bodyDiv.className = 'body whatsapp-text';
@@ -27,6 +29,7 @@ export class ChatUI {
                 messageDiv.appendChild(bodyDiv);
             }
 
+            // Handle interactive components
             if (messageData.interactive?.action) {
                 this.handleInteractiveAction(messageDiv, messageData.interactive);
             }
@@ -42,15 +45,21 @@ export class ChatUI {
     handleInteractiveAction(messageDiv, interactive) {
         const action = interactive.action;
 
+        // Handle native form messages
         if (interactive.type === 'nfm') {
+            // Store form name for use in response
+            this.currentFormName = action.name;
             messageDiv.appendChild(createNativeForm(
                 action.parameters.fields,
                 formData => {
-                    this.messageInput.value = `form:${Object.entries(formData).map(([k,v]) => `${k}=${v}`).join(',')}`;
+                    // Include form name in submission
+                    this.messageInput.value = `form:${this.currentFormName}:${Object.entries(formData).map(([k,v]) => `${k}=${v}`).join(',')}`;
                     this.onSendMessage();
                 }
             ));
-        } else if (interactive.type === 'button' && action.buttons) {
+        }
+        // Handle button messages
+        else if (interactive.type === 'button' && action.buttons) {
             const buttonsDiv = document.createElement('div');
             buttonsDiv.className = 'buttons';
 
@@ -66,53 +75,59 @@ export class ChatUI {
             });
 
             messageDiv.appendChild(buttonsDiv);
-        } else if (interactive.type === 'list') {
-            this.handleListInteraction(messageDiv, action);
         }
-    }
+        // Handle list messages
+        else if (interactive.type === 'list') {
+            const listDiv = document.createElement('div');
+            listDiv.className = 'list-container';
 
-    handleListInteraction(messageDiv, action) {
-        if (action.button) {
-            const button = document.createElement('div');
-            button.className = 'list-button';
-            button.textContent = action.button;
-            button.onclick = () => {
-                const options = messageDiv.querySelector('.menu-options');
-                if (options) {
-                    options.style.display = options.style.display === 'none' ? 'flex' : 'none';
-                }
-            };
-            messageDiv.appendChild(button);
-        }
+            // Create list button
+            if (action.button) {
+                const button = document.createElement('div');
+                button.className = 'list-button';
+                button.textContent = action.button;
+                button.onclick = () => {
+                    const options = listDiv.querySelector('.list-options');
+                    if (options) {
+                        options.style.display = options.style.display === 'none' ? 'block' : 'none';
+                    }
+                };
+                listDiv.appendChild(button);
+            }
 
-        if (action.sections) {
-            const optionsDiv = document.createElement('div');
-            optionsDiv.className = 'menu-options';
-            optionsDiv.style.display = 'none';
+            // Create list options
+            if (action.sections) {
+                const optionsDiv = document.createElement('div');
+                optionsDiv.className = 'list-options';
+                optionsDiv.style.display = 'none';
 
-            action.sections.forEach(section => {
-                if (section.title) {
-                    const titleDiv = document.createElement('div');
-                    titleDiv.className = 'section-title';
-                    titleDiv.textContent = section.title;
-                    optionsDiv.appendChild(titleDiv);
-                }
+                action.sections.forEach(section => {
+                    if (section.title) {
+                        const titleDiv = document.createElement('div');
+                        titleDiv.className = 'list-section-title';
+                        titleDiv.textContent = section.title;
+                        optionsDiv.appendChild(titleDiv);
+                    }
 
-                if (section.rows) {
-                    section.rows.forEach(row => {
-                        const option = document.createElement('div');
-                        option.className = 'menu-option';
-                        option.textContent = row.title;
-                        option.onclick = () => {
-                            this.messageInput.value = row.id;
-                            setTimeout(() => this.onSendMessage(), 0);
-                        };
-                        optionsDiv.appendChild(option);
-                    });
-                }
-            });
+                    if (section.rows) {
+                        section.rows.forEach(row => {
+                            const option = document.createElement('div');
+                            option.className = 'list-option';
+                            option.textContent = row.title;
+                            option.onclick = () => {
+                                this.messageInput.value = row.id;
+                                this.onSendMessage();
+                                optionsDiv.style.display = 'none';
+                            };
+                            optionsDiv.appendChild(option);
+                        });
+                    }
+                });
 
-            messageDiv.appendChild(optionsDiv);
+                listDiv.appendChild(optionsDiv);
+            }
+
+            messageDiv.appendChild(listDiv);
         }
     }
 
