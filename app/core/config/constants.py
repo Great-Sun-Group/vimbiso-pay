@@ -1,6 +1,7 @@
 from django.core.cache import cache
 from datetime import timedelta
 import datetime
+import os
 
 GREETINGS = [
     "menu",
@@ -23,6 +24,9 @@ GREETINGS = [
     "yes",
     "retry",
 ]
+
+# Feature flags
+USE_PROGRESSIVE_FLOW = os.environ.get('USE_PROGRESSIVE_FLOW', 'False') == 'True'
 
 
 def get_greeting(name):

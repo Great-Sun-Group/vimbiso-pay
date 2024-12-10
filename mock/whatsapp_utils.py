@@ -110,11 +110,21 @@ def _get_message_content(message_type: str, message_text: Union[str, Dict]) -> D
     if message_type == "text":
         return {"text": {"body": message_text, "preview_url": False}}
 
-    if message_type == "button":
-        return {"button": {"payload": message_text, "text": message_text}}
-
     if message_type == "interactive":
-        if isinstance(message_text, dict):  # Form data
+        # Handle menu selection (e.g., "handle_action_offer_credex")
+        if isinstance(message_text, str) and message_text.startswith("handle_action_"):
+            return {
+                "interactive": {
+                    "type": "button_reply",
+                    "button_reply": {
+                        "id": message_text,
+                        "title": message_text
+                    }
+                }
+            }
+
+        # Handle form data
+        if isinstance(message_text, dict):
             return {
                 "interactive": {
                     "type": "nfm_reply",
@@ -122,8 +132,8 @@ def _get_message_content(message_type: str, message_text: Union[str, Dict]) -> D
                 }
             }
 
-        # Handle button/list replies
-        if ":" in message_text:
+        # Handle button/list replies with explicit type
+        if isinstance(message_text, str) and ":" in message_text:
             reply_type, reply_id = message_text.split(":", 1)
             if reply_type in ["button", "list"]:
                 return {
@@ -131,23 +141,13 @@ def _get_message_content(message_type: str, message_text: Union[str, Dict]) -> D
                         "type": f"{reply_type}_reply",
                         f"{reply_type}_reply": {
                             "id": reply_id,
-                            "title": reply_id,
-                            "selected": True
+                            "title": reply_id
                         }
                     }
                 }
 
-        # Default to button reply
-        return {
-            "interactive": {
-                "type": "button_reply",
-                "button_reply": {
-                    "id": message_text,
-                    "title": message_text,
-                    "selected": True
-                }
-            }
-        }
+        # Default to text message
+        return {"text": {"body": str(message_text), "preview_url": False}}
 
     raise ValueError(f"Unsupported message type: {message_type}")
 
@@ -187,19 +187,18 @@ def extract_message_text(message: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
     if message_type == "text":
         return message.get("text", {}).get("body", "")
 
-    if message_type == "button":
-        return message.get("button", {}).get("payload", "")
-
     if message_type == "interactive":
         interactive = message.get("interactive", {})
+        interactive_type = interactive.get("type", "")
 
         # Handle button/list replies
-        for reply_type in ["button_reply", "list_reply"]:
-            if reply_type in interactive:
-                return interactive[reply_type].get("id", "")
+        if interactive_type == "button_reply":
+            return interactive["button_reply"].get("id", "")
+        elif interactive_type == "list_reply":
+            return interactive["list_reply"].get("id", "")
 
         # Handle form replies
-        if "nfm_reply" in interactive:
+        elif interactive_type == "nfm_reply":
             nfm_reply = interactive.get("nfm_reply", {})
             submitted_data = nfm_reply.get("submitted_form_data", {})
             form_data = submitted_data.get("form_data", {})

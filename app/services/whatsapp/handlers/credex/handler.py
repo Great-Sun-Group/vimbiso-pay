@@ -2,44 +2,59 @@ import logging
 
 from core.transactions import create_transaction_service
 from services.state.service import StateStage
+
 from ...base_handler import BaseActionHandler
 from ...types import WhatsAppMessage
-
-from .profile import ProfileMixin
-from .offer_flow import OfferFlowMixin
-from .message_handler import MessageHandlerMixin
 from .command_handler import CommandHandlerMixin
+from .message_handler import MessageHandlerMixin
+from .offer_flow import OfferFlowMixin
+from .profile import ProfileMixin
+from .progressive_flow import ProgressiveFlowMixin
 
 logger = logging.getLogger(__name__)
 
 
 class CredexActionHandler(
-    ProfileMixin,
+    ProgressiveFlowMixin,  # First to ensure it gets priority
     OfferFlowMixin,
     MessageHandlerMixin,
     CommandHandlerMixin,
+    ProfileMixin,
     BaseActionHandler
 ):
     """Handler for Credex-related actions"""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, service):
+        logger.debug("Initializing CredexActionHandler")
+        # Initialize with service
+        super().__init__(service)
         self.transaction_service = create_transaction_service(
             api_client=self.service.credex_service
         )
         # Ensure JWT token is set from state
         if self.service.current_state.get("jwt_token"):
             self.service.credex_service.jwt_token = self.service.current_state["jwt_token"]
+        logger.debug("CredexActionHandler initialized")
 
     def handle_action_offer_credex(self) -> WhatsAppMessage:
         """Handle credex offer creation with proper state management"""
         try:
+            logger.debug("Starting handle_action_offer_credex")
             # Validate and get profile data
             profile_result = self._validate_and_get_profile()
             if isinstance(profile_result, WhatsAppMessage):
                 return profile_result
 
             current_state, selected_profile = profile_result
+            logger.debug(f"Current state: stage={current_state.get('stage')}, option={current_state.get('option')}")
+
+            # Try progressive flow first if enabled
+            logger.debug("Attempting progressive flow")
+            handled, response = self._handle_progressive_flow(current_state, selected_profile)
+            if handled:
+                logger.debug("Using progressive flow")
+                return response
+            logger.debug("Progressive flow not used, falling back to old flow")
 
             # Check for commands first
             if self.service.message_type == "text" and self._is_credex_command(self.service.body):
@@ -48,14 +63,15 @@ class CredexActionHandler(
 
             # Handle offer flow states
             if current_state.get("offer_flow"):
+                logger.debug("Handling existing offer flow")
                 return self._handle_offer_flow(current_state, selected_profile)
 
             # Start new offer flow
+            logger.debug("Starting new offer flow")
             return self._start_offer_flow(current_state)
 
         except Exception as e:
             logger.error(f"Error handling credex offer: {str(e)}")
-            # Use _format_error_response to properly format the error message
             return self._format_error_response(str(e))
 
     def handle_action_pending_offers_out(self) -> WhatsAppMessage:

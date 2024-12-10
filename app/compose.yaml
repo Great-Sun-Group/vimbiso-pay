@@ -23,6 +23,7 @@ services:
       - WHATSAPP_COMPANY_REGISTRATION_FLOW_ID=${WHATSAPP_COMPANY_REGISTRATION_FLOW_ID}
       - MYCREDEX_APP_URL=https://dev.mycredex.dev
       - CLIENT_API_KEY=${CLIENT_API_KEY}
+      - USE_PROGRESSIVE_FLOW=True
     command: ["./start_app.sh"]
     depends_on:
       redis:
