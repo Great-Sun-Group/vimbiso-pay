@@ -1,4 +1,22 @@
-.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down diff
+.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down diff dev prod
+
+# Combined development workflow
+dev:
+	DJANGO_ENV=development docker compose -f app/compose.yaml down
+	DJANGO_ENV=development docker compose -f app/compose.yaml build \
+		--build-arg REQUIREMENTS_FILE=requirements/dev.txt \
+		--build-arg DJANGO_SETTINGS_MODULE=config.settings \
+		--build-arg DJANGO_ENV=development
+	DJANGO_ENV=development docker compose -f app/compose.yaml up
+
+# Combined production workflow
+prod:
+	DJANGO_ENV=production docker compose -f app/compose.yaml down
+	DJANGO_ENV=production docker compose -f app/compose.yaml build \
+		--build-arg REQUIREMENTS_FILE=requirements/prod.txt \
+		--build-arg DJANGO_SETTINGS_MODULE=config.settings \
+		--build-arg DJANGO_ENV=production
+	DJANGO_ENV=production docker compose -f app/compose.yaml up -d
 
 # Build for development
 dev-build:

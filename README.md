@@ -21,9 +21,13 @@ A WhatsApp bot service that facilitates financial transactions through the [cred
 
 ### Development Environment
 ```bash
-# Build and start services
+# Build and start services (combined command)
+make dev
+
+# Or use individual commands if needed:
 make dev-build
 make dev-up
+make dev-down
 
 # Access services (from host machine)
 Application: http://localhost:8000
@@ -33,18 +37,16 @@ Mock WhatsApp: http://localhost:8001
 - App service: http://app:8000
 - Redis: redis://redis:6379
 - Mock WhatsApp: http://mock:8001
-
-# Stop services
-make dev-down
 ```
 
 ### Production Environment
 ```bash
-# Build and start
+# Build and start services (combined command)
+make prod
+
+# Or use individual commands if needed:
 make prod-build
 make prod-up
-
-# Stop services
 make prod-down
 ```
 
@@ -98,7 +100,7 @@ Test the WhatsApp bot without real WhatsApp credentials:
 
 ```bash
 # Start all services including mock server
-make dev-up
+make dev
 
 # CLI testing (from host machine)
 ./mock/cli.py "Hello, world!"
