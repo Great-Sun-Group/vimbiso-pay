@@ -20,27 +20,39 @@ def create_whatsapp_payload(phone_number, message_type, message_text, phone_numb
     Returns:
         dict: WhatsApp message payload
     """
+    # Create payload matching real WhatsApp webhook format
     payload = {
+        "object": "whatsapp_business_account",
         "entry": [
             {
+                "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
                 "changes": [
                     {
                         "value": {
+                            "messaging_product": "whatsapp",
                             "metadata": {
-                                "phone_number_id": phone_number_id,
                                 "display_phone_number": "15550123456",
+                                "phone_number_id": phone_number_id
                             },
                             "contacts": [
-                                {"wa_id": phone_number, "profile": {"name": ""}}
+                                {
+                                    "wa_id": phone_number,
+                                    "profile": {
+                                        "name": ""
+                                    }
+                                }
                             ],
                             "messages": [
                                 {
-                                    "type": message_type,
+                                    "from": phone_number,
+                                    "id": f"wamid.{datetime.now().timestamp()}",
                                     "timestamp": int(datetime.now().timestamp()),
-                                    **get_message_content(message_type, message_text),
+                                    "type": message_type,
+                                    **get_message_content(message_type, message_text)
                                 }
-                            ],
-                        }
+                            ]
+                        },
+                        "field": "messages"
                     }
                 ]
             }

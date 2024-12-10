@@ -31,51 +31,54 @@ class BotServiceInterface:
 
         # Extract message details from payload
         try:
-            # Try direct message format first (mock server)
-            self.message_type = payload.get("type", "")
+            # Extract message from WhatsApp webhook format
+            message_data = (
+                payload.get("entry", [{}])[0]
+                .get("changes", [{}])[0]
+                .get("value", {})
+            )
+            messages = message_data.get("messages", [{}])
+            if not messages:
+                logger.error("No messages found in payload")
+                raise ValueError("No messages found in payload")
+
+            message = messages[0]
+            self.message_type = message.get("type", "")
+            logger.debug(f"Message type: {self.message_type}")
+
+            # Extract body based on message type
             if self.message_type == "text":
-                self.body = payload.get("message", "")
+                self.body = message.get("text", {}).get("body", "")
+                logger.debug(f"Text message body: {self.body}")
             elif self.message_type == "button":
-                self.body = payload.get("message", "")
+                self.body = message.get("button", {}).get("payload", "")
+                logger.debug(f"Button payload: {self.body}")
             elif self.message_type == "interactive":
-                self.body = payload.get("message", "")
+                interactive = message.get("interactive", {})
+                logger.debug(f"Interactive message: {json.dumps(interactive, indent=2)}")
+                if "button_reply" in interactive:
+                    self.body = interactive["button_reply"].get("id", "")
+                    logger.debug(f"Button reply ID: {self.body}")
+                elif "list_reply" in interactive:
+                    self.body = interactive["list_reply"].get("id", "")
+                    logger.debug(f"List reply ID: {self.body}")
+                elif "nfm_reply" in interactive:
+                    self.message_type = "nfm_reply"
+                    try:
+                        response_json = interactive["nfm_reply"].get("response_json", "{}")
+                        self.body = json.loads(response_json)
+                        logger.debug(f"Form response data: {json.dumps(self.body, indent=2)}")
+                    except json.JSONDecodeError:
+                        logger.error("Failed to parse nfm_reply response_json")
+                        self.body = {}
             else:
-                self.body = payload.get("message", "")
-
-            # If no message type found, try nested format (WhatsApp API)
-            if not self.message_type:
-                message_data = (
-                    payload.get("entry", [{}])[0]
-                    .get("changes", [{}])[0]
-                    .get("value", {})
-                )
-                messages = message_data.get("messages", [{}])[0]
-                self.message_type = messages.get("type", "")
-
-                if self.message_type == "text":
-                    self.body = messages.get("text", {}).get("body", "")
-                elif self.message_type == "button":
-                    self.body = messages.get("button", {}).get("payload", "")
-                elif self.message_type == "interactive":
-                    interactive = messages.get("interactive", {})
-                    if "button_reply" in interactive:
-                        self.body = interactive["button_reply"].get("id", "")
-                    elif "list_reply" in interactive:
-                        self.body = interactive["list_reply"].get("id", "")
-                    elif "nfm_reply" in interactive:
-                        self.message_type = "nfm_reply"
-                        try:
-                            response_json = interactive["nfm_reply"].get("response_json", "{}")
-                            self.body = json.loads(response_json)
-                        except json.JSONDecodeError:
-                            logger.error("Failed to parse nfm_reply response_json")
-                            self.body = {}
-                else:
-                    self.body = ""
+                logger.warning(f"Unsupported message type: {self.message_type}")
+                self.body = ""
 
             # Get current state using mobile number as user ID
             try:
                 self.current_state = self.state.get_state(self.user.mobile_number)
+                logger.debug(f"Current state: {json.dumps(self.current_state, indent=2)}")
             except Exception as e:
                 logger.info(f"No existing state found: {str(e)}")
                 # Initialize with empty state but include required fields
@@ -94,9 +97,11 @@ class BotServiceInterface:
                     option="handle_action_menu"
                 )
                 self.current_state = self.state.get_state(self.user.mobile_number)
+                logger.debug("Initialized new state")
 
             # Update state if body is an action command
             if isinstance(self.body, str) and self.body.startswith("handle_action_"):
+                logger.debug(f"Updating state for action command: {self.body}")
                 new_state = self.current_state.copy()
                 new_state.update({
                     "stage": self.body,

@@ -2,6 +2,7 @@
 WhatsApp bot service implementation.
 Handles message routing and bot interactions.
 """
+import json
 import logging
 from typing import Dict, Any, Optional, Tuple
 
@@ -28,7 +29,7 @@ class CredexBotService(BotServiceInterface):
             payload: Message payload from WhatsApp
             user: CachedUser instance
         """
-        logger.debug(f"Initializing CredexBotService with payload: {payload}")
+        logger.debug(f"Initializing CredexBotService with payload: {json.dumps(payload, indent=2)}")
         if user is None:
             logger.error("User object is required")
             raise InvalidInputException("User object is required")
@@ -44,15 +45,16 @@ class CredexBotService(BotServiceInterface):
 
         # Initialize state if needed
         self._initialize_state()
-        logger.debug(f"Current state: {self.current_state}")
+        logger.debug(f"Current state: {json.dumps(self.current_state, indent=2)}")
 
         self.response = self.handle()
-        logger.debug(f"Final response: {self.response}")
+        logger.debug(f"Final response: {json.dumps(self.response, indent=2)}")
 
     def _initialize_state(self) -> None:
         """Initialize state if empty with proper error handling"""
         try:
             self.current_state = self.state.get_state(self.user.mobile_number)
+            logger.debug(f"Retrieved state: {json.dumps(self.current_state, indent=2)}")
         except Exception as e:
             logger.info(f"No existing state found: {str(e)}")
             # Initialize fresh state with required fields
@@ -71,6 +73,7 @@ class CredexBotService(BotServiceInterface):
                 option="handle_action_menu"
             )
             self.current_state = self.state.get_state(self.user.mobile_number)
+            logger.debug(f"Initialized new state: {json.dumps(self.current_state, indent=2)}")
 
     def refresh(self, reset: bool = True, silent: bool = True) -> Optional[str]:
         """Refresh user profile and state information.
@@ -128,11 +131,13 @@ class CredexBotService(BotServiceInterface):
 
             # First try to login
             success, login_msg = self._attempt_login()
+            logger.debug(f"Login attempt result: success={success}, msg={login_msg}")
             if not success:
                 return self._handle_login_failure(login_msg)
 
             # Get fresh dashboard data
             success, data = self._get_dashboard_data()
+            logger.debug(f"Dashboard data result: success={success}")
             if not success:
                 return self.get_response_template(data.get("message", "Failed to load profile"))
 
@@ -196,10 +201,16 @@ class CredexBotService(BotServiceInterface):
             # Get current stage and option from state
             current_stage = self.state.get_stage(self.user.mobile_number)
             current_option = self.current_state.get("option")
+            logger.debug(f"Current stage: {current_stage}")
+            logger.debug(f"Current option: {current_option}")
 
             # Handle greeting messages
-            if self.message_type == "text" and self.body.lower() in GREETINGS:
-                return self._handle_greeting()
+            if self.message_type == "text":
+                logger.debug(f"Checking if '{self.body}' is a greeting")
+                if self.body and self.body.lower() in GREETINGS:
+                    logger.info(f"Recognized greeting: {self.body}")
+                    return self._handle_greeting()
+                logger.debug("Not a greeting message")
 
             # Handle cancel_offer commands first
             if (self.message_type == "text" and
