@@ -69,8 +69,7 @@ Type *'Menu'* to return to dashboard"""
 REGISTER = """*👤  Welcome to VimbisoPay*
 ~ Your portal to the credex accounting and payment ecosystem
 
-Once you've created your free account below, just message us at this number to manage your accounts and payments, and to be first in line for new features.
-{message}"""
+Once you've created your free account below, just message us at this number to manage your accounts and payments, and to be first in line for new features."""
 
 MORE_ABOUT_CREDEX = """*About Us*
 

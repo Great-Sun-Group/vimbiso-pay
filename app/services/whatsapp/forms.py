@@ -2,12 +2,12 @@ from .screens import REGISTER
 from .types import WhatsAppMessage
 
 
-def registration_form(mobile_number: str, message: str) -> WhatsAppMessage:
+def registration_form(mobile_number: str, message: str = "") -> WhatsAppMessage:
     """Create a WhatsApp registration form message
 
     Args:
         mobile_number: The recipient's mobile number
-        message: Custom message to include in the form
+        message: Custom message to include in the form (optional)
 
     Returns:
         WhatsAppMessage: Formatted WhatsApp message with registration form
@@ -19,7 +19,7 @@ def registration_form(mobile_number: str, message: str) -> WhatsAppMessage:
         "type": "interactive",
         "interactive": {
             "type": "nfm",
-            "body": {"text": REGISTER.format(message=message)},
+            "body": {"text": REGISTER},  # Using REGISTER directly since it's now a complete message
             "action": {
                 "name": "registration_form",
                 "parameters": {
