@@ -66,6 +66,19 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
+    def confirm_credex(self, credex_id: str, issuer_account_id: str) -> Tuple[bool, Dict[str, Any]]:
+        """Confirm a CredEx offer
+
+        Args:
+            credex_id: ID of the offer to confirm
+            issuer_account_id: ID of the issuer's account
+
+        Returns:
+            Tuple of (success: bool, confirmation_result: Dict)
+        """
+        pass
+
+    @abstractmethod
     def accept_credex(self, offer_id: str) -> Tuple[bool, Dict[str, Any]]:
         """Accept a CredEx offer
 
@@ -151,5 +164,18 @@ class CredExServiceInterface(ABC):
 
         Returns:
             Optional error message if refresh fails
+        """
+        pass
+
+    @abstractmethod
+    def get_member_accounts(self, member_id: str) -> Tuple[bool, Dict[str, Any]]:
+        """Get available accounts for a member
+
+        Args:
+            member_id: ID of the member to get accounts for
+
+        Returns:
+            Tuple[bool, Dict[str, Any]]: (success, accounts_data) where accounts_data contains
+            a list of accounts with their details including ID, name, type, and denomination
         """
         pass

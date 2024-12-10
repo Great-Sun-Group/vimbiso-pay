@@ -30,6 +30,7 @@ class CredexCloudApiWebhook(APIView):
 
     permission_classes = []
     parser_classes = (JSONParser,)
+    throttle_classes = []  # Disable throttling for webhook endpoint
 
     @staticmethod
     def post(request):
@@ -356,6 +357,7 @@ class CredexSendMessageWebhook(APIView):
     """Cloud Api Webhook"""
 
     parser_classes = (JSONParser,)
+    throttle_classes = []  # Disable throttling for webhook endpoint
 
     @staticmethod
     def post(request):

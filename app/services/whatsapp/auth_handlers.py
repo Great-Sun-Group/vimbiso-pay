@@ -2,7 +2,7 @@ from typing import Dict, Any, Optional, Tuple
 
 from .base_handler import BaseActionHandler
 from .forms import registration_form
-from .screens import HOME_1, HOME_2, BALANCE, UNSERCURED_BALANCES
+from .screens import HOME_1, HOME_2, BALANCE, UNSECURED_BALANCES
 from .types import WhatsAppMessage
 from api.serializers.members import MemberDetailsSerializer
 from services.state.service import StateStage
@@ -25,10 +25,14 @@ class AuthActionHandler(BaseActionHandler):
         """
         try:
             if register:
-                # Update state to registration flow
+                # Initialize state with required fields before starting registration
                 self.service.state.update_state(
                     user_id=self.service.user.mobile_number,
-                    new_state={"registration_started": True},
+                    new_state={
+                        "registration_started": True,
+                        "stage": StateStage.AUTH.value,
+                        "option": "registration"
+                    },
                     stage=StateStage.AUTH.value,
                     update_from="registration_start",
                     option="registration"
@@ -53,6 +57,8 @@ class AuthActionHandler(BaseActionHandler):
                         # Store JWT token in state after successful registration
                         current_state = self.service.current_state or {}
                         current_state["jwt_token"] = self.service.credex_service._jwt_token
+                        current_state["stage"] = StateStage.MENU.value
+                        current_state["option"] = "handle_action_menu"
                         # Update state after successful registration
                         self.service.state.update_state(
                             user_id=self.service.user.mobile_number,
@@ -82,6 +88,9 @@ class AuthActionHandler(BaseActionHandler):
                 self.service.user.mobile_number
             )
             if not success:
+                # Check for both new user phrases and member not found message
+                if any(phrase in login_msg.lower() for phrase in ["new user", "new here", "member not found"]):
+                    return False, "new user", None
                 return False, login_msg, None
 
             # Store JWT token after successful login
@@ -89,6 +98,8 @@ class AuthActionHandler(BaseActionHandler):
             if jwt_token:
                 current_state = self.service.current_state or {}
                 current_state["jwt_token"] = jwt_token
+                current_state["stage"] = StateStage.AUTH.value
+                current_state["option"] = "handle_action_menu"
                 self.service.state.update_state(
                     user_id=self.service.user.mobile_number,
                     new_state=current_state,
@@ -129,13 +140,15 @@ class AuthActionHandler(BaseActionHandler):
             if login or not current_state.get("profile"):
                 success, msg, data = self._attempt_login()
                 if not success:
-                    if any(phrase in msg.lower() for phrase in ["new user", "new here"]):
+                    if any(phrase in msg.lower() for phrase in ["new user", "new here", "member not found"]):
                         return self.handle_action_register(register=True)
                     return self.get_response_template(msg)
 
                 # Update state with fresh dashboard data
                 current_state["profile"] = data
                 current_state["last_refresh"] = True
+                current_state["stage"] = StateStage.MENU.value
+                current_state["option"] = "handle_action_menu"
                 # Preserve JWT token
                 if self.service.credex_service._jwt_token:
                     current_state["jwt_token"] = self.service.credex_service._jwt_token
@@ -181,6 +194,8 @@ class AuthActionHandler(BaseActionHandler):
                         selected_account = account
                         # Update state with selected account
                         current_state["current_account"] = selected_account
+                        current_state["stage"] = StateStage.MENU.value
+                        current_state["option"] = "handle_action_menu"
                         # Preserve JWT token
                         if self.service.credex_service._jwt_token:
                             current_state["jwt_token"] = self.service.credex_service._jwt_token
@@ -206,20 +221,11 @@ class AuthActionHandler(BaseActionHandler):
         selected_account: Dict[str, Any],
         message: Optional[str] = None
     ) -> WhatsAppMessage:
-        """Build menu response with proper error handling
-
-        Args:
-            selected_account: Selected account data
-            message: Optional message to display
-
-        Returns:
-            WhatsAppMessage: Menu response
-        """
+        """Build menu response with proper error handling"""
         try:
-            # Get pending offers counts
+            # Get pending offers counts for menu actions
             pending_in = len(selected_account["data"]["pendingInData"].get("data", []))
             pending_out = len(selected_account["data"]["pendingOutData"].get("data", []))
-            pending = f"    Pending Offers ({pending_in})" if pending_in else ""
 
             # Format balances
             balances = ""
@@ -227,7 +233,33 @@ class AuthActionHandler(BaseActionHandler):
             is_owned_account = selected_account["data"].get("isOwnedAccount")
 
             for bal in balance_data["securedNetBalancesByDenom"]:
-                balances += f"- {bal}\n"
+                balances += f"  {bal}\n"
+
+            # Get member tier from dashboard data
+            profile_data = self.service.current_state.get("profile", {})
+            data = profile_data.get("data", {})
+            action = data.get("action", {})
+            details = action.get("details", {})
+            member_tier = details.get("memberTier", {}).get("low", 1)
+
+            # Get remaining available USD from either member or dashboard data
+            remaining_usd = details.get("remainingAvailableUSD") or "0.00"
+
+            # Determine what to show in the unsecured balance section
+            if balance_data["unsecuredBalancesInDefaultDenom"]["totalPayables"] != "0.00 USD" or \
+               balance_data["unsecuredBalancesInDefaultDenom"]["totalReceivables"] != "0.00 USD":
+                # Show unsecured balances if they exist
+                unsecured_balance = UNSECURED_BALANCES.format(
+                    totalPayables=balance_data["unsecuredBalancesInDefaultDenom"]["totalPayables"],
+                    totalReceivables=balance_data["unsecuredBalancesInDefaultDenom"]["totalReceivables"],
+                    netPayRec=balance_data["unsecuredBalancesInDefaultDenom"]["netPayRec"],
+                )
+            elif member_tier <= 2:
+                # Only show free tier limit for tier <= 2
+                unsecured_balance = f"Free tier remaining daily spend limit\n    *{remaining_usd} USD*"
+            else:
+                # Show nothing for tier > 2
+                unsecured_balance = ""
 
             # Build menu response
             return {
@@ -239,27 +271,11 @@ class AuthActionHandler(BaseActionHandler):
                     "type": "list",
                     "body": {
                         "text": (HOME_2 if is_owned_account else HOME_1).format(
-                            message=message if message else "",
+                            message=message.strip() if message else "",
                             account=selected_account["data"].get("accountName", "Personal Account"),
                             balance=BALANCE.format(
-                                securedNetBalancesByDenom=(
-                                    balances if balances else "    $0.00\n"
-                                ),
-                                unsecured_balance=(
-                                    UNSERCURED_BALANCES.format(
-                                        totalPayables=balance_data[
-                                            "unsecuredBalancesInDefaultDenom"
-                                        ]["totalPayables"],
-                                        totalReceivables=balance_data[
-                                            "unsecuredBalancesInDefaultDenom"
-                                        ]["totalReceivables"],
-                                        netPayRec=balance_data[
-                                            "unsecuredBalancesInDefaultDenom"
-                                        ]["netPayRec"],
-                                    )
-                                    if pending_in > 0
-                                    else f"Free tier remaining daily spend limit\n    *{self.service.current_state['profile'].get('remainingAvailableUSD', '0.00')} USD*\n{pending}\n"
-                                ),
+                                securedNetBalancesByDenom=balances.rstrip(),
+                                unsecured_balance=unsecured_balance,
                                 netCredexAssetsInDefaultDenom=balance_data[
                                     "netCredexAssetsInDefaultDenom"
                                 ],
@@ -280,16 +296,7 @@ class AuthActionHandler(BaseActionHandler):
         pending_in: int,
         pending_out: int
     ) -> Dict[str, Any]:
-        """Get menu actions based on account type
-
-        Args:
-            is_owned_account: Whether account is owned by user
-            pending_in: Count of pending incoming offers
-            pending_out: Count of pending outgoing offers
-
-        Returns:
-            Dict[str, Any]: Menu actions configuration
-        """
+        """Get menu actions based on account type"""
         base_options = [
             {
                 "id": "handle_action_offer_credex",
@@ -323,6 +330,8 @@ class AuthActionHandler(BaseActionHandler):
             if self.service.credex_service._jwt_token:
                 current_state["jwt_token"] = self.service.credex_service._jwt_token
             current_state["selecting_profile"] = True
+            current_state["stage"] = StateStage.ACCOUNT.value
+            current_state["option"] = "profile_selection"
             self.service.state.update_state(
                 user_id=self.service.user.mobile_number,
                 new_state=current_state,

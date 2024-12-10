@@ -6,8 +6,7 @@ from core.transactions import (Transaction, TransactionError, TransactionOffer,
 from services.state.service import StateStage
 
 from ...base_handler import BaseActionHandler
-from ...screens import (CONFIRM_SECURED_CREDEX, CONFIRM_UNSECURED_CREDEX,
-                        OFFER_SUCCESSFUL)
+from ...screens import (CONFIRM_OFFER_CREDEX, OFFER_SUCCESSFUL)
 from ...types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -35,10 +34,10 @@ class MessageHandlerMixin(BaseActionHandler):
                 return self._handle_offer_confirmation(current_state, selected_profile)
             elif button_id == "cancel_offer":
                 return self._handle_offer_cancellation(current_state)
-            return self.get_response_template("Invalid button response. Please try again.")
+            return self._format_error_response("Invalid button response. Please try again.")
         except Exception as e:
             logger.error(f"Error handling interactive message: {str(e)}")
-            return self.get_response_template("Error processing response. Please try again.")
+            return self._format_error_response(str(e))
 
     def _handle_offer_cancellation(self, current_state: Dict[str, Any]) -> WhatsAppMessage:
         """Handle offer cancellation with proper state cleanup"""
@@ -63,7 +62,7 @@ class MessageHandlerMixin(BaseActionHandler):
             return self.get_response_template("Offer cancelled. Returning to menu.")
         except Exception as e:
             logger.error(f"Error cancelling offer: {str(e)}")
-            return self.get_response_template("Error cancelling offer. Please try again.")
+            return self._format_error_response(str(e))
 
     def _handle_offer_confirmation(
         self, current_state: Dict[str, Any], selected_profile: Dict[str, Any]
@@ -120,15 +119,8 @@ class MessageHandlerMixin(BaseActionHandler):
     ) -> WhatsAppMessage:
         """Format confirmation message for credex offer"""
         try:
-            template = (
-                CONFIRM_SECURED_CREDEX if offer.type == TransactionType.SECURED_CREDEX
-                else CONFIRM_UNSECURED_CREDEX
-            )
-
-            date_str = (
-                f"*Due Date :* {offer.due_date}"
-                if offer.type == TransactionType.UNSECURED_CREDEX else ""
-            )
+            # Get account name from current_state
+            account_name = current_state.get("current_account", {}).get("data", {}).get("accountName")
 
             return {
                 "messaging_product": "whatsapp",
@@ -138,14 +130,12 @@ class MessageHandlerMixin(BaseActionHandler):
                 "interactive": {
                     "type": "button",
                     "body": {
-                        "text": template.format(
+                        "text": CONFIRM_OFFER_CREDEX.format(
                             party=offer.metadata.get("full_name"),
                             amount=offer.amount,
                             denomination=offer.denomination,
-                            source=current_state.get("current_account", {}).get("accountName"),
-                            handle=offer.handle,
-                            secured="*secured*" if offer.type == TransactionType.SECURED_CREDEX else "*unsecured*",
-                            date=date_str,
+                            source=account_name,
+                            secured="*secured*" if offer.type == TransactionType.SECURED_CREDEX else "*unsecured*"
                         )
                     },
                     "action": {
@@ -170,7 +160,7 @@ class MessageHandlerMixin(BaseActionHandler):
             }
         except Exception as e:
             logger.error(f"Error formatting confirmation message: {str(e)}")
-            return self.get_response_template("Error displaying confirmation. Please try again.")
+            return self._format_error_response(str(e))
 
     def _format_success_response(
         self, transaction: Transaction, selected_profile: Dict[str, Any]
@@ -191,14 +181,26 @@ class MessageHandlerMixin(BaseActionHandler):
             )
         except Exception as e:
             logger.error(f"Error formatting success response: {str(e)}")
-            return self.get_response_template("Offer completed successfully.")
+            return self._format_error_response(str(e))
 
     def _format_error_response(self, message: str) -> WhatsAppMessage:
         """Format error response with proper error handling"""
         try:
-            error_message = self.format_synopsis(
-                message.replace("Error:", "")
-            )
+            # Log the original error message for debugging
+            logger.debug(f"Formatting error message: {message}")
+
+            # Clean up the error message
+            error_message = message.replace("Error:", "").strip()
+            if "API error" in error_message:
+                # Extract the actual error message from the API response
+                error_message = error_message.split("API error")[-1].strip()
+                if error_message.startswith(":"):
+                    error_message = error_message[1:].strip()
+
+            # Format for better readability
+            error_message = self.format_synopsis(error_message)
+
+            logger.debug(f"Formatted error message: {error_message}")
         except Exception as e:
             logger.error(f"Error formatting error message: {str(e)}")
             error_message = "An error occurred. Please try again."

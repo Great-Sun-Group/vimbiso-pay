@@ -51,7 +51,7 @@ def format_display_text(response):
 def send_message(args):
     """Send a message to the mock WhatsApp server."""
     payload = create_whatsapp_payload(
-        args.phone, args.username, args.type, args.message, args.phone_number_id
+        args.phone, args.type, args.message, args.phone_number_id
     )
 
     # Add target to URL query params
@@ -105,11 +105,6 @@ Examples:
         "--phone",
         default="1234567890",
         help="Phone number (default: 1234567890)"
-    )
-    parser.add_argument(
-        "--username",
-        default="CLI User",
-        help="Username (default: CLI User)"
     )
     parser.add_argument(
         "--type",

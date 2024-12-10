@@ -49,4 +49,5 @@ class CredexActionHandler(
 
         except Exception as e:
             logger.error(f"Error handling credex offer: {str(e)}")
-            return self.get_response_template("An error occurred. Please try again.")
+            # Use _format_error_response to properly format the error message
+            return self._format_error_response(str(e))

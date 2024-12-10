@@ -8,12 +8,11 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
-def create_whatsapp_payload(phone_number, username, message_type, message_text, phone_number_id="123456789"):
+def create_whatsapp_payload(phone_number, message_type, message_text, phone_number_id="123456789"):
     """Create a WhatsApp-style payload.
 
     Args:
         phone_number: The user's phone number
-        username: The user's display name
         message_type: Type of message (text, button, interactive)
         message_text: The message content
         phone_number_id: WhatsApp phone number ID
@@ -32,7 +31,7 @@ def create_whatsapp_payload(phone_number, username, message_type, message_text, 
                                 "display_phone_number": "15550123456",
                             },
                             "contacts": [
-                                {"wa_id": phone_number, "profile": {"name": username}}
+                                {"wa_id": phone_number, "profile": {"name": ""}}
                             ],
                             "messages": [
                                 {
@@ -50,7 +49,7 @@ def create_whatsapp_payload(phone_number, username, message_type, message_text, 
 
     # Log the payload for debugging
     logger.debug("\nCreated WhatsApp payload:")
-    logger.debug(f"From: {username} ({phone_number})")
+    logger.debug(f"Phone: {phone_number}")
     logger.debug(f"Message: {message_text}")
     logger.debug(f"Type: {message_type}")
     logger.debug(f"Phone Number ID: {phone_number_id}\n")

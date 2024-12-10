@@ -66,6 +66,13 @@
             display: flex;
             gap: 10px;
             margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .input-container label {
+            color: var(--bright-blue);
+            font-weight: bold;
+            min-width: fit-content;
         }
 
         input, select {
@@ -227,6 +234,30 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
 
+        .interactive-message .buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .interactive-message .button {
+            background: var(--bright-blue);
+            color: var(--white);
+            padding: 8px;
+            border-radius: 5px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .interactive-message .button:hover {
+            background: var(--gold);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
         .form-container {
             background: var(--dark-blue-lighter);
             padding: 20px;
@@ -341,8 +372,8 @@
     </div>
 
     <div class="input-container">
+        <label>Phone to send from:</label>
         <input type="text" id="phoneNumber" placeholder="Phone Number" value="263778177125">
-        <input type="text" id="userName" placeholder="User Name" value="Test User">
     </div>
 
     <div class="chat-container" id="chatContainer"></div>
@@ -437,6 +468,25 @@
                     // Create native form
                     const formElement = createNativeForm(action.parameters.fields);
                     messageDiv.appendChild(formElement);
+                } else if (messageData.interactive.type === 'button') {
+                    // Handle button-type interactive messages
+                    if (action.buttons) {
+                        const buttonsDiv = document.createElement('div');
+                        buttonsDiv.className = 'buttons';
+
+                        action.buttons.forEach(button => {
+                            const buttonElement = document.createElement('div');
+                            buttonElement.className = 'button';
+                            buttonElement.textContent = button.reply.title;
+                            buttonElement.onclick = () => {
+                                document.getElementById('messageInput').value = button.reply.id;
+                                sendMessage();
+                            };
+                            buttonsDiv.appendChild(buttonElement);
+                        });
+
+                        messageDiv.appendChild(buttonsDiv);
+                    }
                 } else if (messageData.interactive.type === 'list') {
                     // Add list button
                     if (action.button) {
@@ -496,7 +546,6 @@
     async function sendMessage() {
         const messageInput = document.getElementById('messageInput');
         const phoneNumber = document.getElementById('phoneNumber').value;
-        const userName = document.getElementById('userName').value;
         const target = document.getElementById('target').value;
         const messageText = messageInput.value;
 
@@ -544,7 +593,7 @@
                                 },
                                 contacts: [{
                                     wa_id: phoneNumber,
-                                    profile: { name: userName }
+                                    profile: { name: "" }
                                 }],
                                 messages: [{
                                     type: messageType,
@@ -569,8 +618,8 @@
                                         }
                                     } : {
                                         interactive: {
-                                            type: "list_reply",
-                                            list_reply: {
+                                            type: "button_reply",
+                                            button_reply: {
                                                 id: messageText,
                                                 title: handlerTitles[messageText] || messageText
                                             }

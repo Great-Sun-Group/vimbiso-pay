@@ -57,6 +57,10 @@ class CredExService(CredExServiceInterface):
         """Create a new CredEx offer"""
         return self._offers.offer_credex(offer_data)
 
+    def confirm_credex(self, credex_id: str, issuer_account_id: str) -> Tuple[bool, Dict[str, Any]]:
+        """Confirm a CredEx offer"""
+        return self._offers.confirm_credex(credex_id, issuer_account_id)
+
     def accept_credex(self, offer_id: str) -> Tuple[bool, Dict[str, Any]]:
         """Accept a CredEx offer"""
         return self._offers.accept_credex(offer_id)
@@ -86,6 +90,10 @@ class CredExService(CredExServiceInterface):
     ) -> Optional[str]:
         """Refresh member information"""
         return self._member.refresh_member_info(phone, reset, silent, init)
+
+    def get_member_accounts(self, member_id: str) -> Tuple[bool, Dict[str, Any]]:
+        """Get available accounts for a member"""
+        return self._member.get_member_accounts(member_id)
 
     @property
     def jwt_token(self) -> Optional[str]:

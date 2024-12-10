@@ -34,6 +34,54 @@ class BaseCredExService:
         self._jwt_token: Optional[str] = None
         logger.debug(f"Initialized BaseCredExService with base_url: {self.config.base_url}")
 
+    def _extract_error_message(self, response: requests.Response) -> str:
+        """Extract the most user-friendly error message from a response"""
+        try:
+            # Try to parse response as JSON
+            try:
+                error_data = response.json()
+                logger.debug(f"Response content: {error_data}")
+            except Exception:
+                logger.debug(f"Non-JSON response: {response.text}")
+                error_data = {}
+
+            # Direct message in response
+            if error_data.get("message"):
+                return error_data["message"]
+
+            # Check for business logic errors in action.details
+            action = error_data.get("data", {}).get("action", {})
+            if action.get("type") == "CREDEX_CREATE_FAILED":
+                details = action.get("details", {})
+                if details.get("reason"):
+                    return details["reason"]
+
+            # Check for error details
+            if error_data.get("error"):
+                return error_data["error"]
+
+            # Check for specific error conditions
+            if "Required field missing" in str(error_data):
+                return "Please check your input and try again."
+            elif response.status_code == 404:
+                # Check if this is a member not found case
+                if "Member not found" in str(error_data):
+                    return "Member not found"
+                return "Recipient account not found. Please check the handle and try again."
+            elif response.status_code == 403:
+                return "You don't have permission to perform this action."
+            elif response.status_code >= 500:
+                return "Server error. Please try again later."
+
+            # Last resort - return raw response content if nothing else found
+            if error_data:
+                return str(error_data)
+
+            return f"Server error {response.status_code}. Please try again."
+        except Exception as e:
+            logger.error(f"Error extracting error message: {str(e)}")
+            return f"Server error {response.status_code}. Please try again."
+
     def _make_request(
         self,
         endpoint: str,
@@ -81,20 +129,13 @@ class BaseCredExService:
 
             # Check for error responses
             if response.status_code >= 400:
-                error_data = response.json() if response.headers.get("Content-Type") == "application/json" else {}
-                error_msg = error_data.get("message", f"API error {response.status_code}")
+                error_msg = self._extract_error_message(response)
+                logger.error(error_msg)  # Log the actual error message without prefix
 
-                if "Required field missing" in error_msg:
-                    error_msg = "Please check your input and try again."
-                elif response.status_code == 404:
-                    error_msg = "Recipient account not found. Please check the handle and try again."
-                elif response.status_code == 403:
-                    error_msg = "You don't have permission to perform this action."
-                elif response.status_code >= 500:
-                    error_msg = "Server error. Please try again later."
-
-                logger.error(f"API error: {error_msg}")
-                raise TransactionError(error_msg)
+                # Don't raise error for login attempts (when require_auth is False)
+                # This allows auth.py to handle the response
+                if require_auth:
+                    raise TransactionError(error_msg)
 
             return response
 
@@ -126,12 +167,8 @@ class BaseCredExService:
             if response.status_code >= 400:
                 error_msg = error_mapping.get(response.status_code) if error_mapping else None
                 if not error_msg:
-                    # Check for field validation errors
-                    if "Required field missing" in data.get("message", ""):
-                        error_msg = "Please check your input and try again."
-                    else:
-                        error_msg = data.get("message") or f"API error {response.status_code}"
-                logger.error(f"API error: {error_msg}")
+                    error_msg = self._extract_error_message(response)
+                logger.error(error_msg)  # Log the actual error message without prefix
                 raise TransactionError(error_msg)
 
             return data
@@ -143,19 +180,11 @@ class BaseCredExService:
     def _handle_error_response(self, response: requests.Response, error_mapping: Dict[int, str]) -> Tuple[bool, Dict[str, Any]]:
         """Handle error response with proper error mapping"""
         try:
-            error_msg = error_mapping.get(response.status_code, "Unknown error")
-            if response.headers.get("Content-Type", "").lower() == "application/json":
-                data = response.json()
-                api_msg = data.get("message", "")
-                # Check for field validation errors
-                if "Required field missing" in api_msg:
-                    error_msg = "Please check your input and try again."
-                elif api_msg:
-                    error_msg = api_msg
-            return False, {"error": error_msg}
+            error_msg = self._extract_error_message(response)
+            return False, {"message": error_msg}
         except Exception as e:
             logger.error(f"Error handling error response: {str(e)}")
-            return False, {"error": str(e)}
+            return False, {"message": str(e)}
 
     @property
     def jwt_token(self) -> Optional[str]:

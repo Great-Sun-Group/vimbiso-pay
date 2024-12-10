@@ -197,16 +197,21 @@ class CredexBotService(BotServiceInterface):
             if self.message_type == "text" and self.body.lower() in GREETINGS:
                 return self._handle_greeting()
 
-            # Get current stage from state
+            # Get current stage and option from state
             current_stage = self.state.get_stage(self.user.mobile_number)
+            current_option = self.current_state.get("option")
 
             # Handle form submissions
             if self.message_type == "nfm_reply":
-                # For form submissions, use current stage and handler
-                if current_stage == StateStage.CREDEX.value:
+                # Check for registration form submission
+                if current_stage == StateStage.AUTH.value and current_option == "registration":
+                    return self.action_handler.auth_handler.handle_action_register()
+                # Check for credex form submission
+                elif (current_stage == StateStage.CREDEX.value or
+                        current_option == "handle_action_offer_credex"):
                     return self.action_handler.credex_handler.handle_action_offer_credex()
                 else:
-                    logger.error(f"Invalid stage for form submission: {current_stage}")
+                    logger.error(f"Invalid stage/option for form submission: {current_stage}/{current_option}")
                     return self.get_response_template("Invalid form submission. Please try again.")
 
             # For other messages, check if body is an action command

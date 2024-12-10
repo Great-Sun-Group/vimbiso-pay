@@ -25,9 +25,21 @@ class CredExAuthService(BaseCredExService):
 
             # Handle error responses
             if response.status_code >= 400:
+                # Check response data for member not found cases
+                try:
+                    data = response.json()
+                    if (data.get("message") == "Member not found" or
+                            data.get("data", {}).get("action", {}).get("details", {}).get("reason") == "Member not found"):
+                        logger.info("New user detected")
+                        return False, "Welcome! It looks like you're new here. Let's get you set up."
+                except Exception:
+                    pass
+
+                # Handle other 400 cases as new users
                 if response.status_code == 400:
                     logger.info("New user detected")
                     return False, "Welcome! It looks like you're new here. Let's get you set up."
+
                 return self._handle_error_response(response, {
                     400: "Invalid phone number or new user",
                     401: "Authentication failed"
