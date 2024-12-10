@@ -1,4 +1,4 @@
-.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down
+.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down diff
 
 # Build for development
 dev-build:
@@ -29,3 +29,14 @@ prod-up:
 # Stop the server (production)
 prod-down:
 	DJANGO_ENV=production docker compose -f app/compose.yaml down
+
+# Get diff between two branches
+diff:
+	@if [ "$(filter-out $@,$(MAKECMDGOALS))" = "" ]; then \
+		echo "Usage: make diff <source_branch> <target_branch>"; \
+		exit 1; \
+	fi
+	bash projects/getDiff.sh $(filter-out $@,$(MAKECMDGOALS))
+
+%:
+	@:

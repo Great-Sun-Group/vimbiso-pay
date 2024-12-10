@@ -39,6 +39,20 @@ def handle_error(e, bot_service):
     return wrap_text(message, bot_service.user.mobile_number)
 
 
+def handle_api_error(e):
+    """Handle API-specific errors and return appropriate response"""
+    if isinstance(e, APIException):
+        error_message = str(e)
+    else:
+        error_message = "An unexpected error occurred"
+        logger.error(f"Unexpected error in API handler: {str(e)}")
+
+    return {
+        "status": "error",
+        "message": error_message
+    }
+
+
 def error_decorator(f):
     """Decorator to wrap functions with error handling"""
 

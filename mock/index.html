@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VimbisoPay Mock Interface</title>
+    <style>
+        :root {
+            --bright-blue: #04A0B2;
+            --dark-blue: #06151F;
+            --gold: #FBB016;
+            --black: #000000;
+            --white: #FFFFFF;
+            --dark-blue-lighter: #0c2a3d;
+            --bright-blue-transparent: rgba(4, 160, 178, 0.1);
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: var(--dark-blue);
+            color: var(--white);
+        }
+
+        h1 {
+            color: var(--bright-blue);
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 28px;
+            letter-spacing: 0.5px;
+        }
+
+        .chat-container {
+            background: var(--dark-blue-lighter);
+            border-radius: 10px;
+            padding: 20px;
+            height: 500px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            border: 1px solid var(--bright-blue);
+        }
+
+        .message {
+            margin: 10px;
+            padding: 10px;
+            border-radius: 10px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+
+        .user-message {
+            background: var(--bright-blue);
+            margin-left: auto;
+            color: var(--white);
+        }
+
+        .bot-message {
+            background: var(--dark-blue-lighter);
+            border: 1px solid var(--bright-blue);
+            color: var(--white);
+            white-space: pre-wrap;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .input-container label {
+            color: var(--bright-blue);
+            font-weight: bold;
+            min-width: fit-content;
+        }
+
+        input, select {
+            padding: 10px;
+            border: 1px solid var(--bright-blue);
+            border-radius: 5px;
+            background: var(--dark-blue-lighter);
+            color: var(--white);
+            transition: all 0.3s ease;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--gold);
+            box-shadow: 0 0 0 2px var(--bright-blue-transparent);
+        }
+
+        input {
+            flex-grow: 1;
+        }
+
+        input::placeholder {
+            color: rgba(255,255,255,0.5);
+        }
+
+        button {
+            background: var(--bright-blue);
+            color: var(--white);
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            min-width: 100px;
+            padding: 10px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        button:hover {
+            background: var(--gold);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        button:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+
+        .target-toggle {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            background: var(--dark-blue-lighter);
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            border: 1px solid var(--bright-blue);
+        }
+
+        .target-toggle label {
+            font-weight: bold;
+            min-width: 80px;
+            color: var(--bright-blue);
+        }
+
+        .target-toggle select {
+            flex-grow: 1;
+        }
+
+        .status {
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            background: var(--dark-blue-lighter);
+            font-weight: bold;
+            border: 1px solid var(--bright-blue);
+            color: var(--bright-blue);
+        }
+
+        .status.local {
+            border-color: var(--gold);
+            color: var(--gold);
+        }
+
+        .status.staging {
+            border-color: var(--bright-blue);
+            color: var(--bright-blue);
+        }
+
+        .menu-options {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .menu-option {
+            background: var(--bright-blue);
+            color: var(--white);
+            padding: 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .menu-option:hover {
+            background: var(--gold);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .menu-option:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+
+        .interactive-message {
+            background: var(--dark-blue-lighter);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px;
+            max-width: 70%;
+            border: 1px solid var(--bright-blue);
+            color: var(--white);
+        }
+
+        .interactive-message .body {
+            white-space: pre-wrap;
+            margin-bottom: 15px;
+            line-height: 1.4;
+        }
+
+        .interactive-message .section-title {
+            font-weight: bold;
+            margin: 10px 0 5px;
+            color: var(--gold);
+            letter-spacing: 0.5px;
+        }
+
+        .interactive-message .list-button {
+            background: var(--bright-blue);
+            color: var(--white);
+            padding: 8px;
+            border-radius: 5px;
+            text-align: center;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .interactive-message .list-button:hover {
+            background: var(--gold);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .interactive-message .buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .interactive-message .button {
+            background: var(--bright-blue);
+            color: var(--white);
+            padding: 8px;
+            border-radius: 5px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .interactive-message .button:hover {
+            background: var(--gold);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .form-container {
+            background: var(--dark-blue-lighter);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 10px;
+            border: 1px solid var(--bright-blue);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .form-field {
+            margin-bottom: 20px;
+        }
+
+        .form-field label {
+            display: block;
+            color: var(--gold);
+            margin-bottom: 8px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+
+        .form-field input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            background: var(--dark-blue);
+            border: 1px solid var(--bright-blue);
+            border-radius: 5px;
+            color: var(--white);
+            transition: all 0.3s ease;
+        }
+
+        .form-field input:focus {
+            outline: none;
+            border-color: var(--gold);
+            box-shadow: 0 0 0 2px var(--bright-blue-transparent);
+        }
+
+        .form-submit {
+            background: var(--bright-blue);
+            color: var(--white);
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            margin-top: 10px;
+        }
+
+        .form-submit:hover {
+            background: var(--gold);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .form-submit:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+
+        /* WhatsApp markdown styles */
+        .whatsapp-text {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.4;
+        }
+
+        .whatsapp-text strong {
+            color: var(--gold);
+            font-weight: bold;
+        }
+
+        .whatsapp-text em {
+            color: var(--bright-blue);
+            font-style: italic;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--dark-blue);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--bright-blue);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--gold);
+        }
+    </style>
+</head>
+<body>
+    <h1>VimbisoPay Mock Interface</h1>
+
+    <div class="target-toggle">
+        <label>Target:</label>
+        <select id="target" onchange="updateStatus()">
+            <option value="local">Local (localhost:8000)</option>
+            <option value="staging">Staging (stage.whatsapp.vimbisopay.africa)</option>
+        </select>
+    </div>
+
+    <div class="status" id="status">
+        Connected to: Local Server
+    </div>
+
+    <div class="input-container">
+        <label>Phone to send from:</label>
+        <input type="text" id="phoneNumber" placeholder="Phone Number" value="263778177125">
+    </div>
+
+    <div class="chat-container" id="chatContainer"></div>
+
+    <div class="input-container">
+        <input type="text" id="messageInput" placeholder="Type a message...">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+<script>
+    // Map handler IDs to display titles
+    const handlerTitles = {
+        "handle_action_offer_credex": "Offer Secured Credex",
+        "handle_action_pending_offers_in": "Pending Offers",
+        "handle_action_pending_offers_out": "Cancel Outgoing",
+        "handle_action_transactions": "Review Transactions"
+    };
+
+    function formatWhatsAppText(text) {
+        return text
+            .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+            .replace(/_(.*?)_/g, '<em>$1</em>')
+            .replace(/\n/g, '<br>');
+    }
+
+    function createNativeForm(fields) {
+        const formContainer = document.createElement('div');
+        formContainer.className = 'form-container';
+
+        fields.forEach(field => {
+            const fieldDiv = document.createElement('div');
+            fieldDiv.className = 'form-field';
+
+            const label = document.createElement('label');
+            label.textContent = field.label;
+            fieldDiv.appendChild(label);
+
+            const input = document.createElement('input');
+            input.type = field.type;
+            input.name = field.name;
+            input.required = field.required;
+            input.placeholder = field.label;
+            fieldDiv.appendChild(input);
+
+            formContainer.appendChild(fieldDiv);
+        });
+
+        const submitButton = document.createElement('button');
+        submitButton.className = 'form-submit';
+        submitButton.textContent = 'Submit';
+        submitButton.onclick = () => {
+            const formData = {};
+            fields.forEach(field => {
+                const input = formContainer.querySelector(`input[name="${field.name}"]`);
+                formData[field.name] = input.value;
+            });
+
+            document.getElementById('messageInput').value = `form:${Object.entries(formData).map(([k,v]) => `${k}=${v}`).join(',')}`;
+            sendMessage();
+        };
+        formContainer.appendChild(submitButton);
+
+        return formContainer;
+    }
+
+    function displayMessage(data) {
+        const chatContainer = document.getElementById('chatContainer');
+        const messageDiv = document.createElement('div');
+
+        // Handle wrapped response format
+        const messageData = data.response || data;
+
+        if (typeof messageData === 'string') {
+            messageDiv.className = 'message bot-message whatsapp-text';
+            messageDiv.innerHTML = formatWhatsAppText(messageData);
+        } else if (messageData.type === 'interactive') {
+            messageDiv.className = 'interactive-message';
+
+            // Add message body if present
+            if (messageData.interactive.body && messageData.interactive.body.text) {
+                const bodyDiv = document.createElement('div');
+                bodyDiv.className = 'body whatsapp-text';
+                bodyDiv.innerHTML = formatWhatsAppText(messageData.interactive.body.text);
+                messageDiv.appendChild(bodyDiv);
+            }
+
+            // Add form/buttons/options if present
+            if (messageData.interactive.action) {
+                const action = messageData.interactive.action;
+
+                if (messageData.interactive.type === 'nfm') {
+                    // Create native form
+                    const formElement = createNativeForm(action.parameters.fields);
+                    messageDiv.appendChild(formElement);
+                } else if (messageData.interactive.type === 'button') {
+                    // Handle button-type interactive messages
+                    if (action.buttons) {
+                        const buttonsDiv = document.createElement('div');
+                        buttonsDiv.className = 'buttons';
+
+                        action.buttons.forEach(button => {
+                            const buttonElement = document.createElement('div');
+                            buttonElement.className = 'button';
+                            buttonElement.textContent = button.reply.title;
+                            buttonElement.onclick = () => {
+                                document.getElementById('messageInput').value = button.reply.id;
+                                sendMessage();
+                            };
+                            buttonsDiv.appendChild(buttonElement);
+                        });
+
+                        messageDiv.appendChild(buttonsDiv);
+                    }
+                } else if (messageData.interactive.type === 'list') {
+                    // Add list button
+                    if (action.button) {
+                        const button = document.createElement('div');
+                        button.className = 'list-button';
+                        button.textContent = action.button;
+                        button.onclick = () => {
+                            const options = messageDiv.querySelector('.menu-options');
+                            if (options) {
+                                options.style.display = options.style.display === 'none' ? 'flex' : 'none';
+                            }
+                        };
+                        messageDiv.appendChild(button);
+                    }
+
+                    // Add sections
+                    if (action.sections) {
+                        const optionsDiv = document.createElement('div');
+                        optionsDiv.className = 'menu-options';
+                        optionsDiv.style.display = 'none';
+
+                        action.sections.forEach(section => {
+                            if (section.title) {
+                                const titleDiv = document.createElement('div');
+                                titleDiv.className = 'section-title';
+                                titleDiv.textContent = section.title;
+                                optionsDiv.appendChild(titleDiv);
+                            }
+
+                            if (section.rows) {
+                                section.rows.forEach(row => {
+                                    const option = document.createElement('div');
+                                    option.className = 'menu-option';
+                                    option.textContent = row.title;
+                                    option.onclick = () => {
+                                        document.getElementById('messageInput').value = row.id;
+                                        sendMessage();
+                                    };
+                                    optionsDiv.appendChild(option);
+                                });
+                            }
+                        });
+
+                        messageDiv.appendChild(optionsDiv);
+                    }
+                }
+            }
+        } else if (messageData.text && messageData.text.body) {
+            messageDiv.className = 'message bot-message whatsapp-text';
+            messageDiv.innerHTML = formatWhatsAppText(messageData.text.body);
+        }
+
+        chatContainer.appendChild(messageDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    async function sendMessage() {
+        const messageInput = document.getElementById('messageInput');
+        const phoneNumber = document.getElementById('phoneNumber').value;
+        const target = document.getElementById('target').value;
+        const messageText = messageInput.value;
+
+        if (!messageText) return;
+
+        // Determine message type based on content
+        let messageType = 'text';
+        let displayText = messageText;
+
+        // Check for special message formats
+        if (messageText.startsWith('form:')) {
+            messageType = 'interactive';
+            displayText = `Form data: ${messageText.split(':')[1]}`;
+        } else if (messageText.startsWith('handle')) {
+            messageType = 'interactive';
+            displayText = handlerTitles[messageText] || messageText;
+        } else if (messageText.startsWith('button:')) {
+            messageType = 'button';
+            displayText = messageText.substring(7);
+        }
+
+        // Add user message to chat
+        const chatContainer = document.getElementById('chatContainer');
+        const userMessageDiv = document.createElement('div');
+        userMessageDiv.className = 'message user-message';
+        userMessageDiv.textContent = displayText;
+        chatContainer.appendChild(userMessageDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+
+        try {
+            // Send to webhook endpoint with target parameter
+            const response = await fetch(`/bot/webhook?target=${target}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    entry: [{
+                        changes: [{
+                            value: {
+                                metadata: {
+                                    phone_number_id: "123456789",
+                                    display_phone_number: "15550123456"
+                                },
+                                contacts: [{
+                                    wa_id: phoneNumber,
+                                    profile: { name: "" }
+                                }],
+                                messages: [{
+                                    type: messageType,
+                                    timestamp: Math.floor(Date.now() / 1000),
+                                    ...(messageType === 'text' ? {
+                                        text: { body: messageText }
+                                    } : messageType === 'button' ? {
+                                        button: { payload: messageText.substring(7) }
+                                    } : messageText.startsWith('form:') ? {
+                                        interactive: {
+                                            type: "nfm_reply",
+                                            nfm_reply: {
+                                                response_json: JSON.stringify(
+                                                    Object.fromEntries(
+                                                        messageText.split(':')[1].split(',').map(pair => {
+                                                            const [key, value] = pair.split('=');
+                                                            return [key, value];
+                                                        })
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    } : {
+                                        interactive: {
+                                            type: "button_reply",
+                                            button_reply: {
+                                                id: messageText,
+                                                title: handlerTitles[messageText] || messageText
+                                            }
+                                        }
+                                    })
+                                }]
+                            }
+                        }]
+                    }]
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
+            }
+
+            const data = await response.json();
+
+            // Display bot response
+            setTimeout(() => {
+                displayMessage(data);
+            }, 1000);
+
+        } catch (error) {
+            console.error('Error:', error);
+            displayMessage(`Error: ${error.message}`);
+        }
+
+        messageInput.value = '';
+    }
+
+    function updateStatus() {
+        const target = document.getElementById('target').value;
+        const status = document.getElementById('status');
+        const text = target === 'local' ? 'Local Server (localhost:8000)' : 'Staging Server (stage.whatsapp.vimbisopay.africa)';
+        status.textContent = `Connected to: ${text}`;
+        status.className = `status ${target}`;
+    }
+
+    // Handle Enter key
+    document.getElementById('messageInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+
+    // Initialize status
+    updateStatus();
+</script>
+</body>
+</html>

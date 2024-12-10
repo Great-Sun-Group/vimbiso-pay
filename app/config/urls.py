@@ -9,39 +9,50 @@ from django.http import JsonResponse
 from django.urls import include, path
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
+from rest_framework import routers
+
+from api import views
+
+
+# Create a router and register our viewsets with it
+router = routers.DefaultRouter()
+router.register(r'companies', views.CompanyViewSet, basename='company')
+router.register(r'members', views.MemberViewSet, basename='member')
+router.register(r'offers', views.OfferViewSet, basename='offer')
 
 
 # Health check endpoint with improved error handling and logging
-@api_view(['GET'])
+@api_view(["GET"])
 @permission_classes([AllowAny])
 def health_check(request):
     try:
         # Test Redis connectivity with timeout
-        cache.set('health_check', 'ok', 10)
-        result = cache.get('health_check')
-        if result != 'ok':
-            return JsonResponse({
-                "status": "error",
-                "message": "Redis connectivity check failed",
-                "detail": "Cache set/get operation failed"
-            }, status=500)
+        cache.set("health_check", "ok", 10)
+        result = cache.get("health_check")
+        if result != "ok":
+            return JsonResponse(
+                {
+                    "status": "error",
+                    "message": "Redis connectivity check failed",
+                    "detail": "Cache set/get operation failed",
+                },
+                status=500,
+            )
 
         # Return success response
-        return JsonResponse({
-            "status": "ok",
-            "message": "Service is healthy",
-            "redis": "connected"
-        })
+        return JsonResponse(
+            {"status": "ok", "message": "Service is healthy", "redis": "connected"}
+        )
     except Exception as e:
         import logging
-        logger = logging.getLogger('django')
+
+        logger = logging.getLogger("django")
         logger.error(f"Health check failed: {str(e)}", exc_info=True)
 
-        return JsonResponse({
-            "status": "error",
-            "message": "Health check failed",
-            "detail": str(e)
-        }, status=500)
+        return JsonResponse(
+            {"status": "error", "message": "Health check failed", "detail": str(e)},
+            status=500,
+        )
 
 
 urlpatterns = [
@@ -53,6 +64,9 @@ urlpatterns = [
     path("bot/notify", CredexSendMessageWebhook.as_view(), name="notify"),
     path("bot/welcome/message", WelcomeMessage.as_view(), name="welcome_message"),
     path("bot/wipe", WipeCache.as_view(), name="wipe"),
+    # New API endpoints
+    path("api/", include(router.urls)),
+    path("api/webhooks/", views.webhook_handler, name="webhook-handler"),
 ]
 
 if settings.DEBUG:

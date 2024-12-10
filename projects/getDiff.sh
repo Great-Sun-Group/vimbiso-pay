@@ -48,12 +48,7 @@ else
     # Get the list of changed files
     changed_files=$(git diff --name-only "origin/$to_branch".."origin/$from_branch")
 
-    summary="# Use this command from a codespace environment to create a merge commit with a detailed summary according to best practices from the following diff
-# gh pr create --base \$to_branch --head \$from_branch --title \"Merge \$from_branch into \$to_branch\" --body \"[detailed summary here]\"
-
-Changes detected between $from_branch and $to_branch branches.
-
-Changed files:
+    summary="Changed files:
 $changed_files
 
 Diff:

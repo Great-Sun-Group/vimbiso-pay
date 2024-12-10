@@ -2,177 +2,148 @@
 
 A WhatsApp bot service that facilitates financial transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in a secure WhatsApp chat.
 
-### Quick Start
-After cloning and setting up environment variables, or activation of a codespace:
+## Documentation
 
-Development environment:
+### User Guide
+- [User Flows](docs/flows/user-flows.md) - Detailed guide to all user interactions and flows
+
+### Technical Documentation
+- [WhatsApp Integration](docs/technical/whatsapp.md) - WhatsApp bot implementation
+- [API Integration](docs/technical/api-integration.md) - Integration with credex-core API
+- [State Management](docs/technical/state-management.md) - Conversation and session management
+- [Testing Guide](docs/technical/testing.md) - Testing infrastructure and tools
+- [Security](docs/technical/security.md) - Security measures and best practices
+- [Docker](docs/technical/docker.md) - Docker configuration and services
+- [Deployment](docs/deployment.md) - Deployment process and infrastructure
+- [Redis Management](docs/redis-memory-management.md) - Redis configuration and management
+
+## Quick Start
+
+### Development Environment
 ```bash
-# Build development environment
+# Build and start services
 make dev-build
-
-# Start development server
 make dev-up
 
-# Stop development server
+# Access services (from host machine)
+Application: http://localhost:8000
+Mock WhatsApp: http://localhost:8001
+
+# Note: Within Docker network, services communicate using:
+- App service: http://app:8000
+- Redis: redis://redis:6379
+- Mock WhatsApp: http://mock:8001
+
+# Stop services
 make dev-down
 ```
 
-Production environment:
+### Production Environment
 ```bash
-# Build production environment
+# Build and start
 make prod-build
-
-# Start production server (detached mode)
 make prod-up
 
-# Stop production server
+# Stop services
 make prod-down
 ```
 
-The application will be available at http://localhost:8000
-
 ## Core Features
+
+### WhatsApp Interface
+- Interactive menus and buttons
+- Form-based data collection
+- Rich message formatting
+- State-based conversation flow
+- Time-aware greetings
+- Navigation commands
+- Custom message templates
 
 ### Financial Operations
 - Secured credex transactions with immediate settlement
-- Unsecured credex with configurable due dates (up to 5 weeks)
+- Unsecured credex with configurable due dates
 - Multi-tier account system:
   - Personal accounts with basic features
   - Business accounts with advanced capabilities
   - Member authorization management
 - Balance tracking with denomination support
 - Transaction history with pagination
-- Pending offers management:
-  - Individual and bulk acceptance
-  - Offer cancellation
-  - Review of incoming/outgoing offers
+- Pending offers management
 
-### WhatsApp Interface
-- Interactive menus and buttons
-- Form-based data collection with validation
-- Rich message formatting with emojis
-- State-based conversation flow with Redis persistence:
-  - 5-minute session timeout
-  - Automatic state cleanup
-  - Cross-device state sync(?)
-- Time-aware greetings and messages
-- Navigation commands:
-  - `menu` - Return to main menu
-  - `x` or `c` - Cancel current operation
-  - `home` - Return to account dashboard
-- Custom message templates for:
-  - Account balances and limits
-  - Transaction history
-  - Offer confirmations
-  - Error messages
-  - Status updates
-- Notification preferences per account
+### API & Integration
+- Direct integration with CredEx core API
+- Webhook support for real-time updates:
+  - Company updates
+  - Member updates
+  - Offer status changes
+- Internal API endpoints for:
+  - Company management
+  - Member operations
+  - Offer handling
+- Comprehensive validation and error handling
+- Type-safe request/response handling
 
 ### Security
-- JWT authentication with configurable lifetimes
-- Rate limiting (100/day anonymous, 1000/day authenticated)
-- XSS protection and HSTS
-- CORS configuration
-- Input validation and sanitization
+- JWT authentication
+- Rate limiting
+- Input validation
 - Secure state management
+- Webhook signature validation
+- Request payload validation
 
-## Development Setup
+## Development Tools
 
-### Prerequisites
-- Docker and Docker Compose
-- Python 3.10+
-- Access to Credex Core API development server
-- WhatsApp Business API credentials from Meta
+### Mock WhatsApp Interface
+Test the WhatsApp bot without real WhatsApp credentials:
 
-### Development Features
-- Live code reloading
-- Django Debug Toolbar
-- Redis for state management
-- Console email backend
-- Comprehensive logging
-
-### Code Quality
 ```bash
-# Format and lint
-black .
-isort .
-flake8
+# Start all services including mock server
+make dev-up
 
-# Type checking
-mypy .
-
-# Run tests
-pytest --cov=app
+# CLI testing (from host machine)
+./mock/cli.py "Hello, world!"
+./mock/cli.py --type button "button_1"
 ```
 
-## Production Deployment
-See [Deployment Documentation](docs/deployment.md).
+### API Testing
+Test API endpoints and webhooks:
 
-### Docker Configuration
-- Multi-stage builds
-- Security-hardened production image
-- Non-privileged user
-- Gunicorn with gevent workers
-- Health monitoring
-
-### Server Configuration
 ```bash
-# Build production image
-docker build --target production -t vimbiso-pay:latest .
+# Test webhook endpoint
+curl -X POST http://localhost:8000/api/webhooks/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "metadata": {
+      "webhook_id": "test",
+      "event_type": "company_update",
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    "payload": {
+      "company_id": "123",
+      "name": "Test Company",
+      "status": "active"
+    }
+  }'
 
-# Run with production settings
-docker run -d \
-  --name vimbiso-pay \
-  -p 8000:8000 \
-  -e DJANGO_ENV=production \
-  [additional environment variables]
-  vimbiso-pay:latest
+# Test internal API (requires authentication)
+curl -X GET http://localhost:8000/api/companies/ \
+  -H "Authorization: Bearer your-token"
 ```
 
-### Health Monitoring
-- Built-in health checks (30s interval)
-- Redis connection monitoring
-- API integration verification
-- Comprehensive logging
+### AI-Assisted Merge Summaries
+Generate branch comparison summaries:
 
-## Troubleshooting
+```bash
+make diff <source_branch> <target_branch>
+```
 
-### Common Issues
-1. API Connection
-   - Verify API URL and credentials
-   - Check network connectivity
-   - Validate JWT token
+## Contributing
 
-2. WhatsApp Integration
-   - Verify API credentials
-   - Test webhook configuration
-   - Check message templates
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
-3. State Management
-   - Verify Redis connection
-   - Check session timeouts (5 minutes)
-   - Monitor state transitions
+## License
 
-### Debug Mode
-- Django Debug Toolbar at /__debug__/
-- Detailed error pages
-- Auto-reload on code changes
-- Console email backend
-- Comprehensive logging
-
-## Future Improvements
-
-1. Monitoring
-   - JSON logging configuration
-   - Error tracking
-   - Performance metrics
-
-2. Performance
-   - Redis caching strategy
-   - Container optimization
-   - State management tuning
-
-3. Infrastructure
-   - AWS deployment
-   - Terraform configurations
-   - Production deployment guide
+Have at it.

@@ -1,5 +1,6 @@
 from django.core.cache import cache
 from datetime import timedelta
+import datetime
 
 GREETINGS = [
     "menu",
@@ -23,8 +24,6 @@ GREETINGS = [
     "retry",
 ]
 
-import datetime
-
 
 def get_greeting(name):
     current_time = datetime.datetime.now() + timedelta(hours=2)
@@ -44,11 +43,35 @@ class CachedUserState:
     def __init__(self, user) -> None:
         self.user = user
         print("USER", user)
-        self.direction = cache.get(f"{self.user.mobile_number}_direction", "OUT")
-        self.stage = cache.get(f"{self.user.mobile_number}_stage", "handle_action_menu")
-        self.option = cache.get(f"{self.user.mobile_number}_option")
-        self.state = cache.get(f"{self.user.mobile_number}", {})
+
+        # Get existing state values
+        existing_direction = cache.get(f"{self.user.mobile_number}_direction")
+        existing_stage = cache.get(f"{self.user.mobile_number}_stage")
+        existing_option = cache.get(f"{self.user.mobile_number}_option")
+        existing_state = cache.get(f"{self.user.mobile_number}")
         self.jwt_token = cache.get(f"{self.user.mobile_number}_jwt_token")
+
+        # Initialize with defaults only if no state exists at all
+        if not any([existing_direction, existing_stage, existing_option, existing_state]):
+            cache.set(f"{self.user.mobile_number}_direction", "OUT", timeout=60 * 5)
+            cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu", timeout=60 * 5)
+            cache.set(f"{self.user.mobile_number}", {}, timeout=60 * 5)
+        else:
+            # Refresh expiry for existing values
+            if existing_direction:
+                cache.set(f"{self.user.mobile_number}_direction", existing_direction, timeout=60 * 5)
+            if existing_stage:
+                cache.set(f"{self.user.mobile_number}_stage", existing_stage, timeout=60 * 5)
+            if existing_option:
+                cache.set(f"{self.user.mobile_number}_option", existing_option, timeout=60 * 5)
+            if existing_state:
+                cache.set(f"{self.user.mobile_number}", existing_state, timeout=60 * 5)
+
+        # Load current values
+        self.direction = cache.get(f"{self.user.mobile_number}_direction")
+        self.stage = cache.get(f"{self.user.mobile_number}_stage")
+        self.option = cache.get(f"{self.user.mobile_number}_option")
+        self.state = cache.get(f"{self.user.mobile_number}")
 
     def update_state(
         self, state: dict, update_from, stage=None, option=None, direction=None
@@ -73,19 +96,35 @@ class CachedUserState:
         return self.state
 
     def set_jwt_token(self, jwt_token):
-        cache.set(f"{self.user.mobile_number}_jwt_token", jwt_token, timeout=60 * 5)
-        # print("SETTING JWT TOKEN", jwt_token)
-        self.jwt_token = cache.get(f"{self.user.mobile_number}_jwt_token")
+        if jwt_token:
+            cache.set(f"{self.user.mobile_number}_jwt_token", jwt_token, timeout=60 * 5)
+            self.jwt_token = jwt_token
 
     def reset_state(self):
-        state = cache.get(f"{self.user.mobile_number}", {})
-        state["state"] = {}
-        cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu")
+        """Reset all user state to defaults."""
+        # Save current JWT token
+        current_jwt = self.jwt_token
+
+        # Clear all existing state
+        cache.delete(f"{self.user.mobile_number}")
+        cache.delete(f"{self.user.mobile_number}_stage")
         cache.delete(f"{self.user.mobile_number}_option")
+        cache.delete(f"{self.user.mobile_number}_direction")
+
+        # Set default values with timeouts
         cache.set(f"{self.user.mobile_number}", {}, timeout=60 * 5)
-        self.state = cache.get(f"{self.user.mobile_number}")
-        self.stage = cache.get(f"{self.user.mobile_number}_stage")
-        self.option = cache.get(f"{self.user.mobile_number}_option")
+        cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu", timeout=60 * 5)
+        cache.set(f"{self.user.mobile_number}_direction", "OUT", timeout=60 * 5)
+
+        # Update instance variables
+        self.state = {}
+        self.stage = "handle_action_menu"
+        self.option = None
+        self.direction = "OUT"
+
+        # Restore JWT token if it exists
+        if current_jwt:
+            self.set_jwt_token(current_jwt)
 
 
 class CachedUser:
@@ -131,33 +170,33 @@ MENU_OPTIONS_2 = {
 }
 
 ABOUT = """
-Today credex is being used 
-for combi rides in Harare. 
-Credex solves the problem 
-of small change. Riders 
-charge their credex account 
-with USD at a verified agent, 
-and then use that charge in 
-any amount to pay for one 
-ride at a time. 
+Today credex is being used
+for combi rides in Harare.
+Credex solves the problem
+of small change. Riders
+charge their credex account
+with USD at a verified agent,
+and then use that charge in
+any amount to pay for one
+ride at a time.
 
-When a combi accepts your 
-credex, your charge is 
-transferred to their 
-account, and they can cash 
+When a combi accepts your
+credex, your charge is
+transferred to their
+account, and they can cash
 it out at a registered agent.
-There is no fee to charge 
-your account, or to use that 
-charge to pay for goods and 
+There is no fee to charge
+your account, or to use that
+charge to pay for goods and
 services.
 
-Combi drivers and owners can 
-use the charge they've received 
+Combi drivers and owners can
+use the charge they've received
 to purchase goods and services
-within the credex ecosystem, 
-also at no charge. When an 
-account charge is cashed out 
-at aregistered agent, there 
+within the credex ecosystem,
+also at no charge. When an
+account charge is cashed out
+at aregistered agent, there
 is a 2% fee.
 """
 

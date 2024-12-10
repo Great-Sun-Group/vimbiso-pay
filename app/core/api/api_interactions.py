@@ -3,18 +3,18 @@ import logging
 from typing import Tuple
 
 import requests
-from core.api.services import CredexBotService
 from decouple import config
 from django.core.cache import cache
 
-from ..config.constants import *
+from ..config.constants import CachedUser
 from ..utils.utils import CredexWhatsappService, wrap_text
+from services.whatsapp.types import BotServiceInterface
 
 logger = logging.getLogger(__name__)
 
 
 class APIInteractions:
-    def __init__(self, bot_service: CredexBotService):
+    def __init__(self, bot_service: BotServiceInterface):
         self.bot_service = bot_service
         self.base_url = f"{config('MYCREDEX_APP_URL')}"
         logger.info(f"Base URL: {self.base_url}")
