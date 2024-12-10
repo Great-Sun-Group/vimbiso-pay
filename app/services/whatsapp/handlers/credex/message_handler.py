@@ -24,44 +24,36 @@ class MessageHandlerMixin(BaseActionHandler):
         try:
             logger.debug(f"Handling interactive message type: {self.service.message_type}")
             logger.debug(f"Interactive type: {self.service.message.get('interactive', {}).get('type')}")
+            logger.debug(f"Full interactive message: {self.service.message.get('interactive', {})}")
 
             if self.service.message_type == "nfm_reply":
                 logger.debug("Processing form submission")
                 return self._handle_form_submission(current_state, selected_profile)
 
-            button_id = self.service.message["interactive"]["button_reply"].get("id")
-            if button_id == "confirm_offer":
-                return self._handle_offer_confirmation(current_state, selected_profile)
-            elif button_id == "cancel_offer":
-                return self._handle_offer_cancellation(current_state)
-            return self._format_error_response("Invalid button response. Please try again.")
+            interactive_type = self.service.message.get("interactive", {}).get("type")
+            if interactive_type == "button_reply":
+                button_id = self.service.message["interactive"]["button_reply"].get("id")
+                logger.debug(f"Processing button reply: {button_id}")
+                if button_id == "confirm_offer":
+                    return self._handle_offer_confirmation(current_state, selected_profile)
+                elif button_id == "cancel_offer":
+                    # Use the shared cancellation logic from OfferFlowMixin
+                    return self._handle_offer_cancellation(current_state)
+                return self._format_error_response("Invalid button response. Please try again.")
+            elif interactive_type == "list_reply":
+                selected_id = self.service.message["interactive"]["list_reply"].get("id")
+                logger.debug(f"Processing list selection: {selected_id}")
+                if selected_id and selected_id.startswith("cancel_offer_"):
+                    credex_id = selected_id.replace("cancel_offer_", "")
+                    logger.debug(f"Cancelling offer with ID: {credex_id}")
+                    # Use the shared cancellation logic from OfferFlowMixin
+                    return self._handle_offer_cancellation(current_state, credex_id)
+                return self._format_error_response("Invalid list selection. Please try again.")
+
+            logger.error(f"Unhandled interactive type: {interactive_type}")
+            return self._format_error_response("Invalid interactive message type. Please try again.")
         except Exception as e:
             logger.error(f"Error handling interactive message: {str(e)}")
-            return self._format_error_response(str(e))
-
-    def _handle_offer_cancellation(self, current_state: Dict[str, Any]) -> WhatsAppMessage:
-        """Handle offer cancellation with proper state cleanup"""
-        try:
-            # Clear offer-related state
-            current_state.pop("offer_flow", None)
-            current_state.pop("form_shown", None)
-            current_state.pop("confirmation_shown", None)
-            current_state.pop("selected_denomination", None)
-
-            # Update state to return to menu
-            # Preserve JWT token
-            if self.service.credex_service.jwt_token:
-                current_state["jwt_token"] = self.service.credex_service.jwt_token
-            self.service.state.update_state(
-                user_id=self.service.user.mobile_number,
-                new_state=current_state,
-                stage=StateStage.MENU.value,
-                update_from="offer_cancel",
-                option="handle_action_menu"
-            )
-            return self.get_response_template("Offer cancelled. Returning to menu.")
-        except Exception as e:
-            logger.error(f"Error cancelling offer: {str(e)}")
             return self._format_error_response(str(e))
 
     def _handle_offer_confirmation(

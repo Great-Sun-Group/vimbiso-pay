@@ -193,13 +193,32 @@ class CredexBotService(BotServiceInterface):
             Dict[str, Any]: Response message
         """
         try:
+            # Get current stage and option from state
+            current_stage = self.state.get_stage(self.user.mobile_number)
+            current_option = self.current_state.get("option")
+
             # Handle greeting messages
             if self.message_type == "text" and self.body.lower() in GREETINGS:
                 return self._handle_greeting()
 
-            # Get current stage and option from state
-            current_stage = self.state.get_stage(self.user.mobile_number)
-            current_option = self.current_state.get("option")
+            # Handle cancel_offer commands first
+            if (self.message_type == "text" and
+                isinstance(self.body, str) and
+                    self.body.startswith("cancel_offer_")):
+                logger.debug("Handling cancel_offer command")
+                return self.action_handler.credex_handler.handle_action_offer_credex()
+
+            # Handle interactive messages (including list selections)
+            if self.message_type == "interactive":
+                logger.debug("Handling interactive message")
+                # Use current stage/option to route to correct handler
+                if current_stage == StateStage.CREDEX.value or current_option == "handle_action_offer_credex":
+                    return self.action_handler.credex_handler.handle_action_offer_credex()
+                elif current_stage == StateStage.AUTH.value:
+                    return self.action_handler.auth_handler.handle_action_menu()
+                else:
+                    # Default to current stage
+                    return self.action_handler.handle_action(current_stage)
 
             # Handle form submissions
             if self.message_type == "nfm_reply":
@@ -313,7 +332,7 @@ class WhatsAppActionHandler:
             handler_map = {
                 "handle_action_offer_credex": self.credex_handler.handle_action_offer_credex,
                 "handle_action_pending_offers_in": self.credex_handler.handle_default_action,
-                "handle_action_pending_offers_out": self.credex_handler.handle_default_action,
+                "handle_action_pending_offers_out": self.credex_handler.handle_action_pending_offers_out,
                 "handle_action_transactions": self.credex_handler.handle_default_action,
                 StateStage.CREDEX.value: self.credex_handler.handle_action_offer_credex,
             }

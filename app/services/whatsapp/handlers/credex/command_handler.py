@@ -14,13 +14,21 @@ class CommandHandlerMixin(BaseActionHandler):
 
     def _is_credex_command(self, body: str) -> bool:
         """Check if message is a credex command"""
-        return "=>" in str(body) or "->" in str(body)
+        return ("=>" in str(body) or "->" in str(body) or
+                str(body).startswith("cancel_offer_"))
 
     def _handle_credex_command(
         self, current_state: Dict[str, Any], selected_profile: Dict[str, Any]
     ) -> WhatsAppMessage:
         """Handle credex command processing with proper error handling"""
         try:
+            # Handle cancel offer commands
+            if str(self.service.body).startswith("cancel_offer_"):
+                credex_id = self.service.body.replace("cancel_offer_", "")
+                logger.debug(f"Handling cancel offer command for ID: {credex_id}")
+                # Use the shared cancellation logic from OfferFlowMixin
+                return self._handle_offer_cancellation(current_state, credex_id)
+
             # Ensure JWT token is set
             if current_state.get("jwt_token"):
                 self.service.credex_service.jwt_token = current_state["jwt_token"]
