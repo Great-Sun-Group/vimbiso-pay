@@ -2,380 +2,239 @@
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, Union
 
-
-# Set up logging
 logger = logging.getLogger(__name__)
 
 
-def create_menu_template(
+def create_message_template(
     phone_number: str,
-    body_text: str,
-    button_text: str,
-    sections: List[Dict[str, Any]],
+    template_type: str,
+    content: Dict[str, Any],
     header_text: str = None,
     footer_text: str = None
 ) -> Dict[str, Any]:
-    """Create a WhatsApp menu template message.
+    """Create a WhatsApp message template.
 
     Args:
         phone_number: Recipient's phone number
-        body_text: Main message text
-        button_text: Text for the menu button
-        sections: List of menu sections with options
+        template_type: Type of template (list, button)
+        content: Template content (body_text, buttons/sections)
         header_text: Optional header text
         footer_text: Optional footer text
-
-    Returns:
-        Dict[str, Any]: WhatsApp menu message format
     """
-    menu = {
+    template = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
         "to": phone_number,
         "type": "interactive",
         "interactive": {
-            "type": "list",
-            "body": {"text": body_text},
-            "action": {
-                "button": button_text,
-                "sections": sections
-            }
+            "type": template_type,
+            "body": {"text": content.get("body_text", "")},
+            "action": {}
         }
     }
 
+    if template_type == "list":
+        template["interactive"]["action"].update({
+            "button": content["button_text"],
+            "sections": content["sections"]
+        })
+    elif template_type == "button":
+        template["interactive"]["action"].update({
+            "buttons": [
+                {"type": "reply", "reply": button}
+                for button in content["buttons"]
+            ]
+        })
+
     if header_text:
-        menu["interactive"]["header"] = {
-            "type": "text",
-            "text": header_text
-        }
-
+        template["interactive"]["header"] = {"type": "text", "text": header_text}
     if footer_text:
-        menu["interactive"]["footer"] = {
-            "text": footer_text
-        }
+        template["interactive"]["footer"] = {"text": footer_text}
 
-    return menu
+    return template
 
 
-def create_button_template(
+def create_whatsapp_payload(
     phone_number: str,
-    body_text: str,
-    buttons: List[Dict[str, str]],
-    header_text: str = None,
-    footer_text: str = None
+    message_type: str,
+    message_text: Union[str, Dict],
+    phone_number_id: str = "123456789"
 ) -> Dict[str, Any]:
-    """Create a WhatsApp button template message.
+    """Create a WhatsApp webhook payload."""
+    timestamp = str(int(datetime.now().timestamp()))
+    message_id = f"wamid.{''.join(['0123456789ABCDEF'[int(timestamp) % 16] for _ in range(32)])}"
 
-    Args:
-        phone_number: Recipient's phone number
-        body_text: Main message text
-        buttons: List of button objects with id and title
-        header_text: Optional header text
-        footer_text: Optional footer text
+    message_content = _get_message_content(message_type, message_text)
 
-    Returns:
-        Dict[str, Any]: WhatsApp button message format
-    """
-    button_msg = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": phone_number,
-        "type": "interactive",
-        "interactive": {
-            "type": "button",
-            "body": {"text": body_text},
-            "action": {
-                "buttons": [
-                    {
-                        "type": "reply",
-                        "reply": button
-                    } for button in buttons
-                ]
-            }
-        }
-    }
-
-    if header_text:
-        button_msg["interactive"]["header"] = {
-            "type": "text",
-            "text": header_text
-        }
-
-    if footer_text:
-        button_msg["interactive"]["footer"] = {
-            "text": footer_text
-        }
-
-    return button_msg
-
-
-def create_whatsapp_payload(phone_number, message_type, message_text, phone_number_id="123456789"):
-    """Create a WhatsApp-style payload.
-
-    Args:
-        phone_number: The user's phone number
-        message_type: Type of message (text, button, interactive)
-        message_text: The message content
-        phone_number_id: WhatsApp phone number ID
-
-    Returns:
-        dict: WhatsApp message payload
-    """
-    timestamp = int(datetime.now().timestamp())
-    # WhatsApp message IDs are 32-char hex strings
-    message_id = f"wamid.{''.join(['0123456789ABCDEF'[timestamp % 16] for _ in range(32)])}"
-
-    # Create payload matching real WhatsApp webhook format
-    payload = {
+    return {
         "object": "whatsapp_business_account",
-        "entry": [
-            {
-                "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
-                "changes": [
-                    {
-                        "value": {
-                            "messaging_product": "whatsapp",
-                            "metadata": {
-                                "display_phone_number": "15550123456",
-                                "phone_number_id": phone_number_id,
-                                "timestamp": str(timestamp)  # WhatsApp uses string timestamps
-                            },
-                            "statuses": [],  # Required by WhatsApp
-                            "contacts": [
-                                {
-                                    "profile": {
-                                        "name": ""  # WhatsApp may include additional profile fields
-                                    },
-                                    "wa_id": phone_number,
-                                    "input": phone_number,  # Required by WhatsApp
-                                }
-                            ],
-                            "messages": [
-                                {
-                                    "from": phone_number,
-                                    "id": message_id,
-                                    "timestamp": str(timestamp),
-                                    "type": message_type,
-                                    "context": {
-                                        "from": phone_number,
-                                        "id": message_id,
-                                        "forwarded": False,  # Required by WhatsApp
-                                        "frequently_forwarded": False  # Required by WhatsApp
-                                    },
-                                    **get_message_content(message_type, message_text)
-                                }
-                            ]
+        "entry": [{
+            "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+            "changes": [{
+                "value": {
+                    "messaging_product": "whatsapp",
+                    "metadata": {
+                        "display_phone_number": "15550123456",
+                        "phone_number_id": phone_number_id,
+                        "timestamp": timestamp
+                    },
+                    "contacts": [{
+                        "profile": {"name": ""},
+                        "wa_id": phone_number,
+                        "input": phone_number
+                    }],
+                    "messages": [{
+                        "from": phone_number,
+                        "id": message_id,
+                        "timestamp": timestamp,
+                        "type": message_type,
+                        "context": {
+                            "from": phone_number,
+                            "id": message_id,
+                            "forwarded": False,
+                            "frequently_forwarded": False
                         },
-                        "field": "messages"
-                    }
-                ]
-            }
-        ]
+                        **message_content
+                    }]
+                },
+                "field": "messages"
+            }]
+        }]
     }
 
-    # Log the payload for debugging
-    logger.debug("\nCreated WhatsApp payload:")
-    logger.debug(f"Phone: {phone_number}")
-    logger.debug(f"Message: {message_text}")
-    logger.debug(f"Type: {message_type}")
-    logger.debug(f"Phone Number ID: {phone_number_id}\n")
 
-    return payload
-
-
-def get_message_content(message_type, message_text):
-    """Get the appropriate message content based on type.
-
-    Args:
-        message_type: Type of message (text, button, interactive)
-        message_text: The message content
-
-    Returns:
-        dict: Message content structure
-    """
+def _get_message_content(message_type: str, message_text: Union[str, Dict]) -> Dict[str, Any]:
+    """Get message content based on type."""
     if message_type == "text":
-        return {
-            "text": {
-                "body": message_text,
-                "preview_url": False  # Required by WhatsApp
-            }
-        }
-    elif message_type == "button":
-        return {
-            "button": {
-                "payload": message_text,
-                "text": message_text  # Required by WhatsApp
-            }
-        }
-    elif message_type == "interactive":
-        # Handle different interactive message types
-        if message_text.startswith("button:"):
-            # Format: button:button_id
-            button_id = message_text.split(":", 1)[1]
-            return {
-                "interactive": {
-                    "type": "button_reply",
-                    "button_reply": {
-                        "id": button_id,
-                        "title": button_id,
-                        "description": None,  # Optional in WhatsApp
-                        "selected": True  # Required by WhatsApp for replies
-                    }
-                }
-            }
-        elif message_text.startswith("list:"):
-            # Format: list:selection_id
-            selection_id = message_text.split(":", 1)[1]
-            return {
-                "interactive": {
-                    "type": "list_reply",
-                    "list_reply": {
-                        "id": selection_id,
-                        "title": selection_id,
-                        "description": None,  # Optional in WhatsApp
-                        "selected": True  # Required by WhatsApp for replies
-                    }
-                }
-            }
-        elif message_text.startswith("form:"):
-            # Format: form:field1=value1,field2=value2
-            form_data = {}
-            data_str = message_text.split(":", 1)[1]
-            if data_str:
-                for field in data_str.split(","):
-                    if "=" in field:
-                        key, value = field.split("=", 1)
-                        form_data[key.strip()] = value.strip()
+        return {"text": {"body": message_text, "preview_url": False}}
 
-            # Match WhatsApp's exact NFM reply format
+    if message_type == "button":
+        return {"button": {"payload": message_text, "text": message_text}}
+
+    if message_type == "interactive":
+        if isinstance(message_text, dict):  # Form data
             return {
                 "interactive": {
                     "type": "nfm_reply",
-                    "nfm_reply": {
-                        "submitted_form_data": {
-                            "message_id": None,  # Optional in WhatsApp
-                            "response_at": str(int(datetime.now().timestamp())),  # Required by WhatsApp
-                            "form_data": {
-                                "version": "1",  # Required by WhatsApp
-                                "screen": "MAIN",  # Required by WhatsApp
-                                "name": "credex_offer_form",  # Match form name from forms.py
-                                "response_payload": {
-                                    "response_json": json.dumps(form_data),
-                                    "version": "1"  # Required by WhatsApp
-                                },
-                                "response_fields": [
-                                    {
-                                        "field_id": field_id,
-                                        "value": value,
-                                        "type": "text",  # Match field type from forms.py
-                                        "screen": "MAIN",  # Required by WhatsApp
-                                        "version": "1",  # Required by WhatsApp
-                                        "selected": True  # Required by WhatsApp for form fields
-                                    } for field_id, value in form_data.items()
-                                ]
-                            }
+                    "nfm_reply": _create_form_reply(message_text)
+                }
+            }
+
+        # Handle button/list replies
+        if ":" in message_text:
+            reply_type, reply_id = message_text.split(":", 1)
+            if reply_type in ["button", "list"]:
+                return {
+                    "interactive": {
+                        "type": f"{reply_type}_reply",
+                        f"{reply_type}_reply": {
+                            "id": reply_id,
+                            "title": reply_id,
+                            "selected": True
                         }
                     }
                 }
-            }
-        else:
-            # Default to button reply
-            return {
-                "interactive": {
-                    "type": "button_reply",
-                    "button_reply": {
-                        "id": message_text,
-                        "title": message_text,
-                        "description": None,  # Optional in WhatsApp
-                        "selected": True  # Required by WhatsApp for replies
-                    }
-                }
-            }
-    else:
-        raise ValueError(f"Unsupported message type: {message_type}")
 
-
-def format_json_response(response_text):
-    """Format JSON response.
-
-    Args:
-        response_text: JSON string to format
-
-    Returns:
-        dict: Parsed response object
-    """
-    try:
-        # Parse the response text
-        data = json.loads(response_text)
-
-        # If it's a WhatsApp response wrapped in "response" key, return the inner response
-        if isinstance(data, dict) and 'response' in data:
-            return data['response']
-
-        # Otherwise return the original data
-        return data
-    except json.JSONDecodeError:
-        # Return error message as text response
+        # Default to button reply
         return {
-            "type": "text",
-            "text": {
-                "body": response_text,
-                "preview_url": False  # Required by WhatsApp
+            "interactive": {
+                "type": "button_reply",
+                "button_reply": {
+                    "id": message_text,
+                    "title": message_text,
+                    "selected": True
+                }
             }
         }
 
+    raise ValueError(f"Unsupported message type: {message_type}")
 
-def extract_message_text(message):
-    """Extract message text from a WhatsApp message based on its type.
 
-    Args:
-        message: WhatsApp message object
+def _create_form_reply(form_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Create form reply structure."""
+    return {
+        "submitted_form_data": {
+            "response_at": str(int(datetime.now().timestamp())),
+            "form_data": {
+                "version": "1",
+                "screen": "MAIN",
+                "name": "credex_offer_form",
+                "response_payload": {
+                    "response_json": json.dumps(form_data),
+                    "version": "1"
+                },
+                "response_fields": [
+                    {
+                        "field_id": field_id,
+                        "value": value,
+                        "type": "text",
+                        "screen": "MAIN",
+                        "version": "1",
+                        "selected": True
+                    } for field_id, value in form_data.items()
+                ]
+            }
+        }
+    }
 
-    Returns:
-        str: Extracted message text
-    """
+
+def extract_message_text(message: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
+    """Extract message text from WhatsApp message."""
     message_type = message.get("type", "")
 
     if message_type == "text":
         return message.get("text", {}).get("body", "")
-    elif message_type == "button":
+
+    if message_type == "button":
         return message.get("button", {}).get("payload", "")
-    elif message_type == "interactive":
+
+    if message_type == "interactive":
         interactive = message.get("interactive", {})
-        if "button_reply" in interactive:
-            return interactive["button_reply"].get("id", "")
-        elif "list_reply" in interactive:
-            return interactive["list_reply"].get("id", "")
-        elif "nfm_reply" in interactive:
-            # Extract form data from WhatsApp's NFM reply format
-            submitted_form = interactive["nfm_reply"].get("submitted_form_data", {})
-            form_data = submitted_form.get("form_data", {})
 
-            # Get form name and version for validation
-            form_name = form_data.get("name", "")
-            version = form_data.get("version", "1")  # Used for version validation
+        # Handle button/list replies
+        for reply_type in ["button_reply", "list_reply"]:
+            if reply_type in interactive:
+                return interactive[reply_type].get("id", "")
+
+        # Handle form replies
+        if "nfm_reply" in interactive:
+            form_data = (interactive.get("nfm_reply", {})
+                         .get("submitted_form_data", {})
+                         .get("form_data", {}))
+
             response_fields = form_data.get("response_fields", [])
+            form_values = {
+                field["field_id"]: field["value"]
+                for field in response_fields
+                if field.get("version") == form_data.get("version")
+                and "field_id" in field and "value" in field
+            }
 
-            # Convert response fields to dictionary
-            form_values = {}
-            for field in response_fields:
-                # Only process fields matching the form version
-                if field.get("version") == version:
-                    field_id = field.get("field_id")
-                    value = field.get("value")
-                    if field_id and value:
-                        form_values[field_id] = value
-
-            # For credex offer form, ensure required fields
-            if form_name == "credex_offer_form":
-                if "amount" not in form_values or "recipientAccountHandle" not in form_values:
-                    logger.error("Missing required fields in credex offer form")
-                    return {}
+            # Validate required fields for credex form
+            if (form_data.get("name") == "credex_offer_form" and
+                    not all(k in form_values for k in ["amount", "recipientAccountHandle"])):
+                logger.error("Missing required fields in credex offer form")
+                return {}
 
             return form_values
-        else:
-            return "Unknown interactive type"
-    else:
-        return "Unsupported message type"
+
+        return "Unknown interactive type"
+
+    return "Unsupported message type"
+
+
+def format_json_response(response_text: str) -> Dict[str, Any]:
+    """Format JSON response."""
+    try:
+        data = json.loads(response_text)
+        return data.get("response", data) if isinstance(data, dict) else data
+    except json.JSONDecodeError:
+        return {
+            "type": "text",
+            "text": {
+                "body": response_text,
+                "preview_url": False
+            }
+        }

@@ -1,76 +1,89 @@
 #!/usr/bin/env python3
+"""Mock WhatsApp CLI client."""
 import argparse
 import json
-import requests
 import sys
+from typing import Dict, Any
 from urllib.parse import urlencode
 
-from whatsapp_utils import create_whatsapp_payload, format_json_response
+import requests
+
+from whatsapp_utils import (
+    create_whatsapp_payload,
+    extract_message_text,
+    format_json_response
+)
 
 
-def format_display_text(response):
-    """Format response for display.
-
-    Args:
-        response: Response object from format_json_response
-
-    Returns:
-        str: Formatted text for display
-    """
+def format_display_text(response: Dict[str, Any]) -> str:
+    """Format response for display."""
     if isinstance(response, str):
         return response
 
-    # Format based on message type
+    # Extract message text
+    message_text = extract_message_text(response)
+    if message_text and isinstance(message_text, str):
+        return message_text
+
+    # Format interactive messages
     if response.get("type") == "interactive":
         interactive = response.get("interactive", {})
         text_parts = []
 
-        # Add body text if present
+        # Add body text
         if interactive.get("body", {}).get("text"):
             text_parts.append(interactive["body"]["text"])
 
-        # Add button text if present
-        if interactive.get("action", {}).get("button"):
-            text_parts.append(f"\n[Button: {interactive['action']['button']}]")
-
-        # Add options if present
-        if interactive.get("action", {}).get("sections"):
-            for section in interactive["action"]["sections"]:
+        # Add button/options
+        action = interactive.get("action", {})
+        if action.get("button"):
+            text_parts.append(f"\n[Button: {action['button']}]")
+        if action.get("sections"):
+            for section in action["sections"]:
                 if section.get("title"):
                     text_parts.append(f"\n{section['title']}:")
                 for row in section.get("rows", []):
                     text_parts.append(f"- {row['title']}")
 
         return "\n".join(text_parts)
-    elif response.get("type") == "text":
+
+    # Format text messages
+    if response.get("type") == "text":
         return response.get("text", {}).get("body", "")
-    else:
-        return json.dumps(response, indent=2, ensure_ascii=False)
+
+    # Default to JSON string
+    return json.dumps(response, indent=2, ensure_ascii=False)
 
 
-def send_message(args):
-    """Send a message to the mock WhatsApp server."""
+def send_message(args: argparse.Namespace) -> None:
+    """Send message to mock server."""
+    # Create payload
     payload = create_whatsapp_payload(
-        args.phone, args.type, args.message, args.phone_number_id
+        args.phone,
+        args.type,
+        args.message,
+        args.phone_number_id
     )
 
-    # Add target to URL query params
+    # Send request
     params = {'target': args.target}
     url = f"http://localhost:{args.port}/bot/webhook?{urlencode(params)}"
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-Mock-Testing": "true"
+    }
 
     try:
         response = requests.post(
             url,
             json=payload,
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "X-Mock-Testing": "true"
-            },
+            headers=headers,
             timeout=30
         )
         response.raise_for_status()
 
+        # Format and display response
         print("Server Response:")
         formatted_response = format_json_response(response.text)
         display_text = format_display_text(formatted_response)
@@ -83,15 +96,16 @@ def send_message(args):
         sys.exit(1)
 
 
-def main():
+def main() -> None:
+    """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Mock WhatsApp CLI Client - Send test messages to local or staging chatbot",
+        description="Mock WhatsApp CLI Client",
         epilog="""
 Examples:
   # Text message
   %(prog)s "Hello, world!"
 
-  # Menu option selection
+  # Menu option
   %(prog)s --type interactive "handleactionoffercredex"
 
   # Flow navigation
@@ -99,8 +113,12 @@ Examples:
 
   # Button response
   %(prog)s --type button "accept_offer_123"
+
+  # Form submission
+  %(prog)s --type interactive "form:amount=100,recipientAccountHandle=@user123"
         """
     )
+
     parser.add_argument(
         "--phone",
         default="1234567890",
@@ -110,10 +128,7 @@ Examples:
         "--type",
         choices=["text", "button", "interactive"],
         default="text",
-        help="""Message type (default: text). For interactive messages:
-        - Menu options: Use the option ID directly (e.g., "handleactionoffercredex")
-        - Flow navigation: Use "flow:SCREEN_NAME" format
-        """
+        help="Message type (default: text)"
     )
     parser.add_argument(
         "--port",
@@ -134,10 +149,7 @@ Examples:
     )
     parser.add_argument(
         "message",
-        help="""Message to send. For interactive messages:
-        - Menu options: The option ID (e.g., "handleactionoffercredex")
-        - Flow navigation: "flow:SCREEN_NAME" (e.g., "flow:MAKE_SECURE_OFFER")
-        """
+        help="Message to send"
     )
 
     args = parser.parse_args()
