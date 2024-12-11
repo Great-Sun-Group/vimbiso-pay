@@ -5,10 +5,10 @@ from typing import Tuple
 import requests
 from decouple import config
 from django.core.cache import cache
+from services.whatsapp.types import BotServiceInterface
 
 from ..config.constants import CachedUser
-from ..utils.utils import CredexWhatsappService, wrap_text
-from services.whatsapp.types import BotServiceInterface
+from ..utils.utils import CredexWhatsappService
 
 logger = logging.getLogger(__name__)
 
@@ -189,8 +189,6 @@ class APIInteractions:
 
     def get_dashboard(self) -> Tuple[bool, dict]:
         """Fetches the member's dashboard from the CredEx API"""
-        self.refresh_member_info(reset=True, silent=True, init=False)
-
         logger.info("Fetching member dashboard")
         url = f"{self.base_url}/getMemberDashboardByPhone"
         logger.info(f"Dashboard URL: {url}")
@@ -648,132 +646,72 @@ class APIInteractions:
     def _handle_successful_refresh(self, current_state, member_info=dict):
 
         logger.info("Refresh successful")
-        # {
-        #     'member': {
-        #         'memberID': '93af87ee-4f1d-4341-a224-826598407793',
-        #         'firstname': 'Takudzwa',
-        #         'lastname': 'Sharara',
-        #         'memberHandle': '263719624032',
-        #         'defaultDenom': 'USD',
-        #         'memberTier': {
-        #             'low': 1,
-        #             'high': 0
-        #         },
-        #         'remainingAvailableUSD': None
-        #     },
-        #     'memberDashboard': {
-        #         'memberTier': {
-        #             'low': 1,
-        #             'high': 0
-        #         },
-        #         'remainingAvailableUSD': None,
-        #         'accounts': [
-        #             {
-        #                 'success': True,
-        #                 'data': {
-        #                     'accountID': 'd3a68139-81de-4bdb-875a-494f747863fb',
-        #                     'accountName': 'Takudzwa Sharara Personal',
-        #                     'accountHandle': '263719624032',
-        #                     'defaultDenom': 'USD',
-        #                     'isOwnedAccount': True,
-        #                     'authFor': [
-        #                         {
-        #                             'lastname': 'Sharara',
-        #                             'firstname': 'Takudzwa',
-        #                             'memberID': '93af87ee-4f1d-4341-a224-826598407793'
-        #                         }
-        #                     ],
-        #                     'balanceData': {
-        #                         'success': True,
-        #                         'data': {
-        #                             'securedNetBalancesByDenom': ['99.76 USD'],
-        #                             'unsecuredBalancesInDefaultDenom': {
-        #                                 'totalPayables': '0.00 USD',
-        #                                 'totalReceivables': '0.00 USD',
-        #                                 'netPayRec': '0.00 USD'
-        #                             },
-        #                             'netCredexAssetsInDefaultDenom': '99.76 USD'
-        #                         },
-        #                         'message': 'Account balances retrieved successfully'
-        #                     },
-        #                     'pendingInData': {
-        #                         'success': True,
-        #                         'data': [],
-        #                         'message': 'No pending offers found'
-        #                     },
-        #                     'pendingOutData': {
-        #                         'success': True, 'data': [],
-        #                         'message': 'No pending outgoing offers found'
-        #                     },
-        #                     'sendOffersTo': {
-        #                         'memberID': '93af87ee-4f1d-4341-a224-826598407793',
-        #                         'firstname': 'Takudzwa',
-        #                         'lastname': 'Sharara'
-        #                     }
-        #                 },
-        #                 'message': 'Dashboard retrieved successfully'
-        #             }
-        #         ]
-        #     }
-        # }
 
+        # Validate member_info structure
+        if not isinstance(member_info, dict):
+            logger.error("Invalid member_info format")
+            return self._handle_failed_refresh(current_state, "Invalid member info format")
+
+        # Extract and validate dashboard data
+        dashboard_data = member_info.get("data", {}).get("dashboard")
+        member_details = member_info.get("data", {}).get("action", {}).get("details", {})
+
+        if not dashboard_data or not member_details:
+            logger.error("Missing required dashboard data")
+            return self._handle_failed_refresh(current_state, "Missing dashboard data")
+
+        # Format member info consistently
         member_info = {
-            "member": member_info.get("data", {}).get("action", {}).get("details", {}),
-            "memberDashboard": member_info.get("data", {}).get("dashboard"),
+            "member": member_details,
+            "memberDashboard": dashboard_data,
         }
 
-        user = CachedUser(self.bot_service.user.mobile_number)
-        if member_info:
-            current_state["profile"] = member_info
-            if not current_state.get("current_account", {}):
-                if (
-                    current_state.get("profile", {})
-                    .get("memberDashboard", {})
-                    .get("memberTier", {})
-                    .get("low", 1)
-                    < 2
-                ):
-                    try:
-                        current_state.update(
-                            {
-                                "current_account": member_info["memberDashboard"][
-                                    "accounts"
-                                ][0]
-                            }
-                        )
-                    except Exception as e:
-                        print("ERROR SETTING DEFAULT PROFILE ", e)
-                        current_state["current_account"] = {}
-                else:
-                    current_state["current_account"] = {}
+        # Preserve JWT token
+        jwt_token = current_state.get("jwt_token")
+        if jwt_token:
+            member_info["jwt_token"] = jwt_token
 
+        # Update state with new member info
+        current_state["profile"] = member_info
+
+        # Handle current account setup with proper validation
+        if not current_state.get("current_account", {}):
+            member_tier = (
+                dashboard_data.get("memberTier", {}).get("low", 1)
+                if isinstance(dashboard_data.get("memberTier"), dict)
+                else 1
+            )
+
+            accounts = dashboard_data.get("accounts", [])
+            if member_tier < 2 and accounts and isinstance(accounts, list) and accounts:
+                try:
+                    # Extract account data from success/data wrapper
+                    first_account = accounts[0]
+                    if (
+                        isinstance(first_account, dict)
+                        and first_account.get("success")
+                        and isinstance(first_account.get("data"), dict)
+                    ):
+                        current_state["current_account"] = first_account["data"]
+                        logger.info("Successfully set default account")
+                    else:
+                        logger.error("Invalid account data structure")
+                        current_state["current_account"] = {}
+                except Exception as e:
+                    logger.error(f"Error setting default account: {str(e)}")
+                    current_state["current_account"] = {}
+            else:
+                current_state["current_account"] = {}
+                logger.info("No eligible account found or member tier too high")
+
+        # Single state update with consistent stage/option
+        user = CachedUser(self.bot_service.user.mobile_number)
         user.state.update_state(
             state=current_state,
             stage="handle_action_menu",
             update_from="refresh",
-            option="handle_action_menu",
+            option="handle_action_menu"
         )
 
-        self.bot_service.state_manager.update_state(
-            new_state=current_state,
-            update_from="handle_action_menu",
-            stage="handle_action_register",
-            option="handle_action_register",
-        )
+        logger.info("State updated successfully after refresh")
         return None
-
-    def _handle_failed_refresh(self, current_state, error_message):
-        logger.error(f"Refresh failed: {error_message}")
-        user = CachedUser(self.bot_service.user.mobile_number)
-        user.state.update_state(
-            state=current_state,
-            stage="handle_action_register",
-            update_from="refresh",
-            option="handle_action_register",
-        )
-        return wrap_text(
-            f"An error occurred: {error_message}. Please try again.",
-            self.bot_service.user.mobile_number,
-            extra_rows=[{"id": "1", "title": "Become a member"}],
-            include_menu=False,
-        )

@@ -80,32 +80,63 @@ class CachedUserState:
     def update_state(
         self, state: dict, update_from, stage=None, option=None, direction=None
     ):
-        """Get wallets by user."""
-        # pylint: disable=no-member
-        # print("UPDATING FROM ", update_from, stage, option, direction, state)
+        """Update user state with proper cache management"""
+        # Ensure we have a valid state object
+        if not isinstance(state, dict):
+            state = {}
+
+        # Set state with increased timeout
         cache.set(f"{self.user.mobile_number}", state, timeout=60 * 5)
+
+        # Update stage if provided
         if stage:
             cache.set(f"{self.user.mobile_number}_stage", stage, timeout=60 * 5)
+            self.stage = stage
+
+        # Update option if provided
         if option:
             cache.set(f"{self.user.mobile_number}_option", option, timeout=60 * 5)
+            self.option = option
+
+        # Update direction if provided
         if direction:
             cache.set(f"{self.user.mobile_number}_direction", direction, timeout=60 * 5)
-        self.state = cache.get(f"{self.user.mobile_number}")
-        self.stage = cache.get(f"{self.user.mobile_number}_stage")
-        self.option = cache.get(f"{self.user.mobile_number}_option")
-        self.direction = cache.get(f"{self.user.mobile_number}_direction")
+            self.direction = direction
+
+        # Update local state
+        self.state = state
+
+        # Force a cache refresh to ensure consistency
+        cache.touch(f"{self.user.mobile_number}", timeout=60 * 5)
+        if stage:
+            cache.touch(f"{self.user.mobile_number}_stage", timeout=60 * 5)
+        if option:
+            cache.touch(f"{self.user.mobile_number}_option", timeout=60 * 5)
+        if direction:
+            cache.touch(f"{self.user.mobile_number}_direction", timeout=60 * 5)
 
     def get_state(self, user):
-        self.state = cache.get(f"{user.mobile_number}", {})
-        return self.state
+        """Get current state with proper cache handling"""
+        state = cache.get(f"{user.mobile_number}")
+        if state is None:
+            state = {}
+            cache.set(f"{user.mobile_number}", state, timeout=60 * 5)
+        else:
+            # Refresh cache timeout
+            cache.touch(f"{user.mobile_number}", timeout=60 * 5)
+        self.state = state
+        return state
 
     def set_jwt_token(self, jwt_token):
+        """Set JWT token with proper cache handling"""
         if jwt_token:
             cache.set(f"{self.user.mobile_number}_jwt_token", jwt_token, timeout=60 * 5)
             self.jwt_token = jwt_token
+            # Refresh cache timeout
+            cache.touch(f"{self.user.mobile_number}_jwt_token", timeout=60 * 5)
 
     def reset_state(self):
-        """Reset all user state to defaults."""
+        """Reset all user state with proper cache handling"""
         # Save current JWT token
         current_jwt = self.jwt_token
 
@@ -115,7 +146,7 @@ class CachedUserState:
         cache.delete(f"{self.user.mobile_number}_option")
         cache.delete(f"{self.user.mobile_number}_direction")
 
-        # Set default values with timeouts
+        # Set default values with timeout
         cache.set(f"{self.user.mobile_number}", {}, timeout=60 * 5)
         cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu", timeout=60 * 5)
         cache.set(f"{self.user.mobile_number}_direction", "OUT", timeout=60 * 5)
