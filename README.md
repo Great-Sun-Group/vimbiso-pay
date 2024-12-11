@@ -8,10 +8,13 @@ A WhatsApp bot service that facilitates financial transactions through the [cred
 - [User Flows](docs/flows/user-flows.md) - Detailed guide to all user interactions and flows
 
 ### Technical Documentation
+- [Flow Framework](docs/technical/flow-framework.md) - Progressive interaction framework
+- [WhatsApp Integration](docs/technical/whatsapp.md) - WhatsApp bot implementation
 - [API Integration](docs/technical/api-integration.md) - Integration with credex-core API
 - [State Management](docs/technical/state-management.md) - Conversation and session management
 - [Testing Guide](docs/technical/testing.md) - Testing infrastructure and tools
 - [Security](docs/technical/security.md) - Security measures and best practices
+- [Docker](docs/technical/docker.md) - Docker configuration and services
 - [Deployment](docs/deployment.md) - Deployment process and infrastructure
 - [Redis Management](docs/redis-memory-management.md) - Redis configuration and management
 
@@ -19,9 +22,13 @@ A WhatsApp bot service that facilitates financial transactions through the [cred
 
 ### Development Environment
 ```bash
-# Build and start services
+# Build and start services (combined command)
+make dev
+
+# Or use individual commands if needed:
 make dev-build
 make dev-up
+make dev-down
 
 # Access services (from host machine)
 Application: http://localhost:8000
@@ -31,22 +38,29 @@ Mock WhatsApp: http://localhost:8001
 - App service: http://app:8000
 - Redis: redis://redis:6379
 - Mock WhatsApp: http://mock:8001
-
-# Stop services
-make dev-down
 ```
 
 ### Production Environment
 ```bash
-# Build and start
+# Build and start services (combined command)
+make prod
+
+# Or use individual commands if needed:
 make prod-build
 make prod-up
-
-# Stop services
 make prod-down
 ```
 
 ## Core Features
+
+### WhatsApp Interface
+- Interactive menus and buttons
+- Form-based data collection
+- Rich message formatting
+- State-based conversation flow
+- Time-aware greetings
+- Navigation commands
+- Custom message templates
 
 ### Financial Operations
 - Secured credex transactions with immediate settlement
@@ -59,20 +73,26 @@ make prod-down
 - Transaction history with pagination
 - Pending offers management
 
-### WhatsApp Interface
-- Interactive menus and buttons
-- Form-based data collection
-- Rich message formatting
-- State-based conversation flow
-- Time-aware greetings
-- Navigation commands
-- Custom message templates
+### API & Integration
+- Direct integration with CredEx core API
+- Webhook support for real-time updates:
+  - Company updates
+  - Member updates
+  - Offer status changes
+- Internal API endpoints for:
+  - Company management
+  - Member operations
+  - Offer handling
+- Comprehensive validation and error handling
+- Type-safe request/response handling
 
 ### Security
 - JWT authentication
 - Rate limiting
 - Input validation
 - Secure state management
+- Webhook signature validation
+- Request payload validation
 
 ## Development Tools
 
@@ -81,11 +101,36 @@ Test the WhatsApp bot without real WhatsApp credentials:
 
 ```bash
 # Start all services including mock server
-make dev-up
+make dev
 
 # CLI testing (from host machine)
 ./mock/cli.py "Hello, world!"
 ./mock/cli.py --type button "button_1"
+```
+
+### API Testing
+Test API endpoints and webhooks:
+
+```bash
+# Test webhook endpoint
+curl -X POST http://localhost:8000/api/webhooks/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "metadata": {
+      "webhook_id": "test",
+      "event_type": "company_update",
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    "payload": {
+      "company_id": "123",
+      "name": "Test Company",
+      "status": "active"
+    }
+  }'
+
+# Test internal API (requires authentication)
+curl -X GET http://localhost:8000/api/companies/ \
+  -H "Authorization: Bearer your-token"
 ```
 
 ### AI-Assisted Merge Summaries

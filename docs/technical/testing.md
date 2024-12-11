@@ -1,258 +1,156 @@
-# Testing Infrastructure
+# Testing Guide
 
 ## Overview
 
-VimbisoPay provides a comprehensive testing infrastructure centered around a mock WhatsApp server that enables testing without real WhatsApp credentials. The system supports:
-- Web interface for manual testing
-- CLI interface for automated testing
-- Request/response logging
-- Environment switching (local/staging)
+VimbisoPay provides testing infrastructure for both WhatsApp interactions and API integrations.
 
-## Mock Server Architecture
+## Mock WhatsApp Interface
+
+For detailed WhatsApp testing, see [WhatsApp Integration](whatsapp.md).
 
 ### Components
 ```
 mock/
-├── server.py      # Mock WhatsApp webhook server
-├── cli.py         # Command-line testing interface
-└── index.html     # Web testing interface
+├── server.py          # Mock webhook server
+├── cli.py            # CLI interface
+├── whatsapp_utils.py # Shared utilities
+└── index.html        # Web interface
 ```
 
-### Server Configuration
-```python
-TARGETS = {
-    'local': 'http://app:8000/bot/webhook',
-    'staging': 'https://stage.whatsapp.vimbisopay.africa/bot/webhook'
-}
-```
-
-## CLI Testing Tool
-
-### Basic Usage
+### CLI Usage
 ```bash
-# Send text message
-./mock/cli.py "Hello, world!"
+# Text message
+./mock/cli.py "hi"
 
-# Custom phone and username
-./mock/cli.py --phone 263778177125 --username "Test User" "Hello!"
+# Menu option selection
+./mock/cli.py --type interactive "handleactionoffercredex"
+
+# Flow navigation
+./mock/cli.py --type interactive "flow:MAKE_SECURE_OFFER"
 
 # Button response
-./mock/cli.py --type button "button_1"
-
-# Interactive message
-./mock/cli.py --type interactive "menu_option_1"
-```
-
-### Command Line Options
-```bash
-options:
-  -h, --help            Show help message
-  --phone PHONE         Phone number (default: 1234567890)
-  --username USERNAME   Username (default: CLI User)
-  --type {text,button,interactive}
-                       Message type (default: text)
-  --port PORT          Server port (default: 8001)
-  --phone_number_id ID  WhatsApp Phone Number ID (default: 123456789)
-  --target {local,staging}
-                       Target environment (default: local)
-```
-
-### Message Types
-1. Text Messages
-```bash
-./mock/cli.py "Your message here"
-```
-
-2. Button Responses
-```bash
 ./mock/cli.py --type button "accept_offer_123"
 ```
 
-3. Interactive Messages
-```bash
-./mock/cli.py --type interactive "menu_option_1"
-```
+### Web Interface
+Access at http://localhost:8001
+- WhatsApp-style chat interface
+- Interactive menu options
+- Flow navigation
+- Real-time message display
+- Environment switching (local/staging)
 
-## Web Interface
-
-Access the web interface at http://localhost:8001
-
-### Features
-1. **Chat Interface**
-   - WhatsApp-style messaging
-   - Real-time conversation history
-   - Message type selection
-   - Environment switching
-
-2. **Message Types**
-   - Text messages
-   - Button responses
-   - Interactive messages
-   - Form responses
-
-3. **Testing Controls**
-   - Custom phone numbers
-   - Custom usernames
-   - Environment selection
-   - Message history
-
-## Message Format
-
-### WhatsApp Webhook Format
-```python
-{
-    "entry": [{
-        "changes": [{
-            "value": {
-                "metadata": {
-                    "phone_number_id": "PHONE_ID",
-                    "display_phone_number": "DISPLAY_NUMBER"
-                },
-                "contacts": [{
-                    "wa_id": "PHONE_NUMBER",
-                    "profile": {"name": "USERNAME"}
-                }],
-                "messages": [{
-                    "type": "MESSAGE_TYPE",
-                    "timestamp": "TIMESTAMP",
-                    # Message-specific content
-                }]
-            }
-        }]
-    }]
-}
-```
-
-### Message Content Types
-```python
-# Text Message
-{
-    "text": {
-        "body": "message_text"
-    }
-}
-
-# Button Response
-{
-    "button": {
-        "payload": "button_id"
-    }
-}
-
-# Interactive Response
-{
-    "interactive": {
-        "type": "button_reply",
-        "button_reply": {
-            "id": "menu_option"
-        }
-    }
-}
-```
-
-## Logging and Debugging
-
-### Server Logs
-```python
-logger.info(f"Received message: {text}")
-logger.info(f"From: {contact['profile']['name']}")
-logger.info(f"Phone: {contact['wa_id']}")
-logger.info(f"Type: {message_type}")
-logger.info(f"Target: {target}")
-```
-
-### Request/Response Logging
-```python
-logger.info(f"Target URL: {TARGETS[target]}")
-logger.info(f"Request Headers: {headers}")
-logger.info(f"Request Payload: {payload}")
-logger.info(f"Response Status: {response.status_code}")
-logger.info(f"Response Content: {response.text}")
-```
-
-### Error Handling
-1. **Connection Errors**
-   - Timeout handling
-   - Connection failure detection
-   - Server unavailability checks
-
-2. **Response Validation**
-   - JSON format validation
-   - Status code checking
-   - Error message formatting
-
-## Testing Scenarios
+## Common Test Scenarios
 
 ### 1. User Registration
 ```bash
-# Start registration flow
+# Start registration
 ./mock/cli.py "hi"
 
-# Submit registration form
-./mock/cli.py --type interactive "registration_form"
+# Create account
+./mock/cli.py --type interactive "flow:MEMBER_SIGNUP"
 ```
 
-### 2. Transaction Testing
+### 2. Transactions
 ```bash
-# Offer credex
-./mock/cli.py "0.5=>recipientHandle"
+# Quick command
+./mock/cli.py "0.5=>handle"
 
-# Accept offer
-./mock/cli.py --type button "accept_123"
+# Through menu
+./mock/cli.py --type interactive "handleactionoffercredex"
 
-# Decline offer
-./mock/cli.py --type button "decline_123"
+# Flow navigation
+./mock/cli.py --type interactive "flow:MAKE_SECURE_OFFER"
 ```
 
 ### 3. Menu Navigation
 ```bash
-# Main menu
+# Show menu
 ./mock/cli.py "menu"
 
 # Select options
-./mock/cli.py --type interactive "handle_action_transactions"
+./mock/cli.py --type interactive "handleactiontransactions"
 ```
 
-## Security Testing
+## Message Types
 
-### Headers
+### 1. Text Messages
+```bash
+# Basic text
+./mock/cli.py "Hello"
+
+# Quick commands
+./mock/cli.py "0.5=>handle"  # Secured credex
+./mock/cli.py "0.5->handle"  # Unsecured credex
+```
+
+### 2. Interactive Messages
+```bash
+# Menu options
+./mock/cli.py --type interactive "handleactionoffercredex"
+./mock/cli.py --type interactive "handleactiontransactions"
+
+# Flow navigation
+./mock/cli.py --type interactive "flow:MEMBER_SIGNUP"
+./mock/cli.py --type interactive "flow:MAKE_SECURE_OFFER"
+```
+
+### 3. Button Responses
+```bash
+./mock/cli.py --type button "accept_offer_123"
+./mock/cli.py --type button "decline_offer_123"
+```
+
+## Error Testing
+
+### Common Scenarios
+```bash
+# Invalid menu option
+./mock/cli.py --type interactive "invalid_option"
+
+# Expired session
+./mock/cli.py --type interactive "handleactionoffercredex"  # After timeout
+
+# Malformed command
+./mock/cli.py "0.5=>"  # Missing handle
+```
+
+### Error Format
 ```python
-headers = {
-    "Content-Type": "application/json",
-    "X-Mock-Testing": "true",
-    "Accept": "application/json"
+{
+    "error": "Error description",
+    "details": {
+        "field": "Error details"
+    }
 }
 ```
-
-### Test Environments
-- Local: http://app:8000/bot/webhook
-- Staging: https://stage.whatsapp.vimbisopay.africa/bot/webhook
-
-### Error Scenarios
-- Invalid tokens
-- Expired sessions
-- Malformed requests
-- Server timeouts
-- Connection failures
 
 ## Best Practices
 
 1. **Test Organization**
    - Group related tests
-   - Use descriptive test names
+   - Use descriptive names
    - Document expected outcomes
 
 2. **Environment Management**
-   - Use appropriate target environment
+   - Use appropriate target
    - Clean up test data
    - Reset state between tests
 
-3. **Error Handling**
-   - Test error scenarios
-   - Validate error messages
-   - Check recovery flows
-
-4. **Data Validation**
-   - Verify message format
-   - Check state transitions
+3. **Message Testing**
+   - Test all message types
+   - Verify formatting
+   - Check interactions
    - Validate responses
+
+4. **Flow Testing**
+   - Test complete flows
+   - Verify state transitions
+   - Check error handling
+   - Test timeouts
+
+For more details on:
+- WhatsApp integration: [WhatsApp Integration](whatsapp.md)
+- State management: [State Management](state-management.md)
+- API integration: [API Integration](api-integration.md)
+- Security testing: [Security](security.md)

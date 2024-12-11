@@ -1,0 +1,351 @@
+:root {
+    --bright-blue: #04A0B2;
+    --dark-blue: #06151F;
+    --gold: #FBB016;
+    --black: #000000;
+    --white: #FFFFFF;
+    --dark-blue-lighter: #0c2a3d;
+    --bright-blue-transparent: rgba(4, 160, 178, 0.1);
+}
+
+body {
+    font-family: Arial, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background: var(--dark-blue);
+    color: var(--white);
+}
+
+h1 {
+    color: var(--bright-blue);
+    text-align: center;
+    margin-bottom: 30px;
+    font-size: 28px;
+    letter-spacing: 0.5px;
+}
+
+.chat-container {
+    background: var(--dark-blue-lighter);
+    border-radius: 10px;
+    padding: 20px;
+    height: 500px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    border: 1px solid var(--bright-blue);
+}
+
+.message {
+    margin: 10px;
+    padding: 10px;
+    border-radius: 10px;
+    max-width: 70%;
+    word-wrap: break-word;
+}
+
+.user-message {
+    background: var(--bright-blue);
+    margin-left: auto;
+    color: var(--white);
+}
+
+.bot-message {
+    background: var(--dark-blue-lighter);
+    border: 1px solid var(--bright-blue);
+    color: var(--white);
+    white-space: pre-wrap;
+}
+
+.input-container {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    align-items: center;
+}
+
+.input-container label {
+    color: var(--bright-blue);
+    font-weight: bold;
+    min-width: fit-content;
+}
+
+input, select {
+    padding: 10px;
+    border: 1px solid var(--bright-blue);
+    border-radius: 5px;
+    background: var(--dark-blue-lighter);
+    color: var(--white);
+    transition: all 0.3s ease;
+}
+
+input:focus, select:focus {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: 0 0 0 2px var(--bright-blue-transparent);
+}
+
+input {
+    flex-grow: 1;
+}
+
+input::placeholder {
+    color: rgba(255,255,255,0.5);
+}
+
+button {
+    background: var(--bright-blue);
+    color: var(--white);
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    min-width: 100px;
+    padding: 10px;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+}
+
+button:hover {
+    background: var(--gold);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+button:active {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+.target-toggle {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 20px;
+    padding: 10px;
+    background: var(--dark-blue-lighter);
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    border: 1px solid var(--bright-blue);
+}
+
+.target-toggle label {
+    font-weight: bold;
+    min-width: 80px;
+    color: var(--bright-blue);
+}
+
+.target-toggle select {
+    flex-grow: 1;
+}
+
+.status {
+    padding: 10px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    background: var(--dark-blue-lighter);
+    font-weight: bold;
+    border: 1px solid var(--bright-blue);
+    color: var(--bright-blue);
+}
+
+.status.local {
+    border-color: var(--gold);
+    color: var(--gold);
+}
+
+.status.staging {
+    border-color: var(--bright-blue);
+    color: var(--bright-blue);
+}
+
+.menu-options {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 10px;
+}
+
+.menu-option {
+    background: var(--bright-blue);
+    color: var(--white);
+    padding: 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.menu-option:hover {
+    background: var(--gold);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.menu-option:active {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+.interactive-message {
+    background: var(--dark-blue-lighter);
+    padding: 15px;
+    border-radius: 10px;
+    margin: 10px;
+    max-width: 70%;
+    border: 1px solid var(--bright-blue);
+    color: var(--white);
+}
+
+.interactive-message .body {
+    white-space: pre-wrap;
+    margin-bottom: 15px;
+    line-height: 1.4;
+}
+
+.interactive-message .section-title {
+    font-weight: bold;
+    margin: 10px 0 5px;
+    color: var(--gold);
+    letter-spacing: 0.5px;
+}
+
+.interactive-message .list-button {
+    background: var(--bright-blue);
+    color: var(--white);
+    padding: 8px;
+    border-radius: 5px;
+    text-align: center;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.interactive-message .list-button:hover {
+    background: var(--gold);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.interactive-message .buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.interactive-message .button {
+    background: var(--bright-blue);
+    color: var(--white);
+    padding: 8px;
+    border-radius: 5px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.interactive-message .button:hover {
+    background: var(--gold);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.form-container {
+    background: var(--dark-blue-lighter);
+    padding: 20px;
+    border-radius: 10px;
+    margin: 10px;
+    border: 1px solid var(--bright-blue);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.form-field {
+    margin-bottom: 20px;
+}
+
+.form-field label {
+    display: block;
+    color: var(--gold);
+    margin-bottom: 8px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+.form-field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px;
+    background: var(--dark-blue);
+    border: 1px solid var(--bright-blue);
+    border-radius: 5px;
+    color: var(--white);
+    transition: all 0.3s ease;
+}
+
+.form-field input:focus {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: 0 0 0 2px var(--bright-blue-transparent);
+}
+
+.form-submit {
+    background: var(--bright-blue);
+    color: var(--white);
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    margin-top: 10px;
+}
+
+.form-submit:hover {
+    background: var(--gold);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.form-submit:active {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+/* WhatsApp markdown styles */
+.whatsapp-text {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.4;
+}
+
+.whatsapp-text strong {
+    color: var(--gold);
+    font-weight: bold;
+}
+
+.whatsapp-text em {
+    color: var(--bright-blue);
+    font-style: italic;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--dark-blue);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--bright-blue);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--gold);
+}

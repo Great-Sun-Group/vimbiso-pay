@@ -38,20 +38,23 @@ VimbisoPay is deployed on AWS using a containerized architecture with the follow
 2. Copy `.env.example` to `.env` and configure environment variables
 3. Run development environment:
    ```bash
-   make dev-build  # First time setup
-   make dev-up     # Start services
+   make dev  # Build and start services
    ```
 
 4. Access the application at http://localhost:8000
 
 ### Local Development Commands
 ```bash
-make dev-build    # Build development environment
-make dev-up       # Start development server
-make dev-down     # Stop development server
-make prod-build   # Build production environment
-make prod-up      # Start production server
-make prod-down    # Stop production server
+make dev         # Build and start development environment (combined command)
+make prod        # Build and start production environment (combined command)
+
+# Individual commands if needed:
+make dev-build   # Build development environment
+make dev-up      # Start development server
+make dev-down    # Stop development server
+make prod-build  # Build production environment
+make prod-up     # Start production server
+make prod-down   # Stop production server
 ```
 
 ## Deployment Process

@@ -1,12 +1,10 @@
-import json
+"""Cloud API webhook views"""
 import logging
 import sys
 from datetime import datetime
 
-import requests
 from core.api.models import Message
 from core.config.constants import CachedUser
-from core.message_handling.credex_bot_service import CredexBotService
 from core.utils.utils import CredexWhatsappService
 from decouple import config
 from django.core.cache import cache
@@ -14,6 +12,7 @@ from django.http import HttpResponse, JsonResponse
 from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
+from services.whatsapp.handler import CredexBotService
 
 # Configure logging to output to stdout
 logging.basicConfig(
@@ -30,6 +29,7 @@ class CredexCloudApiWebhook(APIView):
 
     permission_classes = []
     parser_classes = (JSONParser,)
+    throttle_classes = []  # Disable throttling for webhook endpoint
 
     @staticmethod
     def post(request):
@@ -43,6 +43,7 @@ class CredexCloudApiWebhook(APIView):
             logger.info("Received webhook request")
             logger.debug(f"Request data: {request.data}")
 
+            # Get the WhatsApp payload
             payload = request.data.get("entry")[0].get("changes")[0].get("value")
             logger.info(f"Webhook payload metadata: {payload.get('metadata', {})}")
 
@@ -60,248 +61,98 @@ class CredexCloudApiWebhook(APIView):
                     )
                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            if payload.get("messages"):
-                phone_number_id = payload["metadata"].get("phone_number_id")
-                message = payload["messages"][0]
-                message_type = message["type"]
-                contact = (
-                    payload["contacts"][0]
-                    if message_type != "system"
-                    else payload["messages"][0].get("wa_id")
+            if not payload.get("messages"):
+                logger.info("No messages in payload")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
+            message = payload["messages"][0]
+            message_type = message["type"]
+
+            # Handle system messages
+            if (message_type == "system" or message.get("system") or
+                    (not is_mock_testing and payload["metadata"]["phone_number_id"] != config("WHATSAPP_PHONE_NUMBER_ID"))):
+                logger.info("Ignoring system message")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
+            # Get contact info
+            contact = payload["contacts"][0] if message_type != "system" else message.get("wa_id")
+            if not contact:
+                logger.warning("No contact information in payload")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
+            # Debug Redis connection
+            logger.info("Testing Redis connection...")
+            try:
+                test_key = "test_redis_connection"
+                cache.set(test_key, "test_value", timeout=10)
+                test_value = cache.get(test_key)
+                logger.info(f"Redis test - Set and get successful: {test_value}")
+            except Exception as e:
+                logger.error(f"Redis connection error: {str(e)}")
+                return JsonResponse(
+                    {"error": "Redis connection failed"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
-                if (
-                    message_type == "system"
-                    or message.get("system")
-                    or (not is_mock_testing and phone_number_id != config("WHATSAPP_PHONE_NUMBER_ID"))
-                ):
-                    logger.info("Ignoring system message")
-                    return JsonResponse(
-                        {"message": "received"}, status=status.HTTP_200_OK
-                    )
+            # Create CachedUser with debug logging
+            logger.info(f"Creating CachedUser for phone: {contact['wa_id']}")
+            user = CachedUser(contact["wa_id"])
+            logger.info(f"CachedUser created with state: {user.state.__dict__}")
 
-                if message_type == "text":
-                    payload["body"] = message["text"]["body"]
+            state = user.state
 
-                elif message_type == "button":
-                    payload["body"] = message["button"]["payload"]
+            # Check message age
+            message_stamp = datetime.fromtimestamp(int(message["timestamp"]))
+            if (datetime.now() - message_stamp).total_seconds() > 20:
+                logger.info(f"Ignoring old webhook from {message_stamp}")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-                elif message_type == "interactive":
-                    if message.get("interactive"):
-                        if message["interactive"]["type"] == "button_reply":
-                            payload["body"] = message["interactive"]["button_reply"][
-                                "id"
-                            ]
-                        elif message["interactive"].get("type") == "nfm_reply":
-                            message_type = "nfm_reply"
-                            payload["body"] = json.loads(
-                                message["interactive"]["nfm_reply"]["response_json"]
-                            )
-                        else:
-                            payload["body"] = message["interactive"]["list_reply"]["id"]
-                    else:
-                        return JsonResponse(
-                            {"message": "received"}, status=status.HTTP_200_OK
-                        )
-                elif message_type == "location":
-                    payload["body"] = (
-                        message["location"]["latitude"],
-                        message["location"]["longitude"],
-                    )
+            # Extract message text for logging
+            message_text = ""
+            if message_type == "text":
+                message_text = message["text"]["body"]
+            elif message_type == "interactive":
+                interactive = message.get("interactive", {})
+                if "button_reply" in interactive:
+                    message_text = interactive["button_reply"]["id"]
+                elif "list_reply" in interactive:
+                    message_text = interactive["list_reply"]["id"]
+                else:
+                    # Log full interactive message for debugging
+                    logger.debug(f"Unhandled interactive message type: {interactive}")
+                    message_text = str(interactive)
 
-                elif message_type == "image":
-                    image_id = message["image"]["id"]
-                    headers = {
-                        "Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")
-                    }
-                    file = requests.request(
-                        "GET",
-                        url=f"https://graph.facebook.com/v20.0/{image_id}",
-                        headers=headers,
-                        data={},
-                    ).json()
+            logger.info(
+                f"Credex [{state.stage}<|>{state.option}] RECEIVED -> {message_text} "
+                f"FROM {contact['wa_id']} @ {message_stamp}"
+            )
 
-                    caption = message["image"].get("caption")
-                    payload["file_id"] = image_id
-                    if caption:
-                        payload["caption"] = caption
-                    payload["body"] = file.get("url")
-                    payload["file_name"] = file.get("name")
+            try:
+                logger.info("Creating CredexBotService...")
+                # Pass the original WhatsApp format request data
+                service = CredexBotService(payload=request.data, user=user)
 
-                elif message_type == "document":
-                    document_id = message["document"]["id"]
-                    headers = {
-                        "Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")
-                    }
-                    file = requests.request(
-                        "GET",
-                        url=f"https://graph.facebook.com/v20.0/{document_id}",
-                        headers=headers,
-                        data={},
-                    ).json()
-                    payload["body"] = file.get("url")
-                    payload["file_name"] = file.get("name")
-                    payload["file_id"] = document_id
+                # For mock testing return the response directly
+                if is_mock_testing:
+                    logger.info("Mock testing mode: Returning response without sending to WhatsApp")
+                    return JsonResponse({"response": service.response}, status=status.HTTP_200_OK)
 
-                elif message_type == "video":
-                    video_id = message["video"]["id"]
-                    headers = {
-                        "Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")
-                    }
-                    file = requests.request(
-                        "GET",
-                        url=f"https://graph.facebook.com/v20.0/{video_id}",
-                        headers=headers,
-                        data={},
-                    ).json()
-                    payload["body"] = file.get("url")
-                    payload["file_name"] = file.get("name")
-                    payload["file_id"] = video_id
-                    caption = message["video"].get("caption")
-                    if caption:
-                        payload["caption"] = caption
-                elif message_type == "audio":
-                    audio_id = message["audio"]["id"]
-                    headers = {
-                        "Authorization": "Bearer " + config("WHATSAPP_ACCESS_TOKEN")
-                    }
-                    file = requests.request(
-                        "GET",
-                        url=f"https://graph.facebook.com/v20.0/{audio_id}",
-                        headers=headers,
-                        data={},
-                    ).json()
-                    payload["body"] = file.get("url")
-                    payload["file_name"] = file.get("name")
+                # For real requests send via WhatsApp
+                logger.info("Sending response via WhatsApp service...")
+                response = CredexWhatsappService(
+                    payload=service.response,
+                    phone_number_id=payload["metadata"]["phone_number_id"]
+                ).send_message()
+                logger.info(f"WhatsApp API Response: {response}")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-                elif message_type == "order":
-                    payload["body"] = message["order"]["product_items"]
-
-                elif message_type == "nfm_reply":
-                    payload["body"] = message["nfm_reply"]["response_json"]
-
-                if f"{payload['body']}".lower() in ["ok", "thanks", "thank you"]:
-                    logger.info("Sending thank you response")
-                    CredexWhatsappService(
-                        payload={
-                            "messaging_product": "whatsapp",
-                            "recipient_type": "individual",
-                            "to": contact["wa_id"],
-                            "type": "text",
-                            "text": {"body": "🙏"},
-                        },
-                        phone_number_id=payload["metadata"]["phone_number_id"],
-                    ).notify()
-
-                    return JsonResponse(
-                        {"message": "received"}, status=status.HTTP_200_OK
-                    )
-
-                elif message_type == "reaction":
-                    payload["body"] = message["reaction"].get("emoji")
-                    if f"{payload['body']}".lower() in [
-                        "👍",
-                        "🙏",
-                        "❤️",
-                        "ok",
-                        "thanks",
-                        "thank you",
-                    ]:
-                        logger.info("Sending reaction response")
-                        CredexWhatsappService(
-                            payload={
-                                "messaging_product": "whatsapp",
-                                "recipient_type": "individual",
-                                "to": contact["wa_id"],
-                                "type": "text",
-                                "text": {"body": "🙏"},
-                            },
-                            phone_number_id=payload["metadata"]["phone_number_id"],
-                        ).notify()
-                        return JsonResponse(
-                            {"message": "received"}, status=status.HTTP_200_OK
-                        )
-
-                if not contact:
-                    logger.warning("No contact information in payload")
-                    return JsonResponse(
-                        {"message": "received"}, status=status.HTTP_200_OK
-                    )
-
-                # Format the message
-                formatted_message = {
-                    "to": payload["metadata"]["display_phone_number"],
-                    "phone_number_id": payload["metadata"]["phone_number_id"],
-                    "from": contact["wa_id"],
-                    "username": contact["profile"]["name"],
-                    "type": message_type,
-                    "message": payload["body"],
-                    "filename": payload.get("file_name", None),
-                    "fileid": payload.get("file_id", None),
-                    "caption": payload.get("caption", None),
-                }
-
-                # Debug Redis connection
-                logger.info("Testing Redis connection...")
-                try:
-                    test_key = "test_redis_connection"
-                    cache.set(test_key, "test_value", timeout=10)
-                    test_value = cache.get(test_key)
-                    logger.info(f"Redis test - Set and get successful: {test_value}")
-                except Exception as e:
-                    logger.error(f"Redis connection error: {str(e)}")
-                    return JsonResponse(
-                        {"error": "Redis connection failed"},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    )
-
-                # Create CachedUser with debug logging
-                logger.info(f"Creating CachedUser for phone: {formatted_message.get('from')}")
-                user = CachedUser(formatted_message.get("from"))
-                logger.info(f"CachedUser created with state: {user.state.__dict__}")
-
-                state = user.state
-
-                # Calculate the time difference in seconds
-                message_stamp = datetime.fromtimestamp(int(message["timestamp"]))
-                if (datetime.now() - message_stamp).total_seconds() > 20:
-                    logger.info(f"Ignoring old webhook from {message_stamp}")
-                    return JsonResponse(
-                        {"message": "received"}, status=status.HTTP_200_OK
-                    )
-
-                logger.info(
-                    f"Credex [{state.stage}<|>{state.option}] RECEIVED -> {payload['body']} "
-                    f"FROM {formatted_message.get('from')} @ {message_stamp}"
+            except Exception as e:
+                logger.error(f"Error processing message: {str(e)}", exc_info=True)
+                return JsonResponse(
+                    {"error": str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
-                try:
-                    logger.info("Creating CredexBotService...")
-                    service = CredexBotService(payload=formatted_message, user=user)
-
-                    # For mock testing, return the response directly
-                    if is_mock_testing:
-                        logger.info("Mock testing mode: Returning response without sending to WhatsApp")
-                        return JsonResponse({"response": service.response}, status=status.HTTP_200_OK)
-
-                    # For real requests, send via WhatsApp
-                    logger.info("Sending response via WhatsApp service...")
-                    response = CredexWhatsappService(
-                        payload=service.response,
-                        phone_number_id=payload["metadata"]["phone_number_id"],
-                    ).send_message()
-                    logger.info(f"WhatsApp API Response: {response}")
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-                except Exception as e:
-                    logger.error(f"Error processing message: {str(e)}", exc_info=True)
-                    # Return error response instead of silently continuing
-                    return JsonResponse(
-                        {"error": str(e)},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                    )
-
-            return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Webhook error: {str(e)}", exc_info=True)
             return JsonResponse(
@@ -347,6 +198,7 @@ class CredexSendMessageWebhook(APIView):
     """Cloud Api Webhook"""
 
     parser_classes = (JSONParser,)
+    throttle_classes = []  # Disable throttling for webhook endpoint
 
     @staticmethod
     def post(request):
@@ -374,16 +226,16 @@ class CredexSendMessageWebhook(APIView):
                                 "parameters": [
                                     {
                                         "type": "text",
-                                        "text": request.data.get("memberName"),
+                                        "text": request.data.get("memberName")
                                     },
                                     {
                                         "type": "text",
-                                        "text": request.data.get("message"),
-                                    },
-                                ],
+                                        "text": request.data.get("message")
+                                    }
+                                ]
                             }
-                        ],
-                    },
+                        ]
+                    }
                 }
 
                 response = CredexWhatsappService(payload=payload).notify()
@@ -391,5 +243,5 @@ class CredexSendMessageWebhook(APIView):
                 return JsonResponse(response, status=status.HTTP_200_OK)
         return JsonResponse(
             {"status": "Successful", "message": "Missing API KEY"},
-            status=status.HTTP_400_BAD_REQUEST,
+            status=status.HTTP_400_BAD_REQUEST
         )

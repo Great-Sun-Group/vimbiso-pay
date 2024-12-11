@@ -1,12 +1,14 @@
 #!/bin/bash
 set -e
 
-# Set up logging to file only when not deployed to AWS
+# Set up startup logging to file only when not deployed to AWS
 if [ "${DEPLOYED_TO_AWS:-false}" = "false" ]; then
     LOG_FILE="/app/data/logs/startup.log"
     mkdir -p /app/data/logs
     touch "$LOG_FILE"
     chmod 666 "$LOG_FILE"  # Make log file readable/writable by all users
+    # Only redirect startup logs to file
+    exec 3>&1 4>&2  # Save original stdout/stderr
     exec 1>"$LOG_FILE" 2>&1
 fi
 
@@ -85,6 +87,11 @@ if [ "${DJANGO_ENV:-development}" = "production" ]; then
     python manage.py collectstatic --noinput
 fi
 
+# Restore original stdout/stderr for runtime logs
+if [ "${DEPLOYED_TO_AWS:-false}" = "false" ]; then
+    exec 1>&3 2>&4
+fi
+
 # Determine environment and set appropriate server command
 if [ "${DJANGO_ENV:-development}" = "production" ]; then
     echo "Starting Gunicorn server in production mode..."
@@ -110,5 +117,6 @@ else
     echo "Applying database migrations..."
     python manage.py migrate --noinput
 
+    # Start Django with stdout/stderr going to console
     exec python manage.py runserver 0.0.0.0:${PORT:-8000}
 fi

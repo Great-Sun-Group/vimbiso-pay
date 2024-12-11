@@ -1,7 +1,9 @@
-from ..config.constants import *
 from datetime import datetime
+
 import requests
 from decouple import config
+
+from ..config.constants import *
 
 
 def format_synopsis(synopsis, style=None, max_line_length=35):
@@ -158,11 +160,11 @@ def get_greeting(name):
         return f"Good evening, {name}"
 
 
-def format_currency(amount, currency):
-    if currency.upper() == "USD":
+def format_denomination(amount, denomination):
+    if denomination.upper() == "USD":
         return f"${amount:.2f}"
     else:
-        return f"{amount:.2f} {currency}"
+        return f"{amount:.2f} {denomination}"
 
 
 def validate_phone_number(phone_number):
