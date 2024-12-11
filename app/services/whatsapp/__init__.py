@@ -1,14 +1,11 @@
-"""
-WhatsApp bot service implementation.
-"""
+"""WhatsApp service package"""
 from .handler import CredexBotService
-from .forms import registration_form, offer_credex
 from .types import WhatsAppMessage, BotServiceInterface
+from .base_handler import BaseActionHandler
 
 __all__ = [
     'CredexBotService',
-    'registration_form',
-    'offer_credex',
     'WhatsAppMessage',
-    'BotServiceInterface'
+    'BotServiceInterface',
+    'BaseActionHandler'
 ]

@@ -1,10 +1,10 @@
+"""Cloud API webhook views"""
 import logging
 import sys
 from datetime import datetime
 
 from core.api.models import Message
 from core.config.constants import CachedUser
-from services.whatsapp.handler import CredexBotService
 from core.utils.utils import CredexWhatsappService
 from decouple import config
 from django.core.cache import cache
@@ -12,6 +12,7 @@ from django.http import HttpResponse, JsonResponse
 from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
+from services.whatsapp.handler import CredexBotService
 
 # Configure logging to output to stdout
 logging.basicConfig(
@@ -111,12 +112,15 @@ class CredexCloudApiWebhook(APIView):
             if message_type == "text":
                 message_text = message["text"]["body"]
             elif message_type == "interactive":
-                if "button_reply" in message["interactive"]:
-                    message_text = message["interactive"]["button_reply"]["id"]
-                elif "list_reply" in message["interactive"]:
-                    message_text = message["interactive"]["list_reply"]["id"]
-                elif "nfm_reply" in message["interactive"]:
-                    message_text = message["interactive"]["nfm_reply"]["response_json"]
+                interactive = message.get("interactive", {})
+                if "button_reply" in interactive:
+                    message_text = interactive["button_reply"]["id"]
+                elif "list_reply" in interactive:
+                    message_text = interactive["list_reply"]["id"]
+                else:
+                    # Log full interactive message for debugging
+                    logger.debug(f"Unhandled interactive message type: {interactive}")
+                    message_text = str(interactive)
 
             logger.info(
                 f"Credex [{state.stage}<|>{state.option}] RECEIVED -> {message_text} "

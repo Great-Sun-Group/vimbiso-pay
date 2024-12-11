@@ -15,6 +15,7 @@ from .types import BotServiceInterface, WhatsAppMessage
 from .account_handlers import AccountActionHandler
 from .auth_handlers import AuthActionHandler
 from .handlers import CredexActionHandler
+from .handlers.member import MemberRegistrationHandler
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +213,10 @@ class CredexBotService(BotServiceInterface):
                     return self._handle_greeting()
                 logger.debug("Not a greeting message")
 
+                # Handle text input during registration
+                if current_stage == StateStage.REGISTRATION.value:
+                    return self.action_handler.registration_handler.handle_registration()
+
             # Handle cancel_offer commands first
             if (self.message_type == "text" and
                 isinstance(self.body, str) and
@@ -227,22 +232,11 @@ class CredexBotService(BotServiceInterface):
                     return self.action_handler.credex_handler.handle_action_offer_credex()
                 elif current_stage == StateStage.AUTH.value:
                     return self.action_handler.auth_handler.handle_action_menu()
+                elif current_stage == StateStage.REGISTRATION.value:
+                    return self.action_handler.registration_handler.handle_registration()
                 else:
                     # Default to current stage
                     return self.action_handler.handle_action(current_stage)
-
-            # Handle form submissions
-            if self.message_type == "nfm_reply":
-                # Check for registration form submission
-                if current_stage == StateStage.AUTH.value and current_option == "registration":
-                    return self.action_handler.auth_handler.handle_action_register()
-                # Check for credex form submission
-                elif (current_stage == StateStage.CREDEX.value or
-                        current_option == "handle_action_offer_credex"):
-                    return self.action_handler.credex_handler.handle_action_offer_credex()
-                else:
-                    logger.error(f"Invalid stage/option for form submission: {current_stage}/{current_option}")
-                    return self.get_response_template("Invalid form submission. Please try again.")
 
             # For other messages, check if body is an action command
             action = (
@@ -271,6 +265,7 @@ class WhatsAppActionHandler:
         self.auth_handler = AuthActionHandler(service)
         self.credex_handler = CredexActionHandler(service)
         self.account_handler = AccountActionHandler(service)
+        self.registration_handler = MemberRegistrationHandler(service)
 
     def handle_action(self, action: str) -> WhatsAppMessage:
         """Route action to appropriate handler with proper state validation
@@ -285,6 +280,10 @@ class WhatsAppActionHandler:
             # Authentication and menu actions
             if action in ["handle_action_register", "handle_action_menu"]:
                 return self._handle_auth_action(action)
+
+            # Registration actions
+            if action == StateStage.REGISTRATION.value:
+                return self.registration_handler.handle_registration()
 
             # Credex-related actions
             if action in [

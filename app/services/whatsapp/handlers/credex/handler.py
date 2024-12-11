@@ -1,3 +1,4 @@
+"""Handler for credex-related WhatsApp interactions"""
 import logging
 
 from core.transactions import create_transaction_service
@@ -9,6 +10,7 @@ from .command_handler import CommandHandlerMixin
 from .message_handler import MessageHandlerMixin
 from .profile import ProfileMixin
 from .progressive_flow import ProgressiveFlowMixin
+from .action_flow_mixin import ActionFlowMixin
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,7 @@ class CredexActionHandler(
     MessageHandlerMixin,
     CommandHandlerMixin,
     ProfileMixin,
+    ActionFlowMixin,
     BaseActionHandler
 ):
     """Handler for Credex-related actions"""
@@ -70,6 +73,16 @@ class CredexActionHandler(
             if self.service.message_type == "text" and self._is_credex_command(self.service.body):
                 logger.debug(f"Handling credex command: {self.service.body}")
                 return self._handle_credex_command(current_state, selected_profile)
+
+            # Handle button selection for cancel action
+            if (self.service.message_type == "interactive" and
+                    self.service.message.get("interactive", {}).get("type") == "list_reply"):
+                button_id = self.service.message["interactive"]["list_reply"].get("id")
+                credex_id = self._extract_credex_id_from_button(button_id)
+                if credex_id:
+                    offer_data = self._get_offer_data(credex_id, selected_profile)
+                    if offer_data:
+                        return self._handle_credex_action("cancel", credex_id, offer_data)
 
             # Get pending outgoing offers from current state
             pending_out_data = selected_profile.get("data", {}).get("pendingOutData", {})
@@ -163,6 +176,16 @@ class CredexActionHandler(
                 logger.debug(f"Handling credex command: {self.service.body}")
                 return self._handle_credex_command(current_state, selected_profile)
 
+            # Handle button selection for accept action
+            if (self.service.message_type == "interactive" and
+                    self.service.message.get("interactive", {}).get("type") == "list_reply"):
+                button_id = self.service.message["interactive"]["list_reply"].get("id")
+                credex_id = self._extract_credex_id_from_button(button_id)
+                if credex_id:
+                    offer_data = self._get_offer_data(credex_id, selected_profile)
+                    if offer_data:
+                        return self._handle_credex_action("accept", credex_id, offer_data)
+
             # Get pending incoming offers from current state
             pending_in_data = selected_profile.get("data", {}).get("pendingInData", {})
             if not pending_in_data.get("success", False):
@@ -254,6 +277,16 @@ class CredexActionHandler(
             if self.service.message_type == "text" and self._is_credex_command(self.service.body):
                 logger.debug(f"Handling credex command: {self.service.body}")
                 return self._handle_credex_command(current_state, selected_profile)
+
+            # Handle button selection for decline action
+            if (self.service.message_type == "interactive" and
+                    self.service.message.get("interactive", {}).get("type") == "list_reply"):
+                button_id = self.service.message["interactive"]["list_reply"].get("id")
+                credex_id = self._extract_credex_id_from_button(button_id)
+                if credex_id:
+                    offer_data = self._get_offer_data(credex_id, selected_profile)
+                    if offer_data:
+                        return self._handle_credex_action("decline", credex_id, offer_data)
 
             # Get pending incoming offers from current state
             pending_in_data = selected_profile.get("data", {}).get("pendingInData", {})

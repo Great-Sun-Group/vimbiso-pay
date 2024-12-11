@@ -1,188 +1,461 @@
 # Flow Framework
 
-A reusable framework for building progressive, state-aware interactions in WhatsApp that provides type-safe message handling and standardized flow management.
+A comprehensive framework for building progressive, state-aware interactions in WhatsApp that provides type-safe message handling and standardized flow management.
 
-## Overview
+## Architecture Overview
 
-The Flow Framework provides a structured way to build complex multi-step interactions while maintaining state and ensuring proper validation at each step. It abstracts away the complexities of WhatsApp message handling and state management, allowing developers to focus on business logic.
+### Component Architecture
 
-## Core Components
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Flow Class    │     │  Flow Handler   │     │  State Service  │
+├─────────────────┤     ├─────────────────┤     ├─────────────────┤
+│ - Steps         │     │ - Flow Registry │     │ - Redis Backend │
+│ - State         │◄────┤ - Message Router│◄────┤ - State Lock    │
+│ - Services      │     │ - State Manager │     │ - TTL Management│
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+         ▲                      ▲                        ▲
+         │                      │                        │
+         │                      │                        │
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Step Class     │     │ Message Types   │     │ State Types     │
+├─────────────────┤     ├─────────────────┤     ├─────────────────┤
+│ - Validation    │     │ - Text          │     │ - Stage Enum    │
+│ - Transform     │     │ - Interactive   │     │ - Transitions   │
+│ - Conditions    │     │ - Template      │     │ - Validation    │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
 
-### Step Types
+## WhatsApp Integration
+
+### 1. Message Types
+
 ```python
-class StepType(Enum):
-    TEXT_INPUT = 'text_input'          # Free text input
-    LIST_SELECT = 'list_select'        # List of options
-    BUTTON_SELECT = 'button_select'    # Quick reply buttons
+class MessageType(Enum):
+    """Supported WhatsApp message types"""
+    TEXT = "text"
+    TEMPLATE = "template"
+    INTERACTIVE = "interactive"
+    IMAGE = "image"
+    DOCUMENT = "document"
+    AUDIO = "audio"
+    VIDEO = "video"
+    LOCATION = "location"
 ```
 
-### Step Definition
-Each step in a flow is defined with:
-- **ID**: Unique identifier for the step
-- **Type**: The type of interaction (text, list, buttons)
-- **Stage**: Mapping to state management stage
-- **Message**: Static message or dynamic generator
-- **Validation**: Optional input validation
-- **Transform**: Optional input transformation
-- **Condition**: Optional execution condition
+### 2. Interactive Messages
 
 ```python
-@dataclass
-class Step:
-    id: str
-    type: StepType
-    stage: str
-    message: Union[WhatsAppMessage, Callable[[Dict[str, Any]], WhatsAppMessage]]
-    validation: Optional[Callable[[Any], bool]] = None
-    transform: Optional[Callable[[Any], Any]] = None
-    condition: Optional[Callable[[Dict[str, Any]], bool]] = None
+def create_interactive_message(self, state: Dict[str, Any]) -> Message:
+    """Create interactive message"""
+    return ButtonSelection.create_buttons({
+        "text": "Select an option:",
+        "buttons": [
+            {"id": "btn1", "title": "Option 1"},
+            {"id": "btn2", "title": "Option 2"}
+        ],
+        "header": "Optional Header",
+        "footer": "Optional Footer"
+    }, recipient=state.get("phone", ""))
 ```
 
-### Flow Management
-The Flow class manages:
-- Step progression
-- State persistence
-- Input validation
-- Data transformation
-- Conditional execution
-
-## Key Features
-
-### State Management
-- Automatic state persistence between messages
-- Type-safe state access
-- State-based conditional progression
-- Validation of required fields
-- Safe handling of missing or malformed data
-
-### Input Processing
-- Validation before state updates
-- Data transformation hooks
-- Error handling and recovery
-- Clear error messages
-
-### Conditional Logic
-- Step execution based on state
-- Dynamic message generation
-- Flow branching support
-- State validation for conditions
-
-### WhatsApp Integration
-- Native WhatsApp message types
-- Rich message formatting
-- Interactive components
-- Clean message presentation
-
-## Real-World Example: CredEx Offer Flow
-
-Here's how we use the framework for processing CredEx offers:
+### 3. Template Messages
 
 ```python
-class CredexOfferFlow(Flow):
-    """Progressive flow for creating credex offers"""
+def send_template_message(self, recipient: str) -> Dict[str, Any]:
+    """Send template message"""
+    return self.whatsapp.send_template(
+        recipient=MessageRecipient(phone_number=recipient),
+        template_name="welcome_template",
+        language={"code": "en"},
+        components=[{
+            "type": "body",
+            "parameters": [
+                {"type": "text", "text": "User"}
+            ]
+        }]
+    )
+```
+
+### 4. Media Messages
+
+```python
+def send_media_message(self, recipient: str, url: str) -> Dict[str, Any]:
+    """Send media message"""
+    return self.whatsapp.send_message(Message(
+        recipient=MessageRecipient(phone_number=recipient),
+        content=ImageContent(
+            url=url,
+            caption="Optional caption"
+        )
+    ))
+```
+
+## Message Templates
+
+### 1. Text Formatting
+
+```python
+# Basic formatting
+BASIC_TEMPLATE = """*Bold text*
+_Italic text_
+~Strikethrough~
+```Monospace```"""
+
+# Multi-line formatting
+COMPLEX_TEMPLATE = """*{header}*
+{message}
+
+*Options:*
+1. ✅ {option1}
+2. ❌ {option2}"""
+
+# List formatting
+LIST_TEMPLATE = """*{title}*
+
+{items_list}
+
+Type *'{command}'* to continue"""
+```
+
+### 2. Interactive Components
+
+```python
+# Button selection
+BUTTON_TEMPLATE = """*{title}*
+{description}
+
+1. ✅ Confirm
+2. ❌ Cancel"""
+
+# List selection
+LIST_TEMPLATE = """*{category}*
+
+*Available options:*
+{options}
+
+Select an option to continue"""
+```
+
+### 3. Status Messages
+
+```python
+# Success message
+SUCCESS_TEMPLATE = """*✅ Success*
+
+🎉 {message}
+
+Type *'Menu'* to continue"""
+
+# Error message
+ERROR_TEMPLATE = """*❌ Error*
+
+⚠️ {error_message}
+
+Please try again"""
+
+# Progress message
+PROGRESS_TEMPLATE = """*⏳ Processing*
+
+Please wait while we {action}..."""
+```
+
+## UI/UX Guidelines
+
+### 1. Message Structure
+
+1. **Header**
+   - Use bold formatting
+   - Keep it short and clear
+   - Include emoji for visual context
+
+2. **Body**
+   - Break into logical sections
+   - Use proper spacing
+   - Include relevant details
+
+3. **Actions**
+   - List numbered options
+   - Use emoji indicators
+   - Show clear commands
+
+### 2. Formatting Rules
+
+1. **Text Emphasis**
+   - *Bold* for headers and important info
+   - _Italic_ for instructions
+   - ```Monospace``` for code/commands
+
+2. **Emoji Usage**
+   - 📝 For forms/input
+   - ✅ For success/confirmation
+   - ❌ For errors/cancellation
+   - ⚠️ For warnings
+   - 💡 For tips/info
+
+3. **Layout**
+   - Use blank lines for separation
+   - Indent sub-items
+   - Align related information
+
+### 3. Response Times
+
+1. **Immediate Responses**
+   - Acknowledgment messages
+   - Error notifications
+   - Simple validations
+
+2. **Progress Updates**
+   - Long operations
+   - Multi-step processes
+   - External service calls
+
+3. **Timeouts**
+   - Session expiration
+   - Input waiting time
+   - Service timeouts
+
+## Integration Examples
+
+### 1. Registration Flow
+
+```python
+# Message template
+REGISTRATION_TEMPLATE = """*👤 Registration*
+
+Please enter your {field}:
+
+Examples:
+{examples}"""
+
+# Flow implementation
+class RegistrationFlow(Flow):
+    """Registration flow implementation"""
 
     def _create_steps(self) -> list[Step]:
         return [
-            # Step 1: Amount Input
+            Step(
+                id="first_name",
+                type=StepType.TEXT_INPUT,
+                stage=StateStage.REGISTRATION.value,
+                message=lambda state: ProgressiveInput.create_prompt(
+                    "What's your first name?",
+                    ["John", "Jane"],
+                    state.get("phone", "")
+                ),
+                validation=self._validate_name,
+                transform=lambda value: {"first_name": value.strip()}
+            ),
+            # More steps...
+        ]
+```
+
+### 2. Transaction Flow
+
+```python
+# Message template
+TRANSACTION_TEMPLATE = """*💰 Transaction*
+
+*From:* {sender}
+*To:* {recipient}
+*Amount:* ${amount}
+
+1. ✅ Confirm
+2. ❌ Cancel"""
+
+# Flow implementation
+class TransactionFlow(Flow):
+    """Transaction flow implementation"""
+
+    def _create_steps(self) -> list[Step]:
+        return [
             Step(
                 id="amount",
                 type=StepType.TEXT_INPUT,
-                stage=StateStage.CREDEX.value,
+                stage=StateStage.TRANSACTION.value,
                 message=lambda state: ProgressiveInput.create_prompt(
-                    "Enter amount in USD or specify denomination:",
-                    [
-                        "100",           # Default USD
-                        "USD 100",       # Explicit USD
-                        "ZWG 100",       # Zimbabwe Gold
-                        "XAU 1"          # Gold
-                    ],
+                    "Enter amount:",
+                    ["100", "USD 100"],
                     state.get("phone", "")
                 ),
                 validation=self._validate_amount,
                 transform=self._transform_amount
             ),
-
-            # Step 2: Recipient Handle Input
-            Step(
-                id="handle",
-                type=StepType.TEXT_INPUT,
-                stage=StateStage.CREDEX.value,
-                message=lambda state: ProgressiveInput.create_prompt(
-                    "Enter recipient's handle:",
-                    ["greatsun_ops"],
-                    state.get("phone", "")
-                ),
-                validation=self._validate_handle,
-                transform=self._transform_handle,
-                condition=lambda state: self._has_valid_amount(state)
-            ),
-
-            # Step 3: Final Confirmation
-            Step(
-                id="confirm",
-                type=StepType.BUTTON_SELECT,
-                stage=StateStage.CREDEX.value,
-                message=self._create_final_confirmation_message,
-                condition=lambda state: self._can_show_confirmation(state)
-            )
+            # More steps...
         ]
 ```
 
-This flow demonstrates:
-1. **Progressive Data Collection**: Amount → Handle → Confirmation
-2. **Input Validation**: Amount format, handle validation
-3. **Data Transformation**: Parse amounts, validate handles with API
-4. **Conditional Steps**: Each step depends on previous data
-5. **State Management**: Maintains data between steps
-6. **Safe State Access**: Proper validation and error handling
-7. **Clean Message Formatting**: Clear user prompts and confirmations
+## Testing Strategies
 
-## Best Practices
+### 1. Unit Tests
 
-### State Handling
-1. Always use state.get() with defaults
-2. Validate state data types and structure
-3. Check for required fields
-4. Handle missing or malformed data gracefully
-5. Log validation failures
+```python
+def test_message_formatting():
+    """Test message formatting"""
+    message = ProgressiveInput.create_prompt(
+        text="Test prompt",
+        examples=["ex1", "ex2"],
+        recipient="1234567890"
+    )
+    assert message.content.body == "Test prompt\n\nExamples:\n• ex1\n• ex2"
 
-### Message Formatting
-1. Keep prompts clear and concise
-2. Show relevant examples
-3. Format multi-line messages consistently
-4. Handle special characters properly
-5. Use proper spacing and line breaks
+def test_flow_validation():
+    """Test flow validation"""
+    flow = TestFlow("test", [])
+    assert flow._validate_amount("100") is True
+    assert flow._validate_amount("invalid") is False
+```
 
-### Error Handling
-1. Provide clear error messages
-2. Log errors with context
-3. Handle API errors gracefully
-4. Validate service dependencies
-5. Check for missing data
+### 2. Integration Tests
 
-### Flow Design
-1. Keep steps focused and simple
-2. Validate data before proceeding
-3. Transform data into proper formats
-4. Handle state transitions cleanly
-5. Log flow progression
+```python
+def test_flow_progression():
+    """Test flow progression"""
+    handler = FlowHandler(MockStateService())
 
-## Benefits
+    # Start flow
+    result = handler.start_flow("test_flow", "1234567890")
+    assert isinstance(result, TestFlow)
 
-1. **Maintainability**: Standardized flow structure makes code easier to maintain
-2. **Type Safety**: Built-in type checking and validation
-3. **Reusability**: Common patterns abstracted into reusable components
-4. **Testability**: Isolated steps are easier to test
-5. **Reliability**: Consistent error handling and state management
-6. **User Experience**: Clean message formatting and clear prompts
-7. **Data Integrity**: Safe state handling and validation
+    # Process steps
+    messages = [
+        {"type": "text", "text": {"body": "John"}},
+        {"type": "text", "text": {"body": "100"}},
+        {"type": "interactive", "interactive": {
+            "type": "button",
+            "button_reply": {"id": "confirm"}
+        }}
+    ]
+
+    for msg in messages:
+        response = handler.handle_message("1234567890", msg)
+        assert response is not None
+```
+
+### 3. End-to-End Tests
+
+```python
+def test_complete_flow():
+    """Test complete flow"""
+    service = TestService()
+
+    # Initialize flow
+    flow = service.start_flow("test_flow", "1234567890")
+
+    # Complete flow
+    result = service.complete_flow([
+        "John",           # Name input
+        "100",           # Amount input
+        "confirm"        # Confirmation
+    ])
+
+    assert result.success is True
+    assert "transaction_id" in result.data
+```
+
+def _validate_input(self, value: str) -> bool:
+    """Chain multiple validations"""
+    validators = [
+        self._validate_format,
+        self._validate_content,
+        self._validate_business_rules
+    ]
+    return all(validator(value) for validator in validators)
+```
+
+### 3. State Machine
+```python
+def _handle_state_machine(self, action: str) -> Tuple[bool, str]:
+    """Handle state machine transitions"""
+    state_handlers = {
+        "init": self._handle_init,
+        "processing": self._handle_processing,
+        "complete": self._handle_complete
+    }
+    handler = state_handlers.get(self.state.get("stage"))
+    if not handler:
+        return False, "Invalid state"
+    return handler(action)
+```
+
+### 4. Service Integration
+```python
+def _integrate_services(self) -> None:
+    """Integrate multiple services"""
+    services = {
+        "auth": self._setup_auth_service,
+        "data": self._setup_data_service,
+        "notification": self._setup_notification_service
+    }
+    for service_name, setup_func in services.items():
+        try:
+            setup_func()
+        except Exception as e:
+            logger.error(f"Failed to setup {service_name}: {str(e)}")
+```
+
+## Example Flows
+
+### 1. Registration Flow
+See `app/services/whatsapp/handlers/member/registration_flow.py` for a complete example of:
+- Progressive data collection
+- Input validation
+- State management
+- Service integration
+- Error handling
+
+### 2. CredEx Offer Flow
+See `app/services/whatsapp/handlers/credex/offer_flow_v2.py` for an example of:
+- Complex validation
+- Multiple services
+- State transitions
+- Error recovery
+- Business logic integration
 
 ## Future Enhancements
 
-1. **Flow Templates**: Common flow patterns as reusable templates
-2. **Visual Flow Builder**: GUI for flow creation and editing
-3. **Flow Analytics**: Built-in analytics and monitoring
-4. **A/B Testing**: Native support for flow variations
-5. **Flow Versioning**: Version control for flows
-6. **Test Framework**: Automated testing for flows
-7. **State Migration**: Handle state schema changes
+1. **Flow Templates**
+   - Standard flow patterns
+   - Reusable components
+   - Common validations
+   - State templates
+
+2. **Visual Builder**
+   - Flow visualization
+   - State inspection
+   - Visual debugging
+   - Flow testing
+
+3. **Analytics**
+   - Flow metrics
+   - User behavior
+   - Performance monitoring
+   - Error tracking
+
+4. **Enhanced Testing**
+   - Automated flow testing
+   - State verification
+   - Service mocking
+   - Load testing
+
+## Troubleshooting
+
+### 1. Common Issues
+- State corruption
+- Invalid transitions
+- Service failures
+- Message formatting
+- Validation errors
+
+### 2. Debugging
+- Enable debug logging
+- Inspect state changes
+- Monitor service health
+- Review message flow
+- Check validations
+
+### 3. Recovery
+- Reset corrupted state
+- Retry operations
+- Fallback handlers
+- Error notifications
+- Audit logging

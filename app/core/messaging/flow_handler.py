@@ -37,7 +37,12 @@ class FlowHandler:
                 self._service_injectors[flow_id](flow)
             # Restore state if provided
             if state:
-                flow.state = state.copy()  # Make a copy to avoid state corruption
+                flow.state = state
+                # Initialize from profile if available
+                if isinstance(flow, Flow) and hasattr(flow, 'initialize_from_profile'):
+                    profile_data = state.get('profile', {}).get('data', {})
+                    if profile_data:
+                        flow.initialize_from_profile(profile_data)
             return flow
         return None
 
@@ -97,14 +102,9 @@ class FlowHandler:
                     user_id
                 )
 
-            # Transform input if needed
+            # Transform input and update flow state
             transformed_input = current_step.transform_input(input_value)
-
-            # Update flow state with input while preserving existing state
-            existing_state = flow.state.copy()
-            existing_state[current_step.id] = transformed_input
-            flow.state = existing_state
-
+            flow.update_state(current_step.id, transformed_input)
             logger.debug(f"Flow state after update: {flow.state}")
 
             # Get next step
@@ -116,22 +116,30 @@ class FlowHandler:
                     if not success:
                         return self._format_error(message, user_id)
 
-                # Clear flow data
-                state.pop("flow_data", None)
+                # Update state with final flow state before clearing
+                state["flow_data"]["data"] = flow.state
                 self.state_service.update_state(
                     user_id=user_id,
                     new_state=state,
                     stage=StateStage.MENU.value,
-                    update_from="flow_complete"
+                    update_from="flow_update"
                 )
-                return self._format_completion(message, user_id)
 
-            # Update state with new step while preserving existing state
+                # Return None to indicate flow completion to handler
+                return None
+
+            # Update state with new step
             state["flow_data"] = {
                 "id": flow.id,
                 "current_step": flow.current_step_index,
-                "data": flow.state.copy()  # Make a copy to avoid state corruption
+                "data": flow.state
             }
+
+            # Preserve profile and account data in flow state
+            if "profile" in state:
+                state["flow_data"]["data"]["profile"] = state["profile"]
+            if "current_account" in state:
+                state["flow_data"]["data"]["current_account"] = state["current_account"]
 
             # Log state for debugging
             logger.debug(f"Updated flow state: {flow.state}")
@@ -163,19 +171,30 @@ class FlowHandler:
             logger.debug(f"Starting flow with state: {state}")
 
             # Get flow instance
-            flow = self.get_flow(flow_id, state.get("flow_data", {}).get("data", {}))
+            flow = self.get_flow(flow_id)
             if not flow:
                 logger.error(f"Flow {flow_id} not found")
                 return self._format_error("Invalid flow", user_id)
 
-            # Initialize flow state with user ID
-            flow.state["phone"] = user_id
+            # Initialize flow state with user ID, profile, and account
+            initial_state = {
+                "phone": user_id,
+                "profile": state.get("profile", {}),  # Include profile data
+                "current_account": state.get("current_account")  # Include current account
+            }
+            flow.state = initial_state
+
+            # Initialize from profile if available
+            if isinstance(flow, Flow) and hasattr(flow, 'initialize_from_profile'):
+                profile_data = state.get('profile', {}).get('data', {})
+                if profile_data:
+                    flow.initialize_from_profile(profile_data)
 
             # Update state with flow data
             state["flow_data"] = {
                 "id": flow.id,
                 "current_step": flow.current_step_index,
-                "data": flow.state.copy()  # Make a copy to avoid state corruption
+                "data": flow.state
             }
 
             # Log initial state for debugging
@@ -235,7 +254,11 @@ class FlowHandler:
             if messages and messages[0].get("type") == "text":
                 text = messages[0].get("text", {}).get("body", "").lower()
                 # Map text responses to button IDs
-                if text == "confirm":
+                if text == "confirm_registration":
+                    return "confirm_registration"
+                elif text == "edit_registration":
+                    return "edit_registration"
+                elif text == "confirm":
                     return "confirm"
                 elif text == "cancel":
                     return "cancel"
@@ -247,13 +270,6 @@ class FlowHandler:
         return WhatsAppMessage(
             recipient=MessageRecipient(phone_number=user_id),
             content=TextContent(body=f"❌ Error: {message}")
-        )
-
-    def _format_completion(self, message: str, user_id: str) -> WhatsAppMessage:
-        """Format flow completion message"""
-        return WhatsAppMessage(
-            recipient=MessageRecipient(phone_number=user_id),
-            content=TextContent(body=f"✅ {message}")
         )
 
     def _format_message(self, message: str, user_id: str) -> WhatsAppMessage:

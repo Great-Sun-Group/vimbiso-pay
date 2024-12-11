@@ -24,16 +24,18 @@ class StateStage(Enum):
     MENU = "menu"
     CREDEX = "credex"
     ACCOUNT = "account"
+    REGISTRATION = "registration"  # Added for member registration
 
 
 class StateTransition:
     """Represents valid state transitions"""
     VALID_TRANSITIONS = {
-        StateStage.INIT: [StateStage.AUTH, StateStage.MENU],
-        StateStage.AUTH: [StateStage.MENU],
+        StateStage.INIT: [StateStage.AUTH, StateStage.MENU, StateStage.REGISTRATION],
+        StateStage.AUTH: [StateStage.MENU, StateStage.REGISTRATION],
         StateStage.MENU: [StateStage.CREDEX, StateStage.ACCOUNT, StateStage.AUTH, StateStage.MENU],
         StateStage.CREDEX: [StateStage.MENU],
-        StateStage.ACCOUNT: [StateStage.MENU]
+        StateStage.ACCOUNT: [StateStage.MENU],
+        StateStage.REGISTRATION: [StateStage.MENU]  # Registration can transition to menu
     }
 
     @classmethod

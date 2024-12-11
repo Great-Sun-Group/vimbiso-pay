@@ -4,7 +4,7 @@ import re
 from typing import Any, Dict, Optional, Tuple
 
 from core.messaging.flow import Flow, Step, StepType
-from core.messaging.templates import ProgressiveInput, ButtonSelection
+from core.messaging.templates import ButtonSelection, ProgressiveInput
 from core.messaging.types import Message as WhatsAppMessage
 from core.transactions import TransactionOffer, TransactionType
 from services.state.service import StateStage
@@ -18,11 +18,139 @@ class CredexOfferFlow(Flow):
     FLOW_ID = "credex_offer"
     VALID_DENOMINATIONS = {"USD", "ZWG", "XAU", "CAD"}
     AMOUNT_PATTERN = re.compile(r'^(?:([A-Z]{3})\s+)?(\d+(?:\.\d+)?)$')
+    HANDLE_PATTERN = re.compile(r'^[a-zA-Z0-9_]+$')  # Basic handle format validation
 
     def __init__(self, id: str, steps: list):
         super().__init__(id, self._create_steps())
         self.transaction_service = None  # Should be injected
         self.credex_service = None  # Should be injected
+        self.state_service = None  # Should be injected
+
+    def _extract_member_id(self, profile_data: Dict[str, Any]) -> Optional[str]:
+        """Extract member ID from profile data"""
+        try:
+            # Try to get from action details first
+            action = profile_data.get("action", {})
+            if action:
+                # Try details.memberID
+                member_id = action.get("details", {}).get("memberID")
+                if member_id:
+                    return member_id
+                # Try action.actor as fallback
+                return action.get("actor")
+
+            # Try dashboard path as fallback
+            dashboard = profile_data.get("dashboard", {})
+            if dashboard:
+                # Look in accounts for owned account
+                accounts = dashboard.get("accounts", [])
+                for account in accounts:
+                    if account.get("success") and account.get("data", {}).get("isOwnedAccount"):
+                        auth_for = account.get("data", {}).get("authFor", [])
+                        if auth_for:
+                            return auth_for[0].get("memberID")
+
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting member ID: {str(e)}")
+            return None
+
+    def _extract_sender_account_info(self, profile_data: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+        """Extract sender account info from profile data"""
+        try:
+            # Look in dashboard accounts for personal account
+            dashboard = profile_data.get("dashboard", {})
+            accounts = dashboard.get("accounts", [])
+            for account in accounts:
+                if (account.get("success") and
+                        account["data"].get("accountHandle") == self.state.get("phone")):
+                    account_data = account["data"]
+                    return account_data.get("accountID"), account_data.get("accountName")
+
+            # If no personal account found, try first owned account
+            for account in accounts:
+                if account.get("success") and account["data"].get("isOwnedAccount"):
+                    account_data = account["data"]
+                    return account_data.get("accountID"), account_data.get("accountName")
+
+            return None, None
+        except Exception as e:
+            logger.error(f"Error extracting sender account info: {str(e)}")
+            return None, None
+
+    def initialize_from_profile(self, profile_data: Dict[str, Any]) -> None:
+        """Initialize flow state from profile data"""
+        if not profile_data:
+            return
+
+        # Extract member ID
+        member_id = self._extract_member_id(profile_data)
+        if member_id:
+            # Update state with member ID
+            current_state = self.state
+            current_state["authorizer_member_id"] = member_id
+            current_state["issuer_member_id"] = member_id
+            self.state = current_state
+            logger.debug(f"Initialized flow with member ID: {member_id}")
+
+        # Extract sender account info
+        sender_account_id, sender_account_name = self._extract_sender_account_info(profile_data)
+        if sender_account_id:
+            # Update state with sender account info
+            current_state = self.state
+            current_state["sender_account_id"] = sender_account_id
+            current_state["sender_account"] = sender_account_name
+            self.state = current_state
+            logger.debug(f"Initialized flow with sender account: {sender_account_id}")
+
+    def _validate_handle(self, handle: str) -> bool:
+        """
+        Validate handle format before transformation.
+        Basic validation to ensure handle meets format requirements.
+        """
+        if not handle:
+            logger.debug("Handle is empty")
+            return False
+
+        handle = handle.strip()
+        if not handle:
+            logger.debug("Handle is empty after stripping")
+            return False
+
+        if not self.HANDLE_PATTERN.match(handle):
+            logger.debug(f"Handle doesn't match pattern: {self.HANDLE_PATTERN.pattern}")
+            return False
+
+        logger.debug("Handle validation successful")
+        return True
+
+    def _update_service_state(self, data: Dict[str, Any], update_from: str = None) -> None:
+        """Update service state with fresh data"""
+        try:
+            if self.state_service and self.state.get("phone"):
+                # Create new state with only essential data
+                current_state = {
+                    "profile": data,
+                    "last_refresh": True,
+                    "current_account": None,  # Force account reselection
+                }
+
+                # Use Flow's state management to get preserved fields
+                clean_state = self._get_clean_state()
+                current_state.update(clean_state)
+
+                # Update state with proper context
+                self.state_service.update_state(
+                    user_id=self.state.get("phone"),
+                    new_state=current_state,
+                    stage=StateStage.MENU.value,
+                    update_from=update_from or "credex_offer_update",
+                    option="handle_action_menu"
+                )
+                logger.debug(f"Service state updated from {update_from}")
+                logger.debug(f"Updated state: {current_state}")
+        except Exception as e:
+            logger.error(f"Error updating service state: {str(e)}")
 
     def _create_steps(self) -> list[Step]:
         """Create flow steps"""
@@ -33,7 +161,7 @@ class CredexOfferFlow(Flow):
                 type=StepType.TEXT_INPUT,
                 stage=StateStage.CREDEX.value,
                 message=lambda state: ProgressiveInput.create_prompt(
-                    "Enter amount in USD or specify denomination:",
+                    "Enter amount in USD or specify other denomination:",
                     [
                         "100",           # Default USD
                         "USD 100",       # Explicit USD
@@ -52,8 +180,11 @@ class CredexOfferFlow(Flow):
                 type=StepType.TEXT_INPUT,
                 stage=StateStage.CREDEX.value,
                 message=lambda state: ProgressiveInput.create_prompt(
-                    "Enter recipient's handle:",
-                    ["greatsun_ops"],  # Example without @ prefix
+                    "Enter recipient's account handle:",
+                    [
+                        "263123456789",
+                        "vimbisopay_trust"
+                    ],
                     state.get("phone", "")
                 ),
                 validation=self._validate_handle,
@@ -68,30 +199,31 @@ class CredexOfferFlow(Flow):
                 stage=StateStage.CREDEX.value,
                 message=self._create_final_confirmation_message,
                 condition=lambda state: self._can_show_confirmation(state),
-                validation=lambda value: value in ["confirm", "cancel"],
-                transform=lambda value: {"confirmed": value == "confirm"}
+                validation=lambda value: value == "confirm",
+                transform=self._transform_confirm
             )
         ]
 
     def _format_amount(self, amount: float, denomination: str) -> str:
         """Format amount based on denomination"""
         if denomination in {"USD", "ZWG", "CAD"}:
-            return f"${amount:.2f}"
+            return f"${amount:.2f} {denomination}"  # Added denomination for clarity
         elif denomination == "XAU":
-            return f"{amount:.4f}"
-        return str(amount)
+            return f"{amount:.4f} {denomination}"
+        return f"{amount} {denomination}"
 
     def _has_valid_amount(self, state: Dict[str, Any]) -> bool:
         """Check if state has valid amount data"""
         amount_data = state.get("amount", {})
         if not isinstance(amount_data, dict):
+            logger.debug("Invalid amount data format")
             return False
+
+        # Check direct amount and denomination fields
         return (
-            "amount" in amount_data and
-            isinstance(amount_data["amount"], (int, float)) and
-            "denomination" in amount_data and
-            isinstance(amount_data["denomination"], str) and
-            amount_data["denomination"] in self.VALID_DENOMINATIONS
+            isinstance(amount_data.get("amount"), (int, float)) and
+            isinstance(amount_data.get("denomination"), str) and
+            amount_data.get("denomination") in self.VALID_DENOMINATIONS
         )
 
     def _validate_amount(self, amount_str: str) -> bool:
@@ -124,16 +256,12 @@ class CredexOfferFlow(Flow):
         amount_str = amount_str.strip().upper()
         match = self.AMOUNT_PATTERN.match(amount_str)
         denom, amount = match.groups()
-        transformed = {
+
+        # Return just the amount data for this step
+        return {
             "amount": float(amount),
             "denomination": denom or "USD"
         }
-        logger.debug(f"Transformed amount: {transformed}")
-        return transformed
-
-    def _validate_handle(self, handle: str) -> bool:
-        """Validate recipient handle format"""
-        return bool(handle and handle.strip())
 
     def _transform_handle(self, handle: str) -> Dict[str, Any]:
         """Transform handle with validation and account lookup"""
@@ -163,10 +291,18 @@ class CredexOfferFlow(Flow):
         if not receiver_account_id:
             raise ValueError("Could not find recipient's account")
 
+        # Return just the handle data for this step
         return {
             "handle": handle,
             "receiver_account_id": receiver_account_id,
             "recipient_name": receiver_name or handle
+        }
+
+    def _transform_confirm(self, value: str) -> Dict[str, Any]:
+        """Transform confirmation value"""
+        # Return just the confirmation data for this step
+        return {
+            "confirmed": value == "confirm"
         }
 
     def _create_final_confirmation_message(self, state: Dict[str, Any]) -> WhatsAppMessage:
@@ -196,41 +332,52 @@ class CredexOfferFlow(Flow):
         # Get sender account info from state
         sender_account = state.get("sender_account", "Your Account")
 
-        # Format confirmation message
+        # Format confirmation message with more detail
         message = (
-            f"Send {formatted_amount}\n"
+            f"Please confirm the following transaction:\n\n"
+            f"Amount: {formatted_amount}\n"
             f"From: {sender_account}\n"
-            f"To: {recipient_name}"
+            f"To: {recipient_name} ({handle_data['handle']})"
         )
 
         return ButtonSelection.create_buttons({
             "text": message,
             "buttons": [
-                {"id": "confirm", "title": "Confirm"},
-                {"id": "cancel", "title": "Cancel"}
+                {"id": "confirm", "title": "Confirm"}
             ]
         }, state.get("phone", ""))
 
     def _has_required_data(self, state: Dict[str, Any]) -> bool:
         """Check if state has all required data"""
+        logger.debug(f"Checking required data in state: {state}")
+
         # Check amount data
         amount_data = state.get("amount", {})
         if not isinstance(amount_data, dict):
+            logger.debug("Invalid amount data format")
             return False
         if not amount_data.get("amount") or not amount_data.get("denomination"):
+            logger.debug("Missing amount or denomination")
             return False
 
         # Check handle data
         handle_data = state.get("handle", {})
         if not isinstance(handle_data, dict):
+            logger.debug("Invalid handle data format")
             return False
         if not handle_data.get("receiver_account_id") or not handle_data.get("recipient_name"):
+            logger.debug("Missing receiver_account_id or recipient_name")
             return False
 
         # Check member IDs and account ID
-        if not state.get("authorizer_member_id") or not state.get("sender_account_id"):
+        if not state.get("authorizer_member_id"):
+            logger.debug("Missing authorizer_member_id")
+            return False
+        if not state.get("sender_account_id"):
+            logger.debug("Missing sender_account_id")
             return False
 
+        logger.debug("All required data present")
         return True
 
     def _can_show_confirmation(self, state: Dict[str, Any]) -> bool:
@@ -250,6 +397,7 @@ class CredexOfferFlow(Flow):
         # Check if we have all required data
         if not self._has_required_data(self.state):
             logger.error("Missing required data for transaction")
+            logger.debug(f"Current state: {self.state}")
             return None
 
         # Check if confirmed
@@ -280,28 +428,20 @@ class CredexOfferFlow(Flow):
 
         try:
             if action == "accept":
-                success, message = self.credex_service.accept_credex(credex_id)
+                success, response = self.credex_service.accept_credex(credex_id)
             elif action == "decline":
-                success, message = self.credex_service.decline_credex(credex_id)
+                success, response = self.credex_service.decline_credex(credex_id)
             elif action == "cancel":
-                success, message = self.credex_service.cancel_credex(credex_id)
+                success, response = self.credex_service.cancel_credex(credex_id)
             else:
                 return False, f"Invalid action: {action}"
 
             if not success:
-                return False, message or f"Failed to {action} offer"
+                return False, response.get("message") if isinstance(response, dict) else f"Failed to {action} offer"
 
-            # Get fresh dashboard data
-            phone = self.state.get("phone")
-            if not phone:
-                logger.error("Phone number not found in state")
-                return True, f"Offer {action}ed successfully"
-
-            success, data = self.credex_service._member.get_dashboard(phone)
-            if success:
-                self.state["profile"] = data
-                self.state["last_refresh"] = True
-                self.state["current_account"] = None  # Force reselection
+            # Update service state with fresh data from response
+            if isinstance(response, dict) and "data" in response:
+                self._update_service_state(response["data"], f"credex_{action}_complete")
 
             return True, f"Offer {action}ed successfully"
 
@@ -343,6 +483,10 @@ class CredexOfferFlow(Flow):
             success, response = self.credex_service.offer_credex(offer_data)
             if not success:
                 return False, response.get("message", "Failed to create credex offer")
+
+            # Update service state with fresh data from response
+            if isinstance(response, dict) and "data" in response:
+                self._update_service_state(response["data"], "credex_offer_complete")
 
             return True, "Credex offer created successfully"
 

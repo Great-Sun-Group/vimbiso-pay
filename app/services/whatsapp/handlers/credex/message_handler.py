@@ -1,3 +1,4 @@
+"""Message handler mixin for credex handlers"""
 import logging
 from typing import Any, Dict, List
 
@@ -34,20 +35,48 @@ class MessageHandlerMixin(BaseActionHandler):
             if interactive_type == "button_reply":
                 button_id = self.service.message["interactive"]["button_reply"].get("id")
                 logger.debug(f"Processing button reply: {button_id}")
+
+                # Handle offer confirmation/cancellation
                 if button_id == "confirm_offer":
                     return self._handle_offer_confirmation(current_state, selected_profile)
                 elif button_id == "cancel_offer":
-                    # Use the shared cancellation logic from OfferFlowMixin
                     return self._handle_offer_cancellation(current_state)
+
+                # Handle dashboard action buttons
+                elif button_id.startswith(("accept_", "decline_", "cancel_")):
+                    action, credex_id = self._parse_action_button(button_id)
+                    if action and credex_id:
+                        offer_data = self._get_offer_data(credex_id, selected_profile)
+                        if offer_data:
+                            return self._handle_credex_action(action, credex_id, offer_data)
+                    return self._format_error_response("Invalid action button. Please try again.")
+
                 return self._format_error_response("Invalid button response. Please try again.")
+
             elif interactive_type == "list_reply":
                 selected_id = self.service.message["interactive"]["list_reply"].get("id")
                 logger.debug(f"Processing list selection: {selected_id}")
-                if selected_id and selected_id.startswith("cancel_offer_"):
-                    credex_id = selected_id.replace("cancel_offer_", "")
-                    logger.debug(f"Cancelling offer with ID: {credex_id}")
-                    # Use the shared cancellation logic from OfferFlowMixin
-                    return self._handle_offer_cancellation(current_state, credex_id)
+
+                # Handle menu action selections
+                if selected_id in ["handle_action_accept_offers", "handle_action_decline_offers", "handle_action_pending_offers_out"]:
+                    action = selected_id.replace("handle_action_", "").replace("_offers", "")
+                    if action in ["accept", "decline", "pending_offers_out"]:
+                        # Map pending_offers_out to cancel
+                        action = "cancel" if action == "pending_offers_out" else action
+                        # Get offers based on action type
+                        offers = self._get_offers_for_action(action, selected_profile)
+                        if offers:
+                            return self._create_offers_list(action, offers)
+                        return self.get_response_template(f"No {action} offers available.")
+
+                # Handle offer selection from list
+                elif selected_id:
+                    action, credex_id = self._parse_action_button(selected_id)
+                    if action and credex_id:
+                        offer_data = self._get_offer_data(credex_id, selected_profile)
+                        if offer_data:
+                            return self._handle_credex_action(action, credex_id, offer_data)
+
                 return self._format_error_response("Invalid list selection. Please try again.")
 
             logger.error(f"Unhandled interactive type: {interactive_type}")
@@ -55,6 +84,102 @@ class MessageHandlerMixin(BaseActionHandler):
         except Exception as e:
             logger.error(f"Error handling interactive message: {str(e)}")
             return self._format_error_response(str(e))
+
+    def _get_offers_for_action(self, action: str, profile: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Get relevant offers based on action type"""
+        try:
+            if action in ["accept", "decline"]:
+                return profile.get("data", {}).get("pendingInData", {}).get("data", [])
+            elif action == "cancel":
+                return profile.get("data", {}).get("pendingOutData", {}).get("data", [])
+            return []
+        except Exception as e:
+            logger.error(f"Error getting offers for action {action}: {str(e)}")
+            return []
+
+    def _create_offers_list(self, action: str, offers: List[Dict[str, Any]]) -> WhatsAppMessage:
+        """Create interactive list message for offers"""
+        try:
+            sections = []
+            current_section = {
+                "title": f"Select an Offer to {action.title()}",
+                "rows": []
+            }
+
+            for offer in offers:
+                # Get amount and party info
+                amount_str = offer.get("formattedInitialAmount", "")
+                party = offer.get("counterpartyAccountName", "Unknown")
+                secured = "Secured" if offer.get("secured", True) else "Unsecured"
+
+                # Format description based on action
+                if action in ["accept", "decline"]:
+                    title = f"{amount_str} from {party}"
+                else:  # cancel
+                    title = f"{amount_str} to {party}"
+
+                # Create row for this offer
+                row = {
+                    "id": f"{action}_offer_{offer['credexID']}",
+                    "title": title,
+                    "description": f"Tap to {action} this {secured.lower()} credex"
+                }
+                current_section["rows"].append(row)
+
+            sections.append(current_section)
+
+            # Create interactive list message
+            return {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": self.service.user.mobile_number,
+                "type": "interactive",
+                "interactive": {
+                    "type": "list",
+                    "header": {
+                        "type": "text",
+                        "text": f"{action.title()} Offers"
+                    },
+                    "body": {
+                        "text": f"*{self._get_action_emoji(action)} {action.title()} Offers*\n\nSelect an offer below to {action} it:"
+                    },
+                    "footer": {
+                        "text": f"Tap on an offer to {action} it"
+                    },
+                    "action": {
+                        "button": "View Offers",
+                        "sections": sections
+                    }
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error creating offers list: {str(e)}")
+            return self._format_error_response(str(e))
+
+    def _get_action_emoji(self, action: str) -> str:
+        """Get emoji for action type"""
+        return {
+            "accept": "✅",
+            "decline": "❌",
+            "cancel": "❌"
+        }.get(action, "")
+
+    def _parse_action_button(self, button_id: str) -> tuple[str, str]:
+        """Parse action and credex ID from button ID"""
+        try:
+            # Expected formats:
+            # Button: "accept_credex_123", "decline_credex_123", "cancel_credex_123"
+            # List: "accept_offer_123", "decline_offer_123", "cancel_offer_123"
+            parts = button_id.split("_")
+            if len(parts) >= 2:
+                action = parts[0]  # accept/decline/cancel
+                credex_id = parts[-1]  # Last part is always the ID
+                if action in ["accept", "decline", "cancel"] and credex_id:
+                    return action, credex_id
+            return None, None
+        except Exception as e:
+            logger.error(f"Error parsing action button: {str(e)}")
+            return None, None
 
     def _handle_offer_confirmation(
         self, current_state: Dict[str, Any], selected_profile: Dict[str, Any]

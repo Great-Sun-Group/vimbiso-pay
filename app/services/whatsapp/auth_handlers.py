@@ -1,11 +1,11 @@
+"""Authentication and menu handlers"""
 from typing import Dict, Any, Optional, Tuple
 
 from .base_handler import BaseActionHandler
-from .forms import registration_form
-from .screens import HOME_1, HOME_2, BALANCE, UNSECURED_BALANCES
+from .screens import HOME_1, HOME_2, BALANCE, UNSECURED_BALANCES, REGISTER
 from .types import WhatsAppMessage
-from api.serializers.members import MemberDetailsSerializer
 from services.state.service import StateStage
+from services.whatsapp.handlers.member.handler import MemberRegistrationHandler
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 class AuthActionHandler(BaseActionHandler):
     """Handler for authentication and menu-related actions"""
 
+    def __init__(self, service):
+        super().__init__(service)
+        self.registration_handler = MemberRegistrationHandler(service)
+
     def handle_action_register(self, register: bool = False) -> WhatsAppMessage:
         """Handle user registration flow with proper state management
 
@@ -21,7 +25,7 @@ class AuthActionHandler(BaseActionHandler):
             register: Whether this is a new registration
 
         Returns:
-            WhatsAppMessage: Registration form or menu response
+            WhatsAppMessage: Registration response
         """
         try:
             if register:
@@ -30,47 +34,41 @@ class AuthActionHandler(BaseActionHandler):
                     user_id=self.service.user.mobile_number,
                     new_state={
                         "registration_started": True,
-                        "stage": StateStage.AUTH.value,
+                        "stage": StateStage.REGISTRATION.value,
                         "option": "registration"
                     },
-                    stage=StateStage.AUTH.value,
+                    stage=StateStage.REGISTRATION.value,
                     update_from="registration_start",
                     option="registration"
                 )
-                return registration_form(
-                    self.service.user.mobile_number,
-                )
-
-            if self.service.message_type == "nfm_reply":
-                payload = {
-                    "first_name": self.service.body.get("firstName"),
-                    "last_name": self.service.body.get("lastName"),
-                    "phone_number": self.service.user.mobile_number,
+                # Show welcome message with interactive button
+                return {
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": self.service.user.mobile_number,
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "button",
+                        "body": {
+                            "text": REGISTER
+                        },
+                        "action": {
+                            "buttons": [
+                                {
+                                    "type": "reply",
+                                    "reply": {
+                                        "id": "start_registration",
+                                        "title": "Introduce yourself"
+                                    }
+                                }
+                            ]
+                        }
+                    }
                 }
-                serializer = MemberDetailsSerializer(data=payload)
-                if serializer.is_valid():
-                    successful, message = self.service.credex_service.register_member(
-                        serializer.validated_data
-                    )
-                    if successful:
-                        # Store JWT token in state after successful registration
-                        current_state = self.service.current_state or {}
-                        current_state["jwt_token"] = self.service.credex_service._jwt_token
-                        current_state["stage"] = StateStage.MENU.value
-                        current_state["option"] = "handle_action_menu"
-                        # Update state after successful registration
-                        self.service.state.update_state(
-                            user_id=self.service.user.mobile_number,
-                            new_state=current_state,
-                            stage=StateStage.MENU.value,
-                            update_from="registration_complete",
-                            option="handle_action_menu"
-                        )
-                        return self.handle_action_menu(message=f"\n{message}\n\n")
-                    else:
-                        return self.get_response_template(message)
 
-            return self.handle_default_action()
+            # Handle registration through the registration handler
+            return self.registration_handler.handle_registration()
+
         except Exception as e:
             logger.error(f"Error in registration flow: {str(e)}")
             return self.get_response_template("Registration failed. Please try again.")
@@ -99,6 +97,9 @@ class AuthActionHandler(BaseActionHandler):
                 current_state["jwt_token"] = jwt_token
                 current_state["stage"] = StateStage.AUTH.value
                 current_state["option"] = "handle_action_menu"
+                # Clear registration state if exists
+                current_state.pop("registration_started", None)
+                current_state.pop("flow_data", None)
                 self.service.state.update_state(
                     user_id=self.service.user.mobile_number,
                     new_state=current_state,

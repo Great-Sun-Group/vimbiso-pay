@@ -51,6 +51,32 @@ class Flow:
         self.steps = steps
         self.current_step_index = 0
         self._state: Dict[str, Any] = {}
+        self._initial_state: Dict[str, Any] = {}
+
+    def _get_clean_state(self) -> Dict[str, Any]:
+        """Get a clean state with essential fields"""
+        clean_state = {}
+
+        # Always preserve these basic fields if they exist
+        preserve_fields = {
+            "phone",
+            "authorizer_member_id",
+            "issuer_member_id",
+            "sender_account",
+            "sender_account_id",
+            "jwt_token"
+        }
+
+        # Add step IDs to preserved fields
+        for step in self.steps:
+            preserve_fields.add(step.id)
+
+        # Preserve all essential fields
+        for field in preserve_fields:
+            if field in self._state:
+                clean_state[field] = self._state[field]
+
+        return clean_state
 
     @property
     def current_step(self) -> Optional[Step]:
@@ -67,7 +93,34 @@ class Flow:
     @state.setter
     def state(self, value: Dict[str, Any]) -> None:
         """Set flow state"""
-        self._state = value
+        if not self._initial_state:
+            # Store initial state first time state is set
+            self._initial_state = self._get_clean_state()
+
+        # Start with a clean state
+        clean_state = self._get_clean_state()
+
+        # Update with new values, preserving step data
+        for key, val in value.items():
+            # Always preserve step data
+            if key in {step.id for step in self.steps}:
+                clean_state[key] = val
+            # For other fields, don't overwrite preserved fields
+            elif key not in clean_state:
+                clean_state[key] = val
+
+        self._state = clean_state
+
+    def update_state(self, step_id: str, value: Any) -> None:
+        """Update state for a specific step"""
+        # Get clean state but preserve all step data
+        clean_state = self._get_clean_state()
+
+        # Update the specific step's data
+        clean_state[step_id] = value
+
+        # Set the new state
+        self._state = clean_state
 
     def next(self) -> Optional[Step]:
         """Move to next applicable step"""
