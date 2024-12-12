@@ -23,28 +23,23 @@ class MessageHandlerMixin(BaseActionHandler):
     ) -> WhatsAppMessage:
         """Handle interactive message responses"""
         try:
-            logger.debug(f"Handling interactive message type: {self.service.message_type}")
-            logger.debug(f"Interactive type: {self.service.message.get('interactive', {}).get('type')}")
-            logger.debug(f"Full interactive message: {self.service.message.get('interactive', {})}")
+            logger.debug(f"Handling message type: {self.service.message_type}")
+            logger.debug(f"Full message: {self.service.message}")
 
-            if self.service.message_type == "nfm_reply":
-                logger.debug("Processing form submission")
-                return self._handle_form_submission(current_state, selected_profile)
-
-            interactive_type = self.service.message.get("interactive", {}).get("type")
-            if interactive_type == "button_reply":
-                button_id = self.service.message["interactive"]["button_reply"].get("id")
-                logger.debug(f"Processing button reply: {button_id}")
+            # Handle button responses
+            if self.service.message_type == "button":
+                button_payload = self.service.message["button"].get("payload")
+                logger.debug(f"Processing button payload: {button_payload}")
 
                 # Handle offer confirmation/cancellation
-                if button_id == "confirm_offer":
+                if button_payload == "confirm_offer":
                     return self._handle_offer_confirmation(current_state, selected_profile)
-                elif button_id == "cancel_offer":
+                elif button_payload == "cancel_offer":
                     return self._handle_offer_cancellation(current_state)
 
                 # Handle dashboard action buttons
-                elif button_id.startswith(("accept_", "decline_", "cancel_")):
-                    action, credex_id = self._parse_action_button(button_id)
+                elif button_payload.startswith(("accept_", "decline_", "cancel_")):
+                    action, credex_id = self._parse_action_button(button_payload)
                     if action and credex_id:
                         offer_data = self._get_offer_data(credex_id, selected_profile)
                         if offer_data:
@@ -53,36 +48,39 @@ class MessageHandlerMixin(BaseActionHandler):
 
                 return self._format_error_response("Invalid button response. Please try again.")
 
-            elif interactive_type == "list_reply":
-                selected_id = self.service.message["interactive"]["list_reply"].get("id")
-                logger.debug(f"Processing list selection: {selected_id}")
+            # Handle list responses
+            elif self.service.message_type == "interactive":
+                interactive_type = self.service.message.get("interactive", {}).get("type")
+                if interactive_type == "list_reply":
+                    selected_id = self.service.message["interactive"]["list_reply"].get("id")
+                    logger.debug(f"Processing list selection: {selected_id}")
 
-                # Handle menu action selections
-                if selected_id in ["handle_action_accept_offers", "handle_action_decline_offers", "handle_action_pending_offers_out"]:
-                    action = selected_id.replace("handle_action_", "").replace("_offers", "")
-                    if action in ["accept", "decline", "pending_offers_out"]:
-                        # Map pending_offers_out to cancel
-                        action = "cancel" if action == "pending_offers_out" else action
-                        # Get offers based on action type
-                        offers = self._get_offers_for_action(action, selected_profile)
-                        if offers:
-                            return self._create_offers_list(action, offers)
-                        return self.get_response_template(f"No {action} offers available.")
+                    # Handle menu action selections
+                    if selected_id in ["handle_action_accept_offers", "handle_action_decline_offers", "handle_action_pending_offers_out"]:
+                        action = selected_id.replace("handle_action_", "").replace("_offers", "")
+                        if action in ["accept", "decline", "pending_offers_out"]:
+                            # Map pending_offers_out to cancel
+                            action = "cancel" if action == "pending_offers_out" else action
+                            # Get offers based on action type
+                            offers = self._get_offers_for_action(action, selected_profile)
+                            if offers:
+                                return self._create_offers_list(action, offers)
+                            return self.get_response_template(f"No {action} offers available.")
 
-                # Handle offer selection from list
-                elif selected_id:
-                    action, credex_id = self._parse_action_button(selected_id)
-                    if action and credex_id:
-                        offer_data = self._get_offer_data(credex_id, selected_profile)
-                        if offer_data:
-                            return self._handle_credex_action(action, credex_id, offer_data)
+                    # Handle offer selection from list
+                    elif selected_id:
+                        action, credex_id = self._parse_action_button(selected_id)
+                        if action and credex_id:
+                            offer_data = self._get_offer_data(credex_id, selected_profile)
+                            if offer_data:
+                                return self._handle_credex_action(action, credex_id, offer_data)
 
-                return self._format_error_response("Invalid list selection. Please try again.")
+                    return self._format_error_response("Invalid list selection. Please try again.")
 
-            logger.error(f"Unhandled interactive type: {interactive_type}")
-            return self._format_error_response("Invalid interactive message type. Please try again.")
+            logger.error(f"Unhandled message type: {self.service.message_type}")
+            return self._format_error_response("Invalid message type. Please try again.")
         except Exception as e:
-            logger.error(f"Error handling interactive message: {str(e)}")
+            logger.error(f"Error handling message: {str(e)}")
             return self._format_error_response(str(e))
 
     def _get_offers_for_action(self, action: str, profile: Dict[str, Any]) -> List[Dict[str, Any]]:
