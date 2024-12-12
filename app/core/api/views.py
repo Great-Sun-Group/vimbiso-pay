@@ -14,10 +14,12 @@ from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
 from services.whatsapp.handler import CredexBotService
 
-# Configure logging to output to stdout
+
+# Configure logging with a standardized format
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='[%(asctime)s] {"asctime": "%(asctime)s", "levelname": "%(levelname)s", "name": "%(name)s", "message": "%(message)s", "taskName": null}',
+    datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 

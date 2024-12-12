@@ -6,6 +6,7 @@ from core.messaging.flow_handler import FlowHandler
 from .offer_flow_v2 import CredexOfferFlow
 from .action_flows import AcceptCredexFlow, DeclineCredexFlow, CancelCredexFlow
 from ...types import WhatsAppMessage
+from services.state.service import StateStage
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,13 @@ class ProgressiveFlowMixin:
     ) -> None:
         """Update state with consistent pattern"""
         try:
+            # Force credex stage when flow is active
+            if "flow_data" in current_state:
+                stage = StateStage.CREDEX.value
+                if not option:
+                    option = "handle_action_offer_credex"
+                logger.debug(f"Forcing credex stage for active flow. Stage: {stage}, Option: {option}")
+
             # Create new state with only essential data
             new_state = {
                 "profile": current_state.get("profile", {}),
@@ -200,7 +208,7 @@ class ProgressiveFlowMixin:
                     # Update state with new flow data
                     self._update_flow_state(
                         current_state=current_state,
-                        stage="credex",
+                        stage=StateStage.CREDEX.value,  # Force credex stage
                         update_from="flow_init",
                         option="handle_action_offer_credex"
                     )
@@ -246,7 +254,7 @@ class ProgressiveFlowMixin:
                                 # Update state without flow data
                                 self._update_flow_state(
                                     current_state=current_state,
-                                    stage="menu",
+                                    stage=StateStage.MENU.value,
                                     update_from=f"credex_{action}_complete",
                                     option="handle_action_menu",
                                     preserve_flow=False
@@ -282,7 +290,7 @@ class ProgressiveFlowMixin:
                 # Update state before handling message
                 self._update_flow_state(
                     current_state=current_state,
-                    stage=current_state.get("stage", "credex"),
+                    stage=StateStage.CREDEX.value,  # Force credex stage
                     update_from="flow_update"
                 )
 
@@ -320,7 +328,7 @@ class ProgressiveFlowMixin:
                     # Update state without flow data
                     self._update_flow_state(
                         current_state=current_state,
-                        stage="menu",
+                        stage=StateStage.MENU.value,
                         update_from="flow_complete",
                         option="handle_action_menu",
                         preserve_flow=False
@@ -354,7 +362,7 @@ class ProgressiveFlowMixin:
             # Update state with new flow
             self._update_flow_state(
                 current_state=current_state,
-                stage=current_state.get("stage", "credex"),
+                stage=StateStage.CREDEX.value,  # Force credex stage
                 update_from="flow_init"
             )
 

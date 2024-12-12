@@ -91,6 +91,19 @@ get_start_time() {
     echo $(($(date +%s) - seconds))000
 }
 
+# Function to safely format timestamp
+format_timestamp() {
+    local timestamp=$1
+    # Remove last 3 digits (milliseconds) safely using parameter expansion
+    local seconds=${timestamp%???}
+    # Only try to format if we have a valid number
+    if [[ "$seconds" =~ ^[0-9]+$ ]]; then
+        date -d "@$seconds" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "Invalid timestamp"
+    else
+        echo "Invalid timestamp"
+    fi
+}
+
 # If no seconds specified, stream logs in real-time
 if [ -z "$SECONDS_TO_FETCH" ]; then
     echo "Streaming logs in real-time from $LOG_GROUP in ${AWS_REGION} (Ctrl+C to stop)..."
@@ -116,8 +129,8 @@ else
         --output text \
         --region $AWS_REGION | \
     while read -r timestamp message; do
-        # Convert timestamp to human-readable format
-        date=$(date -d @${timestamp::-3} "+%Y-%m-%d %H:%M:%S")
-        echo "[$date] $message"
+        # Format timestamp safely
+        formatted_date=$(format_timestamp "$timestamp")
+        echo "[$formatted_date] $message"
     done
 fi
