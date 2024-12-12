@@ -47,42 +47,33 @@ export function createMessagePayload(messageType, messageText, phoneNumber, cont
     const message = {
         from: phoneNumber,
         id: `wamid.${Array(32).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join('')}`,
-        timestamp: Math.floor(Date.now() / 1000).toString(),
-        type: messageType
+        timestamp: Math.floor(Date.now() / 1000).toString()
     };
 
-    // Add context_message_id for interactive responses
-    if (contextMessageId && (messageType === 'interactive' || messageType === 'button')) {
+    // Add context for button responses
+    if (contextMessageId) {
         message.context = {
+            from: phoneNumber,
             id: contextMessageId
         };
     }
 
     // Add message content based on type
     if (messageType === 'text') {
+        message.type = 'text';
         message.text = { body: messageText };
-    } else if (messageType === 'button') {
-        // Format button response as interactive button_reply
-        message.interactive = {
-            type: "button_reply",
-            button_reply: {
-                id: messageText,
-                title: messageText
-            }
+    } else if (messageType === 'button' || messageType === 'interactive') {
+        // All button responses should be type "button" to match WhatsApp format
+        message.type = 'button';
+        message.button = {
+            text: messageText,
+            payload: messageText
         };
     } else if (messageType === 'interactive' && typeof messageText === 'object') {
+        message.type = 'interactive';
         message.interactive = {
             type: "nfm_reply",
             nfm_reply: messageText
-        };
-    } else if (messageType === 'interactive') {
-        // Handle interactive button responses
-        message.interactive = {
-            type: "button_reply",
-            button_reply: {
-                id: messageText,
-                title: messageText
-            }
         };
     }
 
