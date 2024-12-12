@@ -44,13 +44,7 @@ class ActionFlowMixin:
                 "recipient_name": offer_data.get("counterpartyAccountName")
             })
 
-            # Execute flow
-            success, message = flow.complete_flow()
-            if not success:
-                logger.error(f"Failed to {action} credex: {message}")
-                return self._format_error_response(message)
-
-            # Update state after successful action
+            # Update state BEFORE executing flow
             current_state = self.service.current_state
             current_state["stage"] = StateStage.CREDEX.value
             current_state["option"] = f"handle_action_{action}_offers"
@@ -67,6 +61,12 @@ class ActionFlowMixin:
                 update_from=f"{action}_offer",
                 option=f"handle_action_{action}_offers"
             )
+
+            # Execute flow
+            success, message = flow.complete_flow()
+            if not success:
+                logger.error(f"Failed to {action} credex: {message}")
+                return self._format_error_response(message)
 
             # Return success message
             return self.get_response_template(
