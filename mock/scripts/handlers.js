@@ -43,7 +43,40 @@ export function createNativeForm(fields, onSubmit) {
     return formContainer;
 }
 
-export function createMessagePayload(messageType, messageText, phoneNumber) {
+export function createMessagePayload(messageType, messageText, phoneNumber, contextMessageId = null) {
+    const message = {
+        from: phoneNumber,
+        id: `wamid.${Array(32).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join('')}`,
+        timestamp: Math.floor(Date.now() / 1000).toString()
+    };
+
+    // Add context for button responses
+    if (contextMessageId) {
+        message.context = {
+            from: phoneNumber,
+            id: contextMessageId
+        };
+    }
+
+    // Add message content based on type
+    if (messageType === 'text') {
+        message.type = 'text';
+        message.text = { body: messageText };
+    } else if (messageType === 'button' || messageType === 'interactive') {
+        // All button responses should be type "button" to match WhatsApp format
+        message.type = 'button';
+        message.button = {
+            text: messageText,
+            payload: messageText
+        };
+    } else if (messageType === 'interactive' && typeof messageText === 'object') {
+        message.type = 'interactive';
+        message.interactive = {
+            type: "nfm_reply",
+            nfm_reply: messageText
+        };
+    }
+
     return {
         object: "whatsapp_business_account",
         entry: [{
@@ -60,31 +93,7 @@ export function createMessagePayload(messageType, messageText, phoneNumber) {
                         wa_id: phoneNumber,
                         profile: { name: "" }
                     }],
-                    messages: [{
-                        from: phoneNumber,
-                        id: `wamid.${Array(32).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join('')}`,
-                        timestamp: Math.floor(Date.now() / 1000).toString(),
-                        type: messageType,
-                        ...(messageType === 'text' ? {
-                            text: { body: messageText }
-                        } : messageType === 'button' ? {
-                            button: { payload: messageText.substring(7) }
-                        } : messageType === 'interactive' && typeof messageText === 'object' ? {
-                            interactive: {
-                                type: "nfm_reply",
-                                nfm_reply: messageText
-                            }
-                        } : {
-                            interactive: {
-                                type: "button_reply",
-                                button_reply: {
-                                    id: messageText,
-                                    title: messageText,
-                                    selected: true
-                                }
-                            }
-                        })
-                    }]
+                    messages: [message]
                 },
                 field: "messages"
             }]

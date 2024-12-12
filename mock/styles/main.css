@@ -104,6 +104,9 @@ button {
     transition: all 0.3s ease;
     font-weight: 500;
     letter-spacing: 0.5px;
+    width: 100%;
+    margin: 5px 0;
+    text-align: left;
 }
 
 button:hover {
@@ -166,28 +169,6 @@ button:active {
     margin-top: 10px;
 }
 
-.menu-option {
-    background: var(--bright-blue);
-    color: var(--white);
-    padding: 8px;
-    border-radius: 5px;
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.3s ease;
-    font-weight: 500;
-}
-
-.menu-option:hover {
-    background: var(--gold);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-.menu-option:active {
-    transform: translateY(0);
-    box-shadow: none;
-}
-
 .interactive-message {
     background: var(--dark-blue-lighter);
     padding: 15px;
@@ -196,6 +177,9 @@ button:active {
     max-width: 70%;
     border: 1px solid var(--bright-blue);
     color: var(--white);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .interactive-message .body {
@@ -211,43 +195,74 @@ button:active {
     letter-spacing: 0.5px;
 }
 
-.interactive-message .list-button {
-    background: var(--bright-blue);
-    color: var(--white);
-    padding: 8px;
-    border-radius: 5px;
-    text-align: center;
-    margin-bottom: 10px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    font-weight: 500;
-}
-
-.interactive-message .list-button:hover {
-    background: var(--gold);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
 .interactive-message .buttons {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
     margin-top: 10px;
+    width: 100%;
 }
 
 .interactive-message .button {
+    display: block;
     background: var(--bright-blue);
     color: var(--white);
-    padding: 8px;
+    padding: 12px;
     border-radius: 5px;
-    text-align: center;
+    text-align: left;
     cursor: pointer;
     transition: all 0.3s ease;
     font-weight: 500;
+    width: 100%;
+    border: none;
+    margin: 0;
 }
 
-.interactive-message .button:hover {
+.interactive-message .list-container {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.interactive-message .list-button {
+    display: block;
+    background: var(--bright-blue);
+    color: var(--white);
+    padding: 12px;
+    border-radius: 5px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    width: 100%;
+    border: none;
+    margin: 0;
+}
+
+.interactive-message .list-options {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.interactive-message .list-option {
+    display: block;
+    background: var(--bright-blue);
+    color: var(--white);
+    padding: 12px;
+    border-radius: 5px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    width: 100%;
+    border: none;
+    margin: 0;
+}
+
+.interactive-message button:hover {
     background: var(--gold);
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
