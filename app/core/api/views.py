@@ -43,8 +43,27 @@ class CredexCloudApiWebhook(APIView):
             logger.info("Received webhook request")
             logger.debug(f"Request data: {request.data}")
 
+            # Validate basic webhook structure
+            if not isinstance(request.data, dict):
+                logger.warning("Invalid request data format")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
+            entries = request.data.get("entry", [])
+            if not entries or not isinstance(entries, list):
+                logger.warning("No entries in webhook data")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
+            changes = entries[0].get("changes", [])
+            if not changes or not isinstance(changes, list):
+                logger.warning("No changes in webhook data")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
             # Get the WhatsApp payload
-            payload = request.data.get("entry")[0].get("changes")[0].get("value")
+            payload = changes[0].get("value", {})
+            if not payload or not isinstance(payload, dict):
+                logger.warning("Invalid payload format")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
             logger.info(f"Webhook payload metadata: {payload.get('metadata', {})}")
 
             # Check for mock testing header
@@ -53,20 +72,33 @@ class CredexCloudApiWebhook(APIView):
 
             # Only validate phone_number_id for real WhatsApp requests
             if not is_mock_testing:
-                if payload["metadata"]["phone_number_id"] != config(
-                    "WHATSAPP_PHONE_NUMBER_ID"
-                ):
+                metadata = payload.get("metadata", {})
+                if not metadata or metadata.get("phone_number_id") != config("WHATSAPP_PHONE_NUMBER_ID"):
                     logger.warning(
-                        f"Mismatched phone_number_id: {payload['metadata']['phone_number_id']}"
+                        f"Mismatched phone_number_id: {metadata.get('phone_number_id')}"
                     )
                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            if not payload.get("messages"):
+            # Handle status updates
+            if payload.get("statuses"):
+                logger.info("Received status update")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
+            # Handle messages
+            messages = payload.get("messages", [])
+            if not messages or not isinstance(messages, list):
                 logger.info("No messages in payload")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            message = payload["messages"][0]
-            message_type = message["type"]
+            message = messages[0]
+            if not isinstance(message, dict):
+                logger.warning("Invalid message format")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
+            message_type = message.get("type")
+            if not message_type:
+                logger.warning("No message type specified")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             # Handle system messages
             if (message_type == "system" or message.get("system") or
@@ -75,34 +107,35 @@ class CredexCloudApiWebhook(APIView):
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             # Get contact info
-            contact = payload["contacts"][0] if message_type != "system" else message.get("wa_id")
-            if not contact:
-                logger.warning("No contact information in payload")
+            contacts = payload.get("contacts", [])
+            if not contacts or not isinstance(contacts, list):
+                logger.warning("No contacts in payload")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Debug Redis connection
-            logger.info("Testing Redis connection...")
-            try:
-                test_key = "test_redis_connection"
-                cache.set(test_key, "test_value", timeout=10)
-                test_value = cache.get(test_key)
-                logger.info(f"Redis test - Set and get successful: {test_value}")
-            except Exception as e:
-                logger.error(f"Redis connection error: {str(e)}")
-                return JsonResponse(
-                    {"error": "Redis connection failed"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+            contact = contacts[0] if message_type != "system" else message.get("wa_id")
+            if not contact or not isinstance(contact, dict):
+                logger.warning("Invalid contact information")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
+            wa_id = contact.get("wa_id")
+            if not wa_id:
+                logger.warning("No WA ID in contact")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             # Create CachedUser with debug logging
-            logger.info(f"Creating CachedUser for phone: {contact['wa_id']}")
-            user = CachedUser(contact["wa_id"])
+            logger.info(f"Creating CachedUser for phone: {wa_id}")
+            user = CachedUser(wa_id)
             logger.info(f"CachedUser created with state: {user.state.__dict__}")
 
             state = user.state
 
             # Check message age
-            message_stamp = datetime.fromtimestamp(int(message["timestamp"]))
+            timestamp = message.get("timestamp")
+            if not timestamp:
+                logger.warning("No timestamp in message")
+                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
+            message_stamp = datetime.fromtimestamp(int(timestamp))
             if (datetime.now() - message_stamp).total_seconds() > 20:
                 logger.info(f"Ignoring old webhook from {message_stamp}")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
@@ -110,21 +143,28 @@ class CredexCloudApiWebhook(APIView):
             # Extract message text for logging
             message_text = ""
             if message_type == "text":
-                message_text = message["text"]["body"]
+                text = message.get("text", {})
+                if isinstance(text, dict):
+                    message_text = text.get("body", "")
             elif message_type == "interactive":
                 interactive = message.get("interactive", {})
-                if "button_reply" in interactive:
-                    message_text = interactive["button_reply"]["id"]
-                elif "list_reply" in interactive:
-                    message_text = interactive["list_reply"]["id"]
-                else:
-                    # Log full interactive message for debugging
-                    logger.debug(f"Unhandled interactive message type: {interactive}")
-                    message_text = str(interactive)
+                if isinstance(interactive, dict):
+                    if "button_reply" in interactive:
+                        button_reply = interactive["button_reply"]
+                        if isinstance(button_reply, dict):
+                            message_text = button_reply.get("id", "")
+                    elif "list_reply" in interactive:
+                        list_reply = interactive["list_reply"]
+                        if isinstance(list_reply, dict):
+                            message_text = list_reply.get("id", "")
+                    else:
+                        # Log full interactive message for debugging
+                        logger.debug(f"Unhandled interactive message type: {interactive}")
+                        message_text = str(interactive)
 
             logger.info(
                 f"Credex [{state.stage}<|>{state.option}] RECEIVED -> {message_text} "
-                f"FROM {contact['wa_id']} @ {message_stamp}"
+                f"FROM {wa_id} @ {message_stamp}"
             )
 
             try:
@@ -188,9 +228,9 @@ class WipeCache(APIView):
 
     @staticmethod
     def post(request):
-        from django.core.cache import cache
-
-        cache.delete(request.data.get("number"))
+        number = request.data.get("number")
+        if number:
+            cache.delete(number)
         return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
 
 
