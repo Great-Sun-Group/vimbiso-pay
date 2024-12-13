@@ -167,7 +167,9 @@ export class ChatUI {
         const text = this.targetSelect.value === 'local' ?
             'Local Server (localhost:8000)' :
             'Staging Server (stage.whatsapp.vimbisopay.africa)';
-        this.statusDiv.textContent = `Connected to: ${text}`;
+
+        // Create a span for "Connected to:" text
+        this.statusDiv.innerHTML = `<span class="status-label">Connected to:</span><br>${text}`;
         this.statusDiv.className = `status ${this.targetSelect.value}`;
     }
 
