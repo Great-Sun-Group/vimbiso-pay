@@ -66,6 +66,14 @@ class CredExEndpoints:
     GET_CREDEX = "getCredex"
     GET_LEDGER = "getLedger"
 
+    # Recurring payment endpoints - grouped together as a module
+    RECURRING = {
+        'ACCEPT': 'acceptRecurring',
+        'CANCEL': 'cancelRecurring',
+        'CREATE': 'createRecurring',
+        'GET': 'getRecurring',
+    }
+
     # List of endpoints that don't require authentication
     NO_AUTH_ENDPOINTS = {
         LOGIN,
@@ -76,3 +84,8 @@ class CredExEndpoints:
     def requires_auth(cls, endpoint: str) -> bool:
         """Check if endpoint requires authentication"""
         return endpoint not in cls.NO_AUTH_ENDPOINTS
+
+    @classmethod
+    def get_recurring_endpoint(cls, action: str) -> str:
+        """Get recurring endpoint for a specific action"""
+        return cls.RECURRING.get(action.upper())

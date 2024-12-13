@@ -179,3 +179,63 @@ class CredExServiceInterface(ABC):
             a list of accounts with their details including ID, name, type, and denomination
         """
         pass
+
+
+class CredExRecurringInterface(ABC):
+    """Interface defining recurring payment operations"""
+
+    @abstractmethod
+    def create_recurring(self, payment_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+        """Create a recurring payment
+
+        Args:
+            payment_data: Dictionary containing:
+                - sourceAccountID: ID of the source account
+                - templateType: Type of recurring payment template
+                - payFrequency: Payment frequency in days
+                - startDate: Start date for recurring payment
+                - memberTier: Target member tier (for subscriptions)
+                - securedCredex: Whether credex is secured
+                - amount: Payment amount
+                - denomination: Payment denomination
+
+        Returns:
+            Tuple[bool, Dict[str, Any]]: Success flag and response data
+        """
+        pass
+
+    @abstractmethod
+    def accept_recurring(self, payment_id: str) -> Tuple[bool, Dict[str, Any]]:
+        """Accept a recurring payment
+
+        Args:
+            payment_id: ID of the recurring payment to accept
+
+        Returns:
+            Tuple[bool, Dict[str, Any]]: Success flag and response data
+        """
+        pass
+
+    @abstractmethod
+    def cancel_recurring(self, payment_id: str) -> Tuple[bool, Dict[str, Any]]:
+        """Cancel a recurring payment
+
+        Args:
+            payment_id: ID of the recurring payment to cancel
+
+        Returns:
+            Tuple[bool, Dict[str, Any]]: Success flag and response data
+        """
+        pass
+
+    @abstractmethod
+    def get_recurring(self, payment_id: str) -> Tuple[bool, Dict[str, Any]]:
+        """Get details of a recurring payment
+
+        Args:
+            payment_id: ID of the recurring payment to retrieve
+
+        Returns:
+            Tuple[bool, Dict[str, Any]]: Success flag and response data
+        """
+        pass

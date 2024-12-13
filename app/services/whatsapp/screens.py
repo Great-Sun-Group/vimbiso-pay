@@ -40,7 +40,8 @@ BALANCE = """*💰 SECURED BALANCES*
 {securedNetBalancesByDenom}
 
 *📊 NET ASSETS*
-  {netCredexAssetsInDefaultDenom}"""
+  {netCredexAssetsInDefaultDenom}
+{tier_limit_display}"""
 
 UNSECURED_BALANCES = """*📈 UNSECURED BALANCES*
   📉 Payables : {totalPayables}

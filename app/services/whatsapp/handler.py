@@ -4,18 +4,19 @@ Handles message routing and bot interactions.
 """
 import json
 import logging
-from typing import Dict, Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
-from core.utils.exceptions import InvalidInputException
+from core.config.constants import GREETINGS, CachedUser, get_greeting
 from core.utils.error_handler import error_decorator
-from core.config.constants import CachedUser, get_greeting, GREETINGS
+from core.utils.exceptions import InvalidInputException
 from services.credex.service import CredExService
 from services.state.service import StateStage
-from .types import BotServiceInterface, WhatsAppMessage
+
 from .account_handlers import AccountActionHandler
 from .auth_handlers import AuthActionHandler
 from .handlers import CredexActionHandler
 from .handlers.member import MemberRegistrationHandler
+from .types import BotServiceInterface, WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 
@@ -193,11 +194,7 @@ class CredexBotService(BotServiceInterface):
 
     @error_decorator
     def handle(self) -> Dict[str, Any]:
-        """Process the incoming message and generate response.
-
-        Returns:
-            Dict[str, Any]: Response message
-        """
+        """Process the incoming message and generate response."""
         try:
             # Get current stage and option from state
             current_stage = self.state.get_stage(self.user.mobile_number)
@@ -224,9 +221,27 @@ class CredexBotService(BotServiceInterface):
                 logger.debug("Handling cancel_offer command")
                 return self.action_handler.credex_handler.handle_action_offer_credex()
 
-            # Handle interactive messages (including list selections)
+            # Handle interactive messages (including list selections and button replies)
             if self.message_type == "interactive":
-                logger.debug("Handling interactive message")
+                interactive = self.message.get("interactive", {})
+                interactive_type = interactive.get("type")
+                logger.debug(f"Interactive type: {interactive_type}")
+
+                # Handle button replies
+                if interactive_type == "button_reply":
+                    button_id = interactive.get("button_reply", {}).get("id")
+                    logger.debug(f"Button ID: {button_id}")
+
+                    # Handle specific button responses
+                    if button_id == "confirm_tier_upgrade":
+                        logger.debug("Handling tier upgrade confirmation")
+                        return self.action_handler.handle_action("handle_action_confirm_tier_upgrade")
+
+                # For multi-step flows, prioritize current_option over stage
+                if current_option and current_option.startswith("handle_action_"):
+                    logger.debug(f"Using current option for multi-step flow: {current_option}")
+                    return self.action_handler.handle_action(current_option)
+
                 # Use current stage/option to route to correct handler
                 if current_stage == StateStage.CREDEX.value or current_option == "handle_action_offer_credex":
                     return self.action_handler.credex_handler.handle_action_offer_credex()
@@ -238,11 +253,15 @@ class CredexBotService(BotServiceInterface):
                     # Default to current stage
                     return self.action_handler.handle_action(current_stage)
 
-            # For other messages, check if body is an action command
-            action = (
-                self.body if isinstance(self.body, str) and self.body.startswith("handle_action_")
-                else current_stage
-            )
+            # For other messages, determine action based on body, option, or stage
+            action = None
+            if isinstance(self.body, str) and self.body.startswith("handle_action_"):
+                action = self.body
+            elif current_option and current_option.startswith("handle_action_"):
+                # Prioritize current_option for multi-step flows
+                action = current_option
+            else:
+                action = current_stage
 
             logger.info(f"Entry point: {action}")
             return self.action_handler.handle_action(action)
@@ -278,7 +297,12 @@ class WhatsAppActionHandler:
         """
         try:
             # Authentication and menu actions
-            if action in ["handle_action_register", "handle_action_menu"]:
+            if action in [
+                "handle_action_register",
+                "handle_action_menu",
+                "handle_action_upgrade_tier",
+                "handle_action_confirm_tier_upgrade"
+            ]:
                 return self._handle_auth_action(action)
 
             # Registration actions
@@ -322,11 +346,13 @@ class WhatsAppActionHandler:
             WhatsAppMessage: Response message
         """
         try:
-            if action == "handle_action_menu":
-                return self.auth_handler.handle_action_menu(login=login)
-            elif action == "handle_action_register":
-                return self.auth_handler.handle_action_register()
-            return self.auth_handler.handle_default_action()
+            handler_map = {
+                "handle_action_menu": lambda: self.auth_handler.handle_action_menu(login=login),
+                "handle_action_register": self.auth_handler.handle_action_register,
+                "handle_action_upgrade_tier": self.auth_handler.handle_action_upgrade_tier,
+                "handle_action_confirm_tier_upgrade": self.auth_handler.handle_action_confirm_tier_upgrade
+            }
+            return handler_map.get(action, self.auth_handler.handle_default_action)()
         except Exception as e:
             logger.error(f"Error handling auth action {action}: {str(e)}")
             return self.auth_handler.handle_default_action()

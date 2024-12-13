@@ -1,8 +1,9 @@
 """Authentication and menu handlers"""
 from typing import Dict, Any, Optional, Tuple
+from datetime import datetime
 
 from .base_handler import BaseActionHandler
-from .screens import HOME_1, HOME_2, BALANCE, UNSECURED_BALANCES, REGISTER
+from .screens import HOME_1, HOME_2, BALANCE, REGISTER
 from .types import WhatsAppMessage
 from services.state.service import StateStage
 from services.whatsapp.handlers.member.handler import MemberRegistrationHandler
@@ -245,21 +246,11 @@ class AuthActionHandler(BaseActionHandler):
             # Get remaining available USD from either member or dashboard data
             remaining_usd = details.get("remainingAvailableUSD") or "0.00"
 
-            # Determine what to show in the unsecured balance section
-            if balance_data["unsecuredBalancesInDefaultDenom"]["totalPayables"] != "0.00 USD" or \
-               balance_data["unsecuredBalancesInDefaultDenom"]["totalReceivables"] != "0.00 USD":
-                # Show unsecured balances if they exist
-                unsecured_balance = UNSECURED_BALANCES.format(
-                    totalPayables=balance_data["unsecuredBalancesInDefaultDenom"]["totalPayables"],
-                    totalReceivables=balance_data["unsecuredBalancesInDefaultDenom"]["totalReceivables"],
-                    netPayRec=balance_data["unsecuredBalancesInDefaultDenom"]["netPayRec"],
-                )
-            elif member_tier <= 2:
-                # Only show free tier limit for tier <= 2
-                unsecured_balance = f"Free tier remaining daily spend limit\n    *{remaining_usd} USD*"
-            else:
-                # Show nothing for tier > 2
-                unsecured_balance = ""
+            # Format tier limit display
+            tier_limit_display = ""
+            if member_tier <= 2:
+                tier_type = "OPEN" if member_tier == 1 else "VERIFIED"
+                tier_limit_display = f"\n*{tier_type} TIER DAILY LIMIT*\n  ${remaining_usd} USD"
 
             # Build menu response
             return {
@@ -275,15 +266,15 @@ class AuthActionHandler(BaseActionHandler):
                             account=selected_account["data"].get("accountName", "Personal Account"),
                             balance=BALANCE.format(
                                 securedNetBalancesByDenom=balances.rstrip(),
-                                unsecured_balance=unsecured_balance,
                                 netCredexAssetsInDefaultDenom=balance_data[
                                     "netCredexAssetsInDefaultDenom"
                                 ],
+                                tier_limit_display=tier_limit_display
                             ),
                             handle=selected_account["data"]["accountHandle"],
                         )
                     },
-                    "action": self._get_menu_actions(is_owned_account, pending_in, pending_out),
+                    "action": self._get_menu_actions(is_owned_account, pending_in, pending_out, member_tier),
                 },
             }
         except Exception as e:
@@ -294,7 +285,8 @@ class AuthActionHandler(BaseActionHandler):
         self,
         is_owned_account: bool,
         pending_in: int,
-        pending_out: int
+        pending_out: int,
+        member_tier: int
     ) -> Dict[str, Any]:
         """Get menu actions based on account type"""
         base_options = [
@@ -319,6 +311,13 @@ class AuthActionHandler(BaseActionHandler):
                 "title": "📒 Review Transactions",
             },
         ]
+
+        # Add upgrade option for eligible tiers
+        if member_tier <= 2:
+            base_options.append({
+                "id": "handle_action_upgrade_tier",
+                "title": "⭐️ Upgrade Member Tier",
+            })
 
         return {
             "button": "🕹️ Options",
@@ -348,3 +347,103 @@ class AuthActionHandler(BaseActionHandler):
         except Exception as e:
             logger.error(f"Error in profile selection: {str(e)}")
             return self.get_response_template("Profile selection failed. Please try again.")
+
+    def handle_action_upgrade_tier(self) -> WhatsAppMessage:
+        """Handle member tier upgrade flow"""
+        try:
+            # Update state to track upgrade flow
+            current_state = self.service.current_state
+            current_state["stage"] = StateStage.MENU.value
+            current_state["option"] = "handle_action_confirm_tier_upgrade"
+            self.service.state.update_state(
+                user_id=self.service.user.mobile_number,
+                new_state=current_state,
+                stage=StateStage.MENU.value,
+                update_from="upgrade_tier",
+                option="handle_action_confirm_tier_upgrade"
+            )
+
+            return {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": self.service.user.mobile_number,
+                "type": "interactive",
+                "interactive": {
+                    "type": "button",
+                    "body": {
+                        "text": (
+                            "*Upgrade to the Hustler tier for $1/month.* "
+                            "Subscribe with the button below to unlock unlimited credex transactions.\n\n"
+                            "Clicking below authorizes a $1 payment to be automatically processed "
+                            "from your credex account every 4 weeks (28 days), starting today."
+                        )
+                    },
+                    "action": {
+                        "buttons": [
+                            {
+                                "type": "reply",
+                                "reply": {
+                                    "id": "confirm_tier_upgrade",
+                                    "title": "Hustle Hard"
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error in tier upgrade: {str(e)}")
+            return self.get_response_template("Tier upgrade failed. Please try again.")
+
+    def handle_action_confirm_tier_upgrade(self) -> WhatsAppMessage:
+        """Handle tier upgrade confirmation and payment processing"""
+        try:
+            # Get account ID from current state
+            current_state = self.service.current_state
+            selected_account = current_state.get("current_account")
+            if not selected_account:
+                return self.get_response_template("Account not found. Please try again.")
+
+            account_id = selected_account["data"].get("accountID")
+            if not account_id:
+                return self.get_response_template("Account ID not found. Please try again.")
+
+            # Create recurring payment request
+            payment_data = {
+                "sourceAccountID": account_id,
+                "templateType": "MEMBERTIER_SUBSCRIPTION",
+                "payFrequency": 28,
+                "startDate": datetime.now().strftime("%Y-%m-%d"),
+                "memberTier": 3,
+                "securedCredex": True,
+                "amount": 1.00,
+                "denomination": "USD"
+            }
+
+            # Call createRecurring endpoint through recurring service
+            success, response = self.service.credex_service._recurring.create_recurring(payment_data)
+            if not success:
+                error_msg = response.get("message", "Failed to process subscription")
+                logger.error(f"Tier upgrade failed: {error_msg}")
+                return self.get_response_template(f"Subscription failed: {error_msg}")
+
+            # Update state before refreshing dashboard
+            current_state["stage"] = StateStage.MENU.value
+            current_state["option"] = "handle_action_menu"
+            self.service.state.update_state(
+                user_id=self.service.user.mobile_number,
+                new_state=current_state,
+                stage=StateStage.MENU.value,
+                update_from="tier_upgrade_success",
+                option="handle_action_menu"
+            )
+
+            # Return success message and refresh dashboard
+            return self.handle_action_menu(
+                message="🎉 Successfully upgraded to Hustler tier!",
+                login=True
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing tier upgrade: {str(e)}")
+            return self.get_response_template("Failed to process tier upgrade. Please try again.")

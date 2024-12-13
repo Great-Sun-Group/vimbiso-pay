@@ -5,6 +5,7 @@ from .config import CredExConfig
 from .interface import CredExServiceInterface
 from .member import CredExMemberService
 from .offers import CredExOffersService
+from .recurring import CredExRecurringService
 
 
 class CredExService(CredExServiceInterface):
@@ -25,6 +26,9 @@ class CredExService(CredExServiceInterface):
         self._offers = CredExOffersService(config=self.config)
         self._offers._parent_service = self
 
+        self._recurring = CredExRecurringService(config=self.config)
+        self._recurring._parent_service = self
+
     def login(self, phone: str) -> Tuple[bool, str]:
         """Authenticate user with the CredEx API"""
         success, msg = self._auth.login(phone)
@@ -33,6 +37,7 @@ class CredExService(CredExServiceInterface):
             self._jwt_token = self._auth.jwt_token
             self._member.jwt_token = self._jwt_token
             self._offers.jwt_token = self._jwt_token
+            self._recurring.jwt_token = self._jwt_token
         return success, msg
 
     def register_member(self, member_data: Dict[str, Any]) -> Tuple[bool, str]:
@@ -43,6 +48,7 @@ class CredExService(CredExServiceInterface):
             self._jwt_token = self._auth.jwt_token
             self._member.jwt_token = self._jwt_token
             self._offers.jwt_token = self._jwt_token
+            self._recurring.jwt_token = self._jwt_token
         return success, msg
 
     def get_dashboard(self, phone: str) -> Tuple[bool, Dict[str, Any]]:
@@ -126,3 +132,4 @@ class CredExService(CredExServiceInterface):
         self._auth.jwt_token = value
         self._member.jwt_token = value
         self._offers.jwt_token = value
+        self._recurring.jwt_token = value
