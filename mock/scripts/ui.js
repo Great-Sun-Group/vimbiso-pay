@@ -169,7 +169,7 @@ export class ChatUI {
             'Staging Server (stage.whatsapp.vimbisopay.africa)';
 
         // Create a span for "Connected to:" text
-        this.statusDiv.innerHTML = `<span class="status-label">Connected to:</span><br>${text}`;
+        this.statusDiv.innerHTML = `<span class="te">Connected to:</span><br>${text}`;
         this.statusDiv.className = `status ${this.targetSelect.value}`;
     }
 
