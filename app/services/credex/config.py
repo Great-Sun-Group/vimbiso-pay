@@ -1,4 +1,5 @@
 import os
+from decouple import config
 from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urljoin
@@ -14,11 +15,11 @@ class CredExConfig:
     @classmethod
     def from_env(cls) -> "CredExConfig":
         """Create configuration from environment variables"""
-        base_url = os.getenv("MYCREDEX_APP_URL")
+        base_url = config("MYCREDEX_APP_URL")
         if not base_url:
             raise ValueError("MYCREDEX_APP_URL environment variable is not set")
 
-        client_api_key = os.getenv("CLIENT_API_KEY")
+        client_api_key = config("CLIENT_API_KEY")
         if not client_api_key:
             raise ValueError("CLIENT_API_KEY environment variable is not set")
 

@@ -1,7 +1,7 @@
 """WhatsApp service package"""
-from .handler import CredexBotService
+# from .handler import CredexBotService
 from .types import WhatsAppMessage, BotServiceInterface
-from .base_handler import BaseActionHandler
+# from .base_handler import BaseActionHandler
 
 __all__ = [
     'CredexBotService',

@@ -16,7 +16,7 @@ SECRET_KEY = env("DJANGO_SECRET")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env("DEBUG", default=False, cast=bool)
 
-ALLOWED_HOSTS = env("ALLOWED_HOSTS", default="localhost 127.0.0.1").split(" ")
+ALLOWED_HOSTS = env("ALLOWED_HOSTS", default="localhost 127.0.0.1 0bc7-129-222-164-147.ngrok-free.app").split(" ")
 
 # Application definition
 INSTALLED_APPS = [
@@ -248,6 +248,28 @@ if not DEBUG:
     USE_X_FORWARDED_PORT = True
 
 # Logging configuration - Modified for container-friendly setup
+# LOGGING = {
+#     "version": 1,
+#     "disable_existing_loggers": False,
+#     "handlers": {
+#         "console": {
+#             "class": "logging.StreamHandler",
+#             "formatter": "simple",
+#         },
+#     },
+#     "formatters": {
+#         "simple": {
+#             "format": "%(levelname)s %(message)s",
+#         },
+#     },
+#     "loggers": {
+#         "django": {
+#             "handlers": ["console"],
+#             "level": "INFO",
+#         },
+#     },
+# }
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
