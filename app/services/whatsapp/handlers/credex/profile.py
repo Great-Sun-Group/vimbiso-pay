@@ -84,19 +84,8 @@ class ProfileMixin(BaseActionHandler):
                 return self.get_response_template("Error loading account information. Please try again.")
 
             if not accounts:
-                # If no accounts found but have memberID in dashboard, create default account
-                member_id = dashboard.get("memberID")
-                if member_id:
-                    return {
-                        "success": True,
-                        "data": {
-                            "accountID": member_id,
-                            "accountName": "Your Account",
-                            "accountHandle": self.service.user.mobile_number,
-                            "isOwnedAccount": True
-                        }
-                    }
-                return self.get_response_template("No accounts found. Please try again later.")
+                logger.error("No accounts found in profile data")
+                return self.get_response_template("Account not found. Please try logging in again.")
 
             # Look for personal account
             for account in accounts:
@@ -108,20 +97,8 @@ class ProfileMixin(BaseActionHandler):
                         account["data"].get("accountHandle") == self.service.user.mobile_number):
                     return account
 
-            # If no matching account found but have memberID, create default account
-            member_id = dashboard.get("memberID")
-            if member_id:
-                return {
-                    "success": True,
-                    "data": {
-                        "accountID": member_id,
-                        "accountName": "Your Account",
-                        "accountHandle": self.service.user.mobile_number,
-                        "isOwnedAccount": True
-                    }
-                }
-
-            return self.get_response_template("Personal account not found. Please try again later.")
+            logger.error("Personal account not found in accounts list")
+            return self.get_response_template("Account not found. Please try logging in again.")
 
         except Exception as e:
             logger.error(f"Error finding personal account: {str(e)}")
