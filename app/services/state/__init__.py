@@ -1,21 +1,15 @@
 from .config import RedisConfig
 from .exceptions import (
-    StateServiceError,
-    StateNotFoundError,
-    InvalidStateError,
-    InvalidStageError,
-    InvalidOptionError,
-    InvalidUserError,
+    StateError,
+    StateValidationError,
+    StateOperationError,
 )
 from .service import StateService
 
 __all__ = [
     'StateService',
     'RedisConfig',
-    'StateServiceError',
-    'StateNotFoundError',
-    'InvalidStateError',
-    'InvalidStageError',
-    'InvalidOptionError',
-    'InvalidUserError',
+    'StateError',
+    'StateValidationError',
+    'StateOperationError',
 ]

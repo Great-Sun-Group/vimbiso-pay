@@ -7,7 +7,7 @@ import json
 import time
 
 from services.state.service import StateStage
-from services.state.exceptions import InvalidStateError
+from services.state.exceptions import StateValidationError
 from .types import Message as WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -75,13 +75,13 @@ class Flow:
     def _validate_state_data(self, state_data: Dict[str, Any]) -> None:
         """Validate state data structure and required fields"""
         if not isinstance(state_data, dict):
-            raise InvalidStateError("State must be a dictionary")
+            raise StateValidationError("State must be a dictionary")
 
         # Validate essential fields
         required_fields = {"phone"}
         missing_fields = required_fields - set(state_data.keys())
         if missing_fields:
-            raise InvalidStateError(f"State missing required fields: {missing_fields}")
+            raise StateValidationError(f"State missing required fields: {missing_fields}")
 
         # Validate step data
         for step in self.steps:
@@ -89,10 +89,10 @@ class Flow:
                 try:
                     # Attempt to validate step data
                     if not step.validate(state_data[step.id]):
-                        raise InvalidStateError(f"Invalid data for step {step.id}")
+                        raise StateValidationError(f"Invalid data for step {step.id}")
                 except Exception as e:
                     logger.error(f"Step data validation error: {str(e)}")
-                    raise InvalidStateError(f"Step data validation failed: {str(e)}")
+                    raise StateValidationError(f"Step data validation failed: {str(e)}")
 
     def _preserve_nested_state(self, current: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
         """Preserve nested state data with validation"""
@@ -189,7 +189,7 @@ class Flow:
         try:
             # Validate step exists
             if step_id not in {step.id for step in self.steps}:
-                raise InvalidStateError(f"Invalid step ID: {step_id}")
+                raise StateValidationError(f"Invalid step ID: {step_id}")
 
             # Create backup
             self._backup_state()
