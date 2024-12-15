@@ -59,16 +59,70 @@ class ProfileMixin(BaseActionHandler):
     def _find_personal_account(self, current_state: Dict[str, Any]) -> Union[Dict[str, Any], WhatsAppMessage]:
         """Find personal account from available accounts"""
         try:
-            accounts = current_state["profile"]["data"]["dashboard"]["accounts"]
+            # Get profile data with proper structure handling
+            profile_data = current_state.get("profile", {})
+            if not isinstance(profile_data, dict):
+                logger.error("Profile data is not a dictionary")
+                return self.get_response_template("Error loading account information. Please try again.")
+
+            # Handle both direct and nested data structures
+            data = profile_data.get("data", profile_data)
+            if not isinstance(data, dict):
+                logger.error("Profile data['data'] is not a dictionary")
+                return self.get_response_template("Error loading account information. Please try again.")
+
+            # Get dashboard data
+            dashboard = data.get("dashboard", {})
+            if not isinstance(dashboard, dict):
+                logger.error("Dashboard data is not a dictionary")
+                return self.get_response_template("Error loading account information. Please try again.")
+
+            # Get accounts with proper validation
+            accounts = dashboard.get("accounts", [])
+            if not isinstance(accounts, list):
+                logger.error("Accounts data is not a list")
+                return self.get_response_template("Error loading account information. Please try again.")
+
             if not accounts:
+                # If no accounts found but have memberID in dashboard, create default account
+                member_id = dashboard.get("memberID")
+                if member_id:
+                    return {
+                        "success": True,
+                        "data": {
+                            "accountID": member_id,
+                            "accountName": "Your Account",
+                            "accountHandle": self.service.user.mobile_number,
+                            "isOwnedAccount": True
+                        }
+                    }
                 return self.get_response_template("No accounts found. Please try again later.")
 
+            # Look for personal account
             for account in accounts:
+                if not isinstance(account, dict):
+                    continue
+
                 if (account.get("success") and
+                        isinstance(account.get("data"), dict) and
                         account["data"].get("accountHandle") == self.service.user.mobile_number):
                     return account
 
+            # If no matching account found but have memberID, create default account
+            member_id = dashboard.get("memberID")
+            if member_id:
+                return {
+                    "success": True,
+                    "data": {
+                        "accountID": member_id,
+                        "accountName": "Your Account",
+                        "accountHandle": self.service.user.mobile_number,
+                        "isOwnedAccount": True
+                    }
+                }
+
             return self.get_response_template("Personal account not found. Please try again later.")
-        except (KeyError, IndexError) as e:
+
+        except Exception as e:
             logger.error(f"Error finding personal account: {str(e)}")
             return self.get_response_template("Error loading account information. Please try again.")
