@@ -102,14 +102,15 @@ DATABASES = {
     }
 }
 
-# Redis configuration - Use localhost by default since Redis is in same task
-REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+# Redis configuration
+REDIS_CACHE_URL = env("REDIS_URL", default="redis://redis-cache:6379/0")
+REDIS_STATE_URL = env("REDIS_STATE_URL", default="redis://redis-state:6379/0")
 
 # Enhanced Redis Cache Configuration
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": REDIS_URL,
+        "LOCATION": REDIS_CACHE_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
             "SOCKET_CONNECT_TIMEOUT": 30,
@@ -128,7 +129,6 @@ CACHES = {
                 "health_check_interval": 30,
             },
             "IGNORE_EXCEPTIONS": True,
-            # Removed server-side Redis configurations from client kwargs
             "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
             "SERIALIZER": "django_redis.serializers.json.JSONSerializer",
         },
@@ -190,7 +190,6 @@ REST_FRAMEWORK = {
         "rest_framework_xml.renderers.XMLRenderer",
     ],
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        # Enhanced JWT authentication with user status validation
         "core.utils.jwt_validators.EnhancedJWTAuthentication",
     ],
     "DEFAULT_THROTTLE_CLASSES": [
@@ -222,7 +221,6 @@ SIMPLE_JWT = {
     "SLIDING_TOKEN_REFRESH_EXP_CLAIM": "refresh_exp",
     "SLIDING_TOKEN_LIFETIME": timedelta(minutes=5),
     "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=1),
-    # Add custom validator to check user status on token validation
     "AUTH_TOKEN_VALIDATORS": [
         "core.utils.jwt_validators.validate_token_user",
     ],
@@ -242,16 +240,13 @@ SECURE_HSTS_PRELOAD = True
 if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True
-    # Trust ALB's X-Forwarded-Proto header
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-    # Enable SSL redirect but exempt health check
     SECURE_SSL_REDIRECT = True
-    # Allow both HTTP and HTTPS for health check
     SECURE_REDIRECT_EXEMPT = [r"^health/?$"]
-    # Trust X-Forwarded headers from ALB
     USE_X_FORWARDED_HOST = True
     USE_X_FORWARDED_PORT = True
 
+# Logging Configuration
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -265,33 +260,54 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "json",
-            "level": "DEBUG",  # Changed to DEBUG for more detail during startup
+            "level": "INFO",  # Default to INFO level
         },
     },
     "loggers": {
         "django": {
             "handlers": ["console"],
-            "level": env("DJANGO_LOG_LEVEL", default="DEBUG"),  # Changed to DEBUG
+            "level": env("DJANGO_LOG_LEVEL", default="INFO"),  # Default to INFO
+            "propagate": False,
+        },
+        "django.utils.autoreload": {
+            "handlers": ["console"],
+            "level": "INFO",  # Reduce autoreload noise
+            "propagate": False,
+        },
+        "django.db.backends": {
+            "handlers": ["console"],
+            "level": "INFO",  # Only log slow queries
             "propagate": False,
         },
         "core": {
             "handlers": ["console"],
-            "level": env("APP_LOG_LEVEL", default="DEBUG"),  # Changed to DEBUG
+            "level": env("APP_LOG_LEVEL", default="INFO"),
             "propagate": False,
         },
         "django_redis": {
             "handlers": ["console"],
-            "level": "DEBUG",
+            "level": "WARNING",  # Only log important Redis issues
             "propagate": False,
         },
         "redis": {
             "handlers": ["console"],
-            "level": "DEBUG",
+            "level": "WARNING",  # Only log important Redis issues
             "propagate": False,
         },
     },
     "root": {
         "handlers": ["console"],
-        "level": "DEBUG",  # Changed to DEBUG
+        "level": env("ROOT_LOG_LEVEL", default="INFO"),
     },
 }
+
+# Development-specific settings
+if DEBUG:
+    # Enable more detailed logging for specific components during development
+    LOGGING["loggers"].update({
+        "core": {
+            "handlers": ["console"],
+            "level": "DEBUG",  # Keep core app debugging
+            "propagate": False,
+        },
+    })

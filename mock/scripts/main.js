@@ -1,4 +1,4 @@
-import { createMessagePayload, createFormReply } from './handlers.js';
+import { createFormReply, createMessagePayload } from './handlers.js';
 import { ChatUI } from './ui.js';
 
 class WhatsAppMock {

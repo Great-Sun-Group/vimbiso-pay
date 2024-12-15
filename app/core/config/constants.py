@@ -1,7 +1,23 @@
-from django.core.cache import cache
+from django.conf import settings
 from datetime import timedelta
 import datetime
 import os
+import redis
+import json
+from urllib.parse import urlparse
+
+# Initialize Redis client for state management
+redis_url = urlparse(settings.REDIS_STATE_URL)
+state_redis = redis.Redis(
+    host=redis_url.hostname or 'localhost',
+    port=redis_url.port or 6380,
+    db=int(redis_url.path[1:]) if redis_url.path else 0,
+    password=redis_url.password,
+    decode_responses=True,
+    socket_timeout=30,
+    socket_connect_timeout=30,
+    retry_on_timeout=True
+)
 
 GREETINGS = [
     "menu",
@@ -49,107 +65,110 @@ class CachedUserState:
         print("USER", user)
 
         # Get existing state values
-        existing_direction = cache.get(f"{self.user.mobile_number}_direction")
-        existing_stage = cache.get(f"{self.user.mobile_number}_stage")
-        existing_option = cache.get(f"{self.user.mobile_number}_option")
-        existing_state = cache.get(f"{self.user.mobile_number}")
-        self.jwt_token = cache.get(f"{self.user.mobile_number}_jwt_token")
+        existing_direction = state_redis.get(f"{self.user.mobile_number}_direction")
+        existing_stage = state_redis.get(f"{self.user.mobile_number}_stage")
+        existing_option = state_redis.get(f"{self.user.mobile_number}_option")
+        existing_state = state_redis.get(f"{self.user.mobile_number}")
+        self.jwt_token = state_redis.get(f"{self.user.mobile_number}_jwt_token")
 
         # Initialize with defaults only if no state exists at all
         if not any([existing_direction, existing_stage, existing_option, existing_state]):
-            cache.set(f"{self.user.mobile_number}_direction", "OUT", timeout=60 * 5)
-            cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu", timeout=60 * 5)
-            cache.set(f"{self.user.mobile_number}", {}, timeout=60 * 5)
+            state_redis.setex(f"{self.user.mobile_number}_direction", 300, "OUT")
+            state_redis.setex(f"{self.user.mobile_number}_stage", 300, "handle_action_menu")
+            state_redis.setex(f"{self.user.mobile_number}", 300, "{}")
         else:
             # Refresh expiry for existing values
             if existing_direction:
-                cache.set(f"{self.user.mobile_number}_direction", existing_direction, timeout=60 * 5)
+                state_redis.setex(f"{self.user.mobile_number}_direction", 300, existing_direction)
             if existing_stage:
-                cache.set(f"{self.user.mobile_number}_stage", existing_stage, timeout=60 * 5)
+                state_redis.setex(f"{self.user.mobile_number}_stage", 300, existing_stage)
             if existing_option:
-                cache.set(f"{self.user.mobile_number}_option", existing_option, timeout=60 * 5)
+                state_redis.setex(f"{self.user.mobile_number}_option", 300, existing_option)
             if existing_state:
-                cache.set(f"{self.user.mobile_number}", existing_state, timeout=60 * 5)
+                state_redis.setex(f"{self.user.mobile_number}", 300, existing_state)
 
         # Load current values
-        self.direction = cache.get(f"{self.user.mobile_number}_direction")
-        self.stage = cache.get(f"{self.user.mobile_number}_stage")
-        self.option = cache.get(f"{self.user.mobile_number}_option")
-        self.state = cache.get(f"{self.user.mobile_number}")
+        self.direction = state_redis.get(f"{self.user.mobile_number}_direction")
+        self.stage = state_redis.get(f"{self.user.mobile_number}_stage")
+        self.option = state_redis.get(f"{self.user.mobile_number}_option")
+        self.state = state_redis.get(f"{self.user.mobile_number}")
+        if self.state:
+            try:
+                self.state = json.loads(self.state)
+            except (json.JSONDecodeError, TypeError):
+                self.state = {}
+        else:
+            self.state = {}
 
     def update_state(
         self, state: dict, update_from, stage=None, option=None, direction=None
     ):
-        """Update user state with proper cache management"""
+        """Update user state with proper Redis management"""
         # Ensure we have a valid state object
         if not isinstance(state, dict):
             state = {}
 
-        # Set state with increased timeout
-        cache.set(f"{self.user.mobile_number}", state, timeout=60 * 5)
+        # Convert state to JSON string
+        state_json = json.dumps(state)
+
+        # Set state with timeout
+        state_redis.setex(f"{self.user.mobile_number}", 300, state_json)
 
         # Update stage if provided
         if stage:
-            cache.set(f"{self.user.mobile_number}_stage", stage, timeout=60 * 5)
+            state_redis.setex(f"{self.user.mobile_number}_stage", 300, stage)
             self.stage = stage
 
         # Update option if provided
         if option:
-            cache.set(f"{self.user.mobile_number}_option", option, timeout=60 * 5)
+            state_redis.setex(f"{self.user.mobile_number}_option", 300, option)
             self.option = option
 
         # Update direction if provided
         if direction:
-            cache.set(f"{self.user.mobile_number}_direction", direction, timeout=60 * 5)
+            state_redis.setex(f"{self.user.mobile_number}_direction", 300, direction)
             self.direction = direction
 
         # Update local state
         self.state = state
 
-        # Force a cache refresh to ensure consistency
-        cache.touch(f"{self.user.mobile_number}", timeout=60 * 5)
-        if stage:
-            cache.touch(f"{self.user.mobile_number}_stage", timeout=60 * 5)
-        if option:
-            cache.touch(f"{self.user.mobile_number}_option", timeout=60 * 5)
-        if direction:
-            cache.touch(f"{self.user.mobile_number}_direction", timeout=60 * 5)
-
     def get_state(self, user):
-        """Get current state with proper cache handling"""
-        state = cache.get(f"{user.mobile_number}")
-        if state is None:
+        """Get current state with proper Redis handling"""
+        state_json = state_redis.get(f"{user.mobile_number}")
+        if state_json is None:
             state = {}
-            cache.set(f"{user.mobile_number}", state, timeout=60 * 5)
+            state_redis.setex(f"{user.mobile_number}", 300, "{}")
         else:
-            # Refresh cache timeout
-            cache.touch(f"{user.mobile_number}", timeout=60 * 5)
+            try:
+                state = json.loads(state_json)
+            except (json.JSONDecodeError, TypeError):
+                state = {}
+                state_redis.setex(f"{user.mobile_number}", 300, "{}")
+
         self.state = state
         return state
 
     def set_jwt_token(self, jwt_token):
-        """Set JWT token with proper cache handling"""
+        """Set JWT token with proper Redis handling"""
         if jwt_token:
-            cache.set(f"{self.user.mobile_number}_jwt_token", jwt_token, timeout=60 * 5)
+            state_redis.setex(f"{self.user.mobile_number}_jwt_token", 300, jwt_token)
             self.jwt_token = jwt_token
-            # Refresh cache timeout
-            cache.touch(f"{self.user.mobile_number}_jwt_token", timeout=60 * 5)
 
     def reset_state(self):
-        """Reset all user state with proper cache handling"""
+        """Reset all user state with proper Redis handling"""
         # Save current JWT token
         current_jwt = self.jwt_token
 
         # Clear all existing state
-        cache.delete(f"{self.user.mobile_number}")
-        cache.delete(f"{self.user.mobile_number}_stage")
-        cache.delete(f"{self.user.mobile_number}_option")
-        cache.delete(f"{self.user.mobile_number}_direction")
+        state_redis.delete(f"{self.user.mobile_number}")
+        state_redis.delete(f"{self.user.mobile_number}_stage")
+        state_redis.delete(f"{self.user.mobile_number}_option")
+        state_redis.delete(f"{self.user.mobile_number}_direction")
 
         # Set default values with timeout
-        cache.set(f"{self.user.mobile_number}", {}, timeout=60 * 5)
-        cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu", timeout=60 * 5)
-        cache.set(f"{self.user.mobile_number}_direction", "OUT", timeout=60 * 5)
+        state_redis.setex(f"{self.user.mobile_number}", 300, "{}")
+        state_redis.setex(f"{self.user.mobile_number}_stage", 300, "handle_action_menu")
+        state_redis.setex(f"{self.user.mobile_number}_direction", 300, "OUT")
 
         # Update instance variables
         self.state = {}

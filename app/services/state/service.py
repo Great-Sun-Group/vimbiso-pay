@@ -70,15 +70,17 @@ class StateService:
 
     def __init__(self, redis_client=None):
         """Initialize the state service with a Redis client"""
-        self.redis = redis_client or RedisConfig().get_client()
+        # Always create a new Redis client for state management
+        self.redis = RedisConfig().get_client()
         self.state_key_prefix = "user_state:"
         self.state_lock_prefix = "user_state_lock:"
         self.state_ttl = 3600  # 1 hour TTL for state
         self.lock_timeout = 30  # 30 seconds lock timeout
 
-        # Verify Redis connection
+        # Verify Redis connection on initialization
         try:
-            self.redis.ping()
+            if not self.redis.ping():
+                raise StateOperationError("Redis ping failed")
         except RedisError as e:
             logger.error("Failed to connect to Redis")
             raise StateOperationError("Could not connect to Redis", cause=e)
@@ -170,7 +172,7 @@ class StateService:
                     "last_updated": time.time(),
                     "version": 1
                 }
-                self.redis.set(state_key, json.dumps(new_state), self.state_ttl)
+                self.redis.set(state_key, json.dumps(new_state), ex=self.state_ttl)
                 return new_state
 
             try:
@@ -227,7 +229,7 @@ class StateService:
                     })
 
                     # Store updated state
-                    pipe.set(state_key, json.dumps(new_state), self.state_ttl)
+                    pipe.set(state_key, json.dumps(new_state), ex=self.state_ttl)
                     pipe.execute()
                     logger.info(f"Updated state for user {user_id}: stage={stage}, update_from={update_from}")
                     break
@@ -263,7 +265,7 @@ class StateService:
                                     "last_updated": time.time(),
                                     "version": current_state.get("version", 0) + 1
                                 }
-                                pipe.set(state_key, json.dumps(new_state), self.state_ttl)
+                                pipe.set(state_key, json.dumps(new_state), ex=self.state_ttl)
                                 pipe.execute()
                                 logger.info(f"Reset state for user {user_id} preserving JWT token")
                                 return
