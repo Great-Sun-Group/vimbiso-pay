@@ -40,10 +40,12 @@ class CredExAuthService(BaseCredExService):
                     logger.info("New user detected")
                     return False, "Welcome! It looks like you're new here. Let's get you set up."
 
-                return self._handle_error_response(response, {
+                error_result = self._handle_error_response(response, {
                     400: "Invalid phone number or new user",
                     401: "Authentication failed"
                 })
+                # Extract message from error result dict
+                return error_result[0], error_result[1]["message"]
 
             data = response.json()
             token = (
@@ -84,7 +86,8 @@ class CredExAuthService(BaseCredExService):
                     400: "Invalid registration data",
                     401: "Unauthorized registration attempt"
                 })
-                return error_result[0], error_result[1].get("error", "Registration failed")
+                # Extract message from error result dict
+                return error_result[0], error_result[1]["message"]
 
             data = response.json()
             if response.status_code == 201:
@@ -128,7 +131,8 @@ class CredExAuthService(BaseCredExService):
                     400: "Invalid phone number",
                     401: "Authentication failed"
                 })
-                return error_result[0], error_result[1].get("error", "Token refresh failed")
+                # Extract message from error result dict
+                return error_result[0], error_result[1]["message"]
 
             data = response.json()
             token = (

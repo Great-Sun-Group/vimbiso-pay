@@ -7,9 +7,10 @@ from django.contrib import admin
 from django.core.cache import cache
 from django.http import JsonResponse
 from django.urls import include, path
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework import routers
+from core.utils.throttling import HealthCheckRateThrottle
 
 from api import views
 
@@ -24,6 +25,7 @@ router.register(r'offers', views.OfferViewSet, basename='offer')
 # Health check endpoint with improved error handling and logging
 @api_view(["GET"])
 @permission_classes([AllowAny])
+@throttle_classes([HealthCheckRateThrottle])
 def health_check(request):
     try:
         # Test Redis connectivity with timeout
