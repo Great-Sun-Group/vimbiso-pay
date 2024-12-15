@@ -181,7 +181,7 @@ jobs:
             echo "===================="
             aws logs get-log-events \
               --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
-              --log-stream-name "$([ "$CONTAINER_NAME" = "redis" ] && echo "redis" || echo "vimbiso-pay-${ENVIRONMENT}")/${CONTAINER_NAME}/${TASK_ID}" \
+              --log-stream-name "${CONTAINER_NAME}/${CONTAINER_NAME}/${TASK_ID}" \
               --start-time ${START_TIME}000 \
               --limit $LINES \
               --query 'events[].message' \
@@ -250,21 +250,26 @@ jobs:
                 if [ ! -z "$TASK_ARN" ]; then
                   TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
 
-                  # Check Redis health
-                  REDIS_HEALTH=$(check_container_health "$TASK_ARN" "redis")
-                  echo "Redis Health Status: $REDIS_HEALTH"
+                  # Check Redis Cache health
+                  REDIS_CACHE_HEALTH=$(check_container_health "$TASK_ARN" "redis-cache")
+                  echo "Redis Cache Health Status: $REDIS_CACHE_HEALTH"
+
+                  # Check Redis State health
+                  REDIS_STATE_HEALTH=$(check_container_health "$TASK_ARN" "redis-state")
+                  echo "Redis State Health Status: $REDIS_STATE_HEALTH"
 
                   # Check App health
                   APP_HEALTH=$(check_container_health "$TASK_ARN" "vimbiso-pay-${ENVIRONMENT}")
                   echo "App Health Status: $APP_HEALTH"
 
-                  if [ "$REDIS_HEALTH" != "HEALTHY" ] || [ "$APP_HEALTH" != "HEALTHY" ]; then
+                  if [ "$REDIS_CACHE_HEALTH" != "HEALTHY" ] || [ "$REDIS_STATE_HEALTH" != "HEALTHY" ] || [ "$APP_HEALTH" != "HEALTHY" ]; then
                     ALL_CONTAINERS_HEALTHY=false
                     # Only fail if past grace period
                     if [ $ELAPSED_TIME -gt $GRACE_PERIOD ]; then
                       echo "Unhealthy containers detected after grace period. Fetching logs..."
                       START_TIME=$(($(date +%s) - 300))
-                      get_container_logs "$TASK_ID" "redis" "$START_TIME" 200
+                      get_container_logs "$TASK_ID" "redis-cache" "$START_TIME" 200
+                      get_container_logs "$TASK_ID" "redis-state" "$START_TIME" 200
                       get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
                       exit 1
                     fi
@@ -288,7 +293,8 @@ jobs:
                   if [ ! -z "$TASK_ARN" ]; then
                     TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
                     START_TIME=$(($(date +%s) - 300))
-                    get_container_logs "$TASK_ID" "redis" "$START_TIME" 200
+                    get_container_logs "$TASK_ID" "redis-cache" "$START_TIME" 200
+                    get_container_logs "$TASK_ID" "redis-state" "$START_TIME" 200
                     get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
                   fi
                 done
@@ -318,7 +324,8 @@ jobs:
                   echo "$RUNNING_TASKS" | xargs -n1 | while read -r TASK_ARN; do
                     TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
                     START_TIME=$(($(date +%s) - 300))
-                    get_container_logs "$TASK_ID" "redis" "$START_TIME" 200
+                    get_container_logs "$TASK_ID" "redis-cache" "$START_TIME" 200
+                    get_container_logs "$TASK_ID" "redis-state" "$START_TIME" 200
                     get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
                   done
                 fi
