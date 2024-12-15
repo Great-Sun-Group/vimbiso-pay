@@ -57,6 +57,12 @@ class CredexBotService(BotServiceInterface):
         try:
             self.current_state = self.state.get_state(self.user.mobile_number)
             logger.debug(f"Retrieved state: {json.dumps(self.current_state, indent=2)}")
+
+            # Restore JWT token if present in state
+            if self.current_state.get("jwt_token"):
+                self.credex_service.jwt_token = self.current_state["jwt_token"]
+                logger.debug("Restored JWT token from state")
+
         except Exception as e:
             logger.info(f"No existing state found: {str(e)}")
             # Initialize fresh state with required fields
@@ -137,6 +143,11 @@ class CredexBotService(BotServiceInterface):
             if not success:
                 return self._handle_login_failure(login_msg)
 
+            # Store JWT token in state
+            if self.credex_service.jwt_token:
+                self.current_state["jwt_token"] = self.credex_service.jwt_token
+                logger.debug("Stored JWT token in state")
+
             # Get fresh dashboard data
             success, data = self._get_dashboard_data()
             logger.debug(f"Dashboard data result: success={success}")
@@ -149,7 +160,8 @@ class CredexBotService(BotServiceInterface):
                 "option": "handle_action_menu",
                 "profile": data,
                 "current_account": None,
-                "last_updated": None
+                "last_updated": None,
+                "jwt_token": self.credex_service.jwt_token  # Include token in state
             }
             self.state.update_state(
                 user_id=self.user.mobile_number,
@@ -173,7 +185,12 @@ class CredexBotService(BotServiceInterface):
     def _attempt_login(self) -> Tuple[bool, str]:
         """Attempt to login user with proper error handling"""
         try:
-            return self.credex_service._auth.login(self.user.mobile_number)
+            success, msg = self.credex_service._auth.login(self.user.mobile_number)
+            if success:
+                # Propagate token to bot service
+                self.credex_service.jwt_token = self.credex_service._auth.jwt_token
+                logger.debug("JWT token propagated after successful login")
+            return success, msg
         except Exception as e:
             logger.error(f"Login error: {str(e)}")
             return False, str(e)
