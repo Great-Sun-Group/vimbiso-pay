@@ -89,7 +89,7 @@ resource "aws_ecs_task_definition" "app" {
         EOT
       ]
       healthCheck = {
-        command     = ["CMD", "redis-cli", "-p", "${var.redis_cache_port}", "ping"]
+        command     = ["CMD-SHELL", "redis-cli -p ${var.redis_cache_port} ping"]
         interval    = 30
         timeout     = 15
         retries     = 3
@@ -177,7 +177,7 @@ resource "aws_ecs_task_definition" "app" {
         EOT
       ]
       healthCheck = {
-        command     = ["CMD", "redis-cli", "-p", "${var.redis_state_port}", "ping"]
+        command     = ["CMD-SHELL", "redis-cli -p ${var.redis_state_port} ping"]
         interval    = 30
         timeout     = 15
         retries     = 3
