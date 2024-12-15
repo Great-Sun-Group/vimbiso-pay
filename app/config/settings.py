@@ -190,7 +190,8 @@ REST_FRAMEWORK = {
         "rest_framework_xml.renderers.XMLRenderer",
     ],
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Enhanced JWT authentication with user status validation
+        "core.utils.jwt_validators.EnhancedJWTAuthentication",
     ],
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
@@ -221,6 +222,10 @@ SIMPLE_JWT = {
     "SLIDING_TOKEN_REFRESH_EXP_CLAIM": "refresh_exp",
     "SLIDING_TOKEN_LIFETIME": timedelta(minutes=5),
     "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=1),
+    # Add custom validator to check user status on token validation
+    "AUTH_TOKEN_VALIDATORS": [
+        "core.utils.jwt_validators.validate_token_user",
+    ],
 }
 
 CORS_ALLOW_HEADERS = list(default_headers) + ["apiKey"]
@@ -246,29 +251,6 @@ if not DEBUG:
     # Trust X-Forwarded headers from ALB
     USE_X_FORWARDED_HOST = True
     USE_X_FORWARDED_PORT = True
-
-# Logging configuration - Modified for container-friendly setup
-# LOGGING = {
-#     "version": 1,
-#     "disable_existing_loggers": False,
-#     "handlers": {
-#         "console": {
-#             "class": "logging.StreamHandler",
-#             "formatter": "simple",
-#         },
-#     },
-#     "formatters": {
-#         "simple": {
-#             "format": "%(levelname)s %(message)s",
-#         },
-#     },
-#     "loggers": {
-#         "django": {
-#             "handlers": ["console"],
-#             "level": "INFO",
-#         },
-#     },
-# }
 
 LOGGING = {
     "version": 1,
