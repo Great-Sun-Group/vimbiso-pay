@@ -1,4 +1,3 @@
-"""State management service implementation"""
 import logging
 from typing import Any, Dict, Optional
 from enum import Enum
@@ -12,7 +11,6 @@ from .exceptions import (
     InvalidUserError,
     StateNotFoundError,
 )
-from .interface import StateServiceInterface
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +69,7 @@ class StateTransition:
             return True
 
 
-class StateService(StateServiceInterface):
+class StateService:
     """Implementation of the state management service with proper state machine"""
 
     def __init__(self, redis_client):
@@ -96,20 +94,20 @@ class StateService(StateServiceInterface):
         return f"{self.state_lock_prefix}{user_id}"
 
     def _acquire_lock(self, user_id: str, timeout: int = 10) -> bool:
-        """Acquire lock for state updates with timeout using Django cache add"""
-        lock_key = self._get_lock_key(user_id)
+        """Acquire lock for state updates with timeout"""
+        lock_key = f"{user_id}_lock"
         end_time = time.time() + timeout
 
         while time.time() < end_time:
-            # Use add() which only sets if key doesn't exist (atomic operation)
-            if self.redis.add(lock_key, "1", timeout=30):  # Lock expires after 30 seconds
+            if not self.redis.get(lock_key):
+                self.redis.set(lock_key, "locked", 30)
                 return True
             time.sleep(0.1)
         return False
 
     def _release_lock(self, user_id: str) -> None:
         """Release state update lock"""
-        self.redis.delete(self._get_lock_key(user_id))
+        self.redis.delete(f"{user_id}_lock")
 
     def _validate_state_data(self, state_data: Dict[str, Any]) -> None:
         """Validate state data structure and required fields"""
@@ -138,8 +136,14 @@ class StateService(StateServiceInterface):
             state_json = self.redis.get(state_key)
 
             if not state_json:
-                logger.warning(f"No state found for user {user_id}")
-                raise StateNotFoundError(f"No state found for user {user_id}")
+                logger.warning(f"No state found for user {user_id}, creating a new state")
+                new_state = {
+                    "stage": StateStage.INIT.value,
+                    "option": "",
+                    "last_updated": time.time()
+                }
+                self.redis.set(state_key, json.dumps(new_state), self.state_ttl)
+                return new_state
 
             return json.loads(state_json)
         except Exception as e:
@@ -184,12 +188,8 @@ class StateService(StateServiceInterface):
                 "last_updated": time.time()
             })
 
-            # Store in Redis with TTL using Django cache set
-            self.redis.set(
-                state_key,
-                json.dumps(new_state),
-                timeout=self.state_ttl
-            )
+            # Store in Redis with TTL
+            self.redis.set(state_key, json.dumps(new_state), self.state_ttl)
             logger.info(f"Updated state for user {user_id}: stage={stage}, update_from={update_from}")
         except Exception as e:
             logger.error(f"Error updating state for user {user_id}: {str(e)}")
@@ -219,11 +219,7 @@ class StateService(StateServiceInterface):
                             "jwt_token": jwt_token,
                             "last_updated": time.time()
                         }
-                        self.redis.set(
-                            state_key,
-                            json.dumps(new_state),
-                            timeout=self.state_ttl
-                        )
+                        self.redis.setex(state_key, self.state_ttl, json.dumps(new_state))
                         logger.info(f"Reset state for user {user_id} preserving JWT token")
                         return
                 except StateNotFoundError:

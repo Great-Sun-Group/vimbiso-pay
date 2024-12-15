@@ -31,13 +31,14 @@ class AccountActionHandler(BaseActionHandler):
     def handle_action_authorize_member(self) -> WhatsAppMessage:
         """Handle member authorization flow"""
         user = self.service.user
-        current_state = user.state.get_state(user)
+        current_state = self.service.state.get_state(user.mobile_number)
 
         if not current_state.get("profile"):
             response = self.service.refresh(reset=True)
             if response:
                 self.service.state.update_state(
-                    self.service.current_state,
+                    user_id=user.mobile_number,
+                    new_state=self.service.current_state,
                     stage="handle_action_register",
                     update_from="handle_action_authorize_member",
                     option="handle_action_register",
@@ -49,13 +50,14 @@ class AccountActionHandler(BaseActionHandler):
             selected_profile = current_state["profile"]["memberDashboard"]["accounts"][0]
             current_state["current_account"] = selected_profile
             self.service.state.update_state(
-                state=current_state,
+                user_id=user.mobile_number,
+                new_state=current_state,
                 stage="handle_action_authorize_member",
                 update_from="handle_action_authorize_member",
                 option="handle_action_authorize_member",
             )
 
-        if user.state.option == "handle_action_confirm_authorization":
+        if current_state.get("option") == "handle_action_confirm_authorization":
             return self._handle_authorization_confirmation(current_state)
 
         if self.service.message["type"] == "nfm_reply":
@@ -71,13 +73,14 @@ class AccountActionHandler(BaseActionHandler):
     def handle_action_notifications(self) -> WhatsAppMessage:
         """Handle notification settings"""
         user = self.service.user
-        current_state = user.state.get_state(user)
+        current_state = self.service.state.get_state(user.mobile_number)
 
         if not current_state.get("profile"):
             response = self.service.refresh(reset=True)
             if response:
                 self.service.state.update_state(
-                    self.service.current_state,
+                    user_id=user.mobile_number,
+                    new_state=self.service.current_state,
                     stage="handle_action_register",
                     update_from="handle_action_notifications",
                     option="handle_action_register",
@@ -89,7 +92,8 @@ class AccountActionHandler(BaseActionHandler):
             selected_profile = current_state["profile"]["memberDashboard"]["accounts"][0]
             current_state["current_account"] = selected_profile
             self.service.state.update_state(
-                state=current_state,
+                user_id=user.mobile_number,
+                new_state=current_state,
                 stage="handle_action_notifications",
                 update_from="handle_action_notifications",
                 option="handle_action_notifications",
@@ -165,7 +169,8 @@ class AccountActionHandler(BaseActionHandler):
             }
 
             self.service.state.update_state(
-                state=current_state,
+                user_id=self.service.user.mobile_number,
+                new_state=current_state,
                 stage="handle_action_authorize_member",
                 update_from="handle_action_authorize_member",
                 option="handle_action_confirm_authorization",
