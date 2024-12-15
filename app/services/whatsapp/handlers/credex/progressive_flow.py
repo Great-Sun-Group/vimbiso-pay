@@ -45,18 +45,25 @@ class ProgressiveFlowMixin:
             self, current_state: Dict[str, Any], member_id: str,
             sender_account_id: str, sender_account_name: str) -> Dict[str, Any]:
         """Initialize flow state with required fields"""
+        # Convert profile data to proper structure if needed
+        profile_data = current_state.get("profile", {})
+        if isinstance(profile_data, dict) and "data" not in profile_data:
+            profile_data = {"data": profile_data}
+
         return {
             "id": "credex_offer",
+            "current_step": 0,  # Initialize current_step
             "stage": StateStage.CREDEX.value,
             "option": "handle_action_offer_credex",
             "data": {
-                "profile": current_state["profile"]["data"],
+                "profile": profile_data,
                 "current_account": current_state.get("current_account"),
                 "authorizer_member_id": member_id,
                 "issuer_member_id": member_id,
                 "sender_account": sender_account_name,
                 "sender_account_id": sender_account_id,
-                "phone": self.service.user.mobile_number
+                "phone": self.service.user.mobile_number,
+                "version": 1  # Add version tracking
             }
         }
 
@@ -67,19 +74,23 @@ class ProgressiveFlowMixin:
                 logger.error("Profile data is not a dictionary")
                 return False
 
-            if "data" not in profile_data:
-                logger.error("Profile data missing 'data' key")
+            # Handle both direct and nested data structures
+            data = profile_data.get("data", profile_data)
+            if not isinstance(data, dict):
+                logger.error("Profile data['data'] is not a dictionary")
                 return False
 
-            if "action" not in profile_data["data"]:
-                logger.error("Profile data missing 'action' key")
+            action = data.get("action", {})
+            if not isinstance(action, dict):
+                logger.error("Action data is not a dictionary")
                 return False
 
-            if "details" not in profile_data["data"]["action"]:
-                logger.error("Profile data missing 'details' key")
+            details = action.get("details", {})
+            if not isinstance(details, dict):
+                logger.error("Details data is not a dictionary")
                 return False
 
-            if "memberID" not in profile_data["data"]["action"]["details"]:
+            if "memberID" not in details:
                 logger.error("Profile data missing 'memberID' key")
                 return False
 
@@ -96,7 +107,9 @@ class ProgressiveFlowMixin:
                 if account_data.get("isOwnedAccount"):
                     return account_data.get("accountID"), account_data.get("accountName", "Your Account")
 
-            dashboard = profile_data.get("dashboard", {})
+            # Handle both direct and nested data structures
+            data = profile_data.get("data", profile_data)
+            dashboard = data.get("dashboard", {})
             accounts = dashboard.get("accounts", [])
             for account in accounts:
                 if (account.get("success") and
@@ -130,7 +143,8 @@ class ProgressiveFlowMixin:
                 return False
 
             # Get member ID and account info
-            member_id = profile_data["data"]["action"]["details"]["memberID"]
+            data = profile_data.get("data", profile_data)
+            member_id = data["action"]["details"]["memberID"]
             selected_profile = current_state.get("current_account")
             sender_account_id, sender_account_name = self._extract_sender_account_info(
                 profile_data, selected_profile
@@ -201,10 +215,11 @@ class ProgressiveFlowMixin:
             logger.debug(f"Message body: {self.service.body}")
 
             # Get member ID and account info
-            member_id = current_state["profile"]["data"]["action"]["details"]["memberID"]
+            profile_data = current_state.get("profile", {})
+            data = profile_data.get("data", profile_data)
+            member_id = data["action"]["details"]["memberID"]
             sender_account_id, sender_account_name = self._extract_sender_account_info(
-                current_state["profile"]["data"],
-                selected_profile
+                profile_data, selected_profile
             )
 
             # Initialize base state
@@ -246,7 +261,7 @@ class ProgressiveFlowMixin:
                     )
 
                     if isinstance(result, CredexOfferFlow):
-                        result.initialize_from_profile(current_state["profile"]["data"])
+                        result.initialize_from_profile(data)
                         result.state.update(current_state["flow_data"]["data"])
                         message = result.current_step.message
                         if callable(message):
@@ -302,7 +317,7 @@ class ProgressiveFlowMixin:
                 if "data" not in current_state["flow_data"]:
                     current_state["flow_data"]["data"] = {}
                 current_state["flow_data"]["data"].update({
-                    "profile": current_state["profile"]["data"],
+                    "profile": data,
                     "current_account": selected_profile,  # Include selected account
                     "authorizer_member_id": member_id,
                     "issuer_member_id": member_id,
@@ -338,7 +353,7 @@ class ProgressiveFlowMixin:
                 })
                 if "flow_data" in current_state and "data" in current_state["flow_data"]:
                     current_state["flow_data"]["data"].update({
-                        "profile": current_state["profile"]["data"],
+                        "profile": data,
                         "current_account": selected_profile,  # Include selected account
                         "authorizer_member_id": member_id,
                         "issuer_member_id": member_id,
@@ -372,14 +387,16 @@ class ProgressiveFlowMixin:
             # Initialize flow_data with member IDs and account info
             current_state["flow_data"] = {
                 "id": "credex_offer",  # Set correct flow ID
+                "current_step": 0,  # Initialize current_step
                 "data": {
-                    "profile": current_state["profile"]["data"],
+                    "profile": data,
                     "current_account": selected_profile,  # Include selected account
                     "authorizer_member_id": member_id,
                     "issuer_member_id": member_id,
                     "sender_account": sender_account_name,
                     "sender_account_id": sender_account_id,
-                    "phone": self.service.user.mobile_number
+                    "phone": self.service.user.mobile_number,
+                    "version": 1  # Add version tracking
                 }
             }
             logger.debug(f"Initial flow_data: {current_state['flow_data']['data']}")
@@ -399,7 +416,7 @@ class ProgressiveFlowMixin:
             # If result is a Flow instance
             if isinstance(result, CredexOfferFlow):
                 # Initialize flow with profile data
-                result.initialize_from_profile(current_state["profile"]["data"])
+                result.initialize_from_profile(data)
                 # Set initial state with all required data
                 result.state.update(current_state["flow_data"]["data"])
                 logger.debug(f"Flow state after initialization: {result.state}")
