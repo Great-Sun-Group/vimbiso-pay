@@ -3,13 +3,13 @@ from typing import Any, Dict, Optional
 from enum import Enum
 import json
 import time
+from redis.exceptions import WatchError
 
 from .exceptions import (
     InvalidOptionError,
     InvalidStateError,
     InvalidStageError,
     InvalidUserError,
-    StateNotFoundError,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,6 +78,7 @@ class StateService:
         self.state_key_prefix = "user_state:"
         self.state_lock_prefix = "user_state_lock:"
         self.state_ttl = 3600  # 1 hour TTL for state
+        self.lock_timeout = 30  # 30 seconds lock timeout
 
     def _validate_user_id(self, user_id: str) -> None:
         """Validate user ID"""
@@ -94,41 +95,60 @@ class StateService:
         return f"{self.state_lock_prefix}{user_id}"
 
     def _acquire_lock(self, user_id: str, timeout: int = 10) -> bool:
-        """Acquire lock for state updates with timeout"""
-        lock_key = f"{user_id}_lock"
+        """Acquire lock for state updates with timeout and proper expiry"""
+        lock_key = self._get_lock_key(user_id)
         end_time = time.time() + timeout
 
         while time.time() < end_time:
-            if not self.redis.get(lock_key):
-                self.redis.set(lock_key, "locked", 30)
+            # Use SET NX with expiry to ensure atomic lock acquisition
+            if self.redis.set(lock_key, "1", nx=True, ex=self.lock_timeout):
                 return True
             time.sleep(0.1)
         return False
 
     def _release_lock(self, user_id: str) -> None:
         """Release state update lock"""
-        self.redis.delete(f"{user_id}_lock")
+        self.redis.delete(self._get_lock_key(user_id))
 
     def _validate_state_data(self, state_data: Dict[str, Any]) -> None:
         """Validate state data structure and required fields"""
-        required_fields = {"stage", "option"}
         if not isinstance(state_data, dict):
             raise InvalidStateError("State must be a dictionary")
-        if not all(field in state_data for field in required_fields):
-            raise InvalidStateError(f"State must contain fields: {required_fields}")
 
-    def _preserve_auth_token(self, user_id: str, new_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Preserve JWT token when updating state"""
-        try:
-            current_state = self.get_state(user_id)
-            if "jwt_token" in current_state and "jwt_token" not in new_state:
-                new_state["jwt_token"] = current_state["jwt_token"]
-        except StateNotFoundError:
-            pass
-        return new_state
+        required_fields = {"stage", "option"}
+        missing_fields = required_fields - set(state_data.keys())
+        if missing_fields:
+            raise InvalidStateError(f"State missing required fields: {missing_fields}")
+
+        # Validate nested structures
+        if "flow_data" in state_data:
+            flow_data = state_data["flow_data"]
+            if not isinstance(flow_data, dict):
+                raise InvalidStateError("Flow data must be a dictionary")
+            required_flow_fields = {"id", "current_step", "data"}
+            missing_flow_fields = required_flow_fields - set(flow_data.keys())
+            if missing_flow_fields:
+                raise InvalidStateError(f"Flow data missing required fields: {missing_flow_fields}")
+
+    def _preserve_state_data(self, current_state: Dict[str, Any], new_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Preserve essential state data during updates"""
+        preserved_fields = {
+            "jwt_token",
+            "profile",
+            "current_account",
+            "member",
+            "flow_data"
+        }
+
+        result = new_state.copy()
+        for field in preserved_fields:
+            if field in current_state and field not in new_state:
+                result[field] = current_state[field]
+
+        return result
 
     def get_state(self, user_id: str) -> Dict[str, Any]:
-        """Retrieve the current state for a user"""
+        """Retrieve the current state for a user with proper error handling"""
         self._validate_user_id(user_id)
 
         try:
@@ -136,16 +156,24 @@ class StateService:
             state_json = self.redis.get(state_key)
 
             if not state_json:
-                logger.warning(f"No state found for user {user_id}, creating a new state")
+                logger.warning(f"No state found for user {user_id}, creating new state")
                 new_state = {
                     "stage": StateStage.INIT.value,
                     "option": "",
-                    "last_updated": time.time()
+                    "last_updated": time.time(),
+                    "version": 1  # Add version tracking
                 }
                 self.redis.set(state_key, json.dumps(new_state), self.state_ttl)
                 return new_state
 
-            return json.loads(state_json)
+            try:
+                state = json.loads(state_json)
+                self._validate_state_data(state)
+                return state
+            except json.JSONDecodeError:
+                logger.error(f"Corrupted state data for user {user_id}")
+                raise InvalidStateError("Corrupted state data")
+
         except Exception as e:
             logger.error(f"Error retrieving state for user {user_id}: {str(e)}")
             raise
@@ -158,80 +186,102 @@ class StateService:
         update_from: str,
         option: Optional[str] = None
     ) -> None:
-        """Update the state for a user with proper locking and validation"""
+        """Update the state for a user with atomic operations and validation"""
         self._validate_user_id(user_id)
         self._validate_state_data(new_state)
 
-        if not self._acquire_lock(user_id):
-            raise InvalidStateError("Could not acquire state lock")
+        state_key = self._get_state_key(user_id)
 
-        try:
-            state_key = self._get_state_key(user_id)
-            try:
-                current_state = self.get_state(user_id)
-                current_stage = current_state.get("stage")
-            except StateNotFoundError:
-                current_stage = None
+        # Use Redis transaction for atomic updates
+        with self.redis.pipeline() as pipe:
+            while True:
+                try:
+                    # Watch the state key for changes
+                    pipe.watch(state_key)
 
-            # Validate state transition
-            if not StateTransition.is_valid_transition(current_stage, stage):
-                raise InvalidStageError(f"Invalid state transition from {current_stage} to {stage}")
+                    # Get current state
+                    current_state_json = pipe.get(state_key)
+                    current_state = json.loads(current_state_json) if current_state_json else None
+                    current_stage = current_state.get("stage") if current_state else None
 
-            # Preserve auth token
-            new_state = self._preserve_auth_token(user_id, new_state)
+                    # Validate state transition
+                    if not StateTransition.is_valid_transition(current_stage, stage):
+                        raise InvalidStageError(f"Invalid state transition from {current_stage} to {stage}")
 
-            # Update state with new values
-            new_state.update({
-                "stage": stage,
-                "update_from": update_from,
-                "option": option if option is not None else "",
-                "last_updated": time.time()
-            })
+                    # Start transaction
+                    pipe.multi()
 
-            # Store in Redis with TTL
-            self.redis.set(state_key, json.dumps(new_state), self.state_ttl)
-            logger.info(f"Updated state for user {user_id}: stage={stage}, update_from={update_from}")
-        except Exception as e:
-            logger.error(f"Error updating state for user {user_id}: {str(e)}")
-            raise
-        finally:
-            self._release_lock(user_id)
+                    # Preserve essential data and prepare new state
+                    if current_state:
+                        new_state = self._preserve_state_data(current_state, new_state)
+
+                    # Update state metadata
+                    new_state.update({
+                        "stage": stage,
+                        "update_from": update_from,
+                        "option": option if option is not None else "",
+                        "last_updated": time.time(),
+                        "version": (current_state.get("version", 0) + 1) if current_state else 1
+                    })
+
+                    # Store updated state
+                    pipe.set(state_key, json.dumps(new_state), self.state_ttl)
+
+                    # Execute transaction
+                    pipe.execute()
+                    logger.info(f"Updated state for user {user_id}: stage={stage}, update_from={update_from}")
+                    break
+
+                except WatchError:
+                    # Key changed during transaction, retry
+                    logger.warning(f"Concurrent state update detected for user {user_id}, retrying")
+                    continue
+                except Exception as e:
+                    logger.error(f"Error updating state for user {user_id}: {str(e)}")
+                    raise
 
     def reset_state(self, user_id: str, preserve_auth: bool = True) -> None:
-        """Reset the state for a user with option to preserve auth token"""
+        """Reset the state for a user with atomic operations"""
         self._validate_user_id(user_id)
+        state_key = self._get_state_key(user_id)
 
-        if not self._acquire_lock(user_id):
-            raise InvalidStateError("Could not acquire state lock")
-
-        try:
-            state_key = self._get_state_key(user_id)
-
-            if preserve_auth:
+        with self.redis.pipeline() as pipe:
+            while True:
                 try:
-                    current_state = self.get_state(user_id)
-                    jwt_token = current_state.get("jwt_token")
+                    pipe.watch(state_key)
 
-                    if jwt_token:
-                        new_state = {
-                            "stage": StateStage.INIT.value,
-                            "option": "",
-                            "jwt_token": jwt_token,
-                            "last_updated": time.time()
-                        }
-                        self.redis.setex(state_key, self.state_ttl, json.dumps(new_state))
-                        logger.info(f"Reset state for user {user_id} preserving JWT token")
-                        return
-                except StateNotFoundError:
-                    pass
+                    if preserve_auth:
+                        current_state_json = pipe.get(state_key)
+                        if current_state_json:
+                            current_state = json.loads(current_state_json)
+                            jwt_token = current_state.get("jwt_token")
 
-            self.redis.delete(state_key)
-            logger.info(f"Reset state for user {user_id}")
-        except Exception as e:
-            logger.error(f"Error resetting state for user {user_id}: {str(e)}")
-            raise
-        finally:
-            self._release_lock(user_id)
+                            if jwt_token:
+                                pipe.multi()
+                                new_state = {
+                                    "stage": StateStage.INIT.value,
+                                    "option": "",
+                                    "jwt_token": jwt_token,
+                                    "last_updated": time.time(),
+                                    "version": current_state.get("version", 0) + 1
+                                }
+                                pipe.set(state_key, json.dumps(new_state), self.state_ttl)
+                                pipe.execute()
+                                logger.info(f"Reset state for user {user_id} preserving JWT token")
+                                return
+
+                    # If no auth to preserve or no current state, delete the key
+                    pipe.multi()
+                    pipe.delete(state_key)
+                    pipe.execute()
+                    logger.info(f"Reset state for user {user_id}")
+                    break
+
+                except WatchError:
+                    continue
+                except Exception as e:
+                    logger.error(f"Error resetting state for user {user_id}: {str(e)}")
+                    raise
 
     def get_stage(self, user_id: str) -> str:
         """Get the current stage for a user"""
