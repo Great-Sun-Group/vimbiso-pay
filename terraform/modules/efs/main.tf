@@ -49,8 +49,8 @@ resource "aws_efs_access_point" "app_data" {
   })
 }
 
-# Redis Data Access Point with specific directory structure
-resource "aws_efs_access_point" "redis_data" {
+# Redis Cache Access Point
+resource "aws_efs_access_point" "redis_cache" {
   file_system_id = aws_efs_file_system.main.id
 
   posix_user {
@@ -59,7 +59,7 @@ resource "aws_efs_access_point" "redis_data" {
   }
 
   root_directory {
-    path = "/redis/data"  # Changed to dedicated Redis directory
+    path = "/redis/cache"  # Dedicated cache directory
     creation_info {
       owner_gid   = 999  # Alpine Redis group
       owner_uid   = 999  # Alpine Redis user
@@ -68,7 +68,30 @@ resource "aws_efs_access_point" "redis_data" {
   }
 
   tags = merge(var.tags, {
-    Name = "vimbiso-pay-redis-ap-${var.environment}"
+    Name = "vimbiso-pay-redis-cache-ap-${var.environment}"
+  })
+}
+
+# Redis State Access Point
+resource "aws_efs_access_point" "redis_state" {
+  file_system_id = aws_efs_file_system.main.id
+
+  posix_user {
+    gid = 999  # Alpine Redis group
+    uid = 999  # Alpine Redis user
+  }
+
+  root_directory {
+    path = "/redis/state"  # Dedicated state directory
+    creation_info {
+      owner_gid   = 999  # Alpine Redis group
+      owner_uid   = 999  # Alpine Redis user
+      permissions = "755"
+    }
+  }
+
+  tags = merge(var.tags, {
+    Name = "vimbiso-pay-redis-state-ap-${var.environment}"
   })
 }
 
@@ -118,7 +141,8 @@ resource "aws_efs_file_system_policy" "main" {
           StringEquals = {
             "elasticfilesystem:AccessPointArn": [
               aws_efs_access_point.app_data.arn,
-              aws_efs_access_point.redis_data.arn
+              aws_efs_access_point.redis_cache.arn,
+              aws_efs_access_point.redis_state.arn
             ]
           }
         }
