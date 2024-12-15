@@ -11,6 +11,7 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 from rest_framework.permissions import AllowAny
 from rest_framework import routers
 from core.utils.throttling import HealthCheckRateThrottle
+from services.state.config import RedisConfig
 
 from api import views
 
@@ -27,34 +28,50 @@ router.register(r'offers', views.OfferViewSet, basename='offer')
 @permission_classes([AllowAny])
 @throttle_classes([HealthCheckRateThrottle])
 def health_check(request):
+    status_info = {
+        "status": "ok",
+        "message": "Service is healthy",
+        "components": {
+            "cache_redis": "unknown",
+            "state_redis": "unknown"
+        }
+    }
+
+    # Check cache Redis
     try:
-        # Test Redis connectivity with timeout
         cache.set("health_check", "ok", 10)
         result = cache.get("health_check")
-        if result != "ok":
-            return JsonResponse(
-                {
-                    "status": "error",
-                    "message": "Redis connectivity check failed",
-                    "detail": "Cache set/get operation failed",
-                },
-                status=500,
-            )
-
-        # Return success response
-        return JsonResponse(
-            {"status": "ok", "message": "Service is healthy", "redis": "connected"}
-        )
+        status_info["components"]["cache_redis"] = "connected" if result == "ok" else "error"
     except Exception as e:
         import logging
-
         logger = logging.getLogger("django")
-        logger.error(f"Health check failed: {str(e)}", exc_info=True)
+        logger.warning(f"Cache Redis check failed: {str(e)}")
+        status_info["components"]["cache_redis"] = "error"
 
-        return JsonResponse(
-            {"status": "error", "message": "Health check failed", "detail": str(e)},
-            status=500,
-        )
+    # Check state Redis
+    try:
+        state_redis = RedisConfig().get_client()
+        state_redis.set("health_check", "ok", 10)
+        result = state_redis.get("health_check")
+        status_info["components"]["state_redis"] = "connected" if result == "ok" else "error"
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("django")
+        logger.warning(f"State Redis check failed: {str(e)}")
+        status_info["components"]["state_redis"] = "error"
+
+    # Determine overall status
+    if all(v == "connected" for v in status_info["components"].values()):
+        status_info["status"] = "ok"
+        return JsonResponse(status_info)
+    elif all(v == "error" for v in status_info["components"].values()):
+        status_info["status"] = "error"
+        status_info["message"] = "All Redis connections failed"
+        return JsonResponse(status_info, status=500)
+    else:
+        status_info["status"] = "degraded"
+        status_info["message"] = "Some Redis connections failed"
+        return JsonResponse(status_info, status=200)
 
 
 urlpatterns = [
