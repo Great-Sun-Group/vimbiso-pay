@@ -1,6 +1,6 @@
 """Progressive flow mixin for credex handlers"""
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 
 from core.messaging.flow_handler import FlowHandler
 from .offer_flow_v2 import CredexOfferFlow
@@ -40,6 +40,65 @@ class ProgressiveFlowMixin:
 
         logger.debug("Progressive flow initialized with service injector")
 
+    def _validate_profile_data(self, profile_data: Dict[str, Any]) -> bool:
+        """Validate profile data structure"""
+        try:
+            if not isinstance(profile_data, dict):
+                logger.error("Profile data is not a dictionary")
+                return False
+
+            # Check required profile structure
+            if "data" not in profile_data:
+                logger.error("Profile data missing 'data' key")
+                return False
+
+            if "action" not in profile_data["data"]:
+                logger.error("Profile data missing 'action' key")
+                return False
+
+            if "details" not in profile_data["data"]["action"]:
+                logger.error("Profile data missing 'details' key")
+                return False
+
+            if "memberID" not in profile_data["data"]["action"]["details"]:
+                logger.error("Profile data missing 'memberID' key")
+                return False
+
+            return True
+        except Exception as e:
+            logger.error(f"Profile validation error: {str(e)}")
+            return False
+
+    def _validate_flow_data(self, flow_data: Dict[str, Any]) -> bool:
+        """Validate flow data structure"""
+        try:
+            if not isinstance(flow_data, dict):
+                logger.error("Flow data is not a dictionary")
+                return False
+
+            required_keys = ["id", "data"]
+            for key in required_keys:
+                if key not in flow_data:
+                    logger.error(f"Flow data missing required key: {key}")
+                    return False
+
+            if not isinstance(flow_data["data"], dict):
+                logger.error("Flow data 'data' is not a dictionary")
+                return False
+
+            return True
+        except Exception as e:
+            logger.error(f"Flow data validation error: {str(e)}")
+            return False
+
+    def _get_member_id(self, profile_data: Dict[str, Any]) -> Optional[str]:
+        """Safely extract member ID from profile data"""
+        try:
+            return profile_data.get("data", {}).get("action", {}).get("details", {}).get("memberID")
+        except Exception as e:
+            logger.error(f"Error extracting member ID: {str(e)}")
+            return None
+
     def _inject_flow_services(self, flow: Any) -> None:
         """Inject required services into flow"""
         flow.transaction_service = self.transaction_service
@@ -77,11 +136,25 @@ class ProgressiveFlowMixin:
         update_from: str,
         option: str = None,
         preserve_flow: bool = True
-    ) -> None:
+    ) -> bool:
         """Update state with consistent pattern"""
         try:
+            # Validate current state
+            if not isinstance(current_state, dict):
+                logger.error("Invalid current state type")
+                return False
+
+            # Validate profile data if present
+            profile_data = current_state.get("profile", {})
+            if profile_data and not self._validate_profile_data(profile_data):
+                logger.error("Invalid profile data structure")
+                return False
+
             # Force credex stage when flow is active
             if "flow_data" in current_state:
+                if not self._validate_flow_data(current_state["flow_data"]):
+                    logger.error("Invalid flow data structure")
+                    return False
                 stage = StateStage.CREDEX.value
                 if not option:
                     option = "handle_action_offer_credex"
@@ -89,13 +162,12 @@ class ProgressiveFlowMixin:
 
             # Create new state with only essential data
             new_state = {
-                "profile": current_state.get("profile", {}),
+                "profile": profile_data,
                 "current_account": current_state.get("current_account"),  # Preserve selected account
                 "last_refresh": True
             }
 
             # Extract sender account info from profile data
-            profile_data = current_state.get("profile", {}).get("data", {})
             selected_profile = current_state.get("current_account")
             sender_account_id, sender_account_name = self._extract_sender_account_info(profile_data, selected_profile)
 
@@ -129,7 +201,7 @@ class ProgressiveFlowMixin:
                 if "data" in new_state["flow_data"]:
                     # Include profile data in flow state
                     new_state["flow_data"]["data"]["profile"] = profile_data
-                    new_state["flow_data"]["data"]["current_account"] = selected_profile  # Include selected account
+                    new_state["flow_data"]["data"]["current_account"] = selected_profile
                     # Add sender account info to flow data
                     if sender_account_id:
                         new_state["flow_data"]["data"]["sender_account_id"] = sender_account_id
@@ -149,8 +221,10 @@ class ProgressiveFlowMixin:
             )
             logger.debug(f"Flow state updated from {update_from}")
             logger.debug(f"Updated state: {new_state}")
+            return True
         except Exception as e:
             logger.error(f"Error updating flow state: {str(e)}")
+            return False
 
     def _handle_progressive_flow(
         self,
@@ -159,6 +233,14 @@ class ProgressiveFlowMixin:
     ) -> Tuple[bool, WhatsAppMessage]:
         """Handle progressive flow"""
         try:
+            # Validate current state
+            if not isinstance(current_state, dict):
+                raise ValueError("Invalid current state type")
+
+            # Validate profile data
+            if not self._validate_profile_data(current_state.get("profile", {})):
+                raise ValueError("Invalid profile data structure")
+
             # Log message details
             logger.debug(f"Message type: {self.service.message_type}")
             logger.debug(f"Message body: {self.service.body}")
@@ -167,10 +249,14 @@ class ProgressiveFlowMixin:
                 logger.debug(f"Interactive type: {interactive.get('type')}")
                 logger.debug(f"Interactive content: {interactive}")
 
-            # Get member IDs and account info
-            member_id = current_state["profile"]["data"]["action"]["details"]["memberID"]
+            # Get member ID safely
+            member_id = self._get_member_id(current_state.get("profile", {}))
+            if not member_id:
+                raise ValueError("Could not extract member ID from profile")
+
+            # Get account info
             sender_account_id, sender_account_name = self._extract_sender_account_info(
-                current_state["profile"]["data"],
+                current_state.get("profile", {}).get("data", {}),
                 selected_profile
             )
             logger.debug(f"Member IDs: member={member_id}")
@@ -183,7 +269,7 @@ class ProgressiveFlowMixin:
                 "sender_account": sender_account_name,
                 "sender_account_id": sender_account_id,
                 "phone": self.service.user.mobile_number,
-                "current_account": selected_profile  # Preserve selected account
+                "current_account": selected_profile
             })
 
             # Handle menu action selection

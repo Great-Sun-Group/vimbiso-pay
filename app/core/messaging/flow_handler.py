@@ -27,6 +27,49 @@ class FlowHandler:
             if service_injector:
                 self._service_injectors[flow_class.FLOW_ID] = service_injector
 
+    def _validate_profile_data(self, profile_data: Dict[str, Any]) -> bool:
+        """Validate profile data structure"""
+        try:
+            if not isinstance(profile_data, dict):
+                logger.error("Profile data is not a dictionary")
+                return False
+
+            # Check required profile structure
+            if "data" not in profile_data:
+                logger.error("Profile data missing 'data' key")
+                return False
+
+            if "action" not in profile_data["data"]:
+                logger.error("Profile data missing 'action' key")
+                return False
+
+            if "details" not in profile_data["data"]["action"]:
+                logger.error("Profile data missing 'details' key")
+                return False
+
+            return True
+        except Exception as e:
+            logger.error(f"Profile validation error: {str(e)}")
+            return False
+
+    def _preserve_critical_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Preserve critical state data during cleanup"""
+        preserved_state = {}
+        critical_fields = [
+            "profile",
+            "current_account",
+            "jwt_token",
+            "authorizer_member_id",
+            "issuer_member_id",
+            "sender_account",
+            "sender_account_id",
+            "phone"
+        ]
+        for field in critical_fields:
+            if field in state:
+                preserved_state[field] = state[field]
+        return preserved_state
+
     def get_flow(self, flow_id: str, state: Optional[Dict[str, Any]] = None) -> Optional[Flow]:
         """Get flow instance by ID and optionally restore its state"""
         try:
@@ -49,6 +92,12 @@ class FlowHandler:
             # Restore and validate state if provided
             if state:
                 try:
+                    # Validate profile data first
+                    profile_data = state.get('profile', {})
+                    if profile_data and not self._validate_profile_data(profile_data):
+                        logger.error("Invalid profile data structure")
+                        return None
+
                     flow.state = state
                     if not flow.validate_state():
                         if not flow.recover_state():
@@ -75,21 +124,37 @@ class FlowHandler:
             return None
 
     def _cleanup_flow_state(self, user_id: str, state: Dict[str, Any], update_from: str = "flow_cleanup") -> None:
-        """Clean up flow state data"""
+        """Clean up flow state data while preserving critical data"""
         try:
-            if "flow_data" in state:
-                del state["flow_data"]
+            # Preserve critical state data
+            preserved_state = self._preserve_critical_state(state)
+
+            # Remove flow data
+            if "flow_data" in preserved_state:
+                del preserved_state["flow_data"]
+
+            # Update state with preserved data
             self.state_service.update_state(
                 user_id=user_id,
-                new_state=state,
+                new_state=preserved_state,
                 stage=StateStage.MENU.value,
                 update_from=update_from
             )
+            logger.debug(f"Flow state cleaned up from {update_from}")
+            logger.debug(f"Preserved state: {preserved_state}")
         except Exception as e:
             logger.error(f"Flow cleanup failed: {str(e)}")
-            # Attempt emergency cleanup
+            # Attempt emergency cleanup while preserving critical data
             try:
+                preserved_state = self._preserve_critical_state(state)
                 self.state_service.reset_state(user_id)
+                if preserved_state:
+                    self.state_service.update_state(
+                        user_id=user_id,
+                        new_state=preserved_state,
+                        stage=StateStage.MENU.value,
+                        update_from="emergency_cleanup"
+                    )
             except Exception:
                 pass
 
@@ -99,6 +164,11 @@ class FlowHandler:
             # Get current state
             state = self.state_service.get_state(user_id)
             logger.debug(f"Current state: {state}")
+
+            # Validate state structure
+            if not isinstance(state, dict):
+                logger.error("Invalid state type")
+                return self._format_error("Invalid state", user_id)
 
             # Get flow data from state
             flow_data = state.get("flow_data", {})
@@ -229,7 +299,7 @@ class FlowHandler:
 
         except Exception as e:
             logger.exception(f"Error handling flow message: {str(e)}")
-            # Attempt to cleanup on error
+            # Attempt to cleanup on error while preserving critical data
             try:
                 self._cleanup_flow_state(user_id, state, "flow_error")
             except Exception:
@@ -243,6 +313,11 @@ class FlowHandler:
             state = self.state_service.get_state(user_id)
             logger.debug(f"Starting flow with state: {state}")
 
+            # Validate state structure
+            if not isinstance(state, dict):
+                logger.error("Invalid state type")
+                return self._format_error("Invalid state", user_id)
+
             # Get flow instance
             flow = self.get_flow(flow_id)
             if not flow:
@@ -255,6 +330,12 @@ class FlowHandler:
                 "profile": state.get("profile", {}),
                 "current_account": state.get("current_account")
             }
+
+            # Validate profile data if present
+            profile_data = state.get("profile", {})
+            if profile_data and not self._validate_profile_data(profile_data):
+                logger.error("Invalid profile data structure")
+                return self._format_error("Invalid profile data", user_id)
 
             try:
                 flow.state = initial_state
