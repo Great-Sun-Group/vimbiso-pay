@@ -80,6 +80,26 @@ class ProgressiveFlowMixin:
                 logger.error("Profile data['data'] is not a dictionary")
                 return False
 
+            # Check if data has dashboard info
+            if "dashboard" in data:
+                # Extract action from dashboard data
+                dashboard = data.get("dashboard", {})
+                if not isinstance(dashboard, dict):
+                    logger.error("Dashboard data is not a dictionary")
+                    return False
+
+                # Look for member ID in dashboard data
+                member_id = dashboard.get("memberID")
+                if member_id:
+                    # Create action structure if not present
+                    if "action" not in data:
+                        data["action"] = {
+                            "details": {
+                                "memberID": member_id
+                            }
+                        }
+
+            # Validate action structure
             action = data.get("action", {})
             if not isinstance(action, dict):
                 logger.error("Action data is not a dictionary")
@@ -90,9 +110,15 @@ class ProgressiveFlowMixin:
                 logger.error("Details data is not a dictionary")
                 return False
 
-            if "memberID" not in details:
-                logger.error("Profile data missing 'memberID' key")
-                return False
+            # Check for memberID in details or try to get it from dashboard
+            if "memberID" not in details and "dashboard" in data:
+                dashboard = data.get("dashboard", {})
+                member_id = dashboard.get("memberID")
+                if member_id:
+                    details["memberID"] = member_id
+                else:
+                    logger.error("Could not find memberID in profile data")
+                    return False
 
             return True
         except Exception as e:
@@ -116,6 +142,10 @@ class ProgressiveFlowMixin:
                         account["data"].get("accountHandle") == self.service.user.mobile_number):
                     account_data = account["data"]
                     return account_data.get("accountID"), account_data.get("accountName", "Your Account")
+
+            # If no account found but have dashboard memberID, use that
+            if dashboard.get("memberID"):
+                return dashboard["memberID"], "Your Account"
 
             return None, "Your Account"
         except Exception as e:
@@ -144,7 +174,14 @@ class ProgressiveFlowMixin:
 
             # Get member ID and account info
             data = profile_data.get("data", profile_data)
-            member_id = data["action"]["details"]["memberID"]
+            member_id = data.get("action", {}).get("details", {}).get("memberID")
+            if not member_id and "dashboard" in data:
+                member_id = data.get("dashboard", {}).get("memberID")
+
+            if not member_id:
+                logger.error("Could not find memberID in profile data")
+                return False
+
             selected_profile = current_state.get("current_account")
             sender_account_id, sender_account_name = self._extract_sender_account_info(
                 profile_data, selected_profile
@@ -217,7 +254,15 @@ class ProgressiveFlowMixin:
             # Get member ID and account info
             profile_data = current_state.get("profile", {})
             data = profile_data.get("data", profile_data)
-            member_id = data["action"]["details"]["memberID"]
+
+            # Try to get member ID from action details or dashboard
+            member_id = data.get("action", {}).get("details", {}).get("memberID")
+            if not member_id and "dashboard" in data:
+                member_id = data.get("dashboard", {}).get("memberID")
+
+            if not member_id:
+                raise ValueError("Could not find memberID in profile data")
+
             sender_account_id, sender_account_name = self._extract_sender_account_info(
                 profile_data, selected_profile
             )
