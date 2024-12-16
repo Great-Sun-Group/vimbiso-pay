@@ -100,6 +100,10 @@ class CachedUserState:
                 "flow_data": None
             }
             state_redis.setex(f"{self.user.mobile_number}", ACTIVITY_TTL, json.dumps(initial_state))
+            self.state = initial_state
+            self.stage = initial_state["stage"]
+            self.option = initial_state["option"]
+            self.direction = "OUT"
         else:
             # Ensure existing state has required structure
             try:
@@ -130,6 +134,10 @@ class CachedUserState:
 
                 # Update state with proper structure
                 state_redis.setex(f"{self.user.mobile_number}", ACTIVITY_TTL, json.dumps(current_state))
+                self.state = current_state
+                self.stage = current_state.get("stage")
+                self.option = current_state.get("option")
+                self.direction = existing_direction
             except (json.JSONDecodeError, TypeError):
                 # Reset to initial state if corrupted
                 initial_state = {
@@ -145,6 +153,10 @@ class CachedUserState:
                     "flow_data": None
                 }
                 state_redis.setex(f"{self.user.mobile_number}", ACTIVITY_TTL, json.dumps(initial_state))
+                self.state = initial_state
+                self.stage = initial_state["stage"]
+                self.option = initial_state["option"]
+                self.direction = "OUT"
 
         # Refresh expiry for existing values
         if existing_direction:
@@ -153,19 +165,6 @@ class CachedUserState:
             state_redis.setex(f"{self.user.mobile_number}_stage", ACTIVITY_TTL, existing_stage)
         if existing_option:
             state_redis.setex(f"{self.user.mobile_number}_option", ACTIVITY_TTL, existing_option)
-
-        # Load current values
-        self.direction = state_redis.get(f"{self.user.mobile_number}_direction")
-        self.stage = state_redis.get(f"{self.user.mobile_number}_stage")
-        self.option = state_redis.get(f"{self.user.mobile_number}_option")
-        self.state = state_redis.get(f"{self.user.mobile_number}")
-        if self.state:
-            try:
-                self.state = json.loads(self.state)
-            except (json.JSONDecodeError, TypeError):
-                self.state = {}
-        else:
-            self.state = {}
 
     def update_state(
         self, state: dict, update_from, stage=None, option=None, direction=None
@@ -195,6 +194,12 @@ class CachedUserState:
                 "action": {},
                 "details": {}
             }
+
+        # Update stage and option in state object
+        if stage:
+            state["stage"] = stage
+        if option:
+            state["option"] = option
 
         # Convert state to JSON string
         state_json = json.dumps(state)
@@ -277,7 +282,10 @@ class CachedUserState:
                 }
                 state_redis.setex(f"{user.mobile_number}", ACTIVITY_TTL, json.dumps(state))
 
+        # Update instance variables from state
         self.state = state
+        self.stage = state.get("stage")
+        self.option = state.get("option")
         return state
 
     def set_jwt_token(self, jwt_token):
@@ -319,8 +327,8 @@ class CachedUserState:
 
         # Update instance variables
         self.state = initial_state
-        self.stage = "handle_action_menu"
-        self.option = None
+        self.stage = initial_state["stage"]
+        self.option = initial_state["option"]
         self.direction = "OUT"
 
         # Restore JWT token if still valid
