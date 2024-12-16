@@ -30,6 +30,6 @@ defusedxml==0.7.1
 idna==3.10
 importlib_metadata==8.5.0
 Markdown==3.7
-sqlparse==0.5.2
+sqlparse==0.5.3
 typing_extensions==4.12.2
 zipp==3.21.0
