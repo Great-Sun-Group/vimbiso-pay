@@ -1,8 +1,21 @@
 export function formatWhatsAppText(text) {
-    return text
-        .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
-        .replace(/_(.*?)_/g, '<em>$1</em>')
-        .replace(/\n/g, '<br>');
+    if (!text) return '';
+
+    // Debug log
+    console.log('Formatting text:', text);
+
+    // Handle WhatsApp markdown
+    const formattedText = text
+        .replace(/\*(.*?)\*/g, '<strong>$1</strong>') // Bold
+        .replace(/_(.*?)_/g, '<em>$1</em>')          // Italic
+        .replace(/~(.*?)~/g, '<del>$1</del>')        // Strikethrough
+        .replace(/```(.*?)```/g, '<code>$1</code>')  // Code
+        .replace(/\n/g, '<br>');                     // Line breaks
+
+    // Debug log
+    console.log('Formatted result:', formattedText);
+
+    return formattedText;
 }
 
 export function createNativeForm(fields, onSubmit) {

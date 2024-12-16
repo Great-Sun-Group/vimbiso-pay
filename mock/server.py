@@ -9,8 +9,7 @@ import requests
 
 from whatsapp_utils import (
     create_whatsapp_payload,
-    extract_message_text,
-    format_mock_response
+    extract_message_text
 )
 
 logging.basicConfig(
@@ -43,6 +42,9 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
         post_data = self.rfile.read(content_length)
         mock_request = json.loads(post_data.decode("utf-8"))
 
+        logger.info("=== WEBHOOK REQUEST START ===")
+        logger.info(f"Received webhook request: {json.dumps(mock_request, indent=2)}")
+
         # Create WhatsApp-formatted webhook payload
         whatsapp_payload = create_whatsapp_payload(
             phone_number=mock_request.get("phone", "263778177125"),
@@ -68,6 +70,7 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 "X-Mock-Testing": "true"  # Indicate this is from mock
             }
 
+            logger.info(f"\nSending request to app: {json.dumps(whatsapp_payload, indent=2)}")
             response = requests.post(
                 APP_ENDPOINT,
                 json=whatsapp_payload,
@@ -76,19 +79,18 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             )
             response.raise_for_status()
             response_data = response.json()
+            logger.info(f"\nReceived raw response from app: {json.dumps(response_data, indent=2)}")
 
-            # Format response like WhatsApp's API
-            mock_response = format_mock_response()
-
-            # Send response
+            # Send response with app's response data
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps(mock_response).encode('utf-8'))
 
-            # Log response for debugging
-            logger.info(f"\nApp response: {json.dumps(response_data, indent=2)}")
-            logger.info(f"Mock response: {json.dumps(mock_response, indent=2)}")
+            # Return app's response data directly
+            logger.info(f"\nSending response to client: {json.dumps(response_data, indent=2)}")
+            self.wfile.write(json.dumps(response_data).encode('utf-8'))
+
+            logger.info("=== WEBHOOK REQUEST END ===\n")
 
         except Exception as e:
             logger.error(f"Error: {str(e)}")

@@ -276,6 +276,29 @@ def extract_message_text(message: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
     return "Unsupported message type"
 
 
+def format_json_response(response_text: str) -> Dict[str, Any]:
+    """Format JSON response text."""
+    try:
+        # Parse response text
+        data = json.loads(response_text)
+
+        # Log the parsed data
+        logger.debug(f"Parsed response data: {json.dumps(data, indent=2)}")
+
+        # Extract response content
+        if isinstance(data, dict):
+            # If response is nested under 'response' key
+            if 'response' in data:
+                return data['response']
+            return data
+
+        return {"text": {"body": str(data)}}
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parsing JSON response: {e}")
+        return {"text": {"body": response_text}}
+
+
 def format_mock_response() -> Dict[str, Any]:
     """Format mock response following WhatsApp Cloud API format."""
     return {
