@@ -251,6 +251,22 @@ class ProgressiveFlowMixin:
             logger.debug(f"Message type: {self.service.message_type}")
             logger.debug(f"Message body: {self.service.body}")
 
+            # Check for numeric input without active flow
+            if (self.service.message_type == "text" and
+                isinstance(self.service.body, str) and
+                self.service.body.replace(".", "").isdigit() and
+                    "flow_data" not in current_state):
+                logger.debug("Received numeric input without active flow")
+                return True, WhatsAppMessage.from_core_message({
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": self.service.user.mobile_number,
+                    "type": "text",
+                    "text": {
+                        "body": "❌ Please start from the menu by selecting 'Send Credex' first."
+                    }
+                })
+
             # Get member ID and account info
             profile_data = current_state.get("profile", {})
             data = profile_data.get("data", profile_data)
@@ -426,54 +442,17 @@ class ProgressiveFlowMixin:
                     return True, WhatsAppMessage.from_core_message(menu_message)
                 return True, WhatsAppMessage.from_core_message(message)
 
-            # Start new flow if none active
-            logger.debug("Starting new progressive flow")
-
-            # Initialize flow_data with member IDs and account info
-            current_state["flow_data"] = {
-                "id": "credex_offer",  # Set correct flow ID
-                "current_step": 0,  # Initialize current_step
-                "data": {
-                    "profile": data,
-                    "current_account": selected_profile,  # Include selected account
-                    "authorizer_member_id": member_id,
-                    "issuer_member_id": member_id,
-                    "sender_account": sender_account_name,
-                    "sender_account_id": sender_account_id,
-                    "phone": self.service.user.mobile_number,
-                    "version": 1  # Add version tracking
+            # Return error for any other input without active flow
+            logger.debug("Received input without active flow")
+            return True, WhatsAppMessage.from_core_message({
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": self.service.user.mobile_number,
+                "type": "text",
+                "text": {
+                    "body": "❌ Please start from the menu by selecting 'Send Credex' first."
                 }
-            }
-            logger.debug(f"Initial flow_data: {current_state['flow_data']['data']}")
-
-            # Update state with new flow
-            self._update_flow_state(
-                current_state=current_state,
-                stage=StateStage.CREDEX.value,  # Force credex stage
-                update_from="flow_init"
-            )
-
-            result = self.flow_handler.start_flow(
-                "credex_offer",
-                self.service.user.mobile_number
-            )
-
-            # If result is a Flow instance
-            if isinstance(result, CredexOfferFlow):
-                # Initialize flow with profile data
-                result.initialize_from_profile(data)
-                # Set initial state with all required data
-                result.state.update(current_state["flow_data"]["data"])
-                logger.debug(f"Flow state after initialization: {result.state}")
-
-                # Get message from current step
-                message = result.current_step.message
-                if callable(message):
-                    message = message(result.state)
-                return True, WhatsAppMessage.from_core_message(message)
-
-            # If result is already a message or dict
-            return True, WhatsAppMessage.from_core_message(result)
+            })
 
         except Exception as e:
             logger.exception(f"Error handling progressive flow: {str(e)}")

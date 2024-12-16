@@ -19,6 +19,9 @@ state_redis = redis.Redis(
     retry_on_timeout=True
 )
 
+# Increase state TTL to 24 hours (in seconds)
+STATE_TTL = 86400
+
 GREETINGS = [
     "menu",
     "memu",
@@ -64,29 +67,26 @@ class CachedUserState:
         self.user = user
         print("USER", user)
 
-        # Get existing state values
+        # Get existing state values with debug logging
         existing_direction = state_redis.get(f"{self.user.mobile_number}_direction")
         existing_stage = state_redis.get(f"{self.user.mobile_number}_stage")
         existing_option = state_redis.get(f"{self.user.mobile_number}_option")
         existing_state = state_redis.get(f"{self.user.mobile_number}")
         self.jwt_token = state_redis.get(f"{self.user.mobile_number}_jwt_token")
 
-        # Initialize each missing value independently
-        if not existing_direction:
-            state_redis.setex(f"{self.user.mobile_number}_direction", 300, "OUT")
-        if not existing_stage:
-            state_redis.setex(f"{self.user.mobile_number}_stage", 300, "handle_action_menu")
+        # Log existing state for debugging
+        print("EXISTING STATE:", {
+            "direction": existing_direction,
+            "stage": existing_stage,
+            "option": existing_option,
+            "state": existing_state,
+            "jwt_token": self.jwt_token
+        })
 
-        # Initialize state with proper structure if missing
-        if not existing_state:
-            initial_state = {
-                "stage": "handle_action_menu",
-                "option": None,
-                "profile": {
-                    "data": {
-                        "action": {},
-                        "details": {}
-                    }
+        # Try to restore state from Redis
+        restored_state = None
+        if existing_state:
+            try:
                 },
                 "current_account": None,
                 "flow_data": None
