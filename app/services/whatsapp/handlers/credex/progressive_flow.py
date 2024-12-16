@@ -251,7 +251,46 @@ class ProgressiveFlowMixin:
             logger.debug(f"Message type: {self.service.message_type}")
             logger.debug(f"Message body: {self.service.body}")
 
-            # Check for numeric input without active flow
+            # Handle menu action selection first
+            if (self.service.message_type == "interactive" and
+                    self.service.message.get("interactive", {}).get("type") == "list_reply"):
+                selected_id = self.service.message["interactive"]["list_reply"].get("id")
+                if selected_id == "handle_action_offer_credex":
+                    logger.debug("Starting new credex offer flow")
+                    # Initialize flow data
+                    member_id = current_state.get("authorizer_member_id")
+                    sender_account_id = current_state.get("sender_account_id")
+                    sender_account_name = current_state.get("sender_account")
+
+                    current_state["flow_data"] = self._initialize_flow_state(
+                        current_state, member_id, sender_account_id, sender_account_name
+                    )
+
+                    # Update state
+                    if not self._update_flow_state(
+                        current_state=current_state,
+                        stage=StateStage.CREDEX.value,
+                        update_from="flow_init",
+                        option="handle_action_offer_credex"
+                    ):
+                        raise ValueError("Failed to update flow state")
+
+                    # Start flow
+                    result = self.flow_handler.start_flow(
+                        "credex_offer",
+                        self.service.user.mobile_number
+                    )
+
+                    if isinstance(result, CredexOfferFlow):
+                        result.initialize_from_profile(current_state.get("profile", {}).get("data", {}))
+                        result.state.update(current_state["flow_data"]["data"])
+                        message = result.current_step.message
+                        if callable(message):
+                            message = message(result.state)
+                        return True, WhatsAppMessage.from_core_message(message)
+                    return True, WhatsAppMessage.from_core_message(result)
+
+            # Now check for numeric input without active flow
             if (self.service.message_type == "text" and
                 isinstance(self.service.body, str) and
                 self.service.body.replace(".", "").isdigit() and
@@ -263,7 +302,7 @@ class ProgressiveFlowMixin:
                     "to": self.service.user.mobile_number,
                     "type": "text",
                     "text": {
-                        "body": "❌ Please start from the menu by selecting 'Send Credex' first."
+                        "body": "❌ Please start from the menu by selecting 'Offer Credex' first."
                     }
                 })
 
@@ -294,41 +333,6 @@ class ProgressiveFlowMixin:
                 "phone": self.service.user.mobile_number,
                 "current_account": selected_profile
             })
-
-            # Handle menu action selection
-            if (self.service.message_type == "interactive" and
-                    self.service.message.get("interactive", {}).get("type") == "list_reply"):
-                selected_id = self.service.message["interactive"]["list_reply"].get("id")
-                if selected_id == "handle_action_offer_credex":
-                    logger.debug("Starting new credex offer flow")
-                    # Initialize flow data
-                    current_state["flow_data"] = self._initialize_flow_state(
-                        current_state, member_id, sender_account_id, sender_account_name
-                    )
-
-                    # Update state
-                    if not self._update_flow_state(
-                        current_state=current_state,
-                        stage=StateStage.CREDEX.value,
-                        update_from="flow_init",
-                        option="handle_action_offer_credex"
-                    ):
-                        raise ValueError("Failed to update flow state")
-
-                    # Start flow
-                    result = self.flow_handler.start_flow(
-                        "credex_offer",
-                        self.service.user.mobile_number
-                    )
-
-                    if isinstance(result, CredexOfferFlow):
-                        result.initialize_from_profile(data)
-                        result.state.update(current_state["flow_data"]["data"])
-                        message = result.current_step.message
-                        if callable(message):
-                            message = message(result.state)
-                        return True, WhatsAppMessage.from_core_message(message)
-                    return True, WhatsAppMessage.from_core_message(result)
 
             # Check for offer actions
             if self.service.message_type == "text" and isinstance(self.service.body, str):
@@ -450,7 +454,7 @@ class ProgressiveFlowMixin:
                 "to": self.service.user.mobile_number,
                 "type": "text",
                 "text": {
-                    "body": "❌ Please start from the menu by selecting 'Send Credex' first."
+                    "body": "❌ Please start from the menu by selecting 'Offer Credex' first."
                 }
             })
 

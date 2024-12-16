@@ -45,7 +45,7 @@ class ProfileMixin(BaseActionHandler):
                 self.service.state.update_state(
                     user_id=user.mobile_number,
                     new_state=current_state,
-                    stage="handle_action_offer_credex",
+                    stage=StateStage.CREDEX.value,  # Use proper stage enum value
                     update_from="profile_select",
                     option="handle_action_offer_credex"
                 )
