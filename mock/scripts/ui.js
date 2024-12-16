@@ -9,11 +9,17 @@ export class ChatUI {
         this.chatContainer = document.getElementById('chatContainer');
         this.statusDiv = document.getElementById('status');
         this.currentFormName = null; // Track current form name
+        this.lastMessageId = null; // Track last message ID for context
     }
 
     displayMessage(data) {
         const messageDiv = document.createElement('div');
         const messageData = data.response || data;
+
+        // Store message ID for context in replies
+        if (messageData.messages?.[0]?.id) {
+            this.lastMessageId = messageData.messages[0].id;
+        }
 
         if (typeof messageData === 'string') {
             messageDiv.className = 'message bot-message whatsapp-text';
@@ -60,21 +66,27 @@ export class ChatUI {
         }
         // Handle button messages
         else if (interactive.type === 'button' && action.buttons) {
-            const buttonsDiv = document.createElement('div');
-            buttonsDiv.className = 'buttons';
+            const buttonsContainer = document.createElement('div');
+            buttonsContainer.className = 'buttons';
 
             action.buttons.forEach(button => {
-                const buttonElement = document.createElement('div');
+                const buttonWrapper = document.createElement('div');
+                buttonWrapper.style.width = '100%';
+                buttonWrapper.style.marginBottom = '8px';
+
+                const buttonElement = document.createElement('button');
                 buttonElement.className = 'button';
                 buttonElement.textContent = button.reply.title;
                 buttonElement.onclick = () => {
                     this.messageInput.value = button.reply.id;
                     this.onSendMessage();
                 };
-                buttonsDiv.appendChild(buttonElement);
+
+                buttonWrapper.appendChild(buttonElement);
+                buttonsContainer.appendChild(buttonWrapper);
             });
 
-            messageDiv.appendChild(buttonsDiv);
+            messageDiv.appendChild(buttonsContainer);
         }
         // Handle list messages
         else if (interactive.type === 'list') {
@@ -83,7 +95,11 @@ export class ChatUI {
 
             // Create list button
             if (action.button) {
-                const button = document.createElement('div');
+                const buttonWrapper = document.createElement('div');
+                buttonWrapper.style.width = '100%';
+                buttonWrapper.style.marginBottom = '8px';
+
+                const button = document.createElement('button');
                 button.className = 'list-button';
                 button.textContent = action.button;
                 button.onclick = () => {
@@ -92,7 +108,9 @@ export class ChatUI {
                         options.style.display = options.style.display === 'none' ? 'block' : 'none';
                     }
                 };
-                listDiv.appendChild(button);
+
+                buttonWrapper.appendChild(button);
+                listDiv.appendChild(buttonWrapper);
             }
 
             // Create list options
@@ -111,7 +129,11 @@ export class ChatUI {
 
                     if (section.rows) {
                         section.rows.forEach(row => {
-                            const option = document.createElement('div');
+                            const optionWrapper = document.createElement('div');
+                            optionWrapper.style.width = '100%';
+                            optionWrapper.style.marginBottom = '8px';
+
+                            const option = document.createElement('button');
                             option.className = 'list-option';
                             option.textContent = row.title;
                             option.onclick = () => {
@@ -119,7 +141,9 @@ export class ChatUI {
                                 this.onSendMessage();
                                 optionsDiv.style.display = 'none';
                             };
-                            optionsDiv.appendChild(option);
+
+                            optionWrapper.appendChild(option);
+                            optionsDiv.appendChild(optionWrapper);
                         });
                     }
                 });
@@ -164,5 +188,9 @@ export class ChatUI {
             }
         });
         this.targetSelect.addEventListener('change', () => this.updateStatus());
+    }
+
+    getLastMessageId() {
+        return this.lastMessageId;
     }
 }

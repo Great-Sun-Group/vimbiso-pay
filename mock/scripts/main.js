@@ -43,7 +43,9 @@ class WhatsAppMock {
             const payload = createMessagePayload(
                 messageType,
                 processedMessage,
-                this.ui.phoneInput.value
+                this.ui.phoneInput.value,
+                // Pass context message ID for interactive and button messages
+                (messageType === 'interactive' || messageType === 'button') ? this.ui.getLastMessageId() : null
             );
 
             const response = await fetch(`./bot/webhook?target=${this.ui.targetSelect.value}`, {

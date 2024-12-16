@@ -48,6 +48,7 @@
         "ghcr.io/devcontainers/features/terraform:1": {},
         "ghcr.io/devcontainers/features/docker-in-docker:2": {},
         "ghcr.io/devcontainers/features/github-cli:1": {},
+        "ghcr.io/devcontainers/features/aws-cli:1": {},
         "ghcr.io/devcontainers/features/common-utils:2": {
             "installZsh": true,
             "configureZshAsDefaultShell": true,
@@ -57,6 +58,11 @@
     },
     "forwardPorts": [8000, 6379],
     "postCreateCommand": "pip install -r requirements/dev.txt",
-    "postStartCommand": "sudo apt-get update && sudo apt-get install -y chromium",
-    "remoteUser": "vscode"
+    "postStartCommand": "sudo apt-get update && sudo apt-get install -y chromium && sudo cp /workspaces/vimbiso-pay/scripts/fetchlogs.sh /usr/local/bin/fetchlogs && sudo chmod +x /usr/local/bin/fetchlogs",
+    "remoteUser": "vscode",
+    "remoteEnv": {
+        "AWS_REGION": "af-south-1",
+        "AWS_ACCESS_KEY_ID": "${localEnv:VIMBISOPAY_STAGING_AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY": "${localEnv:VIMBISOPAY_STAGING_AWS_SECRET_ACCESS_KEY}"
+    }
 }
