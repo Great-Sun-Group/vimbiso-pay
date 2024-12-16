@@ -76,8 +76,67 @@ class CachedUserState:
             state_redis.setex(f"{self.user.mobile_number}_direction", 300, "OUT")
         if not existing_stage:
             state_redis.setex(f"{self.user.mobile_number}_stage", 300, "handle_action_menu")
+
+        # Initialize state with proper structure if missing
         if not existing_state:
-            state_redis.setex(f"{self.user.mobile_number}", 300, "{}")
+            initial_state = {
+                "stage": "handle_action_menu",
+                "option": None,
+                "profile": {
+                    "data": {
+                        "action": {},
+                        "details": {}
+                    }
+                },
+                "current_account": None,
+                "flow_data": None
+            }
+            state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
+        else:
+            # Ensure existing state has required structure
+            try:
+                current_state = json.loads(existing_state)
+                if not isinstance(current_state, dict):
+                    current_state = {}
+
+                # Ensure profile structure exists
+                if "profile" not in current_state:
+                    current_state["profile"] = {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    }
+                elif not isinstance(current_state["profile"], dict):
+                    current_state["profile"] = {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    }
+                elif "data" not in current_state["profile"]:
+                    current_state["profile"]["data"] = {
+                        "action": {},
+                        "details": {}
+                    }
+
+                # Update state with proper structure
+                state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(current_state))
+            except (json.JSONDecodeError, TypeError):
+                # Reset to initial state if corrupted
+                initial_state = {
+                    "stage": "handle_action_menu",
+                    "option": None,
+                    "profile": {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    },
+                    "current_account": None,
+                    "flow_data": None
+                }
+                state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
 
         # Refresh expiry for existing values
         if existing_direction:
@@ -86,8 +145,6 @@ class CachedUserState:
             state_redis.setex(f"{self.user.mobile_number}_stage", 300, existing_stage)
         if existing_option:
             state_redis.setex(f"{self.user.mobile_number}_option", 300, existing_option)
-        if existing_state:
-            state_redis.setex(f"{self.user.mobile_number}", 300, existing_state)
 
         # Load current values
         self.direction = state_redis.get(f"{self.user.mobile_number}_direction")
@@ -109,6 +166,27 @@ class CachedUserState:
         # Ensure we have a valid state object
         if not isinstance(state, dict):
             state = {}
+
+        # Ensure profile structure exists
+        if "profile" not in state:
+            state["profile"] = {
+                "data": {
+                    "action": {},
+                    "details": {}
+                }
+            }
+        elif not isinstance(state["profile"], dict):
+            state["profile"] = {
+                "data": {
+                    "action": {},
+                    "details": {}
+                }
+            }
+        elif "data" not in state["profile"]:
+            state["profile"]["data"] = {
+                "action": {},
+                "details": {}
+            }
 
         # Convert state to JSON string
         state_json = json.dumps(state)
@@ -138,14 +216,58 @@ class CachedUserState:
         """Get current state with proper Redis handling"""
         state_json = state_redis.get(f"{user.mobile_number}")
         if state_json is None:
-            state = {}
-            state_redis.setex(f"{user.mobile_number}", 300, "{}")
+            # Initialize with proper structure
+            state = {
+                "stage": "handle_action_menu",
+                "option": None,
+                "profile": {
+                    "data": {
+                        "action": {},
+                        "details": {}
+                    }
+                },
+                "current_account": None,
+                "flow_data": None
+            }
+            state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
         else:
             try:
                 state = json.loads(state_json)
+                # Ensure profile structure exists
+                if "profile" not in state:
+                    state["profile"] = {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    }
+                elif not isinstance(state["profile"], dict):
+                    state["profile"] = {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    }
+                elif "data" not in state["profile"]:
+                    state["profile"]["data"] = {
+                        "action": {},
+                        "details": {}
+                    }
+                state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
             except (json.JSONDecodeError, TypeError):
-                state = {}
-                state_redis.setex(f"{user.mobile_number}", 300, "{}")
+                state = {
+                    "stage": "handle_action_menu",
+                    "option": None,
+                    "profile": {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    },
+                    "current_account": None,
+                    "flow_data": None
+                }
+                state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
 
         self.state = state
         return state
@@ -167,13 +289,25 @@ class CachedUserState:
         state_redis.delete(f"{self.user.mobile_number}_option")
         state_redis.delete(f"{self.user.mobile_number}_direction")
 
-        # Set default values with timeout
-        state_redis.setex(f"{self.user.mobile_number}", 300, "{}")
+        # Set default values with timeout and proper structure
+        initial_state = {
+            "stage": "handle_action_menu",
+            "option": None,
+            "profile": {
+                "data": {
+                    "action": {},
+                    "details": {}
+                }
+            },
+            "current_account": None,
+            "flow_data": None
+        }
+        state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
         state_redis.setex(f"{self.user.mobile_number}_stage", 300, "handle_action_menu")
         state_redis.setex(f"{self.user.mobile_number}_direction", 300, "OUT")
 
         # Update instance variables
-        self.state = {}
+        self.state = initial_state
         self.stage = "handle_action_menu"
         self.option = None
         self.direction = "OUT"
