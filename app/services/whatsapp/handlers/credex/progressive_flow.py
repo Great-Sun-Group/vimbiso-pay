@@ -252,9 +252,16 @@ class ProgressiveFlowMixin:
             logger.debug(f"Message body: {self.service.body}")
 
             # Check if this is a menu selection or text command
+            interactive = self.service.message.get("interactive", {})
             is_menu_selection = (
                 self.service.message_type == "interactive" and
-                self.service.message.get("interactive", {}).get("type") == "list_reply"
+                (
+                    # Handle both list_reply and list types
+                    (interactive.get("type") == "list_reply" and
+                     interactive.get("list_reply", {}).get("id") == "handle_action_offer_credex") or
+                    (interactive.get("type") == "list" and
+                     interactive.get("list_reply", {}).get("id") == "handle_action_offer_credex")
+                )
             )
             is_text_command = (
                 self.service.message_type == "text" and
@@ -392,7 +399,7 @@ class ProgressiveFlowMixin:
                 "to": self.service.user.mobile_number,
                 "type": "text",
                 "text": {
-                    "body": "❌ Please start from the menu by selecting 'Offer Secured Credex' first."
+                    "body": "❌ Unknown error. Please start over by sending 'hi'."
                 }
             })
 
