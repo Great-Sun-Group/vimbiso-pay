@@ -94,6 +94,10 @@ class CredexBotService(BotServiceInterface):
             Optional[str]: Error message if any
         """
         try:
+            # Save current stage and option before refresh
+            current_stage = self.state.get_stage(self.user.mobile_number)
+            current_option = self.current_state.get("option")
+
             # First refresh member info
             result = self.credex_service.refresh_member_info(
                 phone=self.user.mobile_number,
@@ -101,11 +105,11 @@ class CredexBotService(BotServiceInterface):
                 silent=silent
             )
 
-            # Then refresh state if needed
+            # Then refresh state if needed, preserving stage and option
             if reset:
                 initial_state = {
-                    "stage": StateStage.INIT.value,
-                    "option": "handle_action_menu",
+                    "stage": current_stage,  # Preserve current stage
+                    "option": current_option,  # Preserve current option
                     "last_updated": None,
                     "profile": None,
                     "current_account": None
@@ -114,9 +118,9 @@ class CredexBotService(BotServiceInterface):
                 self.state.update_state(
                     user_id=self.user.mobile_number,
                     new_state=initial_state,
-                    stage=StateStage.INIT.value,
+                    stage=current_stage,  # Keep current stage
                     update_from="refresh",
-                    option="handle_action_menu"
+                    option=current_option  # Keep current option
                 )
                 self.current_state = self.state.get_state(self.user.mobile_number)
 
