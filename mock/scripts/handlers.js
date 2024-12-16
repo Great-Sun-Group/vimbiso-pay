@@ -44,39 +44,41 @@ export function createNativeForm(fields, onSubmit) {
 }
 
 export function createMessagePayload(messageType, messageText, phoneNumber, contextMessageId = null) {
+    // Create message object matching WhatsApp format
     const message = {
         from: phoneNumber,
         id: `wamid.${Array(32).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join('')}`,
         timestamp: Math.floor(Date.now() / 1000).toString()
     };
 
-    // Add context for button responses
-    if (contextMessageId) {
-        message.context = {
-            from: phoneNumber,
-            id: contextMessageId
-        };
-    }
-
     // Add message content based on type
     if (messageType === 'text') {
         message.type = 'text';
-        message.text = { body: messageText };
-    } else if (messageType === 'button' || messageType === 'interactive') {
-        // All button responses should be type "button" to match WhatsApp format
-        message.type = 'button';
-        message.button = {
-            text: messageText,
-            payload: messageText
+        message.text = {
+            body: messageText,
+            preview_url: false
         };
-    } else if (messageType === 'interactive' && typeof messageText === 'object') {
+    } else if (messageType === 'interactive') {
         message.type = 'interactive';
-        message.interactive = {
-            type: "nfm_reply",
-            nfm_reply: messageText
-        };
+        if (messageText.startsWith('handle_action_')) {
+            // Handle menu/button selections
+            message.interactive = {
+                type: 'button_reply',
+                button_reply: {
+                    id: messageText,
+                    title: messageText
+                }
+            };
+        } else if (typeof messageText === 'object') {
+            // Handle form submissions
+            message.interactive = {
+                type: 'nfm_reply',
+                nfm_reply: messageText
+            };
+        }
     }
 
+    // Create full webhook payload matching staging format
     return {
         object: "whatsapp_business_account",
         entry: [{
@@ -85,13 +87,15 @@ export function createMessagePayload(messageType, messageText, phoneNumber, cont
                 value: {
                     messaging_product: "whatsapp",
                     metadata: {
-                        display_phone_number: "15550123456",
-                        phone_number_id: "123456789",
+                        display_phone_number: "263787274250",  // Match staging
+                        phone_number_id: "390447444143042",    // Match staging
                         timestamp: Math.floor(Date.now() / 1000).toString()
                     },
                     contacts: [{
-                        wa_id: phoneNumber,
-                        profile: { name: "" }
+                        profile: {
+                            name: "Test User"
+                        },
+                        wa_id: phoneNumber
                     }],
                     messages: [message]
                 },
@@ -103,20 +107,21 @@ export function createMessagePayload(messageType, messageText, phoneNumber, cont
 
 export function createFormReply(formData, formName) {
     const timestamp = Math.floor(Date.now() / 1000).toString();
+
+    // Format form reply matching WhatsApp's format
     return {
         submitted_form_data: {
             response_at: timestamp,
             form_data: {
                 version: "1",
                 screen: "MAIN",
-                name: formName,
                 response_payload: {
                     response_json: JSON.stringify(formData),
                     version: "1"
                 },
                 response_fields: Object.entries(formData).map(([field_id, value]) => ({
-                    field_id,
-                    value,
+                    field_id: field_id,
+                    value: String(value),
                     type: "text",
                     screen: "MAIN",
                     version: "1",

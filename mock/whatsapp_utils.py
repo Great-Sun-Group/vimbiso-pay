@@ -1,4 +1,4 @@
-"""Shared utilities for WhatsApp mock implementations"""
+"""WhatsApp message formatting utilities."""
 import json
 import logging
 from datetime import datetime
@@ -276,32 +276,19 @@ def extract_message_text(message: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
     return "Unsupported message type"
 
 
-def format_json_response(response_text: str) -> Dict[str, Any]:
-    """Format JSON response following WhatsApp Cloud API format."""
-    try:
-        data = json.loads(response_text)
-        # Ensure response follows WhatsApp format
-        if isinstance(data, dict):
-            if "response" in data:
-                return data["response"]
-            if "messaging_product" in data:
-                return data
-            # Convert plain dict to text message
-            return {
-                "messaging_product": "whatsapp",
-                "type": "text",
-                "text": {
-                    "body": json.dumps(data),
-                    "preview_url": False
-                }
+def format_mock_response() -> Dict[str, Any]:
+    """Format mock response following WhatsApp Cloud API format."""
+    return {
+        "messaging_product": "whatsapp",
+        "contacts": [
+            {
+                "input": "263778177125",
+                "wa_id": "263778177125"
             }
-        return data
-    except json.JSONDecodeError:
-        return {
-            "messaging_product": "whatsapp",
-            "type": "text",
-            "text": {
-                "body": response_text,
-                "preview_url": False
+        ],
+        "messages": [
+            {
+                "id": f"wamid.{''.join(['0123456789ABCDEF'[int(datetime.now().timestamp()) % 16] for _ in range(32)])}"
             }
-        }
+        ]
+    }
