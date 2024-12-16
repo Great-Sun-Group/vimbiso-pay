@@ -71,21 +71,23 @@ class CachedUserState:
         existing_state = state_redis.get(f"{self.user.mobile_number}")
         self.jwt_token = state_redis.get(f"{self.user.mobile_number}_jwt_token")
 
-        # Initialize with defaults only if no state exists at all
-        if not any([existing_direction, existing_stage, existing_option, existing_state]):
+        # Initialize each missing value independently
+        if not existing_direction:
             state_redis.setex(f"{self.user.mobile_number}_direction", 300, "OUT")
+        if not existing_stage:
             state_redis.setex(f"{self.user.mobile_number}_stage", 300, "handle_action_menu")
+        if not existing_state:
             state_redis.setex(f"{self.user.mobile_number}", 300, "{}")
-        else:
-            # Refresh expiry for existing values
-            if existing_direction:
-                state_redis.setex(f"{self.user.mobile_number}_direction", 300, existing_direction)
-            if existing_stage:
-                state_redis.setex(f"{self.user.mobile_number}_stage", 300, existing_stage)
-            if existing_option:
-                state_redis.setex(f"{self.user.mobile_number}_option", 300, existing_option)
-            if existing_state:
-                state_redis.setex(f"{self.user.mobile_number}", 300, existing_state)
+
+        # Refresh expiry for existing values
+        if existing_direction:
+            state_redis.setex(f"{self.user.mobile_number}_direction", 300, existing_direction)
+        if existing_stage:
+            state_redis.setex(f"{self.user.mobile_number}_stage", 300, existing_stage)
+        if existing_option:
+            state_redis.setex(f"{self.user.mobile_number}_option", 300, existing_option)
+        if existing_state:
+            state_redis.setex(f"{self.user.mobile_number}", 300, existing_state)
 
         # Load current values
         self.direction = state_redis.get(f"{self.user.mobile_number}_direction")
