@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import requests
 from core.transactions.exceptions import TransactionError
-from core.config.constants import state_redis, JWT_TTL
+from core.config.constants import state_redis, ABSOLUTE_JWT_TTL
 
 if TYPE_CHECKING:
     from .config import CredExConfig
@@ -106,6 +106,16 @@ class BaseCredExService:
             logger.debug(f"Response headers: {dict(response.headers)}")
             logger.debug(f"Response content: {response.text}")
 
+            # Check for new token in response headers for token refresh
+            new_token = response.headers.get('Authorization')
+            if new_token:
+                self._jwt_token = new_token
+                if hasattr(self, '_parent_service'):
+                    self._parent_service.jwt_token = new_token
+                if self._phone:
+                    state_redis.setex(f"{self._phone}_jwt_token", ABSOLUTE_JWT_TTL, new_token)
+                    logger.debug("Updated Redis state with refreshed token from response")
+
             if response.status_code == 401 and require_auth:
                 logger.warning("Authentication failed, attempting to refresh token")
                 if payload and "phone" in payload:
@@ -124,7 +134,7 @@ class BaseCredExService:
                             self._parent_service.jwt_token = self._jwt_token
                         # Update Redis state with new token
                         if self._phone:
-                            state_redis.setex(f"{self._phone}_jwt_token", JWT_TTL, self._jwt_token)
+                            state_redis.setex(f"{self._phone}_jwt_token", ABSOLUTE_JWT_TTL, self._jwt_token)
                             logger.debug("Updated Redis state with refreshed token")
                         headers = self.config.get_headers(self._jwt_token)
                         logger.debug("Making request with refreshed token")
@@ -205,5 +215,5 @@ class BaseCredExService:
         self._jwt_token = value
         # Update Redis state with new token if we have a phone number
         if hasattr(self, '_phone') and self._phone:
-            state_redis.setex(f"{self._phone}_jwt_token", JWT_TTL, value)
+            state_redis.setex(f"{self._phone}_jwt_token", ABSOLUTE_JWT_TTL, value)
             logger.debug("Updated Redis state with new token")

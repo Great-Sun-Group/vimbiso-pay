@@ -19,8 +19,9 @@ state_redis = redis.Redis(
     retry_on_timeout=True
 )
 
-# Increase state TTL to 24 hours (in seconds)
-STATE_TTL = 86400
+# TTL Constants
+ACTIVITY_TTL = 300  # 5 minutes in seconds for activity-based expiration
+ABSOLUTE_JWT_TTL = 21600  # 6 hours in seconds for absolute token expiration
 
 GREETINGS = [
     "menu",
@@ -84,14 +85,21 @@ class CachedUserState:
         })
 
         # Try to restore state from Redis
-        restored_state = None
-        if existing_state:
-            try:
+        if not existing_state:
+            # Initialize with default state if none exists
+            initial_state = {
+                "stage": "handle_action_menu",
+                "option": None,
+                "profile": {
+                    "data": {
+                        "action": {},
+                        "details": {}
+                    }
                 },
                 "current_account": None,
                 "flow_data": None
             }
-            state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
+            state_redis.setex(f"{self.user.mobile_number}", ACTIVITY_TTL, json.dumps(initial_state))
         else:
             # Ensure existing state has required structure
             try:
@@ -121,7 +129,7 @@ class CachedUserState:
                     }
 
                 # Update state with proper structure
-                state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(current_state))
+                state_redis.setex(f"{self.user.mobile_number}", ACTIVITY_TTL, json.dumps(current_state))
             except (json.JSONDecodeError, TypeError):
                 # Reset to initial state if corrupted
                 initial_state = {
@@ -136,15 +144,15 @@ class CachedUserState:
                     "current_account": None,
                     "flow_data": None
                 }
-                state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
+                state_redis.setex(f"{self.user.mobile_number}", ACTIVITY_TTL, json.dumps(initial_state))
 
         # Refresh expiry for existing values
         if existing_direction:
-            state_redis.setex(f"{self.user.mobile_number}_direction", 300, existing_direction)
+            state_redis.setex(f"{self.user.mobile_number}_direction", ACTIVITY_TTL, existing_direction)
         if existing_stage:
-            state_redis.setex(f"{self.user.mobile_number}_stage", 300, existing_stage)
+            state_redis.setex(f"{self.user.mobile_number}_stage", ACTIVITY_TTL, existing_stage)
         if existing_option:
-            state_redis.setex(f"{self.user.mobile_number}_option", 300, existing_option)
+            state_redis.setex(f"{self.user.mobile_number}_option", ACTIVITY_TTL, existing_option)
 
         # Load current values
         self.direction = state_redis.get(f"{self.user.mobile_number}_direction")
@@ -191,22 +199,22 @@ class CachedUserState:
         # Convert state to JSON string
         state_json = json.dumps(state)
 
-        # Set state with timeout
-        state_redis.setex(f"{self.user.mobile_number}", 300, state_json)
+        # Set state with activity timeout
+        state_redis.setex(f"{self.user.mobile_number}", ACTIVITY_TTL, state_json)
 
         # Update stage if provided
         if stage:
-            state_redis.setex(f"{self.user.mobile_number}_stage", 300, stage)
+            state_redis.setex(f"{self.user.mobile_number}_stage", ACTIVITY_TTL, stage)
             self.stage = stage
 
         # Update option if provided
         if option:
-            state_redis.setex(f"{self.user.mobile_number}_option", 300, option)
+            state_redis.setex(f"{self.user.mobile_number}_option", ACTIVITY_TTL, option)
             self.option = option
 
         # Update direction if provided
         if direction:
-            state_redis.setex(f"{self.user.mobile_number}_direction", 300, direction)
+            state_redis.setex(f"{self.user.mobile_number}_direction", ACTIVITY_TTL, direction)
             self.direction = direction
 
         # Update local state
@@ -229,7 +237,7 @@ class CachedUserState:
                 "current_account": None,
                 "flow_data": None
             }
-            state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
+            state_redis.setex(f"{user.mobile_number}", ACTIVITY_TTL, json.dumps(state))
         else:
             try:
                 state = json.loads(state_json)
@@ -253,7 +261,7 @@ class CachedUserState:
                         "action": {},
                         "details": {}
                     }
-                state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
+                state_redis.setex(f"{user.mobile_number}", ACTIVITY_TTL, json.dumps(state))
             except (json.JSONDecodeError, TypeError):
                 state = {
                     "stage": "handle_action_menu",
@@ -267,7 +275,7 @@ class CachedUserState:
                     "current_account": None,
                     "flow_data": None
                 }
-                state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
+                state_redis.setex(f"{user.mobile_number}", ACTIVITY_TTL, json.dumps(state))
 
         self.state = state
         return state
@@ -275,13 +283,16 @@ class CachedUserState:
     def set_jwt_token(self, jwt_token):
         """Set JWT token with proper Redis handling"""
         if jwt_token:
-            state_redis.setex(f"{self.user.mobile_number}_jwt_token", 300, jwt_token)
+            # Store token with absolute expiration
+            state_redis.setex(f"{self.user.mobile_number}_jwt_token", ABSOLUTE_JWT_TTL, jwt_token)
             self.jwt_token = jwt_token
 
     def reset_state(self):
         """Reset all user state with proper Redis handling"""
-        # Save current JWT token
+        # Save current JWT token if within absolute expiry
         current_jwt = self.jwt_token
+        jwt_ttl = state_redis.ttl(f"{self.user.mobile_number}_jwt_token")
+        preserve_jwt = current_jwt and jwt_ttl > 0 and jwt_ttl <= ABSOLUTE_JWT_TTL
 
         # Clear all existing state
         state_redis.delete(f"{self.user.mobile_number}")
@@ -289,7 +300,7 @@ class CachedUserState:
         state_redis.delete(f"{self.user.mobile_number}_option")
         state_redis.delete(f"{self.user.mobile_number}_direction")
 
-        # Set default values with timeout and proper structure
+        # Set default values with activity timeout
         initial_state = {
             "stage": "handle_action_menu",
             "option": None,
@@ -302,9 +313,9 @@ class CachedUserState:
             "current_account": None,
             "flow_data": None
         }
-        state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
-        state_redis.setex(f"{self.user.mobile_number}_stage", 300, "handle_action_menu")
-        state_redis.setex(f"{self.user.mobile_number}_direction", 300, "OUT")
+        state_redis.setex(f"{self.user.mobile_number}", ACTIVITY_TTL, json.dumps(initial_state))
+        state_redis.setex(f"{self.user.mobile_number}_stage", ACTIVITY_TTL, "handle_action_menu")
+        state_redis.setex(f"{self.user.mobile_number}_direction", ACTIVITY_TTL, "OUT")
 
         # Update instance variables
         self.state = initial_state
@@ -312,8 +323,8 @@ class CachedUserState:
         self.option = None
         self.direction = "OUT"
 
-        # Restore JWT token if it exists
-        if current_jwt:
+        # Restore JWT token if still valid
+        if preserve_jwt:
             self.set_jwt_token(current_jwt)
 
 
