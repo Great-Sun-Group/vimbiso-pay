@@ -380,7 +380,7 @@ class ProgressiveFlowMixin:
                     "to": self.service.user.mobile_number,
                     "type": "text",
                     "text": {
-                        "body": "❌ Please start from the menu by selecting 'Offer Credex' first."
+                        "body": "❌ Please start from the menu by selecting 'Offer Secured Credex' first."
                     }
                 })
 
@@ -392,7 +392,7 @@ class ProgressiveFlowMixin:
                 "to": self.service.user.mobile_number,
                 "type": "text",
                 "text": {
-                    "body": "❌ Please start from the menu by selecting 'Offer Credex' first."
+                    "body": "❌ Please start from the menu by selecting 'Offer Secured Credex' first."
                 }
             })
 

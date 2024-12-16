@@ -370,38 +370,6 @@ MENU_OPTIONS_2 = {
     "handle_action_switch_account": "handle_action_switch_account",
 }
 
-ABOUT = """
-Today credex is being used
-for combi rides in Harare.
-Credex solves the problem
-of small change. Riders
-charge their credex account
-with USD at a verified agent,
-and then use that charge in
-any amount to pay for one
-ride at a time.
-
-When a combi accepts your
-credex, your charge is
-transferred to their
-account, and they can cash
-it out at a registered agent.
-There is no fee to charge
-your account, or to use that
-charge to pay for goods and
-services.
-
-Combi drivers and owners can
-use the charge they've received
-to purchase goods and services
-within the credex ecosystem,
-also at no charge. When an
-account charge is cashed out
-at aregistered agent, there
-is a 2% fee.
-"""
-
-# Add the missing constants
 REGISTER = """
 {message}
 """

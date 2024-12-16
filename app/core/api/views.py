@@ -2,7 +2,6 @@
 import logging
 import sys
 from datetime import datetime
-
 from core.api.models import Message
 from core.config.constants import CachedUser
 from core.utils.utils import CredexWhatsappService

@@ -1,9 +1,13 @@
+"""Utility functions and WhatsApp service implementation."""
+import json
+import logging
 from datetime import datetime
 
 import requests
 from decouple import config
 
-from ..config.constants import *
+
+logger = logging.getLogger(__name__)
 
 
 def format_synopsis(synopsis, style=None, max_line_length=35):
@@ -37,7 +41,7 @@ def wrap_text(
     plain=False,
     include_menu=True,
 ):
-    print("MESSAGE : ", message)
+    logger.debug(f"Wrapping text message: {message}")
     if use_buttons:
         rows = [
             {"type": "reply", "reply": {"id": "N", "title": "❌ No"}},
@@ -123,41 +127,45 @@ class CredexWhatsappService:
         self.api_url = config(
             "WHATSAPP_API_URL", default="https://graph.facebook.com/v20.0/"
         )
+        logger.debug(f"Initialized WhatsApp service with phone_number_id: {self.phone_number_id}")
 
     def send_message(self):
-        # Implementation for sending WhatsApp message
-        url = f"{config('WHATSAPP_API_URL')}{self.phone_number_id}/messages"
+        """Send message to WhatsApp Cloud API with detailed logging."""
+        url = f"{self.api_url}{self.phone_number_id}/messages"
         headers = {
             "Authorization": f"Bearer {config('WHATSAPP_ACCESS_TOKEN')}",
             "Content-Type": "application/json",
         }
+
+        # Log the exact request we're sending
+        logger.info("WhatsApp request: %s", json.dumps({
+            "url": url,
+            "headers": {k: v for k, v in headers.items() if k != "Authorization"},
+            "payload": self.payload
+        }, indent=2))
+
         try:
             response = requests.post(url, json=self.payload, headers=headers)
-            print("WhatsApp API Response:", response.json())
+
+            # Log the complete response
+            logger.info("WhatsApp response: %s", json.dumps(response.json(), indent=2))
+
             if response.status_code != 200:
-                print(f"WhatsApp API Error: {response.status_code}", response.text)
+                logger.error("WhatsApp API Error [%d]: %s",
+                             response.status_code, response.text)
             return response.json()
+
         except Exception as e:
-            print(f"Error sending WhatsApp message: {str(e)}")
+            logger.error("Error sending WhatsApp message: %s", str(e))
             return {"error": str(e)}
 
     def notify(self):
-        # Implementation for sending notification
+        """Send notification message."""
         return self.send_message()
 
 
 def convert_timestamp_to_date(timestamp):
     return datetime.fromtimestamp(timestamp / 1000).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def get_greeting(name):
-    current_hour = datetime.now().hour
-    if 5 <= current_hour < 12:
-        return f"Good morning, {name}"
-    elif 12 <= current_hour < 18:
-        return f"Good afternoon, {name}"
-    else:
-        return f"Good evening, {name}"
 
 
 def format_denomination(amount, denomination):
