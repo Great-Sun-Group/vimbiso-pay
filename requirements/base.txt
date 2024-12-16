@@ -15,7 +15,7 @@ async-timeout==5.0.1
 
 # Utils
 python-decouple==3.8
-python-json-logger==2.0.7
+python-json-logger==3.2.0
 python-logstash==0.4.8
 requests==2.32.3
 urllib3>=2.0.0,<3.0.0
