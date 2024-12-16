@@ -290,91 +290,6 @@ class ProgressiveFlowMixin:
                         return True, WhatsAppMessage.from_core_message(message)
                     return True, WhatsAppMessage.from_core_message(result)
 
-            # Now check for numeric input without active flow
-            if (self.service.message_type == "text" and
-                isinstance(self.service.body, str) and
-                self.service.body.replace(".", "").isdigit() and
-                    "flow_data" not in current_state):
-                logger.debug("Received numeric input without active flow")
-                return True, WhatsAppMessage.from_core_message({
-                    "messaging_product": "whatsapp",
-                    "recipient_type": "individual",
-                    "to": self.service.user.mobile_number,
-                    "type": "text",
-                    "text": {
-                        "body": "❌ Please start from the menu by selecting 'Offer Credex' first."
-                    }
-                })
-
-            # Get member ID and account info
-            profile_data = current_state.get("profile", {})
-            data = profile_data.get("data", profile_data)
-
-            # Try to get member ID from action details or dashboard
-            member_id = data.get("action", {}).get("details", {}).get("memberID")
-            if not member_id and "dashboard" in data:
-                member_id = data.get("dashboard", {}).get("memberID")
-
-            if not member_id:
-                raise ValueError("Could not find memberID in profile data")
-
-            sender_account_id, sender_account_name = self._extract_sender_account_info(
-                profile_data, selected_profile
-            )
-
-            # Initialize base state
-            current_state.update({
-                "stage": StateStage.CREDEX.value,
-                "option": "handle_action_offer_credex",
-                "authorizer_member_id": member_id,
-                "issuer_member_id": member_id,
-                "sender_account": sender_account_name,
-                "sender_account_id": sender_account_id,
-                "phone": self.service.user.mobile_number,
-                "current_account": selected_profile
-            })
-
-            # Check for offer actions
-            if self.service.message_type == "text" and isinstance(self.service.body, str):
-                # Extract action and credex_id from command
-                action_map = {
-                    "accept_offer_": "accept",
-                    "decline_offer_": "decline",
-                    "cancel_offer_": "cancel"
-                }
-
-                for prefix, action in action_map.items():
-                    if self.service.body.startswith(prefix):
-                        credex_id = self.service.body.replace(prefix, "")
-                        logger.debug(f"Handling offer action: {action} for credex_id: {credex_id}")
-
-                        # Get active flow from state using CredexOfferFlow directly
-                        flow = self.flow_handler.get_flow(
-                            "credex_offer",
-                            current_state.get("flow_data", {}).get("data", {})
-                        )
-                        if flow:
-                            success, message = flow.handle_offer_action(action, credex_id)
-                            if success:
-                                # Update state without flow data
-                                self._update_flow_state(
-                                    current_state=current_state,
-                                    stage=StateStage.MENU.value,
-                                    update_from=f"credex_{action}_complete",
-                                    option="handle_action_menu",
-                                    preserve_flow=False
-                                )
-                                # Return to menu with success message
-                                menu_message = self.service.action_handler.auth_handler.handle_action_menu(
-                                    message=f"✅ {message}\n\n",
-                                    login=False  # Don't need API call since we have fresh data
-                                )
-                                return True, WhatsAppMessage.from_core_message(menu_message)
-                            else:
-                                error_message = self._format_error_response(message)
-                                return True, WhatsAppMessage.from_core_message(error_message)
-                        break
-
             # Check if there's an active flow
             if "flow_data" in current_state:
                 logger.debug("Found active flow, handling message")
@@ -382,12 +297,12 @@ class ProgressiveFlowMixin:
                 if "data" not in current_state["flow_data"]:
                     current_state["flow_data"]["data"] = {}
                 current_state["flow_data"]["data"].update({
-                    "profile": data,
+                    "profile": current_state.get("profile", {}),
                     "current_account": selected_profile,  # Include selected account
-                    "authorizer_member_id": member_id,
-                    "issuer_member_id": member_id,
-                    "sender_account": sender_account_name,
-                    "sender_account_id": sender_account_id,
+                    "authorizer_member_id": current_state.get("authorizer_member_id"),
+                    "issuer_member_id": current_state.get("issuer_member_id"),
+                    "sender_account": current_state.get("sender_account"),
+                    "sender_account_id": current_state.get("sender_account_id"),
                     "phone": self.service.user.mobile_number
                 })
                 logger.debug(f"Updated flow_data: {current_state['flow_data']['data']}")
@@ -409,21 +324,21 @@ class ProgressiveFlowMixin:
                 current_state = self.service.state.get_state(self.service.user.mobile_number)
                 # Re-ensure member IDs and account info are present
                 current_state.update({
-                    "authorizer_member_id": member_id,
-                    "issuer_member_id": member_id,
-                    "sender_account": sender_account_name,
-                    "sender_account_id": sender_account_id,
+                    "authorizer_member_id": current_state.get("authorizer_member_id"),
+                    "issuer_member_id": current_state.get("issuer_member_id"),
+                    "sender_account": current_state.get("sender_account"),
+                    "sender_account_id": current_state.get("sender_account_id"),
                     "phone": self.service.user.mobile_number,
                     "current_account": selected_profile  # Preserve selected account
                 })
                 if "flow_data" in current_state and "data" in current_state["flow_data"]:
                     current_state["flow_data"]["data"].update({
-                        "profile": data,
+                        "profile": current_state.get("profile", {}),
                         "current_account": selected_profile,  # Include selected account
-                        "authorizer_member_id": member_id,
-                        "issuer_member_id": member_id,
-                        "sender_account": sender_account_name,
-                        "sender_account_id": sender_account_id,
+                        "authorizer_member_id": current_state.get("authorizer_member_id"),
+                        "issuer_member_id": current_state.get("issuer_member_id"),
+                        "sender_account": current_state.get("sender_account"),
+                        "sender_account_id": current_state.get("sender_account_id"),
                         "phone": self.service.user.mobile_number
                     })
 
@@ -445,6 +360,21 @@ class ProgressiveFlowMixin:
                     )
                     return True, WhatsAppMessage.from_core_message(menu_message)
                 return True, WhatsAppMessage.from_core_message(message)
+
+            # Now check for numeric input without active flow
+            if (self.service.message_type == "text" and
+                isinstance(self.service.body, str) and
+                    self.service.body.replace(".", "").isdigit()):
+                logger.debug("Received numeric input without active flow")
+                return True, WhatsAppMessage.from_core_message({
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": self.service.user.mobile_number,
+                    "type": "text",
+                    "text": {
+                        "body": "❌ Please start from the menu by selecting 'Offer Credex' first."
+                    }
+                })
 
             # Return error for any other input without active flow
             logger.debug("Received input without active flow")

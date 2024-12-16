@@ -43,26 +43,24 @@ class CredexActionHandler(
             logger.debug("Starting handle_action_offer_credex")
             logger.debug(f"Initial state: stage={self.service.current_state.get('stage')}, option={self.service.current_state.get('option')}")
 
-            # Validate and get profile data
+            # First update state to CREDEX stage
+            current_state = self.service.current_state
+            current_state['stage'] = StateStage.CREDEX.value
+            self.service.state.update_state(
+                user_id=self.service.user.mobile_number,
+                new_state=current_state,
+                stage=StateStage.CREDEX.value,
+                update_from="offer_credex_init",
+                option="handle_action_offer_credex"
+            )
+
+            # Then validate and get profile data
             profile_result = self._validate_and_get_profile()
             if isinstance(profile_result, WhatsAppMessage):
                 return profile_result
 
             current_state, selected_profile = profile_result
             logger.debug(f"After profile validation: stage={current_state.get('stage')}, option={current_state.get('option')}")
-
-            # Verify we're in CREDEX stage
-            if current_state.get('stage') != StateStage.CREDEX.value:
-                logger.error(f"Invalid state stage: {current_state.get('stage')}, expected {StateStage.CREDEX.value}")
-                # Update state to CREDEX stage
-                current_state['stage'] = StateStage.CREDEX.value
-                self.service.state.update_state(
-                    user_id=self.service.user.mobile_number,
-                    new_state=current_state,
-                    stage=StateStage.CREDEX.value,
-                    update_from="offer_credex_init",
-                    option="handle_action_offer_credex"
-                )
 
             # Handle with progressive flow
             logger.debug("Handling with progressive flow")

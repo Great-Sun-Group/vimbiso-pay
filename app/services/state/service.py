@@ -42,27 +42,49 @@ class StateTransition:
             if from_stage is None:
                 return True
 
+            # Handle menu to credex transitions
+            if from_stage == "handle_action_menu" and (
+                to_stage == StateStage.CREDEX.value or
+                to_stage == "handle_action_offer_credex"
+            ):
+                return True
+
+            # Handle credex offer transitions
+            if from_stage == "handle_action_offer_credex" and (
+                to_stage == StateStage.CREDEX.value or
+                to_stage == "credex"
+            ):
+                return True
+
             # Handle action commands
             if to_stage.startswith("handle_action_"):
-                parts = to_stage.split("_")
-                if len(parts) >= 3:
+                return True
+
+            # Handle direct stage transitions
+            try:
+                from_enum = StateStage(from_stage)
+                to_enum = StateStage(to_stage)
+
+                # Allow same stage transitions
+                if from_enum == to_enum:
                     return True
 
-            # Handle credex-specific transitions
-            if from_stage == "handle_action_offer_credex" and to_stage == "credex":
+                return to_enum in cls.VALID_TRANSITIONS.get(from_enum, [])
+            except ValueError:
+                # If from_stage is not a valid enum, check if it's a handle_action
+                if from_stage.startswith("handle_action_"):
+                    try:
+                        to_enum = StateStage(to_stage)
+                        # Allow transitions from any handle_action to valid stages
+                        return True
+                    except ValueError:
+                        # Both stages are custom - allow the transition
+                        return True
                 return True
 
-            from_enum = StateStage(from_stage)
-            to_enum = StateStage(to_stage)
-
-            # Allow same stage transitions
-            if from_enum == to_enum:
-                return True
-
-            return to_enum in cls.VALID_TRANSITIONS.get(from_enum, [])
-        except ValueError:
-            # Allow transitions for custom stages not in enum
-            return True
+        except Exception as e:
+            logger.error(f"Error validating state transition: {str(e)}")
+            return False
 
 
 class StateService:
