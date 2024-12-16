@@ -3,7 +3,7 @@ import logging
 import sys
 from datetime import datetime
 from core.api.models import Message
-from core.config.constants import CachedUser
+from core.config.constants import CachedUser, state_redis
 from core.utils.utils import CredexWhatsappService
 from decouple import config
 from django.core.cache import cache
@@ -123,11 +123,16 @@ class CredexCloudApiWebhook(APIView):
                 logger.warning("No WA ID in contact")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Create CachedUser with debug logging
-            logger.info(f"Creating CachedUser for phone: {wa_id}")
-            user = CachedUser(wa_id)
-            logger.info(f"CachedUser created with state: {user.state.__dict__}")
+            # Check if state exists for this user
+            existing_state = state_redis.get(f"{wa_id}")
+            if existing_state:
+                logger.info(f"Found existing state for phone: {wa_id}")
+                user = CachedUser(wa_id)  # Will load existing state
+            else:
+                logger.info(f"Creating new CachedUser for phone: {wa_id}")
+                user = CachedUser(wa_id)  # Will initialize new state
 
+            logger.info(f"Using CachedUser with state: {user.state.__dict__}")
             state = user.state
 
             # Check message age
