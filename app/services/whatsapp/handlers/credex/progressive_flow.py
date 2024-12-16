@@ -251,44 +251,52 @@ class ProgressiveFlowMixin:
             logger.debug(f"Message type: {self.service.message_type}")
             logger.debug(f"Message body: {self.service.body}")
 
-            # Handle menu action selection first
-            if (self.service.message_type == "interactive" and
-                    self.service.message.get("interactive", {}).get("type") == "list_reply"):
-                selected_id = self.service.message["interactive"]["list_reply"].get("id")
-                if selected_id == "handle_action_offer_credex":
-                    logger.debug("Starting new credex offer flow")
-                    # Initialize flow data
-                    member_id = current_state.get("authorizer_member_id")
-                    sender_account_id = current_state.get("sender_account_id")
-                    sender_account_name = current_state.get("sender_account")
+            # Check if this is a menu selection or text command
+            is_menu_selection = (
+                self.service.message_type == "interactive" and
+                self.service.message.get("interactive", {}).get("type") == "list_reply"
+            )
+            is_text_command = (
+                self.service.message_type == "text" and
+                isinstance(self.service.body, str) and
+                self.service.body == "handle_action_offer_credex"
+            )
 
-                    current_state["flow_data"] = self._initialize_flow_state(
-                        current_state, member_id, sender_account_id, sender_account_name
-                    )
+            # Handle menu selection or text command
+            if is_menu_selection or is_text_command:
+                logger.debug("Starting new credex offer flow")
+                # Initialize flow data
+                member_id = current_state.get("authorizer_member_id")
+                sender_account_id = current_state.get("sender_account_id")
+                sender_account_name = current_state.get("sender_account")
 
-                    # Update state
-                    if not self._update_flow_state(
-                        current_state=current_state,
-                        stage=StateStage.CREDEX.value,
-                        update_from="flow_init",
-                        option="handle_action_offer_credex"
-                    ):
-                        raise ValueError("Failed to update flow state")
+                current_state["flow_data"] = self._initialize_flow_state(
+                    current_state, member_id, sender_account_id, sender_account_name
+                )
 
-                    # Start flow
-                    result = self.flow_handler.start_flow(
-                        "credex_offer",
-                        self.service.user.mobile_number
-                    )
+                # Update state
+                if not self._update_flow_state(
+                    current_state=current_state,
+                    stage=StateStage.CREDEX.value,
+                    update_from="flow_init",
+                    option="handle_action_offer_credex"
+                ):
+                    raise ValueError("Failed to update flow state")
 
-                    if isinstance(result, CredexOfferFlow):
-                        result.initialize_from_profile(current_state.get("profile", {}).get("data", {}))
-                        result.state.update(current_state["flow_data"]["data"])
-                        message = result.current_step.message
-                        if callable(message):
-                            message = message(result.state)
-                        return True, WhatsAppMessage.from_core_message(message)
-                    return True, WhatsAppMessage.from_core_message(result)
+                # Start flow
+                result = self.flow_handler.start_flow(
+                    "credex_offer",
+                    self.service.user.mobile_number
+                )
+
+                if isinstance(result, CredexOfferFlow):
+                    result.initialize_from_profile(current_state.get("profile", {}).get("data", {}))
+                    result.state.update(current_state["flow_data"]["data"])
+                    message = result.current_step.message
+                    if callable(message):
+                        message = message(result.state)
+                    return True, WhatsAppMessage.from_core_message(message)
+                return True, WhatsAppMessage.from_core_message(result)
 
             # Check if there's an active flow
             if "flow_data" in current_state:
