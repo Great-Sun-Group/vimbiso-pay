@@ -59,10 +59,16 @@ variable "app_port" {
   default     = 8000
 }
 
-variable "redis_port" {
-  description = "Port exposed by the Redis container"
+variable "redis_cache_port" {
+  description = "Port exposed by the Redis cache container"
   type        = number
   default     = 6379
+}
+
+variable "redis_state_port" {
+  description = "Port exposed by the Redis state container"
+  type        = number
+  default     = 6380
 }
 
 # AWS Account Configuration
@@ -106,8 +112,13 @@ variable "app_access_point_id" {
   type        = string
 }
 
-variable "redis_access_point_id" {
-  description = "ID of the Redis EFS access point"
+variable "redis_cache_access_point_id" {
+  description = "ID of the Redis cache EFS access point"
+  type        = string
+}
+
+variable "redis_state_access_point_id" {
+  description = "ID of the Redis state EFS access point"
   type        = string
 }
 

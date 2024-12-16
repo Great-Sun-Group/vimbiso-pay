@@ -3,18 +3,13 @@
 A WhatsApp bot service that facilitates financial transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in a secure WhatsApp chat.
 
 ## Documentation
-
-### User Guide
-- [User Flows](docs/flows/user-flows.md) - Detailed guide to all user interactions and flows
-
-### Technical Documentation
-- [Flow Framework](docs/technical/flow-framework.md) - Progressive interaction framework
-- [WhatsApp Integration](docs/technical/whatsapp.md) - WhatsApp bot implementation
-- [API Integration](docs/technical/api-integration.md) - Integration with credex-core API
-- [State Management](docs/technical/state-management.md) - Conversation and session management
-- [Testing Guide](docs/technical/testing.md) - Testing infrastructure and tools
-- [Security](docs/technical/security.md) - Security measures and best practices
-- [Docker](docs/technical/docker.md) - Docker configuration and services
+- [Flow Framework](docs/flow-framework.md) - Progressive interaction framework
+- [WhatsApp Integration](docs/whatsapp.md) - WhatsApp bot implementation
+- [API Integration](docs/api-integration.md) - Integration with credex-core API
+- [State Management](docs/state-management.md) - Conversation and session management
+- [Testing Guide](docs/testing.md) - Testing infrastructure and tools
+- [Security](docs/security.md) - Security measures and best practices
+- [Docker](docs/docker.md) - Docker configuration and services
 - [Deployment](docs/deployment.md) - Deployment process and infrastructure
 - [Redis Management](docs/redis-memory-management.md) - Redis configuration and management
 

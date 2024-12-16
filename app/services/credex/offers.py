@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, List, Tuple
 
 from core.transactions.exceptions import TransactionError
+
 from .base import BaseCredExService
 from .config import CredExEndpoints
 

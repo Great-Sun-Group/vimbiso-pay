@@ -31,9 +31,10 @@ class ActionFlowMixin:
 
             # Inject services
             flow.credex_service = self.service.credex_service
+            flow.state_service = self.service.state  # Add state service
 
-            # Set flow state
-            flow.state.update({
+            # Set flow state with required fields
+            flow_state = {
                 "credex_id": credex_id,
                 "phone": self.service.user.mobile_number,
                 "amount": {
@@ -41,19 +42,24 @@ class ActionFlowMixin:
                     "denomination": offer_data.get("denomination", "USD")
                 },
                 "sender_name": offer_data.get("counterpartyAccountName"),
-                "recipient_name": offer_data.get("counterpartyAccountName")
-            })
+                "recipient_name": offer_data.get("counterpartyAccountName"),
+                # Add profile and account data
+                "profile": self.service.current_state.get("profile", {}),
+                "current_account": self.service.current_state.get("current_account")
+            }
 
-            # Execute flow
-            success, message = flow.complete_flow()
-            if not success:
-                logger.error(f"Failed to {action} credex: {message}")
-                return self._format_error_response(message)
+            # Update flow state
+            flow.state.update(flow_state)
 
-            # Update state after successful action
+            # Update current state with flow data
             current_state = self.service.current_state
             current_state["stage"] = StateStage.CREDEX.value
             current_state["option"] = f"handle_action_{action}_offers"
+            current_state["flow_data"] = {
+                "id": f"{action}_credex",
+                "current_step": 0,  # Initialize current_step
+                "data": flow_state
+            }
 
             # Preserve JWT token
             if self.service.credex_service.jwt_token:
@@ -64,8 +70,30 @@ class ActionFlowMixin:
                 user_id=self.service.user.mobile_number,
                 new_state=current_state,
                 stage=StateStage.CREDEX.value,
-                update_from=f"{action}_offer",
+                update_from=f"{action}_offer_init",
                 option=f"handle_action_{action}_offers"
+            )
+
+            logger.debug(f"Updated state before flow execution: {current_state}")
+
+            # Execute flow
+            success, message = flow.complete_flow()
+            if not success:
+                logger.error(f"Failed to {action} credex: {message}")
+                return self._format_error_response(message)
+
+            # Clear flow data after successful completion
+            current_state = self.service.current_state
+            if "flow_data" in current_state:
+                del current_state["flow_data"]
+
+            # Update state without flow data
+            self.service.state.update_state(
+                user_id=self.service.user.mobile_number,
+                new_state=current_state,
+                stage=StateStage.MENU.value,
+                update_from=f"{action}_offer_complete",
+                option="handle_action_menu"
             )
 
             # Return success message
@@ -83,24 +111,48 @@ class ActionFlowMixin:
         if not button_id:
             return None
 
-        # Expected format: "{action}_offer_{credex_id}"
-        parts = button_id.split("_")
-        if len(parts) >= 3:
-            return parts[2]
-        return None
+        try:
+            # Expected format: "{action}_offer_{credex_id}"
+            parts = button_id.split("_")
+            if len(parts) >= 3:
+                credex_id = parts[2]
+                logger.debug(f"Extracted credex ID: {credex_id} from button ID: {button_id}")
+                return credex_id
+            logger.warning(f"Invalid button ID format: {button_id}")
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting credex ID from button: {str(e)}")
+            return None
 
     def _get_offer_data(self, credex_id: str, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Get offer data from profile data"""
-        # Check incoming offers
-        pending_in = profile_data.get("data", {}).get("pendingInData", {}).get("data", [])
-        for offer in pending_in:
-            if offer.get("credexID") == credex_id:
-                return offer
+        try:
+            if not isinstance(profile_data, dict):
+                logger.error("Invalid profile data type")
+                return None
 
-        # Check outgoing offers
-        pending_out = profile_data.get("data", {}).get("pendingOutData", {}).get("data", [])
-        for offer in pending_out:
-            if offer.get("credexID") == credex_id:
-                return offer
+            data = profile_data.get("data", {})
+            if not isinstance(data, dict):
+                logger.error("Invalid profile data structure")
+                return None
 
-        return None
+            # Check incoming offers
+            pending_in = data.get("pendingInData", {}).get("data", [])
+            for offer in pending_in:
+                if offer.get("credexID") == credex_id:
+                    logger.debug(f"Found matching incoming offer: {offer}")
+                    return offer
+
+            # Check outgoing offers
+            pending_out = data.get("pendingOutData", {}).get("data", [])
+            for offer in pending_out:
+                if offer.get("credexID") == credex_id:
+                    logger.debug(f"Found matching outgoing offer: {offer}")
+                    return offer
+
+            logger.warning(f"No matching offer found for credex ID: {credex_id}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting offer data: {str(e)}")
+            return None

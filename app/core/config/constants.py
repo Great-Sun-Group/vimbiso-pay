@@ -1,7 +1,26 @@
-from django.core.cache import cache
+from django.conf import settings
 from datetime import timedelta
 import datetime
 import os
+import redis
+import json
+from urllib.parse import urlparse
+
+# Initialize Redis client for state management
+redis_url = urlparse(settings.REDIS_STATE_URL)
+state_redis = redis.Redis(
+    host=redis_url.hostname or 'localhost',
+    port=redis_url.port or 6380,
+    db=int(redis_url.path[1:]) if redis_url.path else 0,
+    password=redis_url.password,
+    decode_responses=True,
+    socket_timeout=30,
+    socket_connect_timeout=30,
+    retry_on_timeout=True
+)
+
+# Increase state TTL to 24 hours (in seconds)
+STATE_TTL = 86400
 
 GREETINGS = [
     "menu",
@@ -48,111 +67,247 @@ class CachedUserState:
         self.user = user
         print("USER", user)
 
-        # Get existing state values
-        existing_direction = cache.get(f"{self.user.mobile_number}_direction")
-        existing_stage = cache.get(f"{self.user.mobile_number}_stage")
-        existing_option = cache.get(f"{self.user.mobile_number}_option")
-        existing_state = cache.get(f"{self.user.mobile_number}")
-        self.jwt_token = cache.get(f"{self.user.mobile_number}_jwt_token")
+        # Get existing state values with debug logging
+        existing_direction = state_redis.get(f"{self.user.mobile_number}_direction")
+        existing_stage = state_redis.get(f"{self.user.mobile_number}_stage")
+        existing_option = state_redis.get(f"{self.user.mobile_number}_option")
+        existing_state = state_redis.get(f"{self.user.mobile_number}")
+        self.jwt_token = state_redis.get(f"{self.user.mobile_number}_jwt_token")
 
-        # Initialize with defaults only if no state exists at all
-        if not any([existing_direction, existing_stage, existing_option, existing_state]):
-            cache.set(f"{self.user.mobile_number}_direction", "OUT", timeout=60 * 5)
-            cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu", timeout=60 * 5)
-            cache.set(f"{self.user.mobile_number}", {}, timeout=60 * 5)
+        # Log existing state for debugging
+        print("EXISTING STATE:", {
+            "direction": existing_direction,
+            "stage": existing_stage,
+            "option": existing_option,
+            "state": existing_state,
+            "jwt_token": self.jwt_token
+        })
+
+        # Try to restore state from Redis
+        restored_state = None
+        if existing_state:
+            try:
+                },
+                "current_account": None,
+                "flow_data": None
+            }
+            state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
         else:
-            # Refresh expiry for existing values
-            if existing_direction:
-                cache.set(f"{self.user.mobile_number}_direction", existing_direction, timeout=60 * 5)
-            if existing_stage:
-                cache.set(f"{self.user.mobile_number}_stage", existing_stage, timeout=60 * 5)
-            if existing_option:
-                cache.set(f"{self.user.mobile_number}_option", existing_option, timeout=60 * 5)
-            if existing_state:
-                cache.set(f"{self.user.mobile_number}", existing_state, timeout=60 * 5)
+            # Ensure existing state has required structure
+            try:
+                current_state = json.loads(existing_state)
+                if not isinstance(current_state, dict):
+                    current_state = {}
+
+                # Ensure profile structure exists
+                if "profile" not in current_state:
+                    current_state["profile"] = {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    }
+                elif not isinstance(current_state["profile"], dict):
+                    current_state["profile"] = {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    }
+                elif "data" not in current_state["profile"]:
+                    current_state["profile"]["data"] = {
+                        "action": {},
+                        "details": {}
+                    }
+
+                # Update state with proper structure
+                state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(current_state))
+            except (json.JSONDecodeError, TypeError):
+                # Reset to initial state if corrupted
+                initial_state = {
+                    "stage": "handle_action_menu",
+                    "option": None,
+                    "profile": {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    },
+                    "current_account": None,
+                    "flow_data": None
+                }
+                state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
+
+        # Refresh expiry for existing values
+        if existing_direction:
+            state_redis.setex(f"{self.user.mobile_number}_direction", 300, existing_direction)
+        if existing_stage:
+            state_redis.setex(f"{self.user.mobile_number}_stage", 300, existing_stage)
+        if existing_option:
+            state_redis.setex(f"{self.user.mobile_number}_option", 300, existing_option)
 
         # Load current values
-        self.direction = cache.get(f"{self.user.mobile_number}_direction")
-        self.stage = cache.get(f"{self.user.mobile_number}_stage")
-        self.option = cache.get(f"{self.user.mobile_number}_option")
-        self.state = cache.get(f"{self.user.mobile_number}")
+        self.direction = state_redis.get(f"{self.user.mobile_number}_direction")
+        self.stage = state_redis.get(f"{self.user.mobile_number}_stage")
+        self.option = state_redis.get(f"{self.user.mobile_number}_option")
+        self.state = state_redis.get(f"{self.user.mobile_number}")
+        if self.state:
+            try:
+                self.state = json.loads(self.state)
+            except (json.JSONDecodeError, TypeError):
+                self.state = {}
+        else:
+            self.state = {}
 
     def update_state(
         self, state: dict, update_from, stage=None, option=None, direction=None
     ):
-        """Update user state with proper cache management"""
+        """Update user state with proper Redis management"""
         # Ensure we have a valid state object
         if not isinstance(state, dict):
             state = {}
 
-        # Set state with increased timeout
-        cache.set(f"{self.user.mobile_number}", state, timeout=60 * 5)
+        # Ensure profile structure exists
+        if "profile" not in state:
+            state["profile"] = {
+                "data": {
+                    "action": {},
+                    "details": {}
+                }
+            }
+        elif not isinstance(state["profile"], dict):
+            state["profile"] = {
+                "data": {
+                    "action": {},
+                    "details": {}
+                }
+            }
+        elif "data" not in state["profile"]:
+            state["profile"]["data"] = {
+                "action": {},
+                "details": {}
+            }
+
+        # Convert state to JSON string
+        state_json = json.dumps(state)
+
+        # Set state with timeout
+        state_redis.setex(f"{self.user.mobile_number}", 300, state_json)
 
         # Update stage if provided
         if stage:
-            cache.set(f"{self.user.mobile_number}_stage", stage, timeout=60 * 5)
+            state_redis.setex(f"{self.user.mobile_number}_stage", 300, stage)
             self.stage = stage
 
         # Update option if provided
         if option:
-            cache.set(f"{self.user.mobile_number}_option", option, timeout=60 * 5)
+            state_redis.setex(f"{self.user.mobile_number}_option", 300, option)
             self.option = option
 
         # Update direction if provided
         if direction:
-            cache.set(f"{self.user.mobile_number}_direction", direction, timeout=60 * 5)
+            state_redis.setex(f"{self.user.mobile_number}_direction", 300, direction)
             self.direction = direction
 
         # Update local state
         self.state = state
 
-        # Force a cache refresh to ensure consistency
-        cache.touch(f"{self.user.mobile_number}", timeout=60 * 5)
-        if stage:
-            cache.touch(f"{self.user.mobile_number}_stage", timeout=60 * 5)
-        if option:
-            cache.touch(f"{self.user.mobile_number}_option", timeout=60 * 5)
-        if direction:
-            cache.touch(f"{self.user.mobile_number}_direction", timeout=60 * 5)
-
     def get_state(self, user):
-        """Get current state with proper cache handling"""
-        state = cache.get(f"{user.mobile_number}")
-        if state is None:
-            state = {}
-            cache.set(f"{user.mobile_number}", state, timeout=60 * 5)
+        """Get current state with proper Redis handling"""
+        state_json = state_redis.get(f"{user.mobile_number}")
+        if state_json is None:
+            # Initialize with proper structure
+            state = {
+                "stage": "handle_action_menu",
+                "option": None,
+                "profile": {
+                    "data": {
+                        "action": {},
+                        "details": {}
+                    }
+                },
+                "current_account": None,
+                "flow_data": None
+            }
+            state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
         else:
-            # Refresh cache timeout
-            cache.touch(f"{user.mobile_number}", timeout=60 * 5)
+            try:
+                state = json.loads(state_json)
+                # Ensure profile structure exists
+                if "profile" not in state:
+                    state["profile"] = {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    }
+                elif not isinstance(state["profile"], dict):
+                    state["profile"] = {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    }
+                elif "data" not in state["profile"]:
+                    state["profile"]["data"] = {
+                        "action": {},
+                        "details": {}
+                    }
+                state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
+            except (json.JSONDecodeError, TypeError):
+                state = {
+                    "stage": "handle_action_menu",
+                    "option": None,
+                    "profile": {
+                        "data": {
+                            "action": {},
+                            "details": {}
+                        }
+                    },
+                    "current_account": None,
+                    "flow_data": None
+                }
+                state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
+
         self.state = state
         return state
 
     def set_jwt_token(self, jwt_token):
-        """Set JWT token with proper cache handling"""
+        """Set JWT token with proper Redis handling"""
         if jwt_token:
-            cache.set(f"{self.user.mobile_number}_jwt_token", jwt_token, timeout=60 * 5)
+            state_redis.setex(f"{self.user.mobile_number}_jwt_token", 300, jwt_token)
             self.jwt_token = jwt_token
-            # Refresh cache timeout
-            cache.touch(f"{self.user.mobile_number}_jwt_token", timeout=60 * 5)
 
     def reset_state(self):
-        """Reset all user state with proper cache handling"""
+        """Reset all user state with proper Redis handling"""
         # Save current JWT token
         current_jwt = self.jwt_token
 
         # Clear all existing state
-        cache.delete(f"{self.user.mobile_number}")
-        cache.delete(f"{self.user.mobile_number}_stage")
-        cache.delete(f"{self.user.mobile_number}_option")
-        cache.delete(f"{self.user.mobile_number}_direction")
+        state_redis.delete(f"{self.user.mobile_number}")
+        state_redis.delete(f"{self.user.mobile_number}_stage")
+        state_redis.delete(f"{self.user.mobile_number}_option")
+        state_redis.delete(f"{self.user.mobile_number}_direction")
 
-        # Set default values with timeout
-        cache.set(f"{self.user.mobile_number}", {}, timeout=60 * 5)
-        cache.set(f"{self.user.mobile_number}_stage", "handle_action_menu", timeout=60 * 5)
-        cache.set(f"{self.user.mobile_number}_direction", "OUT", timeout=60 * 5)
+        # Set default values with timeout and proper structure
+        initial_state = {
+            "stage": "handle_action_menu",
+            "option": None,
+            "profile": {
+                "data": {
+                    "action": {},
+                    "details": {}
+                }
+            },
+            "current_account": None,
+            "flow_data": None
+        }
+        state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
+        state_redis.setex(f"{self.user.mobile_number}_stage", 300, "handle_action_menu")
+        state_redis.setex(f"{self.user.mobile_number}_direction", 300, "OUT")
 
         # Update instance variables
-        self.state = {}
+        self.state = initial_state
         self.stage = "handle_action_menu"
         self.option = None
         self.direction = "OUT"

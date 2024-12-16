@@ -174,7 +174,7 @@ Please wait while we {action}..."""
    - Include relevant details
 
 3. **Actions**
-   - List numbered options
+   - Use buttons when possible
    - Use emoji indicators
    - Show clear commands
 

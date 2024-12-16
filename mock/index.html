@@ -9,28 +9,28 @@
 <body>
     <h1>VimbisoPay Mock Interface</h1>
 
-    <div class="target-toggle">
-        <label>Target:</label>
-        <select id="target">
-            <option value="local">Local (localhost:8000)</option>
-            <option value="staging">Staging (stage.whatsapp.vimbisopay.africa)</option>
-        </select>
-    </div>
-
-    <div class="status" id="status">
-        Connected to: Local Server
-    </div>
-
-    <div class="input-container">
-        <label>Phone to send from:</label>
-        <input type="text" id="phoneNumber" placeholder="Phone Number" value="263778177125">
-    </div>
-
     <div class="chat-container" id="chatContainer"></div>
 
     <div class="input-container">
         <input type="text" id="messageInput" placeholder="Type a message...">
         <button id="sendButton">Send</button>
+    </div>
+
+    <div class="settings-row">
+        <div class="input-container">
+            <label>Phone:</label>
+            <input type="text" id="phoneNumber" value="263778177125">
+        </div>
+
+        <div class="target-toggle">
+            <label>Host:</label>
+            <select id="target">
+                <option value="local">Local (localhost:8000)</option>
+                <option value="staging">Staging (stage.whatsapp.vimbisopay.africa)</option>
+            </select>
+        </div>
+
+        <div class="status" id="status">Connected: Local Server</div>
     </div>
 
     <script type="module" src="./scripts/main.js"></script>

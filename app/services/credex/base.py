@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import requests
 from core.transactions.exceptions import TransactionError
+from core.config.constants import state_redis, JWT_TTL
 
 if TYPE_CHECKING:
     from .config import CredExConfig
@@ -31,6 +32,7 @@ class BaseCredExService:
         from .config import CredExConfig
         self.config = config or CredExConfig.from_env()
         self._jwt_token: Optional[str] = None
+        self._phone: Optional[str] = None  # Store phone for token refresh
         logger.debug(f"Initialized BaseCredExService with base_url: {self.config.base_url}")
 
     def _extract_error_message(self, response: requests.Response) -> str:
@@ -107,6 +109,8 @@ class BaseCredExService:
             if response.status_code == 401 and require_auth:
                 logger.warning("Authentication failed, attempting to refresh token")
                 if payload and "phone" in payload:
+                    # Store phone for future token refreshes
+                    self._phone = payload["phone"]
                     # This will be implemented in auth.py
                     from .auth import CredExAuthService
                     auth_service = CredExAuthService(config=self.config)
@@ -118,6 +122,10 @@ class BaseCredExService:
                         self._jwt_token = auth_service._jwt_token
                         if hasattr(self, '_parent_service'):
                             self._parent_service.jwt_token = self._jwt_token
+                        # Update Redis state with new token
+                        if self._phone:
+                            state_redis.setex(f"{self._phone}_jwt_token", JWT_TTL, self._jwt_token)
+                            logger.debug("Updated Redis state with refreshed token")
                         headers = self.config.get_headers(self._jwt_token)
                         logger.debug("Making request with refreshed token")
                         response = requests.request(method, url, headers=headers, json=payload)
@@ -195,3 +203,7 @@ class BaseCredExService:
         """Set the JWT token"""
         logger.debug("Setting new JWT token")
         self._jwt_token = value
+        # Update Redis state with new token if we have a phone number
+        if hasattr(self, '_phone') and self._phone:
+            state_redis.setex(f"{self._phone}_jwt_token", JWT_TTL, value)
+            logger.debug("Updated Redis state with new token")
