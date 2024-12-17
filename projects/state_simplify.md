@@ -1,37 +1,112 @@
-# State Management Analysis
+# State Management Simplification Plan
 
-## Task: Analyze Current Implementation
+## What We've Built
 
-1. Map the flow of state through:
-- CredexOfferFlow in offer_flow_v2.py
-- Flow base class in flow.py
-- FlowHandler in flow_handler.py
-- CachedUserState in constants.py
+1. Clean Core Components
+- StateManager: Simple Redis operations
+- StateData: Basic structure and preservation
+- Flow: Step-based interaction flows
+- MessageHandler: Direct message processing
 
-2. Identify State Checks:
-- Look for redundant validation in Flow steps
-- Check state preservation in CachedUserState
-- Review state transitions in FlowHandler
-- Note any duplicate checks
+2. Key Files
+- app/services/state/manager.py
+- app/services/state/data.py
+- app/core/messaging/flow.py
+- app/services/whatsapp/handler.py
 
-3. Track Variable Re-injection:
-- Follow JWT token through state updates
-- Track profile data preservation
-- Monitor account info passing
-- Note where data gets copied
+## Integration Points
 
-4. Document Actual Issues:
-- Only note problems found in code
-- Include file and line references
-- Show the impact in the flow
-- Explain why it's a problem
+1. Auth Flow
+- Need to integrate with AuthActionHandler
+- Keep existing auth/registration flow
+- Maintain menu navigation
 
-## Important: Focus on Facts
+2. WhatsApp Interface
+- Need to implement BotServiceInterface
+- Keep message formatting
+- Preserve webhook handling
 
-For each issue found:
-1. Show where in code
-2. Explain what it does now
-3. Point out the complexity
-4. Demonstrate the impact
+## Next Steps
 
+1. Clean Integration
+- Remove our MessageHandler complexity
+- Use existing auth flow directly
+- Keep webhook format intact
+- Maintain menu structure
 
+2. Flow Updates
+- Convert existing flows to new format
+- Keep screen/template system
+- Preserve action handling
+- Maintain service connections
+
+3. Testing
+- Use mock WhatsApp server
+- Verify auth flow
+- Test message handling
+- Check state preservation
+
+## Key Insights
+
+1. Keep It Simple
+- Direct Redis operations
+- Clear flow structure
+- Minimal abstractions
+- Essential preservation
+
+2. Use What Works
+- Existing auth system
+- WhatsApp formatting
+- Menu navigation
+- Screen templates
+
+3. Clean Integration
+- No parallel systems
+- Direct connections
+- Clear handoffs
+- Simple flows
+
+## Example Flow
+
+```python
+class CredexFlow(Flow):
+    def __init__(self):
+        steps = [
+            Step(
+                id="amount",
+                type=StepType.TEXT,
+                message="Enter amount:",
+                validator=self._validate_amount,
+                transformer=self._transform_amount
+            ),
+            Step(
+                id="confirm",
+                type=StepType.BUTTON,
+                message=self._create_confirmation,
+                validator=lambda x: x == "confirm"
+            )
+        ]
+        super().__init__("credex", steps)
+```
+
+## Integration Example
+
+```python
+# Use existing auth
+auth_handler = AuthActionHandler(service)
+result = auth_handler.handle_action_menu()
+
+# Start flow if needed
+if action == "offer_credex":
+    flow = CredexFlow()
+    message = flow.start()
+    return format_message(message)
+```
+
+The path forward is clear:
+1. Remove our added complexity
+2. Integrate with existing systems
+3. Keep the simplified state management
+4. Maintain existing functionality
+
+This provides a clean foundation while preserving what works.
