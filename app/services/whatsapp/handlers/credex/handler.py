@@ -1,4 +1,5 @@
 """Handler for credex-related WhatsApp interactions"""
+import json  # Add json for pretty printing
 import logging
 
 from core.transactions import create_transaction_service
@@ -41,11 +42,22 @@ class CredexActionHandler(
         """Handle credex offer creation with proper state management"""
         try:
             logger.debug("Starting handle_action_offer_credex")
-            logger.debug(f"Initial state: stage={self.service.current_state.get('stage')}, option={self.service.current_state.get('option')}")
+            logger.debug(f"Initial state: {json.dumps(self.service.current_state, indent=2)}")
 
-            # First update state to CREDEX stage
-            current_state = self.service.current_state
+            # First validate and get profile data
+            profile_result = self._validate_and_get_profile()
+            if isinstance(profile_result, WhatsAppMessage):
+                logger.error("Profile validation failed")
+                return profile_result
+
+            current_state, selected_profile = profile_result
+            logger.debug(f"After profile validation: {json.dumps(current_state, indent=2)}")
+            logger.debug(f"Selected profile: {json.dumps(selected_profile, indent=2)}")
+
+            # Update state to CREDEX stage while preserving profile data
             current_state['stage'] = StateStage.CREDEX.value
+
+            # Update state with preserved data
             self.service.state.update_state(
                 user_id=self.service.user.mobile_number,
                 new_state=current_state,
@@ -54,22 +66,23 @@ class CredexActionHandler(
                 option="handle_action_offer_credex"
             )
 
-            # Then validate and get profile data
-            profile_result = self._validate_and_get_profile()
-            if isinstance(profile_result, WhatsAppMessage):
-                return profile_result
-
-            current_state, selected_profile = profile_result
-            logger.debug(f"After profile validation: stage={current_state.get('stage')}, option={current_state.get('option')}")
+            # Get fresh state after update
+            fresh_state = self.service.current_state
+            logger.debug(f"State after update: {json.dumps(fresh_state, indent=2)}")
 
             # Handle with progressive flow
             logger.debug("Handling with progressive flow")
-            handled, response = self._handle_progressive_flow(current_state, selected_profile)
+            handled, response = self._handle_progressive_flow(fresh_state, selected_profile)
+            logger.debug(f"Progressive flow result: handled={handled}")
+            if isinstance(response, dict):
+                logger.debug(f"Response: {json.dumps(response, indent=2)}")
             return response
 
         except Exception as e:
-            logger.error(f"Error handling credex offer: {str(e)}")
-            return self._format_error_response(str(e))
+            logger.error(f"Error handling credex offer: {str(e)}", exc_info=True)
+            return self._format_error_response(
+                "An error occurred while processing your request. Please try again by sending 'hi'."
+            )
 
     def handle_action_pending_offers_out(self) -> WhatsAppMessage:
         """Handle viewing and managing outgoing offers"""

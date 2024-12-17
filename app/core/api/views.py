@@ -1,6 +1,7 @@
 """Cloud API webhook views"""
 import logging
 import sys
+import json
 from datetime import datetime
 from core.api.models import Message
 from core.config.constants import CachedUser, state_redis
@@ -127,7 +128,44 @@ class CredexCloudApiWebhook(APIView):
             existing_state = state_redis.get(f"{wa_id}")
             if existing_state:
                 logger.info(f"Found existing state for phone: {wa_id}")
-                user = CachedUser(wa_id)  # Will load existing state
+                try:
+                    # Parse state JSON string
+                    state_data = json.loads(existing_state)
+                    if not isinstance(state_data, dict):
+                        state_data = {}
+
+                    # Ensure profile structure exists
+                    if "profile" not in state_data:
+                        state_data["profile"] = {
+                            "data": {
+                                "action": {},
+                                "details": {}
+                            }
+                        }
+                    elif not isinstance(state_data["profile"], dict):
+                        state_data["profile"] = {
+                            "data": {
+                                "action": {},
+                                "details": {}
+                            }
+                        }
+                    elif "data" not in state_data["profile"]:
+                        state_data["profile"]["data"] = {
+                            "action": {},
+                            "details": {}
+                        }
+
+                    # Get JWT token from Redis
+                    jwt_token = state_redis.get(f"{wa_id}_jwt_token")
+                    if jwt_token:
+                        state_data["jwt_token"] = jwt_token
+
+                    # Store state directly in Redis
+                    state_redis.set(f"{wa_id}", json.dumps(state_data))
+                    user = CachedUser(wa_id)  # Will load updated state
+                except json.JSONDecodeError:
+                    logger.warning("Invalid state JSON, creating new state")
+                    user = CachedUser(wa_id)  # Will initialize new state
             else:
                 logger.info(f"Creating new CachedUser for phone: {wa_id}")
                 user = CachedUser(wa_id)  # Will initialize new state

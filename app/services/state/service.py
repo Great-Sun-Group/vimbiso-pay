@@ -168,13 +168,65 @@ class StateService:
             "profile",
             "current_account",
             "member",
-            "flow_data"
+            "flow_data",
+            "authorizer_member_id",
+            "issuer_member_id",
+            "sender_account",
+            "sender_account_id"
         }
 
         result = new_state.copy()
-        for field in preserved_fields:
+
+        # Always preserve JWT token if it exists
+        if "jwt_token" in current_state:
+            result["jwt_token"] = current_state["jwt_token"]
+
+        # Preserve profile data if it exists and has valid content
+        if "profile" in current_state:
+            profile_data = current_state["profile"]
+            if isinstance(profile_data, dict):
+                data = profile_data.get("data", {})
+                dashboard = data.get("dashboard", {})
+
+                # Check if we have valid dashboard data
+                has_dashboard = (
+                    isinstance(dashboard, dict) and
+                    (
+                        # Either has accounts
+                        (isinstance(dashboard.get("accounts"), list) and
+                         len(dashboard["accounts"]) > 0 and
+                         any(
+                             isinstance(account, dict) and
+                             account.get("success") and
+                             isinstance(account.get("data"), dict)
+                             for account in dashboard["accounts"]
+                         )) or
+                        # Or has member ID
+                        dashboard.get("memberID") or
+                        # Or has other essential dashboard data
+                        (isinstance(dashboard.get("data"), dict) and dashboard["data"])
+                    )
+                )
+
+                if has_dashboard:
+                    # Preserve the entire profile data including dashboard
+                    result["profile"] = profile_data
+
+        # Preserve other fields only if they don't exist in new state and have content
+        for field in preserved_fields - {"jwt_token", "profile"}:
             if field in current_state and field not in new_state:
-                result[field] = current_state[field]
+                field_data = current_state[field]
+                if field_data:  # Only preserve non-empty data
+                    result[field] = field_data
+
+        # Handle flow data preservation
+        if "flow_data" in current_state and "flow_data" not in new_state:
+            flow_data = current_state["flow_data"]
+            if isinstance(flow_data, dict) and flow_data.get("data"):
+                result["flow_data"] = flow_data
+                # Ensure JWT token is also in flow data if it exists
+                if "jwt_token" in current_state:
+                    result["flow_data"]["data"]["jwt_token"] = current_state["jwt_token"]
 
         return result
 
@@ -198,7 +250,26 @@ class StateService:
                 return new_state
 
             try:
-                state = json.loads(state_json)
+                # Handle both string and dict responses from Redis
+                if isinstance(state_json, str):
+                    state = json.loads(state_json)
+                else:
+                    state = state_json
+
+                # Handle nested state field if it exists
+                if isinstance(state.get("state"), str):
+                    try:
+                        nested_state = json.loads(state["state"])
+                        # Preserve JWT token if it exists
+                        jwt_token = state.get("jwt_token")
+                        state.update(nested_state)
+                        state.pop("state", None)
+                        if jwt_token:
+                            state["jwt_token"] = jwt_token
+                    except json.JSONDecodeError:
+                        logger.error("Failed to parse nested state JSON")
+                        state.pop("state", None)
+
                 self._validate_state_data(state)
                 return state
             except json.JSONDecodeError:
@@ -228,7 +299,25 @@ class StateService:
 
                     # Get current state
                     current_state_json = pipe.get(state_key)
-                    current_state = json.loads(current_state_json) if current_state_json else None
+                    if isinstance(current_state_json, str):
+                        current_state = json.loads(current_state_json)
+                    else:
+                        current_state = current_state_json or {}
+
+                    # Handle nested state if it exists
+                    if isinstance(current_state.get("state"), str):
+                        try:
+                            nested_state = json.loads(current_state["state"])
+                            # Preserve JWT token if it exists
+                            jwt_token = current_state.get("jwt_token")
+                            current_state.update(nested_state)
+                            current_state.pop("state", None)
+                            if jwt_token:
+                                current_state["jwt_token"] = jwt_token
+                        except json.JSONDecodeError:
+                            logger.error("Failed to parse nested state JSON")
+                            current_state.pop("state", None)
+
                     current_stage = current_state.get("stage") if current_state else None
 
                     # Validate state transition
@@ -249,6 +338,11 @@ class StateService:
                         "last_updated": time.time(),
                         "version": (current_state.get("version", 0) + 1) if current_state else 1
                     })
+
+                    # Ensure JWT token is preserved in flow data if it exists
+                    if "jwt_token" in new_state and "flow_data" in new_state:
+                        if isinstance(new_state["flow_data"], dict) and "data" in new_state["flow_data"]:
+                            new_state["flow_data"]["data"]["jwt_token"] = new_state["jwt_token"]
 
                     # Store updated state
                     pipe.set(state_key, json.dumps(new_state), ex=self.state_ttl)
@@ -275,15 +369,38 @@ class StateService:
                     if preserve_auth:
                         current_state_json = pipe.get(state_key)
                         if current_state_json:
-                            current_state = json.loads(current_state_json)
+                            if isinstance(current_state_json, str):
+                                current_state = json.loads(current_state_json)
+                            else:
+                                current_state = current_state_json
+
+                            # Handle nested state if it exists
+                            if isinstance(current_state.get("state"), str):
+                                try:
+                                    nested_state = json.loads(current_state["state"])
+                                    current_state.update(nested_state)
+                                    current_state.pop("state", None)
+                                except json.JSONDecodeError:
+                                    logger.error("Failed to parse nested state JSON")
+                                    current_state.pop("state", None)
+
                             jwt_token = current_state.get("jwt_token")
 
                             if jwt_token:
                                 pipe.multi()
+                                # Initialize with empty profile structure
                                 new_state = {
                                     "stage": StateStage.INIT.value,
-                                    "option": "",
+                                    "option": None,
                                     "jwt_token": jwt_token,
+                                    "profile": {
+                                        "data": {
+                                            "action": {"details": {}},
+                                            "details": {}
+                                        }
+                                    },
+                                    "current_account": None,
+                                    "flow_data": None,
                                     "last_updated": time.time(),
                                     "version": current_state.get("version", 0) + 1
                                 }

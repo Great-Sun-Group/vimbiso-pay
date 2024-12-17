@@ -70,7 +70,12 @@ class CredexBotService(BotServiceInterface):
                 "stage": StateStage.INIT.value,
                 "option": "handle_action_menu",
                 "last_updated": None,
-                "profile": None,
+                "profile": {
+                    "data": {
+                        "action": {"details": {}},
+                        "dashboard": {}
+                    }
+                },
                 "current_account": None
             }
             self.state.update_state(
@@ -82,6 +87,37 @@ class CredexBotService(BotServiceInterface):
             )
             self.current_state = self.state.get_state(self.user.mobile_number)
             logger.debug(f"Initialized new state: {json.dumps(self.current_state, indent=2)}")
+
+    def _structure_profile_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Structure profile data with proper nesting"""
+        try:
+            # Ensure data is properly nested
+            if not isinstance(data, dict):
+                logger.error("Invalid profile data type")
+                return {"data": {"action": {"details": {}}, "dashboard": {}}}
+
+            # Handle both direct and nested data structures
+            if "data" not in data:
+                data = {"data": data}
+
+            # Ensure required structures exist
+            if "action" not in data["data"]:
+                data["data"]["action"] = {}
+            if "details" not in data["data"]["action"]:
+                data["data"]["action"]["details"] = {}
+            if "dashboard" not in data["data"]:
+                data["data"]["dashboard"] = {}
+
+            # If memberID exists in dashboard, ensure it's in action.details
+            dashboard = data["data"].get("dashboard", {})
+            if isinstance(dashboard, dict) and "memberID" in dashboard:
+                data["data"]["action"]["details"]["memberID"] = dashboard["memberID"]
+
+            logger.debug(f"Structured profile data: {json.dumps(data, indent=2)}")
+            return data
+        except Exception as e:
+            logger.error(f"Error structuring profile data: {str(e)}")
+            return {"data": {"action": {"details": {}}, "dashboard": {}}}
 
     def refresh(self, reset: bool = True, silent: bool = True) -> Optional[str]:
         """Refresh user profile and state information.
@@ -111,7 +147,12 @@ class CredexBotService(BotServiceInterface):
                     "stage": current_stage,  # Preserve current stage
                     "option": current_option,  # Preserve current option
                     "last_updated": None,
-                    "profile": None,
+                    "profile": {
+                        "data": {
+                            "action": {"details": {}},
+                            "dashboard": {}
+                        }
+                    },
                     "current_account": None
                 }
                 self.state.reset_state(self.user.mobile_number, preserve_auth=True)
@@ -158,11 +199,15 @@ class CredexBotService(BotServiceInterface):
             if not success:
                 return self.get_response_template(data.get("message", "Failed to load profile"))
 
-            # Initialize state with dashboard data
+            # Structure profile data properly
+            structured_data = self._structure_profile_data(data)
+            logger.debug(f"Structured profile data: {json.dumps(structured_data, indent=2)}")
+
+            # Initialize state with structured dashboard data
             initial_state = {
                 "stage": StateStage.MENU.value,
                 "option": "handle_action_menu",
-                "profile": data,
+                "profile": structured_data,
                 "current_account": None,
                 "last_updated": None,
                 "jwt_token": self.credex_service.jwt_token  # Include token in state

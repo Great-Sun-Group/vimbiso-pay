@@ -163,8 +163,65 @@ class BotServiceInterface:
 
             # Get current state using mobile number as user ID
             try:
-                self.current_state = self.state.get_state(self.user.mobile_number)
-                logger.debug(f"Current state: {json.dumps(self.current_state, indent=2)}")
+                state_data = self.state.get_state(self.user.mobile_number)
+                logger.debug(f"Retrieved state data: {json.dumps(state_data, indent=2)}")
+
+                # Parse state if it's a string and preserve jwt_token
+                jwt_token = state_data.get("jwt_token")  # Save JWT token
+                if isinstance(state_data.get("state"), str):
+                    try:
+                        parsed_state = json.loads(state_data["state"])
+                        logger.debug(f"Parsed state: {json.dumps(parsed_state, indent=2)}")
+                        # Update state with parsed data
+                        state_data.update(parsed_state)
+                        # Remove the original string state
+                        state_data.pop("state", None)
+                    except json.JSONDecodeError:
+                        logger.error("Failed to parse state JSON")
+                        state_data = {}
+
+                # Restore JWT token if it was present
+                if jwt_token:
+                    state_data["jwt_token"] = jwt_token
+                    logger.debug("Restored JWT token after state parsing")
+
+                # Initialize state with proper structure if empty
+                if not state_data or not isinstance(state_data, dict):
+                    state_data = {
+                        "stage": StateStage.INIT.value,
+                        "option": "handle_action_menu",
+                        "last_updated": None,
+                        "profile": {
+                            "data": {
+                                "action": {"details": {}},
+                                "dashboard": {}
+                            }
+                        },
+                        "current_account": None
+                    }
+                    # Preserve JWT token in new state
+                    if jwt_token:
+                        state_data["jwt_token"] = jwt_token
+
+                # Ensure profile has proper structure
+                if "profile" not in state_data:
+                    state_data["profile"] = {
+                        "data": {
+                            "action": {"details": {}},
+                            "dashboard": {}
+                        }
+                    }
+                elif isinstance(state_data["profile"], dict):
+                    if "data" not in state_data["profile"]:
+                        state_data["profile"] = {"data": state_data["profile"]}
+                    if "action" not in state_data["profile"]["data"]:
+                        state_data["profile"]["data"]["action"] = {"details": {}}
+                    elif "details" not in state_data["profile"]["data"]["action"]:
+                        state_data["profile"]["data"]["action"]["details"] = {}
+
+                self.current_state = state_data
+                logger.debug(f"Using state: {json.dumps(self.current_state, indent=2)}")
+
             except Exception as e:
                 logger.info(f"No existing state found: {str(e)}")
                 # Initialize with empty state but include required fields
@@ -172,9 +229,18 @@ class BotServiceInterface:
                     "stage": StateStage.INIT.value,
                     "option": "handle_action_menu",
                     "last_updated": None,
-                    "profile": None,
+                    "profile": {
+                        "data": {
+                            "action": {"details": {}},
+                            "dashboard": {}
+                        }
+                    },
                     "current_account": None
                 }
+                # Preserve JWT token in initial state if it exists
+                if jwt_token:
+                    initial_state["jwt_token"] = jwt_token
+
                 self.state.update_state(
                     user_id=self.user.mobile_number,
                     new_state=initial_state,
@@ -182,7 +248,7 @@ class BotServiceInterface:
                     update_from="init",
                     option="handle_action_menu"
                 )
-                self.current_state = self.state.get_state(self.user.mobile_number)
+                self.current_state = initial_state
                 logger.debug("Initialized new state")
 
             # Update state if body is an action command
@@ -194,6 +260,10 @@ class BotServiceInterface:
                     "option": self.body,
                     "last_updated": None
                 })
+                # Ensure JWT token is preserved in action command update
+                if jwt_token:
+                    new_state["jwt_token"] = jwt_token
+
                 self.state.update_state(
                     user_id=self.user.mobile_number,
                     new_state=new_state,
@@ -201,7 +271,7 @@ class BotServiceInterface:
                     update_from=self.body,
                     option=self.body
                 )
-                self.current_state = self.state.get_state(self.user.mobile_number)
+                self.current_state = new_state
 
         except Exception as e:
             logger.error(f"Error processing message payload: {str(e)}")

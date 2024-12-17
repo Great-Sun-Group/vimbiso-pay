@@ -34,18 +34,27 @@ class FlowHandler:
                 logger.error("Profile data is not a dictionary")
                 return False
 
-            # Check required profile structure
+            # Handle both direct and nested data structures
+            data = profile_data.get("data", profile_data)
+            if not isinstance(data, dict):
+                logger.error("Profile data['data'] is not a dictionary")
+                return False
+
+            # Ensure profile structure exists
+            if "action" not in data:
+                data["action"] = {}
+            if not isinstance(data["action"], dict):
+                data["action"] = {}
+            if "details" not in data["action"]:
+                data["action"]["details"] = {}
+            if not isinstance(data["action"]["details"], dict):
+                data["action"]["details"] = {}
+
+            # Update profile_data with structured data
             if "data" not in profile_data:
-                logger.error("Profile data missing 'data' key")
-                return False
-
-            if "action" not in profile_data["data"]:
-                logger.error("Profile data missing 'action' key")
-                return False
-
-            if "details" not in profile_data["data"]["action"]:
-                logger.error("Profile data missing 'details' key")
-                return False
+                profile_data["data"] = data
+            else:
+                profile_data["data"] = data
 
             return True
         except Exception as e:
@@ -331,11 +340,13 @@ class FlowHandler:
                 "current_account": state.get("current_account")
             }
 
-            # Validate profile data if present
+            # Validate and structure profile data if present
             profile_data = state.get("profile", {})
-            if profile_data and not self._validate_profile_data(profile_data):
-                logger.error("Invalid profile data structure")
-                return self._format_error("Invalid profile data", user_id)
+            if profile_data:
+                if not self._validate_profile_data(profile_data):
+                    logger.error("Invalid profile data structure")
+                    return self._format_error("Invalid profile data", user_id)
+                initial_state["profile"] = profile_data
 
             try:
                 flow.state = initial_state

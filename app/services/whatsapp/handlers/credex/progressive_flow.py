@@ -7,11 +7,12 @@ from .offer_flow_v2 import CredexOfferFlow
 from .action_flows import AcceptCredexFlow, DeclineCredexFlow, CancelCredexFlow
 from ...types import WhatsAppMessage
 from services.state.service import StateStage
+from ...base_handler import BaseActionHandler
 
 logger = logging.getLogger(__name__)
 
 
-class ProgressiveFlowMixin:
+class ProgressiveFlowMixin(BaseActionHandler):
     """Mixin for handling progressive flows"""
 
     def __init__(self, *args, **kwargs):
@@ -41,16 +42,58 @@ class ProgressiveFlowMixin:
         flow.state_service = self.service.state
         logger.debug(f"Services injected into flow: {type(flow).__name__}")
 
+    def _extract_member_id(self, profile_data: Dict[str, Any]) -> str:
+        """Extract member ID from profile data"""
+        try:
+            # Try to get from action details first
+            data = profile_data.get("data", profile_data)
+            action = data.get("action", {})
+            if action:
+                # Try details.memberID
+                member_id = action.get("details", {}).get("memberID")
+                if member_id:
+                    return member_id
+                # Try action.actor as fallback
+                return action.get("actor")
+
+            # Try dashboard path as fallback
+            dashboard = data.get("dashboard", {})
+            if dashboard:
+                # Look in accounts for owned account
+                accounts = dashboard.get("accounts", [])
+                for account in accounts:
+                    if account.get("success") and account.get("data", {}).get("isOwnedAccount"):
+                        auth_for = account.get("data", {}).get("authFor", [])
+                        if auth_for:
+                            return auth_for[0].get("memberID")
+
+                # Try direct memberID as final fallback
+                if dashboard.get("memberID"):
+                    return dashboard["memberID"]
+
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting member ID: {str(e)}")
+            return None
+
     def _initialize_flow_state(
             self, current_state: Dict[str, Any], member_id: str,
             sender_account_id: str, sender_account_name: str) -> Dict[str, Any]:
         """Initialize flow state with required fields"""
         # Convert profile data to proper structure if needed
         profile_data = current_state.get("profile", {})
-        if isinstance(profile_data, dict) and "data" not in profile_data:
-            profile_data = {"data": profile_data}
+        if isinstance(profile_data, dict):
+            # Handle both direct and nested data structures
+            if "data" not in profile_data:
+                profile_data = {"data": profile_data}
+            # Ensure action and details exist
+            if "action" not in profile_data["data"]:
+                profile_data["data"]["action"] = {}
+            if "details" not in profile_data["data"]["action"]:
+                profile_data["data"]["action"]["details"] = {}
 
-        return {
+        # Initialize flow state
+        flow_state = {
             "id": "credex_offer",
             "current_step": 0,  # Initialize current_step
             "stage": StateStage.CREDEX.value,
@@ -67,6 +110,12 @@ class ProgressiveFlowMixin:
             }
         }
 
+        # Preserve JWT token if present
+        if self.service.credex_service and self.service.credex_service.jwt_token:
+            flow_state["data"]["jwt_token"] = self.service.credex_service.jwt_token
+
+        return flow_state
+
     def _validate_profile_data(self, profile_data: Dict[str, Any]) -> bool:
         """Validate profile data structure"""
         try:
@@ -80,45 +129,28 @@ class ProgressiveFlowMixin:
                 logger.error("Profile data['data'] is not a dictionary")
                 return False
 
-            # Check if data has dashboard info
-            if "dashboard" in data:
-                # Extract action from dashboard data
-                dashboard = data.get("dashboard", {})
-                if not isinstance(dashboard, dict):
-                    logger.error("Dashboard data is not a dictionary")
-                    return False
+            # Ensure profile structure exists
+            if "action" not in data:
+                data["action"] = {}
+            if not isinstance(data["action"], dict):
+                data["action"] = {}
+            if "details" not in data["action"]:
+                data["action"]["details"] = {}
+            if not isinstance(data["action"]["details"], dict):
+                data["action"]["details"] = {}
 
-                # Look for member ID in dashboard data
-                member_id = dashboard.get("memberID")
-                if member_id:
-                    # Create action structure if not present
-                    if "action" not in data:
-                        data["action"] = {
-                            "details": {
-                                "memberID": member_id
-                            }
-                        }
-
-            # Validate action structure
-            action = data.get("action", {})
-            if not isinstance(action, dict):
-                logger.error("Action data is not a dictionary")
-                return False
-
-            details = action.get("details", {})
-            if not isinstance(details, dict):
-                logger.error("Details data is not a dictionary")
-                return False
+            # Update profile_data with structured data
+            if "data" not in profile_data:
+                profile_data["data"] = data
+            else:
+                profile_data["data"] = data
 
             # Check for memberID in details or try to get it from dashboard
-            if "memberID" not in details and "dashboard" in data:
+            if "memberID" not in data["action"]["details"] and "dashboard" in data:
                 dashboard = data.get("dashboard", {})
                 member_id = dashboard.get("memberID")
                 if member_id:
-                    details["memberID"] = member_id
-                else:
-                    logger.error("Could not find memberID in profile data")
-                    return False
+                    data["action"]["details"]["memberID"] = member_id
 
             return True
         except Exception as e:
@@ -166,18 +198,14 @@ class ProgressiveFlowMixin:
                 logger.error("Invalid current state type")
                 return False
 
-            # Validate profile data
+            # Validate and structure profile data
             profile_data = current_state.get("profile", {})
             if not self._validate_profile_data(profile_data):
                 logger.error("Invalid profile data structure")
                 return False
 
             # Get member ID and account info
-            data = profile_data.get("data", profile_data)
-            member_id = data.get("action", {}).get("details", {}).get("memberID")
-            if not member_id and "dashboard" in data:
-                member_id = data.get("dashboard", {}).get("memberID")
-
+            member_id = self._extract_member_id(profile_data)
             if not member_id:
                 logger.error("Could not find memberID in profile data")
                 return False
@@ -243,26 +271,24 @@ class ProgressiveFlowMixin:
             if not isinstance(current_state, dict):
                 raise ValueError("Invalid current state type")
 
-            # Validate profile data
-            if not self._validate_profile_data(current_state.get("profile", {})):
-                raise ValueError("Invalid profile data structure")
-
-            # Log message details
+            # Log message details for debugging
             logger.debug(f"Message type: {self.service.message_type}")
-            logger.debug(f"Message body: {self.service.body}")
+            logger.debug(f"Message: {self.service.message}")
+            logger.debug(f"Current state: {current_state}")
 
             # Check if this is a menu selection or text command
             interactive = self.service.message.get("interactive", {})
+            button_reply = interactive.get("button_reply", {})
+            list_reply = interactive.get("list_reply", {})
+
             is_menu_selection = (
                 self.service.message_type == "interactive" and
                 (
-                    # Handle both list_reply and list types
-                    (interactive.get("type") == "list_reply" and
-                     interactive.get("list_reply", {}).get("id") == "handle_action_offer_credex") or
-                    (interactive.get("type") == "list" and
-                     interactive.get("list_reply", {}).get("id") == "handle_action_offer_credex")
+                    (button_reply and button_reply.get("id") == "handle_action_offer_credex") or
+                    (list_reply and list_reply.get("id") == "handle_action_offer_credex")
                 )
             )
+
             is_text_command = (
                 self.service.message_type == "text" and
                 isinstance(self.service.body, str) and
@@ -272,14 +298,31 @@ class ProgressiveFlowMixin:
             # Handle menu selection or text command
             if is_menu_selection or is_text_command:
                 logger.debug("Starting new credex offer flow")
-                # Initialize flow data
-                member_id = current_state.get("authorizer_member_id")
-                sender_account_id = current_state.get("sender_account_id")
-                sender_account_name = current_state.get("sender_account")
 
-                current_state["flow_data"] = self._initialize_flow_state(
+                # Validate profile data first
+                profile_data = current_state.get("profile", {})
+                if not self._validate_profile_data(profile_data):
+                    logger.error("Invalid profile data structure")
+                    return True, self.get_response_template("Please start over by sending 'hi' to refresh your session.")
+
+                # Extract required data from profile
+                member_id = self._extract_member_id(profile_data)
+                if not member_id:
+                    logger.error("Could not find member ID in profile data")
+                    return True, self.get_response_template("Please start over by sending 'hi' to refresh your session.")
+
+                sender_account_id, sender_account_name = self._extract_sender_account_info(
+                    profile_data, selected_profile
+                )
+                if not sender_account_id:
+                    logger.error("Could not find sender account info")
+                    return True, self.get_response_template("Please start over by sending 'hi' to refresh your session.")
+
+                # Initialize flow state with JWT token preservation
+                flow_state = self._initialize_flow_state(
                     current_state, member_id, sender_account_id, sender_account_name
                 )
+                current_state["flow_data"] = flow_state
 
                 # Update state
                 if not self._update_flow_state(
@@ -297,7 +340,7 @@ class ProgressiveFlowMixin:
                 )
 
                 if isinstance(result, CredexOfferFlow):
-                    result.initialize_from_profile(current_state.get("profile", {}).get("data", {}))
+                    result.initialize_from_profile(profile_data.get("data", {}))
                     result.state.update(current_state["flow_data"]["data"])
                     message = result.current_step.message
                     if callable(message):
@@ -320,6 +363,11 @@ class ProgressiveFlowMixin:
                     "sender_account_id": current_state.get("sender_account_id"),
                     "phone": self.service.user.mobile_number
                 })
+
+                # Preserve JWT token in flow data
+                if self.service.credex_service and self.service.credex_service.jwt_token:
+                    current_state["flow_data"]["data"]["jwt_token"] = self.service.credex_service.jwt_token
+
                 logger.debug(f"Updated flow_data: {current_state['flow_data']['data']}")
 
                 # Update state before handling message
@@ -356,6 +404,10 @@ class ProgressiveFlowMixin:
                         "sender_account_id": current_state.get("sender_account_id"),
                         "phone": self.service.user.mobile_number
                     })
+
+                    # Re-ensure JWT token is preserved
+                    if self.service.credex_service and self.service.credex_service.jwt_token:
+                        current_state["flow_data"]["data"]["jwt_token"] = self.service.credex_service.jwt_token
 
                 if message is None:
                     # Flow completed successfully
@@ -399,7 +451,7 @@ class ProgressiveFlowMixin:
                 "to": self.service.user.mobile_number,
                 "type": "text",
                 "text": {
-                    "body": "❌ Unknown error. Please start over by sending 'hi'."
+                    "body": "❌ Please start over by sending 'hi' to refresh your session."
                 }
             })
 

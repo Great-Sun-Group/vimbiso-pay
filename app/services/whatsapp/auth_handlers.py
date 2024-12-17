@@ -118,6 +118,17 @@ class AuthActionHandler(BaseActionHandler):
             if not success:
                 return False, data.get("message", "Failed to load profile"), None
 
+            # Ensure data is properly structured
+            if isinstance(data, dict):
+                if "data" not in data:
+                    # Wrap data in proper structure
+                    data = {"data": data}
+                # Ensure action and details exist
+                if "action" not in data["data"]:
+                    data["data"]["action"] = {}
+                if "details" not in data["data"]["action"]:
+                    data["data"]["action"]["details"] = {}
+
             return True, "Success", data
         except Exception as e:
             logger.error(f"Login attempt failed: {str(e)}")
@@ -145,6 +156,17 @@ class AuthActionHandler(BaseActionHandler):
                         return self.handle_action_register(register=True)
                     return self.get_response_template(msg)
 
+                # Ensure profile data is properly structured
+                if isinstance(data, dict):
+                    if "data" not in data:
+                        # Wrap data in proper structure
+                        data = {"data": data}
+                    # Ensure action and details exist
+                    if "action" not in data["data"]:
+                        data["data"]["action"] = {}
+                    if "details" not in data["data"]["action"]:
+                        data["data"]["action"]["details"] = {}
+
                 # Update state with fresh dashboard data
                 current_state["profile"] = data
                 current_state["last_refresh"] = True
@@ -153,6 +175,8 @@ class AuthActionHandler(BaseActionHandler):
                 # Preserve JWT token
                 if self.service.credex_service._jwt_token:
                     current_state["jwt_token"] = self.service.credex_service._jwt_token
+
+                logger.debug(f"Updating state with profile data: {data}")
                 self.service.state.update_state(
                     user_id=user.mobile_number,
                     new_state=current_state,
@@ -184,7 +208,20 @@ class AuthActionHandler(BaseActionHandler):
             selected_account = current_state.get("current_account")
 
             if not selected_account:
-                accounts = current_state["profile"]["data"]["dashboard"]["accounts"]
+                # Ensure profile data is properly structured
+                profile_data = current_state.get("profile", {})
+                if not isinstance(profile_data, dict):
+                    return self.get_response_template("Invalid profile data. Please try again.")
+
+                data = profile_data.get("data", profile_data)
+                if not isinstance(data, dict):
+                    return self.get_response_template("Invalid profile data structure. Please try again.")
+
+                dashboard = data.get("dashboard", {})
+                if not isinstance(dashboard, dict):
+                    return self.get_response_template("Invalid dashboard data. Please try again.")
+
+                accounts = dashboard.get("accounts", [])
                 if not accounts:
                     return self.get_response_template("No accounts found. Please try again later.")
 
