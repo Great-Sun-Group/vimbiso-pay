@@ -1,20 +1,16 @@
-"""State data structure and preservation"""
+"""Simple state data management"""
 from typing import Dict, Any, Set
 
 
 class StateData:
-    """Manages state data structure and critical field preservation"""
+    """Manages state data preservation"""
 
-    # Critical fields that must be preserved during state updates
+    # Critical fields that should be preserved during updates
     CRITICAL_FIELDS: Set[str] = {
         "jwt_token",
         "profile",
         "current_account",
-        "member",
-        "authorizer_member_id",
-        "issuer_member_id",
-        "sender_account",
-        "sender_account_id"
+        "member"
     }
 
     @classmethod
@@ -31,36 +27,12 @@ class StateData:
 
     @staticmethod
     def create_default() -> Dict[str, Any]:
-        """Create default state structure"""
-        return {
-            "stage": "INIT",
-            "data": {},
-            "profile": {}
-        }
-
-    @classmethod
-    def validate(cls, state: Dict[str, Any]) -> bool:
-        """Validate state structure"""
-        if not isinstance(state, dict):
-            return False
-
-        # Check required fields
-        if "stage" not in state or "data" not in state:
-            return False
-
-        # Validate field types
-        if not isinstance(state["stage"], str):
-            return False
-        if not isinstance(state["data"], dict):
-            return False
-        if "profile" in state and not isinstance(state["profile"], dict):
-            return False
-
-        return True
+        """Create empty state"""
+        return {}
 
     @classmethod
     def merge(cls, current: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
-        """Merge new state with current state, preserving critical fields"""
+        """Merge states preserving critical fields"""
         result = current.copy()
-        result.update(new)  # Update with new data
-        return cls.preserve(current, result)  # Ensure critical fields are preserved
+        result.update(new)
+        return cls.preserve(current, result)

@@ -1,14 +1,12 @@
 """Constants and cached user state management"""
-from django.conf import settings
-from datetime import datetime, timedelta
-import os
-import redis
 import logging
+from typing import Any, Dict
 from urllib.parse import urlparse
-from typing import Dict, Any, Optional
 
-from core.utils.state_validator import StateValidator
+import redis
 from core.utils.redis_atomic import AtomicStateManager
+from django.conf import settings
+from services.credex.service import CredExService
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +23,12 @@ state_redis = redis.Redis(
     retry_on_timeout=True
 )
 
-# Initialize managers
+# Initialize atomic state manager
 atomic_state = AtomicStateManager(state_redis)
 
 # TTL Constants
 ACTIVITY_TTL = 300  # 5 minutes
 ABSOLUTE_JWT_TTL = 21600  # 6 hours
-
-# Feature flags
-USE_PROGRESSIVE_FLOW = os.environ.get('USE_PROGRESSIVE_FLOW', 'False') == 'True'
 
 # Command Recognition
 GREETINGS = {
@@ -45,6 +40,7 @@ GREETINGS = {
 
 def get_greeting(name: str) -> str:
     """Get time-appropriate greeting"""
+    from datetime import datetime, timedelta
     current_time = datetime.now() + timedelta(hours=2)
     hour = current_time.hour
 
@@ -59,11 +55,12 @@ def get_greeting(name: str) -> str:
 
 
 class CachedUserState:
-    """Manages user state with atomic operations and validation"""
+    """Manages user state with atomic operations"""
 
     def __init__(self, user) -> None:
         self.user = user
         self.key_prefix = str(user.mobile_number)
+        self.credex_service = None  # Store CredExService instance
 
         # Get initial state atomically
         state_data, error = atomic_state.atomic_get(self.key_prefix)
@@ -73,70 +70,41 @@ class CachedUserState:
 
         # Initialize state
         if not state_data:
-            state_data = self._create_initial_state()
-        else:
-            # Ensure profile structure
-            state_data["profile"] = StateValidator.ensure_profile_structure(
-                state_data.get("profile", {})
-            )
+            state_data = {
+                "jwt_token": None,
+                "profile": {},
+                "current_account": None,
+                "flow_data": None
+            }
 
         # Set instance variables
         self.state = state_data
-        self.stage = state_data.get("stage", "handle_action_menu")
-        self.option = state_data.get("option")
-        self.direction = state_data.get("direction", "OUT")
         self.jwt_token = state_data.get("jwt_token")
 
-        # Validate and update state
+        # Update state atomically
         success, error = atomic_state.atomic_update(
             key_prefix=self.key_prefix,
             state=state_data,
-            ttl=ACTIVITY_TTL,
-            stage=self.stage,
-            option=self.option,
-            direction=self.direction
+            ttl=ACTIVITY_TTL
         )
         if not success:
             logger.error(f"Initial state update failed: {error}")
 
-    def _create_initial_state(self) -> Dict[str, Any]:
-        """Create initial state structure"""
-        return {
-            "stage": "handle_action_menu",
-            "option": None,
-            "direction": "OUT",
-            "profile": StateValidator.ensure_profile_structure({}),
-            "current_account": None,
-            "flow_data": None
-        }
+    def get_or_create_credex_service(self) -> CredExService:
+        """Get existing CredExService or create new one"""
+        if not self.credex_service:
+            self.credex_service = CredExService(user=self.user)
+            # Initialize token from state if available
+            if self.jwt_token:
+                self._update_service_token(self.jwt_token)
+        return self.credex_service
 
-    def update_state(
-        self,
-        state: Dict[str, Any],
-        update_from: str,
-        stage: Optional[str] = None,
-        option: Optional[str] = None,
-        direction: Optional[str] = None
-    ) -> None:
-        """Update state with validation and atomic operations"""
+    def update_state(self, state: Dict[str, Any], update_from: str) -> None:
+        """Update state with atomic operations"""
         try:
-            # Update local variables
-            if stage:
-                self.stage = stage
-            if option:
-                self.option = option
-            if direction:
-                self.direction = direction
-
             # Merge with existing state
             new_state = self.state.copy()
             new_state.update(state or {})
-
-            # Ensure profile structure
-            if "profile" in new_state:
-                new_state["profile"] = StateValidator.ensure_profile_structure(
-                    new_state["profile"]
-                )
 
             # Preserve JWT token
             if self.jwt_token:
@@ -144,22 +112,11 @@ class CachedUserState:
                 if "flow_data" in new_state and isinstance(new_state["flow_data"], dict):
                     new_state["flow_data"]["jwt_token"] = self.jwt_token
 
-            # Validate state
-            validation = StateValidator.validate_state(new_state)
-            if not validation.is_valid:
-                logger.error(f"State validation failed: {validation.error_message}")
-                new_state = self._create_initial_state()
-                if self.jwt_token:
-                    new_state["jwt_token"] = self.jwt_token
-
             # Update atomically
             success, error = atomic_state.atomic_update(
                 key_prefix=self.key_prefix,
                 state=new_state,
-                ttl=ACTIVITY_TTL,
-                stage=self.stage,
-                option=self.option,
-                direction=self.direction
+                ttl=ACTIVITY_TTL
             )
             if not success:
                 logger.error(f"State update failed: {error}")
@@ -175,11 +132,28 @@ class CachedUserState:
         state_data, error = atomic_state.atomic_get(str(user.mobile_number))
 
         if error or not state_data:
-            state_data = self._create_initial_state()
-            if self.jwt_token:
-                state_data["jwt_token"] = self.jwt_token
+            state_data = {
+                "jwt_token": self.jwt_token,
+                "profile": {},
+                "current_account": None,
+                "flow_data": None
+            }
 
         return state_data
+
+    def _update_service_token(self, jwt_token: str) -> None:
+        """Update service token without triggering recursion"""
+        if self.credex_service:
+            self.credex_service._jwt_token = jwt_token
+            # Update sub-services
+            if hasattr(self.credex_service, '_auth'):
+                self.credex_service._auth._jwt_token = jwt_token
+            if hasattr(self.credex_service, '_member'):
+                self.credex_service._member._jwt_token = jwt_token
+            if hasattr(self.credex_service, '_offers'):
+                self.credex_service._offers._jwt_token = jwt_token
+            if hasattr(self.credex_service, '_recurring'):
+                self.credex_service._recurring._jwt_token = jwt_token
 
     def set_jwt_token(self, jwt_token: str) -> None:
         """Set JWT token with atomic update"""
@@ -190,6 +164,9 @@ class CachedUserState:
 
             if "flow_data" in current_state and isinstance(current_state["flow_data"], dict):
                 current_state["flow_data"]["jwt_token"] = jwt_token
+
+            # Update service token directly without using property setter
+            self._update_service_token(jwt_token)
 
             self.update_state(current_state, "set_jwt_token")
 
@@ -206,20 +183,14 @@ class CachedUserState:
             logger.error(f"State reset failed: {error}")
 
         # Reset instance state
-        initial_state = self._create_initial_state()
-        if self.jwt_token:
-            initial_state["jwt_token"] = self.jwt_token
-
-        self.state = initial_state
-        self.stage = initial_state["stage"]
-        self.option = initial_state["option"]
-        self.direction = initial_state["direction"]
-
-    def __getattr__(self, name: str) -> Any:
-        """Handle attribute access for state data"""
-        if name in self.state:
-            return self.state[name]
-        raise AttributeError(f"'CachedUserState' object has no attribute '{name}'")
+        self.state = {
+            "jwt_token": self.jwt_token,
+            "profile": {},
+            "current_account": None,
+            "flow_data": None
+        }
+        # Clear service instance
+        self.credex_service = None
 
 
 class CachedUser:
@@ -234,27 +205,6 @@ class CachedUser:
         self.state = CachedUserState(self)
         self.jwt_token = self.state.jwt_token
 
-
-# Menu Options
-MENU_OPTIONS_1 = {
-    # Main menu options
-    "handle_action_offer_credex": "handle_action_offer_credex",
-    "handle_action_accept_offers": "handle_action_accept_offers",
-    "handle_action_decline_offers": "handle_action_decline_offers",
-    "handle_action_pending_offers_out": "handle_action_pending_offers_out",
-    "handle_action_transactions": "handle_action_transactions",
-}
-
-MENU_OPTIONS_2 = {
-    # Main menu options
-    "handle_action_offer_credex": "handle_action_offer_credex",
-    "handle_action_accept_offers": "handle_action_accept_offers",
-    "handle_action_decline_offers": "handle_action_decline_offers",
-    "handle_action_pending_offers_out": "handle_action_pending_offers_out",
-    "handle_action_transactions": "handle_action_transactions",
-    "handle_action_authorize_member": "handle_action_authorize_member",
-    "handle_action_notifications": "handle_action_notifications",
-}
 
 # Message Templates
 REGISTER = "{message}"

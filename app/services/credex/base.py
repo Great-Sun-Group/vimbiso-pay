@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import requests
 from core.transactions.exceptions import TransactionError
-from core.config.constants import state_redis, ABSOLUTE_JWT_TTL
 
 if TYPE_CHECKING:
     from .config import CredExConfig
@@ -110,11 +109,10 @@ class BaseCredExService:
             new_token = response.headers.get('Authorization')
             if new_token:
                 self._jwt_token = new_token
-                if hasattr(self, '_parent_service'):
-                    self._parent_service.jwt_token = new_token
-                if self._phone:
-                    state_redis.setex(f"{self._phone}_jwt_token", ABSOLUTE_JWT_TTL, new_token)
-                    logger.debug("Updated Redis state with refreshed token from response")
+                # Update parent service's user state if available
+                if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
+                    self._parent_service.user.state.set_jwt_token(new_token)
+                    logger.debug("Updated parent service user state with refreshed token")
 
             if response.status_code == 401 and require_auth:
                 logger.warning("Authentication failed, attempting to refresh token")
@@ -130,12 +128,9 @@ class BaseCredExService:
                     if success:
                         # Update token and propagate to parent service if available
                         self._jwt_token = auth_service._jwt_token
-                        if hasattr(self, '_parent_service'):
-                            self._parent_service.jwt_token = self._jwt_token
-                        # Update Redis state with new token
-                        if self._phone:
-                            state_redis.setex(f"{self._phone}_jwt_token", ABSOLUTE_JWT_TTL, self._jwt_token)
-                            logger.debug("Updated Redis state with refreshed token")
+                        if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
+                            self._parent_service.user.state.set_jwt_token(self._jwt_token)
+                            logger.debug("Updated parent service user state with refreshed token")
                         headers = self.config.get_headers(self._jwt_token)
                         logger.debug("Making request with refreshed token")
                         response = requests.request(method, url, headers=headers, json=payload)
@@ -213,7 +208,7 @@ class BaseCredExService:
         """Set the JWT token"""
         logger.debug("Setting new JWT token")
         self._jwt_token = value
-        # Update Redis state with new token if we have a phone number
-        if hasattr(self, '_phone') and self._phone:
-            state_redis.setex(f"{self._phone}_jwt_token", ABSOLUTE_JWT_TTL, value)
-            logger.debug("Updated Redis state with new token")
+        # Update parent service's user state if available
+        if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
+            self._parent_service.user.state.set_jwt_token(value)
+            logger.debug("Updated parent service user state with new token")

@@ -1,214 +1,187 @@
 """WhatsApp message handling implementation"""
 import logging
-from typing import Dict, Any, Optional, Type, Tuple
+from typing import Dict, Any
 
-from core.messaging.flow import Flow
-from core.transactions import create_transaction_service
-from services.state.manager import StateManager
-from services.state.data import StateData
 from .base_handler import BaseActionHandler
 from .types import BotServiceInterface, WhatsAppMessage
-from .handlers.credex.offer_flow import CredexOfferFlow
 from .auth_handlers import AuthActionHandler
+from .handlers.credex import CredexFlow
+from .handlers.member import MemberFlow
 
 logger = logging.getLogger(__name__)
 
 
-class MessageHandler:
-    """Simple WhatsApp message processing"""
-
-    def __init__(self, state_manager: StateManager):
-        self.state = state_manager
-        self.flows: Dict[str, Type[Flow]] = {}
-        self._register_default_flows()
-
-    def _register_default_flows(self) -> None:
-        """Register default flows"""
-        self.register_flow("credex_offer", CredexOfferFlow)
-
-    def register_flow(self, flow_id: str, flow_class: Type[Flow]) -> None:
-        """Register a flow class"""
-        self.flows[flow_id] = flow_class
-
-    def _extract_input(self, message: Dict[str, Any]) -> Any:
-        """Extract input value from message"""
-        # Handle interactive messages
-        if "interactive" in message:
-            interactive = message["interactive"]
-            if interactive.get("type") == "button_reply":
-                return interactive.get("button_reply", {}).get("id")
-            if interactive.get("type") == "list_reply":
-                return interactive.get("list_reply", {}).get("id")
-
-        # Handle text messages
-        if "text" in message:
-            return message.get("text", {}).get("body")
-
-        return None
-
-    def _get_flow(self, state: Dict[str, Any]) -> Optional[Flow]:
-        """Get flow from state"""
-        flow_data = state.get("flow_data", {})
-        if not flow_data:
-            return None
-
-        flow_id = flow_data.get("id")
-        if not flow_id or flow_id not in self.flows:
-            return None
-
-        # Create and restore flow
-        flow = self.flows[flow_id](flow_id, [])
-        flow.set_state(flow_data)
-        return flow
-
-    def handle(self, user_id: str, message: Dict[str, Any]) -> Optional[str]:
-        """Handle incoming message"""
-        try:
-            # Get state and input
-            state = self.state.get(user_id)
-            input_data = self._extract_input(message)
-            if input_data is None:
-                return "Invalid message"
-
-            # Get flow
-            flow = self._get_flow(state)
-            if not flow:
-                return "No active flow"
-
-            # Process input
-            result = flow.process_input(input_data)
-
-            # Update state
-            new_state = StateData.merge(state, {
-                "flow_data": flow.get_state()
-            })
-            self.state.set(user_id, new_state)
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Message handling error: {str(e)}")
-            return f"Error: {str(e)}"
-
-    def start_flow(self, user_id: str, flow_id: str, initial_data: Dict[str, Any] = None) -> Optional[str]:
-        """Start a new flow"""
-        try:
-            # Validate flow
-            if flow_id not in self.flows:
-                return f"Unknown flow: {flow_id}"
-
-            # Create flow
-            flow = self.flows[flow_id](flow_id, [])
-            if initial_data:
-                flow.data.update(initial_data)
-
-            # Get initial message
-            if not flow.current_step:
-                return "Flow has no steps"
-            message = flow.current_step.get_message(flow.data)
-
-            # Update state
-            state = self.state.get(user_id)
-            new_state = StateData.merge(state, {
-                "flow_data": flow.get_state()
-            })
-            self.state.set(user_id, new_state)
-
-            return message
-
-        except Exception as e:
-            logger.error(f"Flow start error: {str(e)}")
-            return f"Error: {str(e)}"
-
-
 class CredexBotService(BotServiceInterface, BaseActionHandler):
-    """Bridge between webhook and new message handling"""
+    """Simplified WhatsApp bot service"""
 
     def __init__(self, payload: Dict[str, Any], user: Any):
-        super().__init__(user)  # Initialize BaseActionHandler
-        self.payload = payload
-        self.user = user
-        self.service = self  # Required for BaseActionHandler
-        self.state = user.state  # Required for BotServiceInterface
-        self.credex_service = None  # Will be set by service layer
-        self.transaction_service = None
+        BotServiceInterface.__init__(self, payload=payload, user=user)
+        BaseActionHandler.__init__(self, self)
+        # Get or create the underlying CredEx service
+        self.credex_service = user.state.get_or_create_credex_service()
         self.auth_handler = AuthActionHandler(self)
         self.response = self._process_message()
 
-    def _validate_and_get_profile(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """Validate and get profile data"""
-        current_state = self.user.state.__dict__
-        if not current_state.get("jwt_token"):
-            raise ValueError("Authentication required")
+    def _get_action(self) -> str:
+        """Extract action from message"""
+        if self.message_type == "interactive":
+            return (
+                self.message.get("interactive", {})
+                .get("button_reply", {})
+                .get("id") or
+                self.message.get("interactive", {})
+                .get("list_reply", {})
+                .get("id")
+            )
+        elif self.message_type == "text":
+            return self.body.strip().lower()
+        return ""
 
-        profile = current_state.get("profile", {})
-        if not profile or not isinstance(profile, dict):
-            raise ValueError("Invalid profile data")
+    def _start_flow(self, flow_type: str, flow_class, **kwargs) -> WhatsAppMessage:
+        """Start a new flow"""
+        flow = flow_class(flow_type=flow_type, **kwargs)
+        # Pass the cached CredEx service to the flow
+        flow.credex_service = self.credex_service
 
-        return current_state, profile
+        # Initialize flow data
+        profile = self.user.state.state.get("profile", {})
+        current_account = self.user.state.state.get("current_account", {})
+        member_id = profile.get("data", {}).get("action", {}).get("details", {}).get("memberID")
+        account_id = current_account.get("data", {}).get("accountID")
 
-    def _is_greeting(self, message: Dict[str, Any]) -> bool:
-        """Check if message is a greeting"""
-        if message.get("type") == "text":
-            text = message.get("text", {}).get("body", "").lower()
-            return text in {"hi", "hello", "hey", "start"}
-        return False
+        if not member_id or not account_id:
+            return self.get_response_template("Account not properly initialized")
+
+        flow.data = {
+            "phone": self.user.mobile_number,
+            "member_id": member_id,
+            "account_id": account_id
+        }
+
+        # Get initial message
+        result = flow.current_step.get_message(flow.data)
+
+        # Save flow state
+        flow_state = flow.get_state()  # Get base state (id, step, data)
+        self.user.state.update_state({
+            "flow_data": {
+                **flow_state,  # Flow's internal state
+                "flow_type": flow_type,  # Flow type for recreation
+                "kwargs": kwargs  # Flow kwargs for recreation
+            }
+        }, "flow_start")
+
+        return self.get_response_template(result)
+
+    def _continue_flow(self, flow_data: Dict[str, Any]) -> WhatsAppMessage:
+        """Continue an existing flow"""
+        try:
+            # Get flow type and kwargs from state
+            flow_type = flow_data.get("flow_type")
+            kwargs = flow_data.get("kwargs", {})
+            if not flow_type:
+                raise ValueError("Missing flow type")
+
+            # Initialize correct flow type
+            flow_id = flow_data.get("id", "")
+            if "credex_" in flow_id:
+                flow = CredexFlow(flow_type=flow_type, **kwargs)
+            elif "member_" in flow_id:
+                flow = MemberFlow(flow_type=flow_type, **kwargs)
+            else:
+                raise ValueError("Invalid flow ID")
+
+            # Initialize flow with its expected state structure
+            flow.credex_service = self.credex_service  # Pass the cached CredEx service
+            flow_state = {
+                "id": flow_data["id"],
+                "step": flow_data["step"],
+                "data": flow_data["data"]
+            }
+            flow.set_state(flow_state)
+
+            # Process input
+            result = flow.process_input(self.body)
+            if result == "Invalid input":
+                # Show more helpful error for amount validation
+                if flow.current_step and flow.current_step.id == "amount":
+                    result = (
+                        "Invalid amount format. Examples:\n"
+                        "100     (USD)\n"
+                        "USD 100\n"
+                        "ZWG 100\n"
+                        "XAU 1"
+                    )
+                return self.get_response_template(result)
+            elif not result:
+                # Flow complete with no message
+                self.user.state.update_state({
+                    "flow_data": None
+                }, "flow_complete")
+                return self.auth_handler.handle_action_menu()
+            elif flow.current_index >= len(flow.steps):
+                # Flow complete with success message
+                self.user.state.update_state({
+                    "flow_data": None
+                }, "flow_complete")
+                # Return success message - dashboard data already updated by flow
+                return self.get_response_template(result)
+
+            # Update flow state
+            flow_state = flow.get_state()  # Get updated state
+            self.user.state.update_state({
+                "flow_data": {
+                    **flow_state,  # Flow's internal state
+                    "flow_type": flow_type,  # Preserve flow type
+                    "kwargs": kwargs  # Preserve flow kwargs
+                }
+            }, "flow_continue")
+
+            return self.get_response_template(result)
+
+        except Exception as e:
+            logger.error(f"Flow error: {str(e)}")
+            # Clear flow state on error
+            self.user.state.update_state({
+                "flow_data": None
+            }, "flow_error")
+            return self._format_error_response(str(e))
 
     def _process_message(self) -> WhatsAppMessage:
-        """Process message using new handler"""
+        """Process incoming message"""
         try:
-            # Extract message from payload
-            messages = self.payload.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {}).get("messages", [])
-            if not messages:
-                return self._format_error_response("No message found")
-
-            message = messages[0]
-
-            # Handle greeting with auth flow
-            if self._is_greeting(message):
+            # Handle greeting
+            if self.message_type == "text" and self.body.lower() in {"hi", "hello", "hey", "start"}:
                 return self.auth_handler.handle_action_menu(login=True)
 
-            # Initialize services if needed
-            if not self.transaction_service and self.credex_service:
-                self.transaction_service = create_transaction_service(
-                    api_client=self.credex_service
-                )
+            # Get current flow from user's state
+            state = self.user.state.state
+            flow_data = state.get("flow_data", {})
 
-            # Get profile data
-            try:
-                current_state, profile = self._validate_and_get_profile()
-            except ValueError:
-                # Handle auth error with menu
-                return self.auth_handler.handle_action_menu(login=True)
+            # Handle active flow
+            if flow_data:
+                return self._continue_flow(flow_data)
 
-            # Use new handler
-            handler = MessageHandler(StateManager(self.user.state_redis))
+            # Handle menu actions
+            action = self._get_action()
 
-            # Extract action from message
-            action = None
-            if message.get("type") == "interactive":
-                interactive = message["interactive"]
-                if interactive.get("type") == "button_reply":
-                    action = interactive["button_reply"].get("id")
-                elif interactive.get("type") == "list_reply":
-                    action = interactive["list_reply"].get("id")
-
-            # Handle specific actions
+            # Start flows
             if action == "offer_credex":
-                return self.get_response_template(
-                    handler.start_flow(
-                        self.user.mobile_number,
-                        "credex_offer",
-                        {"profile": profile}
-                    )
-                )
+                return self._start_flow("offer", CredexFlow)
+            elif action == "start_registration":
+                return self._start_flow("registration", MemberFlow)
+            elif action == "upgrade_tier":
+                return self._start_flow("upgrade", MemberFlow)
+            elif action:
+                return self.auth_handler.handle_action_menu()
 
-            # Process normal message
-            result = handler.handle(self.user.mobile_number, message)
-
-            # Format response using base handler
-            return self.get_response_template(result or "No response")
+            # Default to menu
+            return self.auth_handler.handle_action_menu()
 
         except Exception as e:
             logger.error(f"Message processing error: {str(e)}")
             return self._format_error_response(str(e))
+
+    def handle(self) -> WhatsAppMessage:
+        """Return processed response"""
+        return self.response

@@ -4,7 +4,6 @@ import logging
 from typing import Any, Dict, Union
 
 from core.messaging.types import Message as CoreMessage
-from services.state.service import StateService, StateStage
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +77,6 @@ class BotServiceInterface:
         """
         self.message = payload
         self.user = user
-        self.current_state = {}
-
-        # Initialize state service
-        from django.core.cache import cache
-        self.state = StateService(redis_client=cache)
 
         # Extract message details from payload
         try:
@@ -120,21 +114,18 @@ class BotServiceInterface:
                 elif "nfm_reply" in interactive:
                     self.message_type = "nfm_reply"
                     try:
-                        # More lenient form data extraction
+                        # Extract form data
                         nfm_reply = interactive["nfm_reply"]
                         form_data = {}
 
-                        # Try different possible locations for form data
                         if "submitted_form_data" in nfm_reply:
                             submitted_form = nfm_reply["submitted_form_data"]
-                            # Try form_data.response_fields path
                             if "form_data" in submitted_form:
                                 form_data_obj = submitted_form["form_data"]
                                 if "response_fields" in form_data_obj:
                                     for field in form_data_obj["response_fields"]:
                                         if "field_id" in field and "value" in field:
                                             form_data[field["field_id"]] = field["value"]
-                                # Also try response_payload.response_json path
                                 elif "response_payload" in form_data_obj:
                                     try:
                                         response_json = form_data_obj["response_payload"].get("response_json")
@@ -144,7 +135,6 @@ class BotServiceInterface:
                                     except (json.JSONDecodeError, AttributeError):
                                         pass
 
-                        # Fallback to direct response_json if exists
                         if not form_data and "response_json" in nfm_reply:
                             try:
                                 json_data = json.loads(nfm_reply["response_json"])
@@ -161,110 +151,65 @@ class BotServiceInterface:
                 logger.warning(f"Unsupported message type: {self.message_type}")
                 self.body = ""
 
-            # Get current state using mobile number as user ID
-            try:
-                state_data = self.state.get_state(self.user.mobile_number)
-                logger.debug(f"Retrieved state data: {json.dumps(state_data, indent=2)}")
-
-                # Parse state if it's a string and preserve jwt_token
-                jwt_token = state_data.get("jwt_token")  # Save JWT token
-                if isinstance(state_data.get("state"), str):
-                    try:
-                        parsed_state = json.loads(state_data["state"])
-                        logger.debug(f"Parsed state: {json.dumps(parsed_state, indent=2)}")
-                        # Update state with parsed data
-                        state_data.update(parsed_state)
-                        # Remove the original string state
-                        state_data.pop("state", None)
-                    except json.JSONDecodeError:
-                        logger.error("Failed to parse state JSON")
-                        state_data = {}
-
-                # Restore JWT token if it was present
-                if jwt_token:
-                    state_data["jwt_token"] = jwt_token
-                    logger.debug("Restored JWT token after state parsing")
-
-                # Initialize state with proper structure if empty
-                if not state_data or not isinstance(state_data, dict):
-                    state_data = {
-                        "stage": StateStage.INIT.value,
-                        "option": "handle_action_menu",
-                        "last_updated": None,
-                        "profile": {
-                            "data": {
-                                "action": {"details": {}},
-                                "dashboard": {}
-                            }
-                        },
-                        "current_account": None
-                    }
-                    # Preserve JWT token in new state
-                    if jwt_token:
-                        state_data["jwt_token"] = jwt_token
-
-                # Ensure profile has proper structure
-                if "profile" not in state_data:
-                    state_data["profile"] = {
-                        "data": {
-                            "action": {"details": {}},
-                            "dashboard": {}
-                        }
-                    }
-                elif isinstance(state_data["profile"], dict):
-                    if "data" not in state_data["profile"]:
-                        state_data["profile"] = {"data": state_data["profile"]}
-                    if "action" not in state_data["profile"]["data"]:
-                        state_data["profile"]["data"]["action"] = {"details": {}}
-                    elif "details" not in state_data["profile"]["data"]["action"]:
-                        state_data["profile"]["data"]["action"]["details"] = {}
-
-                self.current_state = state_data
-                logger.debug(f"Using state: {json.dumps(self.current_state, indent=2)}")
-
-            except Exception as e:
-                logger.info(f"No existing state found: {str(e)}")
-                # Initialize with empty state but include required fields
-                initial_state = {
-                    "stage": StateStage.INIT.value,
-                    "option": "handle_action_menu",
-                    "last_updated": None,
-                    "profile": {
-                        "data": {
-                            "action": {"details": {}},
-                            "dashboard": {}
-                        }
-                    },
-                    "current_account": None
-                }
-                # Preserve JWT token in initial state if it exists
-                if jwt_token:
-                    initial_state["jwt_token"] = jwt_token
-
-                self.state.update_state(
-                    user_id=self.user.mobile_number,
-                    new_state=initial_state,
-                    stage=StateStage.INIT.value,
-                    update_from="init",
-                    option="handle_action_menu"
-                )
-                self.current_state = initial_state
-                logger.debug("Initialized new state")
-
         except Exception as e:
             logger.error(f"Error processing message payload: {str(e)}")
             self.message_type = "text"
             self.body = ""
 
+    def _parse_button_message(self, message_text: str) -> Dict[str, Any]:
+        """Parse message text for button format.
+
+        Format: "Message text\n\n[button_id] Button Label"
+        """
+        parts = message_text.rsplit("\n\n", 1)
+        if len(parts) != 2:
+            return None
+
+        text, button = parts
+        if not button.startswith("[") or "]" not in button:
+            return None
+
+        button_id = button[1:button.index("]")].strip()
+        button_label = button[button.index("]")+1:].strip()
+
+        return {
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {"text": text},
+                "action": {
+                    "buttons": [{
+                        "type": "reply",
+                        "reply": {
+                            "id": button_id,
+                            "title": button_label[:20]  # WhatsApp button limit
+                        }
+                    }]
+                }
+            }
+        }
+
     def get_response_template(self, message_text: str) -> Dict[str, Any]:
-        """Get a basic WhatsApp message template
+        """Get a WhatsApp message template
 
         Args:
-            message_text: Text content for the message
+            message_text: Text content for the message. For buttons, use format:
+                        "Message text\n\n[button_id] Button Label"
 
         Returns:
-            Dict[str, Any]: Basic formatted WhatsApp message
+            Dict[str, Any]: Formatted WhatsApp message
         """
+        # Try to parse as button message
+        button_message = self._parse_button_message(message_text)
+        if button_message:
+            return {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": self.user.mobile_number,
+                **button_message
+            }
+
+        # Default to text message
         return {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",

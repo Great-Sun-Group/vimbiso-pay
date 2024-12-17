@@ -11,10 +11,16 @@ from .recurring import CredExRecurringService
 class CredExService(CredExServiceInterface):
     """Main CredEx service that combines all operations"""
 
-    def __init__(self, config: Optional[CredExConfig] = None):
-        """Initialize the CredEx service with all sub-services"""
+    def __init__(self, config: Optional[CredExConfig] = None, user: Any = None):
+        """Initialize the CredEx service with all sub-services
+
+        Args:
+            config: Service configuration. If not provided, loads from environment.
+            user: CachedUser instance from parent service
+        """
         self.config = config or CredExConfig.from_env()
         self._jwt_token = None
+        self.user = user  # Store user instance from parent
 
         # Initialize sub-services with parent reference
         self._auth = CredExAuthService(config=self.config)
@@ -33,22 +39,22 @@ class CredExService(CredExServiceInterface):
         """Authenticate user with the CredEx API"""
         success, msg = self._auth.login(phone)
         if success:
-            # Propagate token to all services
-            self._jwt_token = self._auth.jwt_token
-            self._member.jwt_token = self._jwt_token
-            self._offers.jwt_token = self._jwt_token
-            self._recurring.jwt_token = self._jwt_token
+            # Get token from auth service
+            token = self._auth.jwt_token
+            # Update token in state and propagate to services
+            if self.user and token:
+                self.user.state.set_jwt_token(token)
         return success, msg
 
     def register_member(self, member_data: Dict[str, Any]) -> Tuple[bool, str]:
         """Register a new member"""
         success, msg = self._auth.register_member(member_data)
         if success:
-            # Propagate token to all services
-            self._jwt_token = self._auth.jwt_token
-            self._member.jwt_token = self._jwt_token
-            self._offers.jwt_token = self._jwt_token
-            self._recurring.jwt_token = self._jwt_token
+            # Get token from auth service
+            token = self._auth.jwt_token
+            # Update token in state and propagate to services
+            if self.user and token:
+                self.user.state.set_jwt_token(token)
         return success, msg
 
     def get_dashboard(self, phone: str) -> Tuple[bool, Dict[str, Any]]:
@@ -127,9 +133,15 @@ class CredExService(CredExServiceInterface):
 
     @jwt_token.setter
     def jwt_token(self, value: str):
-        """Set the JWT token across all services"""
+        """Set the JWT token"""
+        # Set token directly without triggering state update
         self._jwt_token = value
-        self._auth.jwt_token = value
-        self._member.jwt_token = value
-        self._offers.jwt_token = value
-        self._recurring.jwt_token = value
+        # Propagate to sub-services
+        if hasattr(self, '_auth'):
+            self._auth._jwt_token = value
+        if hasattr(self, '_member'):
+            self._member._jwt_token = value
+        if hasattr(self, '_offers'):
+            self._offers._jwt_token = value
+        if hasattr(self, '_recurring'):
+            self._recurring._jwt_token = value

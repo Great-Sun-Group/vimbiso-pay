@@ -1,10 +1,10 @@
 """Cloud API webhook views"""
 import logging
 import sys
-import json
 from datetime import datetime
+
 from core.api.models import Message
-from core.config.constants import CachedUser, state_redis
+from core.config.constants import CachedUser
 from core.utils.utils import CredexWhatsappService
 from decouple import config
 from django.core.cache import cache
@@ -13,7 +13,6 @@ from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
 from services.whatsapp.handler import CredexBotService
-
 
 # Configure logging with a standardized format
 logging.basicConfig(
@@ -35,15 +34,8 @@ class CredexCloudApiWebhook(APIView):
 
     @staticmethod
     def post(request):
-        # Early debug logging
-        logger.debug("==== START OF WEBHOOK REQUEST ====")
-        logger.debug(f"Request META: {request.META}")
-        logger.debug(f"Request Headers: {request.headers}")
-        logger.debug(f"Request Body: {request.body}")
-
         try:
             logger.info("Received webhook request")
-            logger.debug(f"Request data: {request.data}")
 
             # Validate basic webhook structure
             if not isinstance(request.data, dict):
@@ -68,9 +60,8 @@ class CredexCloudApiWebhook(APIView):
 
             logger.info(f"Webhook payload metadata: {payload.get('metadata', {})}")
 
-            # Check for mock testing header
-            is_mock_testing = request.headers.get('X-Mock-Testing', '').lower() == 'true'
-            logger.debug(f"Mock testing mode: {is_mock_testing}")
+            # Check for mock testing mode
+            is_mock_testing = request.headers.get('X-Mock-Testing') == 'true'
 
             # Only validate phone_number_id for real WhatsApp requests
             if not is_mock_testing:
@@ -124,54 +115,12 @@ class CredexCloudApiWebhook(APIView):
                 logger.warning("No WA ID in contact")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Check if state exists for this user
-            existing_state = state_redis.get(f"{wa_id}")
-            if existing_state:
-                logger.info(f"Found existing state for phone: {wa_id}")
-                try:
-                    # Parse state JSON string
-                    state_data = json.loads(existing_state)
-                    if not isinstance(state_data, dict):
-                        state_data = {}
-
-                    # Ensure profile structure exists
-                    if "profile" not in state_data:
-                        state_data["profile"] = {
-                            "data": {
-                                "action": {},
-                                "details": {}
-                            }
-                        }
-                    elif not isinstance(state_data["profile"], dict):
-                        state_data["profile"] = {
-                            "data": {
-                                "action": {},
-                                "details": {}
-                            }
-                        }
-                    elif "data" not in state_data["profile"]:
-                        state_data["profile"]["data"] = {
-                            "action": {},
-                            "details": {}
-                        }
-
-                    # Get JWT token from Redis
-                    jwt_token = state_redis.get(f"{wa_id}_jwt_token")
-                    if jwt_token:
-                        state_data["jwt_token"] = jwt_token
-
-                    # Store state directly in Redis
-                    state_redis.set(f"{wa_id}", json.dumps(state_data))
-                    user = CachedUser(wa_id)  # Will load updated state
-                except json.JSONDecodeError:
-                    logger.warning("Invalid state JSON, creating new state")
-                    user = CachedUser(wa_id)  # Will initialize new state
-            else:
-                logger.info(f"Creating new CachedUser for phone: {wa_id}")
-                user = CachedUser(wa_id)  # Will initialize new state
-
-            logger.info(f"Using CachedUser with state: {user.state.__dict__}")
+            # Initialize or get cached user - this handles all state management
+            logger.info(f"Initializing CachedUser for phone: {wa_id}")
+            user = CachedUser(wa_id)
             state = user.state
+
+            logger.info(f"Using CachedUser with state: {state.__dict__}")
 
             # Check message age
             timestamp = message.get("timestamp")
@@ -206,23 +155,26 @@ class CredexCloudApiWebhook(APIView):
                         logger.debug(f"Unhandled interactive message type: {interactive}")
                         message_text = str(interactive)
 
+            # Get flow data from state
+            flow_data = state.state.get("flow_data", {}) or {}
+            stage = flow_data.get("stage", "START")
+            option = flow_data.get("option", "NONE")
+
             logger.info(
-                f"Credex [{state.stage}<|>{state.option}] RECEIVED -> {message_text} "
+                f"Credex [{stage}<|>{option}] RECEIVED -> {message_text} "
                 f"FROM {wa_id} @ {message_stamp}"
             )
 
             try:
                 logger.info("Creating CredexBotService...")
-                # Pass the original WhatsApp format request data
+                # Create bot service with cached CredEx service
                 service = CredexBotService(payload=request.data, user=user)
 
                 # For mock testing return the response directly
                 if is_mock_testing:
-                    logger.info("Mock testing mode: Returning response without sending to WhatsApp")
-                    return JsonResponse({"response": service.response}, status=status.HTTP_200_OK)
+                    return JsonResponse(service.response, status=status.HTTP_200_OK)
 
                 # For real requests send via WhatsApp
-                logger.info("Sending response via WhatsApp service...")
                 response = CredexWhatsappService(
                     payload=service.response,
                     phone_number_id=payload["metadata"]["phone_number_id"]

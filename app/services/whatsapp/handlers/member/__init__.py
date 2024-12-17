@@ -1,4 +1,6 @@
-"""Member registration handlers"""
-from .handler import MemberRegistrationHandler
+"""
+Member flows package
+"""
+from .flows import MemberFlow
 
-__all__ = ["MemberRegistrationHandler"]
+__all__ = ['MemberFlow']

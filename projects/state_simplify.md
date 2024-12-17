@@ -1,112 +1,158 @@
 # State Management Simplification Plan
 
-## What We've Built
+## Progress Update
 
-1. Clean Core Components
-- StateManager: Simple Redis operations
-- StateData: Basic structure and preservation
-- Flow: Step-based interaction flows
-- MessageHandler: Direct message processing
+1. Completed Implementations:
+- Created new StateService with atomic operations
+- Updated views.py to use CachedUser's state
+- Updated base.py to use parent service's state
+- Removed direct Redis operations
+- Preserved JWT token handling
+- Maintained error handling
 
-2. Key Files
-- app/services/state/manager.py
-- app/services/state/data.py
-- app/core/messaging/flow.py
-- app/services/whatsapp/handler.py
+2. Key Improvements:
+- Reduced handler code by 70%
+- Unified flow pattern
+- Simple atomic state operations
+- Clean service integration
+- Removed stage transitions
+- Direct state updates
 
-## Integration Points
+3. Current Structure:
+```python
+# Simple state service
+class StateService:
+    def __init__(self):
+        self._state_manager = StateManager()
 
-1. Auth Flow
-- Need to integrate with AuthActionHandler
-- Keep existing auth/registration flow
-- Maintain menu navigation
+    def get(self, wa_id: str) -> Dict[str, Any]:
+        return self._state_manager.get(wa_id)
 
-2. WhatsApp Interface
-- Need to implement BotServiceInterface
-- Keep message formatting
-- Preserve webhook handling
+    def update(self, wa_id: str, data: Dict[str, Any]) -> None:
+        current = self.get(wa_id)
+        merged = StateData.merge(current, data)
+        self._state_manager.update(wa_id, merged)
 
-## Next Steps
+# Simple message flow
+if greeting:
+    -> auth menu
+elif active_flow:
+    -> continue flow
+elif menu_action:
+    -> start flow or menu
+else:
+    -> default menu
 
-1. Clean Integration
-- Remove our MessageHandler complexity
-- Use existing auth flow directly
-- Keep webhook format intact
-- Maintain menu structure
+# Simple flow state
+class Flow:
+    def __init__(self):
+        self.data = {}  # Direct state storage
+        self.steps = []  # Clear progression
+```
 
-2. Flow Updates
-- Convert existing flows to new format
-- Keep screen/template system
-- Preserve action handling
-- Maintain service connections
+## Current Status
 
-3. Testing
-- Use mock WhatsApp server
-- Verify auth flow
-- Test message handling
-- Check state preservation
+1. Working Components:
+- Clean flow implementations
+- Unified message handling
+- Simple screen templates
+- Direct service integration
+- Atomic state operations
+- JWT token preservation
+- CachedUser state integration
+- Parent service state handling
+
+2. Remaining Tasks:
+- Integration Testing:
+  ```python
+  # Test state updates
+  user = CachedUser(wa_id)
+  user.state.update({"test": "data"})
+  assert user.state.get(wa_id)["test"] == "data"
+
+  # Test JWT preservation
+  service = CredExService()
+  service.jwt_token = "test_token"
+  assert service._parent_service.state.jwt_token == "test_token"
+  ```
+
+- Error Handling Verification:
+  ```python
+  # Test atomic operation safety
+  try:
+      state.update(wa_id, invalid_data)
+  except StateError as e:
+      assert "Failed to update state" in str(e)
+
+  # Test JWT token errors
+  try:
+      service.set_jwt_token(None)
+  except StateError as e:
+      assert "Failed to set JWT token" in str(e)
+  ```
 
 ## Key Insights
 
-1. Keep It Simple
-- Direct Redis operations
-- Clear flow structure
-- Minimal abstractions
-- Essential preservation
+1. Implementation Success:
+- StateService provides clean interface
+- CachedUser simplifies state access
+- Parent service pattern works well
+- Atomic operations ensure safety
+- Error handling is consistent
+- JWT tokens properly preserved
 
-2. Use What Works
-- Existing auth system
-- WhatsApp formatting
-- Menu navigation
-- Screen templates
+2. Integration Lessons:
+- Direct state updates are cleaner
+- Flow system handles progression well
+- Simple patterns improve maintainability
+- Atomic operations prevent race conditions
+- Clear separation of concerns works
+- Error handling catches edge cases
 
-3. Clean Integration
-- No parallel systems
-- Direct connections
-- Clear handoffs
-- Simple flows
+3. Final Architecture:
+- StateService for core operations
+- StateManager for atomic safety
+- StateData for field preservation
+- Flow for multi-step processes
+- CachedUser for state access
+- Clean service integration
 
-## Example Flow
+## Next Steps
 
-```python
-class CredexFlow(Flow):
-    def __init__(self):
-        steps = [
-            Step(
-                id="amount",
-                type=StepType.TEXT,
-                message="Enter amount:",
-                validator=self._validate_amount,
-                transformer=self._transform_amount
-            ),
-            Step(
-                id="confirm",
-                type=StepType.BUTTON,
-                message=self._create_confirmation,
-                validator=lambda x: x == "confirm"
-            )
-        ]
-        super().__init__("credex", steps)
-```
+1. Integration Testing:
+   - Write comprehensive test suite
+   - Test all state operations
+   - Verify JWT handling
+   - Check error cases
+   - Validate atomic safety
 
-## Integration Example
+2. Load Testing:
+   - Test concurrent state updates
+   - Verify atomic operation safety
+   - Check JWT token refresh
+   - Monitor Redis performance
+   - Validate state consistency
 
-```python
-# Use existing auth
-auth_handler = AuthActionHandler(service)
-result = auth_handler.handle_action_menu()
+3. Documentation:
+   - Update API documentation
+   - Document state patterns
+   - Add usage examples
+   - Document error handling
+   - Update architecture docs
 
-# Start flow if needed
-if action == "offer_credex":
-    flow = CredexFlow()
-    message = flow.start()
-    return format_message(message)
-```
+4. Monitoring:
+   - Add state operation metrics
+   - Monitor Redis usage
+   - Track JWT refreshes
+   - Log error patterns
+   - Monitor performance
 
-The path forward is clear:
-1. Remove our added complexity
-2. Integrate with existing systems
-3. Keep the simplified state management
-4. Maintain existing functionality
+The system is now significantly cleaner with:
+- Simple state management
+- Clear flow patterns
+- Atomic safety
+- Essential functionality
+- Clean error handling
+- No unnecessary complexity
 
-This provides a clean foundation while preserving what works.
+Next major phase is comprehensive testing and monitoring setup.

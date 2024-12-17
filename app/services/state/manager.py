@@ -1,10 +1,11 @@
 """Clean state management implementation"""
 import json
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
 from redis.exceptions import RedisError
 from .data import StateData
+from .config import RedisConfig
 
 logger = logging.getLogger(__name__)
 
@@ -12,26 +13,18 @@ logger = logging.getLogger(__name__)
 class StateManager:
     """Simple Redis-backed state management"""
 
-    def __init__(self, redis_client):
-        """Initialize with Redis client"""
-        self.redis = redis_client
+    def __init__(self, redis_client=None):
+        """Initialize with Redis client or create new one"""
+        self.redis = redis_client or RedisConfig().get_client()
         self.ttl = 3600  # 1 hour TTL
         self.key_prefix = "user_state:"
-
-        # Verify Redis connection
-        try:
-            if not self.redis.ping():
-                raise ConnectionError("Redis ping failed")
-        except RedisError as e:
-            logger.error("Failed to connect to Redis")
-            raise ConnectionError("Could not connect to Redis") from e
 
     def _get_key(self, user_id: str) -> str:
         """Generate Redis key for user state"""
         return f"{self.key_prefix}{user_id}"
 
     def get(self, user_id: str) -> Dict[str, Any]:
-        """Get user state, creating default if none exists"""
+        """Get user state, creating empty if none exists"""
         try:
             key = self._get_key(user_id)
             data = self.redis.get(key)
@@ -39,38 +32,25 @@ class StateManager:
             if not data:
                 return StateData.create_default()
 
-            # Parse stored state
-            try:
-                if isinstance(data, str):
-                    state = json.loads(data)
-                else:
-                    state = json.loads(data.decode('utf-8'))
-
-                # Validate and ensure structure
-                if not StateData.validate(state):
-                    logger.error(f"Invalid state structure for user {user_id}")
+            # Parse stored state if needed
+            if isinstance(data, str):
+                try:
+                    return json.loads(data)
+                except json.JSONDecodeError:
+                    logger.error(f"Corrupted state data for user {user_id}")
                     return StateData.create_default()
 
-                return state
-
-            except json.JSONDecodeError:
-                logger.error(f"Corrupted state data for user {user_id}")
-                return StateData.create_default()
+            return data
 
         except RedisError as e:
             logger.error(f"Redis error getting state: {str(e)}")
-            raise
+            return StateData.create_default()
 
     def set(self, user_id: str, state: Dict[str, Any]) -> None:
         """Set complete user state"""
         try:
-            # Validate state
             if not isinstance(state, dict):
                 raise ValueError("State must be a dictionary")
-
-            # Ensure valid structure
-            if not StateData.validate(state):
-                raise ValueError("Invalid state structure")
 
             # Store state
             key = self._get_key(user_id)
@@ -86,11 +66,11 @@ class StateManager:
             # Get current state
             current = self.get(user_id)
 
-            # Update with new data
-            current.update(data)
+            # Merge states preserving critical fields
+            updated = StateData.merge(current, data)
 
             # Store updated state
-            self.set(user_id, current)
+            self.set(user_id, updated)
 
         except RedisError as e:
             logger.error(f"Redis error updating state: {str(e)}")
