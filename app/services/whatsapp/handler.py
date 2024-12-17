@@ -262,12 +262,6 @@ class CredexBotService(BotServiceInterface):
     def handle(self) -> Dict[str, Any]:
         """Process the incoming message and generate response."""
         try:
-            # Get current stage and option from state
-            current_stage = self.state.get_stage(self.user.mobile_number)
-            current_option = self.current_state.get("option")
-            logger.debug(f"Current stage: {current_stage}")
-            logger.debug(f"Current option: {current_option}")
-
             # Handle greeting messages
             if self.message_type == "text":
                 logger.debug(f"Checking if '{self.body}' is a greeting")
@@ -277,7 +271,7 @@ class CredexBotService(BotServiceInterface):
                 logger.debug("Not a greeting message")
 
                 # Handle text input during registration
-                if current_stage == StateStage.REGISTRATION.value:
+                if self.current_state.get("stage") == StateStage.REGISTRATION.value:
                     return self.action_handler.registration_handler.handle_registration()
 
             # Handle cancel_offer commands first
@@ -303,32 +297,20 @@ class CredexBotService(BotServiceInterface):
                         logger.debug("Handling tier upgrade confirmation")
                         return self.action_handler.handle_action("handle_action_confirm_tier_upgrade")
 
-                # For multi-step flows, prioritize current_option over stage
-                if current_option and current_option.startswith("handle_action_"):
-                    logger.debug(f"Using current option for multi-step flow: {current_option}")
-                    return self.action_handler.handle_action(current_option)
+                    # Let the appropriate handler manage the flow
+                    if button_id == "handle_action_offer_credex":
+                        return self.action_handler.credex_handler.handle_action_offer_credex()
 
-                # Use current stage/option to route to correct handler
-                if current_stage == StateStage.CREDEX.value or current_option == "handle_action_offer_credex":
+                # Let the appropriate handler manage the flow
+                if self.current_state.get("stage") == StateStage.CREDEX.value:
                     return self.action_handler.credex_handler.handle_action_offer_credex()
-                elif current_stage == StateStage.AUTH.value:
+                elif self.current_state.get("stage") == StateStage.AUTH.value:
                     return self.action_handler.auth_handler.handle_action_menu()
-                elif current_stage == StateStage.REGISTRATION.value:
+                elif self.current_state.get("stage") == StateStage.REGISTRATION.value:
                     return self.action_handler.registration_handler.handle_registration()
-                else:
-                    # Default to current stage
-                    return self.action_handler.handle_action(current_stage)
 
-            # For other messages, determine action based on body, option, or stage
-            action = None
-            if isinstance(self.body, str) and self.body.startswith("handle_action_"):
-                action = self.body
-            elif current_option and current_option.startswith("handle_action_"):
-                # Prioritize current_option for multi-step flows
-                action = current_option
-            else:
-                action = current_stage
-
+            # For other messages, determine action based on stage
+            action = self.current_state.get("stage")
             logger.info(f"Entry point: {action}")
             return self.action_handler.handle_action(action)
 

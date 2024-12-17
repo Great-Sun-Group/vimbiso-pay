@@ -1,3 +1,4 @@
+"""Constants and cached user state management"""
 from django.conf import settings
 from datetime import timedelta
 import datetime
@@ -210,6 +211,11 @@ class CachedUserState:
 
         # Create a copy to avoid modifying the input
         new_state = state.copy()
+
+        # Preserve existing state data
+        for key, value in self.state.items():
+            if key not in new_state:
+                new_state[key] = value
 
         # Ensure profile structure exists and preserve existing data
         if "profile" in new_state:

@@ -103,6 +103,13 @@ class CredexOfferFlow(Flow):
             self.state = current_state
             logger.debug(f"Initialized flow with sender account: {sender_account_id}")
 
+        # Preserve JWT token if present in credex service
+        if self.credex_service and self.credex_service.jwt_token:
+            current_state = self.state
+            current_state["jwt_token"] = self.credex_service.jwt_token
+            self.state = current_state
+            logger.debug("Preserved JWT token in flow state")
+
     def _validate_handle(self, handle: str) -> bool:
         """
         Validate handle format before transformation.
@@ -138,6 +145,10 @@ class CredexOfferFlow(Flow):
                 # Use Flow's state management to get preserved fields
                 clean_state = self._get_clean_state()
                 current_state.update(clean_state)
+
+                # Preserve JWT token
+                if self.credex_service and self.credex_service.jwt_token:
+                    current_state["jwt_token"] = self.credex_service.jwt_token
 
                 # Update state with proper context
                 self.state_service.update_state(
@@ -377,6 +388,11 @@ class CredexOfferFlow(Flow):
             logger.debug("Missing sender_account_id")
             return False
 
+        # Check JWT token
+        if not state.get("jwt_token"):
+            logger.debug("Missing JWT token")
+            return False
+
         logger.debug("All required data present")
         return True
 
@@ -467,6 +483,10 @@ class CredexOfferFlow(Flow):
             # Submit to credex service
             if not self.credex_service:
                 return False, "Credex service not initialized"
+
+            # Ensure JWT token is set in credex service
+            if self.state.get("jwt_token"):
+                self.credex_service.jwt_token = self.state["jwt_token"]
 
             # Convert TransactionOffer to dict with correct API field names
             offer_data = {

@@ -251,28 +251,6 @@ class BotServiceInterface:
                 self.current_state = initial_state
                 logger.debug("Initialized new state")
 
-            # Update state if body is an action command
-            if isinstance(self.body, str) and self.body.startswith("handle_action_"):
-                logger.debug(f"Updating state for action command: {self.body}")
-                new_state = self.current_state.copy()
-                new_state.update({
-                    "stage": self.body,
-                    "option": self.body,
-                    "last_updated": None
-                })
-                # Ensure JWT token is preserved in action command update
-                if jwt_token:
-                    new_state["jwt_token"] = jwt_token
-
-                self.state.update_state(
-                    user_id=self.user.mobile_number,
-                    new_state=new_state,
-                    stage=self.body,
-                    update_from=self.body,
-                    option=self.body
-                )
-                self.current_state = new_state
-
         except Exception as e:
             logger.error(f"Error processing message payload: {str(e)}")
             self.message_type = "text"

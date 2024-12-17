@@ -1,10 +1,7 @@
 """Handler for credex-related WhatsApp interactions"""
-import json  # Add json for pretty printing
+import json
 import logging
-
 from core.transactions import create_transaction_service
-from services.state.service import StateStage
-
 from ...base_handler import BaseActionHandler
 from ...types import WhatsAppMessage
 from .command_handler import CommandHandlerMixin
@@ -54,25 +51,9 @@ class CredexActionHandler(
             logger.debug(f"After profile validation: {json.dumps(current_state, indent=2)}")
             logger.debug(f"Selected profile: {json.dumps(selected_profile, indent=2)}")
 
-            # Update state to CREDEX stage while preserving profile data
-            current_state['stage'] = StateStage.CREDEX.value
-
-            # Update state with preserved data
-            self.service.state.update_state(
-                user_id=self.service.user.mobile_number,
-                new_state=current_state,
-                stage=StateStage.CREDEX.value,
-                update_from="offer_credex_init",
-                option="handle_action_offer_credex"
-            )
-
-            # Get fresh state after update
-            fresh_state = self.service.current_state
-            logger.debug(f"State after update: {json.dumps(fresh_state, indent=2)}")
-
-            # Handle with progressive flow
+            # Handle with progressive flow - let flow manage state
             logger.debug("Handling with progressive flow")
-            handled, response = self._handle_progressive_flow(fresh_state, selected_profile)
+            handled, response = self._handle_progressive_flow(current_state, selected_profile)
             logger.debug(f"Progressive flow result: handled={handled}")
             if isinstance(response, dict):
                 logger.debug(f"Response: {json.dumps(response, indent=2)}")
@@ -141,21 +122,6 @@ class CredexActionHandler(
                 current_section["rows"].append(row)
 
             sections.append(current_section)
-
-            # Update state to handle cancellation
-            current_state["stage"] = StateStage.CREDEX.value
-            current_state["option"] = "handle_action_pending_offers_out"
-            # Preserve JWT token
-            if self.service.credex_service.jwt_token:
-                current_state["jwt_token"] = self.service.credex_service.jwt_token
-
-            self.service.state.update_state(
-                user_id=self.service.user.mobile_number,
-                new_state=current_state,
-                stage=StateStage.CREDEX.value,
-                update_from="pending_offers_out",
-                option="handle_action_pending_offers_out"
-            )
 
             # Create interactive list message with header
             return {
@@ -244,21 +210,6 @@ class CredexActionHandler(
 
             sections.append(current_section)
 
-            # Update state to handle acceptance
-            current_state["stage"] = StateStage.CREDEX.value
-            current_state["option"] = "handle_action_accept_offers"
-            # Preserve JWT token
-            if self.service.credex_service.jwt_token:
-                current_state["jwt_token"] = self.service.credex_service.jwt_token
-
-            self.service.state.update_state(
-                user_id=self.service.user.mobile_number,
-                new_state=current_state,
-                stage=StateStage.CREDEX.value,
-                update_from="accept_offers",
-                option="handle_action_accept_offers"
-            )
-
             # Create interactive list message with header
             return {
                 "messaging_product": "whatsapp",
@@ -345,21 +296,6 @@ class CredexActionHandler(
                 current_section["rows"].append(row)
 
             sections.append(current_section)
-
-            # Update state to handle decline
-            current_state["stage"] = StateStage.CREDEX.value
-            current_state["option"] = "handle_action_decline_offers"
-            # Preserve JWT token
-            if self.service.credex_service.jwt_token:
-                current_state["jwt_token"] = self.service.credex_service.jwt_token
-
-            self.service.state.update_state(
-                user_id=self.service.user.mobile_number,
-                new_state=current_state,
-                stage=StateStage.CREDEX.value,
-                update_from="decline_offers",
-                option="handle_action_decline_offers"
-            )
 
             # Create interactive list message with header
             return {

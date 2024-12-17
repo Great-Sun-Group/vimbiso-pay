@@ -274,11 +274,9 @@ class FlowHandler:
                 "data": flow.state
             }
 
-            # Preserve profile and account data in flow state
-            if "profile" in state:
-                state["flow_data"]["data"]["profile"] = state["profile"]
-            if "current_account" in state:
-                state["flow_data"]["data"]["current_account"] = state["current_account"]
+            # Preserve critical data in flow state
+            preserved_data = self._preserve_critical_state(state)
+            state["flow_data"]["data"].update(preserved_data)
 
             # Log state for debugging
             logger.debug(f"Updated flow state: {flow.state}")
@@ -333,12 +331,9 @@ class FlowHandler:
                 logger.error(f"Flow {flow_id} not found")
                 return self._format_error("Invalid flow", user_id)
 
-            # Initialize flow state with user ID, profile, and account
-            initial_state = {
-                "phone": user_id,
-                "profile": state.get("profile", {}),
-                "current_account": state.get("current_account")
-            }
+            # Initialize flow state with critical data
+            initial_state = self._preserve_critical_state(state)
+            initial_state["phone"] = user_id
 
             # Validate and structure profile data if present
             profile_data = state.get("profile", {})

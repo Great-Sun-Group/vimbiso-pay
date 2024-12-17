@@ -6,7 +6,6 @@ from core.messaging.flow_handler import FlowHandler
 from .offer_flow_v2 import CredexOfferFlow
 from .action_flows import AcceptCredexFlow, DeclineCredexFlow, CancelCredexFlow
 from ...types import WhatsAppMessage
-from services.state.service import StateStage
 from ...base_handler import BaseActionHandler
 
 logger = logging.getLogger(__name__)
@@ -76,87 +75,6 @@ class ProgressiveFlowMixin(BaseActionHandler):
             logger.error(f"Error extracting member ID: {str(e)}")
             return None
 
-    def _initialize_flow_state(
-            self, current_state: Dict[str, Any], member_id: str,
-            sender_account_id: str, sender_account_name: str) -> Dict[str, Any]:
-        """Initialize flow state with required fields"""
-        # Convert profile data to proper structure if needed
-        profile_data = current_state.get("profile", {})
-        if isinstance(profile_data, dict):
-            # Handle both direct and nested data structures
-            if "data" not in profile_data:
-                profile_data = {"data": profile_data}
-            # Ensure action and details exist
-            if "action" not in profile_data["data"]:
-                profile_data["data"]["action"] = {}
-            if "details" not in profile_data["data"]["action"]:
-                profile_data["data"]["action"]["details"] = {}
-
-        # Initialize flow state
-        flow_state = {
-            "id": "credex_offer",
-            "current_step": 0,  # Initialize current_step
-            "stage": StateStage.CREDEX.value,
-            "option": "handle_action_offer_credex",
-            "data": {
-                "profile": profile_data,
-                "current_account": current_state.get("current_account"),
-                "authorizer_member_id": member_id,
-                "issuer_member_id": member_id,
-                "sender_account": sender_account_name,
-                "sender_account_id": sender_account_id,
-                "phone": self.service.user.mobile_number,
-                "version": 1  # Add version tracking
-            }
-        }
-
-        # Preserve JWT token if present
-        if self.service.credex_service and self.service.credex_service.jwt_token:
-            flow_state["data"]["jwt_token"] = self.service.credex_service.jwt_token
-
-        return flow_state
-
-    def _validate_profile_data(self, profile_data: Dict[str, Any]) -> bool:
-        """Validate profile data structure"""
-        try:
-            if not isinstance(profile_data, dict):
-                logger.error("Profile data is not a dictionary")
-                return False
-
-            # Handle both direct and nested data structures
-            data = profile_data.get("data", profile_data)
-            if not isinstance(data, dict):
-                logger.error("Profile data['data'] is not a dictionary")
-                return False
-
-            # Ensure profile structure exists
-            if "action" not in data:
-                data["action"] = {}
-            if not isinstance(data["action"], dict):
-                data["action"] = {}
-            if "details" not in data["action"]:
-                data["action"]["details"] = {}
-            if not isinstance(data["action"]["details"], dict):
-                data["action"]["details"] = {}
-
-            # Update profile_data with structured data
-            if "data" not in profile_data:
-                profile_data["data"] = data
-            else:
-                profile_data["data"] = data
-
-            # Check for memberID in details or try to get it from dashboard
-            if "memberID" not in data["action"]["details"] and "dashboard" in data:
-                dashboard = data.get("dashboard", {})
-                member_id = dashboard.get("memberID")
-                if member_id:
-                    data["action"]["details"]["memberID"] = member_id
-
-            return True
-        except Exception as e:
-            logger.error(f"Profile validation error: {str(e)}")
-            return False
-
     def _extract_sender_account_info(self, profile_data: Dict[str, Any], selected_profile: Dict[str, Any]) -> Tuple[str, str]:
         """Extract sender account info from profile data"""
         try:
@@ -184,81 +102,29 @@ class ProgressiveFlowMixin(BaseActionHandler):
             logger.error(f"Error extracting sender account info: {str(e)}")
             return None, "Your Account"
 
-    def _update_flow_state(
-        self,
-        current_state: Dict[str, Any],
-        stage: str,
-        update_from: str,
-        option: str = None,
-        preserve_flow: bool = True
-    ) -> bool:
-        """Update state with consistent pattern"""
-        try:
-            if not isinstance(current_state, dict):
-                logger.error("Invalid current state type")
-                return False
-
-            # Validate and structure profile data
-            profile_data = current_state.get("profile", {})
-            if not self._validate_profile_data(profile_data):
-                logger.error("Invalid profile data structure")
-                return False
-
-            # Get member ID and account info
-            member_id = self._extract_member_id(profile_data)
-            if not member_id:
-                logger.error("Could not find memberID in profile data")
-                return False
-
-            selected_profile = current_state.get("current_account")
-            sender_account_id, sender_account_name = self._extract_sender_account_info(
-                profile_data, selected_profile
-            )
-
-            # Create new state with required fields
-            new_state = {
-                "profile": profile_data,
-                "current_account": selected_profile,
-                "stage": stage,
-                "option": option or "handle_action_offer_credex",
+    def _initialize_flow_state(
+            self, current_state: Dict[str, Any], member_id: str,
+            sender_account_id: str, sender_account_name: str) -> Dict[str, Any]:
+        """Initialize flow state with required fields"""
+        flow_state = {
+            "id": "credex_offer",
+            "current_step": 0,
+            "data": {
+                "profile": current_state.get("profile", {}),
+                "current_account": current_state.get("current_account"),
                 "authorizer_member_id": member_id,
                 "issuer_member_id": member_id,
                 "sender_account": sender_account_name,
                 "sender_account_id": sender_account_id,
-                "phone": self.service.user.mobile_number,
-                "last_refresh": True
+                "phone": self.service.user.mobile_number
             }
+        }
 
-            # Preserve JWT token
-            if self.service.credex_service and self.service.credex_service.jwt_token:
-                new_state["jwt_token"] = self.service.credex_service.jwt_token
+        # Preserve JWT token
+        if self.service.credex_service and self.service.credex_service.jwt_token:
+            flow_state["data"]["jwt_token"] = self.service.credex_service.jwt_token
 
-            # Preserve or initialize flow data
-            if preserve_flow and "flow_data" in current_state:
-                flow_data = current_state["flow_data"]
-                flow_data["stage"] = stage
-                flow_data["option"] = option or "handle_action_offer_credex"
-                new_state["flow_data"] = flow_data
-            elif preserve_flow:
-                new_state["flow_data"] = self._initialize_flow_state(
-                    current_state, member_id, sender_account_id, sender_account_name
-                )
-
-            # Update state
-            self.service.state.update_state(
-                user_id=self.service.user.mobile_number,
-                new_state=new_state,
-                stage=stage,
-                update_from=update_from,
-                option=option
-            )
-            logger.debug(f"Flow state updated from {update_from}")
-            logger.debug(f"Updated state: {new_state}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error updating flow state: {str(e)}")
-            return False
+        return flow_state
 
     def _handle_progressive_flow(
         self,
@@ -299,39 +165,24 @@ class ProgressiveFlowMixin(BaseActionHandler):
             if is_menu_selection or is_text_command:
                 logger.debug("Starting new credex offer flow")
 
-                # Validate profile data first
-                profile_data = current_state.get("profile", {})
-                if not self._validate_profile_data(profile_data):
-                    logger.error("Invalid profile data structure")
-                    return True, self.get_response_template("Please start over by sending 'hi' to refresh your session.")
-
                 # Extract required data from profile
-                member_id = self._extract_member_id(profile_data)
+                member_id = self._extract_member_id(current_state.get("profile", {}))
                 if not member_id:
                     logger.error("Could not find member ID in profile data")
                     return True, self.get_response_template("Please start over by sending 'hi' to refresh your session.")
 
                 sender_account_id, sender_account_name = self._extract_sender_account_info(
-                    profile_data, selected_profile
+                    current_state.get("profile", {}), selected_profile
                 )
                 if not sender_account_id:
                     logger.error("Could not find sender account info")
                     return True, self.get_response_template("Please start over by sending 'hi' to refresh your session.")
 
-                # Initialize flow state with JWT token preservation
+                # Initialize flow state
                 flow_state = self._initialize_flow_state(
                     current_state, member_id, sender_account_id, sender_account_name
                 )
                 current_state["flow_data"] = flow_state
-
-                # Update state
-                if not self._update_flow_state(
-                    current_state=current_state,
-                    stage=StateStage.CREDEX.value,
-                    update_from="flow_init",
-                    option="handle_action_offer_credex"
-                ):
-                    raise ValueError("Failed to update flow state")
 
                 # Start flow
                 result = self.flow_handler.start_flow(
@@ -340,8 +191,8 @@ class ProgressiveFlowMixin(BaseActionHandler):
                 )
 
                 if isinstance(result, CredexOfferFlow):
-                    result.initialize_from_profile(profile_data.get("data", {}))
-                    result.state.update(current_state["flow_data"]["data"])
+                    result.initialize_from_profile(current_state.get("profile", {}).get("data", {}))
+                    result.state.update(flow_state["data"])
                     message = result.current_step.message
                     if callable(message):
                         message = message(result.state)
@@ -351,75 +202,16 @@ class ProgressiveFlowMixin(BaseActionHandler):
             # Check if there's an active flow
             if "flow_data" in current_state:
                 logger.debug("Found active flow, handling message")
-                # Ensure member IDs and account info are in flow_data
-                if "data" not in current_state["flow_data"]:
-                    current_state["flow_data"]["data"] = {}
-                current_state["flow_data"]["data"].update({
-                    "profile": current_state.get("profile", {}),
-                    "current_account": selected_profile,  # Include selected account
-                    "authorizer_member_id": current_state.get("authorizer_member_id"),
-                    "issuer_member_id": current_state.get("issuer_member_id"),
-                    "sender_account": current_state.get("sender_account"),
-                    "sender_account_id": current_state.get("sender_account_id"),
-                    "phone": self.service.user.mobile_number
-                })
 
-                # Preserve JWT token in flow data
-                if self.service.credex_service and self.service.credex_service.jwt_token:
-                    current_state["flow_data"]["data"]["jwt_token"] = self.service.credex_service.jwt_token
-
-                logger.debug(f"Updated flow_data: {current_state['flow_data']['data']}")
-
-                # Update state before handling message
-                self._update_flow_state(
-                    current_state=current_state,
-                    stage=StateStage.CREDEX.value,  # Force credex stage
-                    update_from="flow_update"
-                )
-
-                # Handle message with updated state
+                # Handle message
                 message = self.flow_handler.handle_message(
                     self.service.user.mobile_number,
                     self.service.message
                 )
 
-                # Get fresh state after message handling
-                current_state = self.service.state.get_state(self.service.user.mobile_number)
-                # Re-ensure member IDs and account info are present
-                current_state.update({
-                    "authorizer_member_id": current_state.get("authorizer_member_id"),
-                    "issuer_member_id": current_state.get("issuer_member_id"),
-                    "sender_account": current_state.get("sender_account"),
-                    "sender_account_id": current_state.get("sender_account_id"),
-                    "phone": self.service.user.mobile_number,
-                    "current_account": selected_profile  # Preserve selected account
-                })
-                if "flow_data" in current_state and "data" in current_state["flow_data"]:
-                    current_state["flow_data"]["data"].update({
-                        "profile": current_state.get("profile", {}),
-                        "current_account": selected_profile,  # Include selected account
-                        "authorizer_member_id": current_state.get("authorizer_member_id"),
-                        "issuer_member_id": current_state.get("issuer_member_id"),
-                        "sender_account": current_state.get("sender_account"),
-                        "sender_account_id": current_state.get("sender_account_id"),
-                        "phone": self.service.user.mobile_number
-                    })
-
-                    # Re-ensure JWT token is preserved
-                    if self.service.credex_service and self.service.credex_service.jwt_token:
-                        current_state["flow_data"]["data"]["jwt_token"] = self.service.credex_service.jwt_token
-
                 if message is None:
                     # Flow completed successfully
                     logger.debug("Flow completed successfully")
-                    # Update state without flow data
-                    self._update_flow_state(
-                        current_state=current_state,
-                        stage=StateStage.MENU.value,
-                        update_from="flow_complete",
-                        option="handle_action_menu",
-                        preserve_flow=False
-                    )
                     # Return to menu with success message
                     menu_message = self.service.action_handler.auth_handler.handle_action_menu(
                         message="✅ Credex offer created successfully!\n\n",
