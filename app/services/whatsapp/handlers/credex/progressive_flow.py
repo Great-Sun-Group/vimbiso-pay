@@ -20,19 +20,30 @@ class ProgressiveFlowMixin(BaseActionHandler):
         self._register_flows()
 
     def _register_flows(self):
-        """Register all flows with service injector"""
-        flows = [
+        """Register all flows with service injector and triggers"""
+        # Register CredexOfferFlow with its triggers
+        self.flow_handler.register_flow(
             CredexOfferFlow,
-            AcceptCredexFlow,
-            DeclineCredexFlow,
-            CancelCredexFlow
+            service_injector=self._inject_flow_services,
+            triggers=[
+                "handle_action_offer_credex",  # Menu selection trigger
+            ]
+        )
+
+        # Register other flows
+        other_flows = [
+            (AcceptCredexFlow, ["handle_action_accept_offers"]),
+            (DeclineCredexFlow, ["handle_action_decline_offers"]),
+            (CancelCredexFlow, ["handle_action_pending_offers_out"])
         ]
-        for flow_class in flows:
+        for flow_class, triggers in other_flows:
             self.flow_handler.register_flow(
                 flow_class,
-                service_injector=self._inject_flow_services
+                service_injector=self._inject_flow_services,
+                triggers=triggers
             )
-        logger.debug("Progressive flows registered with service injector")
+
+        logger.debug("Progressive flows registered with triggers and service injector")
 
     def _inject_flow_services(self, flow: Any) -> None:
         """Inject required services into flow"""
@@ -142,68 +153,22 @@ class ProgressiveFlowMixin(BaseActionHandler):
             logger.debug(f"Message: {self.service.message}")
             logger.debug(f"Current state: {current_state}")
 
-            # Check if this is a menu selection or text command
-            interactive = self.service.message.get("interactive", {})
-            button_reply = interactive.get("button_reply", {})
-            list_reply = interactive.get("list_reply", {})
+            # Extract action from message
+            action = None
+            if self.service.message_type == "interactive":
+                interactive = self.service.message.get("interactive", {})
+                if interactive.get("type") == "button_reply":
+                    action = interactive.get("button_reply", {}).get("id")
+                elif interactive.get("type") == "list_reply":
+                    action = interactive.get("list_reply", {}).get("id")
+            elif self.service.message_type == "text":
+                action = self.service.body
 
-            is_menu_selection = (
-                self.service.message_type == "interactive" and
-                (
-                    (button_reply and button_reply.get("id") == "handle_action_offer_credex") or
-                    (list_reply and list_reply.get("id") == "handle_action_offer_credex")
-                )
-            )
-
-            is_text_command = (
-                self.service.message_type == "text" and
-                isinstance(self.service.body, str) and
-                self.service.body == "handle_action_offer_credex"
-            )
-
-            # Handle menu selection or text command
-            if is_menu_selection or is_text_command:
-                logger.debug("Starting new credex offer flow")
-
-                # Extract required data from profile
-                member_id = self._extract_member_id(current_state.get("profile", {}))
-                if not member_id:
-                    logger.error("Could not find member ID in profile data")
-                    return True, self.get_response_template("Please start over by sending 'hi' to refresh your session.")
-
-                sender_account_id, sender_account_name = self._extract_sender_account_info(
-                    current_state.get("profile", {}), selected_profile
-                )
-                if not sender_account_id:
-                    logger.error("Could not find sender account info")
-                    return True, self.get_response_template("Please start over by sending 'hi' to refresh your session.")
-
-                # Initialize flow state
-                flow_state = self._initialize_flow_state(
-                    current_state, member_id, sender_account_id, sender_account_name
-                )
-                current_state["flow_data"] = flow_state
-
-                # Start flow
-                result = self.flow_handler.start_flow(
-                    "credex_offer",
-                    self.service.user.mobile_number
-                )
-
-                if isinstance(result, CredexOfferFlow):
-                    result.initialize_from_profile(current_state.get("profile", {}).get("data", {}))
-                    result.state.update(flow_state["data"])
-                    message = result.current_step.message
-                    if callable(message):
-                        message = message(result.state)
-                    return True, WhatsAppMessage.from_core_message(message)
-                return True, WhatsAppMessage.from_core_message(result)
+            logger.debug(f"Extracted action: {action}")
 
             # Check if there's an active flow
             if "flow_data" in current_state:
                 logger.debug("Found active flow, handling message")
-
-                # Handle message
                 message = self.flow_handler.handle_message(
                     self.service.user.mobile_number,
                     self.service.message
@@ -214,26 +179,52 @@ class ProgressiveFlowMixin(BaseActionHandler):
                     logger.debug("Flow completed successfully")
                     # Return to menu with success message
                     menu_message = self.service.action_handler.auth_handler.handle_action_menu(
-                        message="✅ Credex offer created successfully!\n\n",
+                        message="✅ Action completed successfully!\n\n",
                         login=False  # Don't need API call since we have fresh data
                     )
                     return True, WhatsAppMessage.from_core_message(menu_message)
                 return True, WhatsAppMessage.from_core_message(message)
 
-            # Now check for numeric input without active flow
-            if (self.service.message_type == "text" and
-                isinstance(self.service.body, str) and
-                    self.service.body.replace(".", "").isdigit()):
-                logger.debug("Received numeric input without active flow")
-                return True, WhatsAppMessage.from_core_message({
-                    "messaging_product": "whatsapp",
-                    "recipient_type": "individual",
-                    "to": self.service.user.mobile_number,
-                    "type": "text",
-                    "text": {
-                        "body": "❌ Please start from the menu by selecting 'Offer Secured Credex' first."
-                    }
-                })
+            # Check if action triggers a flow
+            if action:
+                logger.debug(f"Checking if action '{action}' triggers a flow")
+                flow_id = self.flow_handler._get_flow_id_for_action(action)
+                if flow_id:
+                    logger.debug(f"Action triggers flow: {flow_id}")
+
+                    # Extract required data from profile
+                    member_id = self._extract_member_id(current_state.get("profile", {}))
+                    if not member_id:
+                        logger.error("Could not find member ID in profile data")
+                        return True, self.get_response_template("Please start over by sending 'hi' to refresh your session.")
+
+                    sender_account_id, sender_account_name = self._extract_sender_account_info(
+                        current_state.get("profile", {}), selected_profile
+                    )
+                    if not sender_account_id:
+                        logger.error("Could not find sender account info")
+                        return True, self.get_response_template("Please start over by sending 'hi' to refresh your session.")
+
+                    # Initialize flow state
+                    flow_state = self._initialize_flow_state(
+                        current_state, member_id, sender_account_id, sender_account_name
+                    )
+                    current_state["flow_data"] = flow_state
+
+                    # Start flow
+                    result = self.flow_handler.start_flow(
+                        flow_id,
+                        self.service.user.mobile_number
+                    )
+
+                    if isinstance(result, CredexOfferFlow):
+                        result.initialize_from_profile(current_state.get("profile", {}).get("data", {}))
+                        result.state.update(flow_state["data"])
+                        message = result.current_step.message
+                        if callable(message):
+                            message = message(result.state)
+                        return True, WhatsAppMessage.from_core_message(message)
+                    return True, WhatsAppMessage.from_core_message(result)
 
             # Return error for any other input without active flow
             logger.debug("Received input without active flow")

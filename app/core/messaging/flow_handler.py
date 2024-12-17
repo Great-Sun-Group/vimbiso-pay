@@ -17,158 +17,36 @@ class FlowHandler:
         self.state_service = state_service
         self._registered_flows: Dict[str, Type[Flow]] = {}
         self._service_injectors: Dict[str, callable] = {}
+        self._flow_triggers: Dict[str, str] = {}
 
-    def register_flow(self, flow_class: Type[Flow], service_injector: Optional[callable] = None) -> None:
-        """Register a flow class and optional service injector"""
-        # Register both by class name and flow ID for flexibility
+    def register_flow(
+        self,
+        flow_class: Type[Flow],
+        service_injector: Optional[callable] = None,
+        triggers: Optional[list[str]] = None
+    ) -> None:
+        """Register a flow class with optional service injector and triggers"""
+        # Register flow class
         self._registered_flows[flow_class.__name__] = flow_class
         if hasattr(flow_class, 'FLOW_ID'):
-            self._registered_flows[flow_class.FLOW_ID] = flow_class
+            flow_id = flow_class.FLOW_ID
+            self._registered_flows[flow_id] = flow_class
+
+            # Register service injector
             if service_injector:
-                self._service_injectors[flow_class.FLOW_ID] = service_injector
+                self._service_injectors[flow_id] = service_injector
 
-    def _validate_profile_data(self, profile_data: Dict[str, Any]) -> bool:
-        """Validate profile data structure"""
-        try:
-            if not isinstance(profile_data, dict):
-                logger.error("Profile data is not a dictionary")
-                return False
+            # Register triggers that start this flow
+            if triggers:
+                for trigger in triggers:
+                    self._flow_triggers[trigger] = flow_id
 
-            # Handle both direct and nested data structures
-            data = profile_data.get("data", profile_data)
-            if not isinstance(data, dict):
-                logger.error("Profile data['data'] is not a dictionary")
-                return False
-
-            # Ensure profile structure exists
-            if "action" not in data:
-                data["action"] = {}
-            if not isinstance(data["action"], dict):
-                data["action"] = {}
-            if "details" not in data["action"]:
-                data["action"]["details"] = {}
-            if not isinstance(data["action"]["details"], dict):
-                data["action"]["details"] = {}
-
-            # Update profile_data with structured data
-            if "data" not in profile_data:
-                profile_data["data"] = data
-            else:
-                profile_data["data"] = data
-
-            return True
-        except Exception as e:
-            logger.error(f"Profile validation error: {str(e)}")
-            return False
-
-    def _preserve_critical_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Preserve critical state data during cleanup"""
-        preserved_state = {}
-        critical_fields = [
-            "profile",
-            "current_account",
-            "jwt_token",
-            "authorizer_member_id",
-            "issuer_member_id",
-            "sender_account",
-            "sender_account_id",
-            "phone"
-        ]
-        for field in critical_fields:
-            if field in state:
-                preserved_state[field] = state[field]
-        return preserved_state
-
-    def get_flow(self, flow_id: str, state: Optional[Dict[str, Any]] = None) -> Optional[Flow]:
-        """Get flow instance by ID and optionally restore its state"""
-        try:
-            flow_class = self._registered_flows.get(flow_id)
-            if not flow_class:
-                logger.error(f"Flow {flow_id} not registered")
-                return None
-
-            # Create flow instance
-            flow = flow_class(flow_id, [])  # Steps defined in subclass
-
-            # Inject services if injector exists
-            if flow_id in self._service_injectors:
-                try:
-                    self._service_injectors[flow_id](flow)
-                except Exception as e:
-                    logger.error(f"Service injection failed for flow {flow_id}: {str(e)}")
-                    return None
-
-            # Restore and validate state if provided
-            if state:
-                try:
-                    # Validate profile data first
-                    profile_data = state.get('profile', {})
-                    if profile_data and not self._validate_profile_data(profile_data):
-                        logger.error("Invalid profile data structure")
-                        return None
-
-                    flow.state = state
-                    if not flow.validate_state():
-                        if not flow.recover_state():
-                            logger.error(f"Flow state validation failed for {flow_id}")
-                            return None
-                except Exception as e:
-                    logger.error(f"Flow state restoration failed for {flow_id}: {str(e)}")
-                    return None
-
-                # Initialize from profile if available
-                if isinstance(flow, Flow) and hasattr(flow, 'initialize_from_profile'):
-                    profile_data = state.get('profile', {}).get('data', {})
-                    if profile_data:
-                        try:
-                            flow.initialize_from_profile(profile_data)
-                        except Exception as e:
-                            logger.error(f"Profile initialization failed: {str(e)}")
-                            return None
-
-            return flow
-
-        except Exception as e:
-            logger.error(f"Error getting flow {flow_id}: {str(e)}")
-            return None
-
-    def _cleanup_flow_state(self, user_id: str, state: Dict[str, Any], update_from: str = "flow_cleanup") -> None:
-        """Clean up flow state data while preserving critical data"""
-        try:
-            # Preserve critical state data
-            preserved_state = self._preserve_critical_state(state)
-
-            # Remove flow data
-            if "flow_data" in preserved_state:
-                del preserved_state["flow_data"]
-
-            # Update state with preserved data
-            self.state_service.update_state(
-                user_id=user_id,
-                new_state=preserved_state,
-                stage=StateStage.MENU.value,
-                update_from=update_from
-            )
-            logger.debug(f"Flow state cleaned up from {update_from}")
-            logger.debug(f"Preserved state: {preserved_state}")
-        except Exception as e:
-            logger.error(f"Flow cleanup failed: {str(e)}")
-            # Attempt emergency cleanup while preserving critical data
-            try:
-                preserved_state = self._preserve_critical_state(state)
-                self.state_service.reset_state(user_id)
-                if preserved_state:
-                    self.state_service.update_state(
-                        user_id=user_id,
-                        new_state=preserved_state,
-                        stage=StateStage.MENU.value,
-                        update_from="emergency_cleanup"
-                    )
-            except Exception:
-                pass
+    def _get_flow_id_for_action(self, action: str) -> Optional[str]:
+        """Get flow ID for an action/trigger"""
+        return self._flow_triggers.get(action)
 
     def handle_message(self, user_id: str, message: Dict[str, Any]) -> WhatsAppMessage:
-        """Handle incoming message for active flow"""
+        """Handle incoming message for active flow or start new flow"""
         try:
             # Get current state
             state = self.state_service.get_state(user_id)
@@ -179,10 +57,43 @@ class FlowHandler:
                 logger.error("Invalid state type")
                 return self._format_error("Invalid state", user_id)
 
-            # Get flow data from state
-            flow_data = state.get("flow_data", {})
-            flow_id = flow_data.get("id")
+            # Extract action/message
+            action = None
+            if "interactive" in message:
+                interactive = message["interactive"]
+                if interactive.get("type") == "button_reply":
+                    action = interactive.get("button_reply", {}).get("id")
+                elif interactive.get("type") == "list_reply":
+                    action = interactive.get("list_reply", {}).get("id")
+            elif "text" in message:
+                action = message.get("text", {}).get("body")
 
+            if not action:
+                logger.error("No action/message found")
+                return self._format_error("Invalid message format", user_id)
+
+            # Check if we need to start a new flow
+            flow_data = state.get("flow_data", {})
+            if not flow_data:
+                # Check if action triggers a flow
+                flow_id = self._get_flow_id_for_action(action)
+                if flow_id:
+                    logger.info(f"Starting flow {flow_id} for action {action}")
+                    result = self.start_flow(flow_id, user_id)
+                    if isinstance(result, Flow):
+                        # Get first step's message
+                        if result.current_step:
+                            message = result.current_step.message
+                            if callable(message):
+                                return message(result.state)
+                            return message
+                    return result
+                else:
+                    logger.warning(f"No flow trigger for action: {action}")
+                    return self._format_error("Invalid action", user_id)
+
+            # Handle existing flow
+            flow_id = flow_data.get("id")
             if not flow_id:
                 logger.warning(f"No active flow for user {user_id}")
                 return self._format_error("No active flow", user_id)
@@ -393,6 +304,93 @@ class FlowHandler:
         except Exception as e:
             logger.exception(f"Error starting flow: {str(e)}")
             return self._format_error(str(e), user_id)
+
+    def _validate_profile_data(self, profile_data: Dict[str, Any]) -> bool:
+        """Validate profile data structure"""
+        try:
+            if not isinstance(profile_data, dict):
+                logger.error("Profile data is not a dictionary")
+                return False
+
+            # Handle both direct and nested data structures
+            data = profile_data.get("data", profile_data)
+            if not isinstance(data, dict):
+                logger.error("Profile data['data'] is not a dictionary")
+                return False
+
+            # Ensure profile structure exists
+            if "action" not in data:
+                data["action"] = {}
+            if not isinstance(data["action"], dict):
+                data["action"] = {}
+            if "details" not in data["action"]:
+                data["action"]["details"] = {}
+            if not isinstance(data["action"]["details"], dict):
+                data["action"]["details"] = {}
+
+            # Update profile_data with structured data
+            if "data" not in profile_data:
+                profile_data["data"] = data
+            else:
+                profile_data["data"] = data
+
+            return True
+        except Exception as e:
+            logger.error(f"Profile validation error: {str(e)}")
+            return False
+
+    def _preserve_critical_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Preserve critical state data during cleanup"""
+        preserved_state = {}
+        critical_fields = [
+            "profile",
+            "current_account",
+            "jwt_token",
+            "authorizer_member_id",
+            "issuer_member_id",
+            "sender_account",
+            "sender_account_id",
+            "phone"
+        ]
+        for field in critical_fields:
+            if field in state:
+                preserved_state[field] = state[field]
+        return preserved_state
+
+    def _cleanup_flow_state(self, user_id: str, state: Dict[str, Any], update_from: str = "flow_cleanup") -> None:
+        """Clean up flow state data while preserving critical data"""
+        try:
+            # Preserve critical state data
+            preserved_state = self._preserve_critical_state(state)
+
+            # Remove flow data
+            if "flow_data" in preserved_state:
+                del preserved_state["flow_data"]
+
+            # Update state with preserved data
+            self.state_service.update_state(
+                user_id=user_id,
+                new_state=preserved_state,
+                stage=StateStage.MENU.value,
+                update_from=update_from
+            )
+            logger.debug(f"Flow state cleaned up from {update_from}")
+            logger.debug(f"Preserved state: {preserved_state}")
+        except Exception as e:
+            logger.error(f"Flow cleanup failed: {str(e)}")
+            # Attempt emergency cleanup while preserving critical data
+            try:
+                preserved_state = self._preserve_critical_state(state)
+                self.state_service.reset_state(user_id)
+                if preserved_state:
+                    self.state_service.update_state(
+                        user_id=user_id,
+                        new_state=preserved_state,
+                        stage=StateStage.MENU.value,
+                        update_from="emergency_cleanup"
+                    )
+            except Exception:
+                pass
 
     def _extract_input(self, message: Dict[str, Any], step_type: StepType) -> Any:
         """Extract input value from message based on step type"""
