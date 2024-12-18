@@ -41,21 +41,9 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
     def _get_action(self) -> str:
         """Extract action from message"""
-        # Direct message action
-        if isinstance(self.message, dict) and "message" in self.message:
-            return self.message["message"]
-
-        # Interactive list reply
-        if self.message_type == "interactive":
-            interactive = self.message.get("interactive", {})
-            if list_reply := interactive.get("list_reply", {}):
-                return list_reply.get("id", "")
-
-        # Text message
-        if self.message_type == "text":
-            return self.body.strip().lower()
-
-        return ""
+        # For all message types, we should use self.body which is already parsed
+        # in BotServiceInterface._parse_message and _parse_interactive
+        return self.body.strip().lower()
 
     def _get_flow_info(self, action: str) -> Optional[Tuple[str, Type[Flow], Dict[str, Any]]]:
         """Get flow type, class and kwargs for action"""
