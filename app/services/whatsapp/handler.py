@@ -41,19 +41,8 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
     def _get_action(self) -> str:
         """Extract action from message"""
-        # For interactive messages, use the list_reply id
-        if self.message_type == "interactive":
-            interactive = self.message.get("interactive", {})
-            if list_reply := interactive.get("list_reply", {}):
-                return list_reply.get("id", "")
-            elif button_reply := interactive.get("button_reply", {}):
-                return button_reply.get("id", "")
-
-        # For text messages, use the body
-        if self.message_type == "text":
-            return self.body.strip().lower()
-
-        return ""
+        # For all message types, use the parsed body
+        return self.body.strip().lower()
 
     def _get_flow_info(self, action: str) -> Optional[Tuple[str, Type[Flow], Dict[str, Any]]]:
         """Get flow type, class and kwargs for action"""
@@ -178,7 +167,13 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 # Pass full message structure for validation
                 result = flow.process_input({
                     "type": "interactive",
-                    "interactive": self.message.get("interactive", {})
+                    "interactive": {
+                        "type": "button_reply",
+                        "button_reply": {"id": self.body}
+                    } if "button_reply" in self.message.get("interactive", {}) else {
+                        "type": "list_reply",
+                        "list_reply": {"id": self.body}
+                    }
                 })
             else:
                 result = flow.process_input(self.body)
