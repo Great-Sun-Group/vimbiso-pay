@@ -41,9 +41,19 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
     def _get_action(self) -> str:
         """Extract action from message"""
-        # For all message types, we should use self.body which is already parsed
-        # in BotServiceInterface._parse_message and _parse_interactive
-        return self.body.strip().lower()
+        # For interactive messages, use the list_reply id
+        if self.message_type == "interactive":
+            interactive = self.message.get("interactive", {})
+            if list_reply := interactive.get("list_reply", {}):
+                return list_reply.get("id", "")
+            elif button_reply := interactive.get("button_reply", {}):
+                return button_reply.get("id", "")
+
+        # For text messages, use the body
+        if self.message_type == "text":
+            return self.body.strip().lower()
+
+        return ""
 
     def _get_flow_info(self, action: str) -> Optional[Tuple[str, Type[Flow], Dict[str, Any]]]:
         """Get flow type, class and kwargs for action"""
@@ -165,23 +175,11 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             # Process input
             result = None
             if self.message_type == "interactive":
-                interactive = self.message.get("interactive", {})
-                if interactive.get("type") == "button_reply":
-                    result = flow.process_input({
-                        "type": "interactive",
-                        "interactive": {
-                            "type": "button_reply",
-                            "button_reply": interactive.get("button_reply", {})
-                        }
-                    })
-                elif interactive.get("type") == "list_reply":
-                    result = flow.process_input({
-                        "type": "interactive",
-                        "interactive": {
-                            "type": "list_reply",
-                            "list_reply": interactive.get("list_reply", {})
-                        }
-                    })
+                # Pass full message structure for validation
+                result = flow.process_input({
+                    "type": "interactive",
+                    "interactive": self.message.get("interactive", {})
+                })
             else:
                 result = flow.process_input(self.body)
 
@@ -247,6 +245,11 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
     def _process_message(self) -> WhatsAppMessage:
         """Process incoming message"""
         try:
+            # Check for active flow
+            flow_data = self.user.state.state.get("flow_data")
+            if flow_data:
+                return self._continue_flow(flow_data)
+
             # Handle greeting
             if (self.message_type == "text" and
                     self.body.lower() in self.GREETING_KEYWORDS):
@@ -255,11 +258,6 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             # Get action
             action = self._get_action()
             logger.info(f"Processing action: {action}")
-
-            # Check for active flow
-            flow_data = self.user.state.state.get("flow_data")
-            if flow_data:
-                return self._continue_flow(flow_data)
 
             # Start new flow if action matches
             if flow_info := self._get_flow_info(action):

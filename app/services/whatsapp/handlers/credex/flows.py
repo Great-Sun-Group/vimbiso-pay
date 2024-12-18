@@ -38,7 +38,7 @@ class CredexFlow(Flow):
                 Step(
                     id="handle",
                     type=StepType.TEXT,
-                    message=lambda _: "Enter recipient handle:",
+                    message=lambda s: self._create_whatsapp_message("Enter recipient handle:"),
                     validator=self._validate_handle,
                     transformer=self._transform_handle
                 ),
