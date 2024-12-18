@@ -239,11 +239,21 @@ class CredexFlow(Flow):
             "counterparty": selected_offer["to"]
         }
 
-    def _validate_amount(self, amount_str: str) -> bool:
+    def _validate_amount(self, amount_data: Union[str, Dict[str, Any]]) -> bool:
         """Validate amount format"""
-        if not amount_str:
+        # Handle already transformed amount
+        if isinstance(amount_data, dict):
+            return (
+                "amount" in amount_data and
+                "denomination" in amount_data and
+                isinstance(amount_data["amount"], (int, float)) and
+                (not amount_data["denomination"] or amount_data["denomination"] in self.VALID_DENOMINATIONS)
+            )
+
+        # Handle string input
+        if not amount_data:
             return False
-        match = self.AMOUNT_PATTERN.match(amount_str.strip().upper())
+        match = self.AMOUNT_PATTERN.match(str(amount_data).strip().upper())
         if not match:
             return False
         denom = match.group(1) or match.group(4)
