@@ -37,6 +37,9 @@ class CredexCloudApiWebhook(APIView):
         try:
             logger.info("Received webhook request")
 
+            # Log full request data for debugging
+            logger.debug(f"Full webhook payload: {request.data}")
+
             # Validate basic webhook structure
             if not isinstance(request.data, dict):
                 logger.warning("Invalid request data format")
@@ -87,6 +90,9 @@ class CredexCloudApiWebhook(APIView):
             if not isinstance(message, dict):
                 logger.warning("Invalid message format")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
+            # Log full message for debugging
+            logger.debug(f"Full message payload: {message}")
 
             message_type = message.get("type")
             if not message_type:
@@ -142,6 +148,8 @@ class CredexCloudApiWebhook(APIView):
             elif message_type == "interactive":
                 interactive = message.get("interactive", {})
                 if isinstance(interactive, dict):
+                    # Log full interactive payload for debugging
+                    logger.debug(f"Interactive message payload: {interactive}")
                     if "button_reply" in interactive:
                         button_reply = interactive["button_reply"]
                         if isinstance(button_reply, dict):
@@ -151,8 +159,8 @@ class CredexCloudApiWebhook(APIView):
                         if isinstance(list_reply, dict):
                             message_text = list_reply.get("id", "")
                     else:
-                        # Log full interactive message for debugging
-                        logger.debug(f"Unhandled interactive message type: {interactive}")
+                        # Log unhandled interactive type
+                        logger.warning(f"Unhandled interactive message type: {interactive}")
                         message_text = str(interactive)
 
             # Get flow data from state
