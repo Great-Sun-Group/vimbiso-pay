@@ -123,13 +123,17 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             # Get initial message
             result = flow.current_step.get_message(flow.data)
 
-            # Save flow state
+            # Save flow state while preserving critical fields
+            current_state = self.user.state.state
             self.user.state.update_state({
                 "flow_data": {
                     **flow.get_state(),
                     "flow_type": flow_type,
                     "kwargs": kwargs
-                }
+                },
+                "profile": current_state.get("profile", {}),
+                "current_account": current_state.get("current_account"),
+                "jwt_token": current_state.get("jwt_token")
             }, "flow_start")
 
             return (
@@ -192,7 +196,14 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
             # Handle flow completion
             if not result or flow.current_index >= len(flow.steps):
-                self.user.state.update_state({"flow_data": None}, "flow_complete")
+                # Preserve critical fields when clearing flow data
+                current_state = self.user.state.state
+                self.user.state.update_state({
+                    "flow_data": None,
+                    "profile": current_state.get("profile", {}),
+                    "current_account": current_state.get("current_account"),
+                    "jwt_token": current_state.get("jwt_token")
+                }, "flow_complete")
 
                 if not result:
                     return self.auth_handler.handle_action_menu()
@@ -217,13 +228,17 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                     else self.get_response_template(result)
                 )
 
-            # Update flow state
+            # Update flow state while preserving critical fields
+            current_state = self.user.state.state
             self.user.state.update_state({
                 "flow_data": {
                     **flow.get_state(),
                     "flow_type": flow_type,
                     "kwargs": kwargs
-                }
+                },
+                "profile": current_state.get("profile", {}),
+                "current_account": current_state.get("current_account"),
+                "jwt_token": current_state.get("jwt_token")
             }, "flow_continue")
 
             return (
@@ -234,7 +249,14 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
         except Exception as e:
             logger.error(f"Flow error: {str(e)}")
-            self.user.state.update_state({"flow_data": None}, "flow_error")
+            # Preserve critical fields when clearing flow data on error
+            current_state = self.user.state.state
+            self.user.state.update_state({
+                "flow_data": None,
+                "profile": current_state.get("profile", {}),
+                "current_account": current_state.get("current_account"),
+                "jwt_token": current_state.get("jwt_token")
+            }, "flow_error")
             return self._format_error_response(str(e))
 
     def _process_message(self) -> WhatsAppMessage:

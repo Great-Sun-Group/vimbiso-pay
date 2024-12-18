@@ -161,7 +161,8 @@ class DashboardFlow(Flow):
 
             # Get current state
             user_state = self.credex_service._parent_service.user.state
-            profile_data = user_state.state.get("profile", {})
+            current_state = user_state.state
+            profile_data = current_state.get("profile", {})
             if not profile_data:
                 raise ValueError("No profile data found")
 
@@ -178,9 +179,11 @@ class DashboardFlow(Flow):
             if not selected_account:
                 raise ValueError("Personal account not found")
 
-            # Update state with selected account
+            # Update state while preserving critical fields
             user_state.update_state({
-                "current_account": selected_account
+                "current_account": selected_account,
+                "profile": profile_data,
+                "jwt_token": current_state.get("jwt_token")
             }, "account_select")
 
             # Format dashboard data

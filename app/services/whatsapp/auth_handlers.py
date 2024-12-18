@@ -6,7 +6,6 @@ from .base_handler import BaseActionHandler
 from .screens import REGISTER
 from .types import WhatsAppMessage
 from .handlers.member.dashboard import DashboardFlow
-from services.credex.service import CredExService
 
 logger = logging.getLogger(__name__)
 
@@ -91,17 +90,8 @@ class AuthActionHandler(BaseActionHandler):
                 message=message
             )
 
-            # Set up credex service
-            credex_service = CredExService(user=self.service.user)
-            credex_service._parent_service = self.service
-
-            # Propagate JWT token
-            if jwt_token := self.service.user.state.jwt_token:
-                logger.info("Propagating JWT token")
-                credex_service.jwt_token = jwt_token
-
-            # Configure flow
-            flow.credex_service = credex_service
+            # Use cached credex service
+            flow.credex_service = self.service.credex_service
             flow.data = {
                 "mobile_number": self.service.user.mobile_number
             }

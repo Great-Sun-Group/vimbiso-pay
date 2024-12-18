@@ -314,14 +314,20 @@ class CredexFlow(Flow):
 
             user_state = self.credex_service._parent_service.user.state
             current_state = user_state.state
-            current_profile = current_state.get("profile", {})
+            current_profile = current_state.get("profile", {}).copy()
 
+            # Preserve existing profile data
             if "data" in current_profile:
                 current_profile["data"]["dashboard"] = dashboard
             else:
                 current_profile["data"] = {"dashboard": dashboard}
 
-            user_state.update_state({"profile": current_profile}, "dashboard_update")
+            # Update state while preserving other critical fields
+            user_state.update_state({
+                "profile": current_profile,
+                "current_account": current_state.get("current_account"),
+                "jwt_token": current_state.get("jwt_token")
+            }, "dashboard_update")
 
         except Exception as e:
             logger.error(f"Dashboard update error: {str(e)}")
