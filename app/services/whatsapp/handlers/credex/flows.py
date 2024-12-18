@@ -1,8 +1,7 @@
 """Unified credex flow implementation"""
 import logging
-import re
 from typing import Any, Dict, List, Union
-
+import re
 from core.messaging.flow import Flow, Step, StepType
 from core.transactions import TransactionOffer, TransactionType
 from ...handlers.member.dashboard import DashboardFlow
@@ -18,13 +17,7 @@ class CredexFlow(Flow):
     HANDLE_PATTERN = re.compile(r'^[a-zA-Z0-9_]+$')
 
     def __init__(self, flow_type: str, **kwargs):
-        """Initialize flow
-
-        Args:
-            flow_type: Type of flow ('offer', 'accept', 'decline', 'cancel_credex')
-            **kwargs: Flow-specific arguments
-        """
-        logger.info(f"Initializing CredexFlow with type: {flow_type}")
+        """Initialize flow"""
         self.flow_type = flow_type
         self.kwargs = kwargs
         steps = self._create_steps()
@@ -38,14 +31,7 @@ class CredexFlow(Flow):
                 Step(
                     id="amount",
                     type=StepType.TEXT,
-                    message=lambda _: (
-                        "Enter amount:\n\n"
-                        "Examples:\n"
-                        "100     (USD)\n"
-                        "USD 100\n"
-                        "ZWG 100\n"
-                        "XAU 1"
-                    ),
+                    message=self._get_amount_prompt,
                     validator=self._validate_amount,
                     transformer=self._transform_amount
                 ),
@@ -59,7 +45,7 @@ class CredexFlow(Flow):
                 Step(
                     id="confirm",
                     type=StepType.BUTTON,
-                    message=self._create_offer_confirmation,
+                    message=self._create_confirmation_message,
                     validator=self._validate_button_response
                 )
             ]
@@ -68,67 +54,176 @@ class CredexFlow(Flow):
                 Step(
                     id="list",
                     type=StepType.LIST,
-                    message=self._create_pending_offers_list,
+                    message=self._create_list_message,
                     validator=lambda x: x.startswith("cancel_"),
                     transformer=self._transform_cancel_selection
                 ),
                 Step(
                     id="confirm",
                     type=StepType.BUTTON,
-                    message=self._create_cancel_confirmation,
+                    message=self._create_confirmation_message,
                     validator=self._validate_button_response
                 )
             ]
         else:
-            # Action flows (accept/decline) just need confirmation
             return [
                 Step(
                     id="confirm",
                     type=StepType.BUTTON,
-                    message=self._create_action_confirmation,
+                    message=self._create_confirmation_message,
                     validator=self._validate_button_response
                 )
             ]
 
+    def _create_whatsapp_message(self, text: str, message_type: str = "text", **kwargs) -> Dict[str, Any]:
+        """Create standardized WhatsApp message"""
+        message = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": self.data.get("mobile_number"),
+            "type": message_type,
+        }
+
+        if message_type == "text":
+            message["text"] = {"body": text}
+        elif message_type == "interactive":
+            message["interactive"] = kwargs.get("interactive", {})
+
+        return message
+
+    def _get_amount_prompt(self, _) -> Dict[str, Any]:
+        """Get amount prompt message"""
+        return self._create_whatsapp_message(
+            "Enter amount:\n\n"
+            "Examples:\n"
+            "100     (USD)\n"
+            "USD 100\n"
+            "ZWG 100\n"
+            "XAU 1"
+        )
+
+    def _create_list_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Create list selection message"""
+        pending_offers = state.get("pending_offers", [])
+        rows = [
+            {
+                "id": f"cancel_{offer['id']}",
+                "title": f"{offer['amount']} to {offer['to']}"
+            }
+            for offer in pending_offers
+        ]
+
+        return self._create_whatsapp_message(
+            "Cancel Pending Outgoing Offers",
+            "interactive",
+            interactive={
+                "type": "list",
+                "body": {"text": "Select an offer to cancel:"},
+                "action": {
+                    "button": "🕹️ Options",
+                    "sections": [{"title": "Pending Offers", "rows": rows}]
+                }
+            }
+        )
+
+    def _create_confirmation_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Create confirmation message based on flow type"""
+        messages = {
+            "offer": self._create_offer_confirmation,
+            "cancel_credex": self._create_cancel_confirmation,
+            "accept": lambda s: self._create_action_confirmation(s, "Accept"),
+            "decline": lambda s: self._create_action_confirmation(s, "Decline")
+        }
+
+        return messages[self.flow_type](state)
+
+    def _create_offer_confirmation(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Create offer confirmation message"""
+        amount = self._format_amount(
+            state["amount"]["amount"],
+            state["amount"]["denomination"]
+        )
+        handle = state["handle"]["handle"]
+        name = state["handle"]["name"]
+
+        return self._create_whatsapp_message(
+            f"Confirm transaction:\n\n"
+            f"Amount: {amount}\n"
+            f"To: {name} ({handle})",
+            "interactive",
+            interactive={
+                "type": "button",
+                "body": {"text": f"Amount: {amount}\nTo: {name} ({handle})"},
+                "action": {
+                    "buttons": [{
+                        "type": "reply",
+                        "reply": {"id": "confirm_action", "title": "Confirm"}
+                    }]
+                }
+            }
+        )
+
+    def _create_cancel_confirmation(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Create cancel confirmation message"""
+        amount = state.get("amount", "0")
+        counterparty = state.get("counterparty", "Unknown")
+
+        return self._create_whatsapp_message(
+            f"Cancel Credex Offer\n\n"
+            f"Amount: {amount}\n"
+            f"To: {counterparty}",
+            "interactive",
+            interactive={
+                "type": "button",
+                "body": {"text": f"Amount: {amount}\nTo: {counterparty}"},
+                "action": {
+                    "buttons": [{
+                        "type": "reply",
+                        "reply": {"id": "confirm_action", "title": "Cancel Offer"}
+                    }]
+                }
+            }
+        )
+
+    def _create_action_confirmation(self, state: Dict[str, Any], action: str) -> Dict[str, Any]:
+        """Create action confirmation message"""
+        amount = self._format_amount(
+            float(state.get("amount", "0.00")),
+            state.get("denomination", "USD")
+        )
+        counterparty = state.get("counterparty", "Unknown")
+
+        return self._create_whatsapp_message(
+            f"{action} credex offer\n\n"
+            f"Amount: {amount}\n"
+            f"From: {counterparty}",
+            "interactive",
+            interactive={
+                "type": "button",
+                "body": {"text": f"Amount: {amount}\nFrom: {counterparty}"},
+                "action": {
+                    "buttons": [{
+                        "type": "reply",
+                        "reply": {"id": "confirm_action", "title": "Confirm"}
+                    }]
+                }
+            }
+        )
+
     def _validate_button_response(self, response: Dict[str, Any]) -> bool:
-        """Validate button response from WhatsApp"""
-        # Check message type
-        if response.get("type") != "interactive":
-            logger.debug("Message type is not interactive")
-            return False
-
-        # Get interactive data
-        interactive = response.get("interactive", {})
-        if not interactive:
-            logger.debug("No interactive field in message")
-            return False
-
-        # Check interactive type
-        if interactive.get("type") != "button_reply":
-            logger.debug(f"Interactive type is not button_reply: {interactive.get('type')}")
-            return False
-
-        # Get button reply data
-        button_reply = interactive.get("button_reply", {})
-        if not button_reply:
-            logger.debug("No button_reply in interactive message")
-            return False
-
-        # Check button ID
-        button_id = button_reply.get("id")
-        logger.debug(f"Received button ID: {button_id}")
-        return button_id == "confirm_action"
+        """Validate button response"""
+        return (
+            response.get("type") == "interactive" and
+            response.get("interactive", {}).get("type") == "button_reply" and
+            response.get("interactive", {}).get("button_reply", {}).get("id") == "confirm_action"
+        )
 
     def _transform_cancel_selection(self, selection: str) -> Dict[str, Any]:
-        """Transform cancel selection to get credex ID"""
-        # Extract credex ID from selection (remove 'cancel_' prefix)
+        """Transform cancel selection"""
         credex_id = selection[7:] if selection.startswith("cancel_") else None
-        logger.info(f"Extracted credex ID from selection: {credex_id}")
-
         if not credex_id:
-            return {"error": "Invalid selection format"}
+            return {"error": "Invalid selection"}
 
-        # Find the offer in pending offers
         pending_offers = self.data.get("pending_offers", [])
         selected_offer = next(
             (offer for offer in pending_offers if offer["id"] == credex_id),
@@ -144,167 +239,6 @@ class CredexFlow(Flow):
             "counterparty": selected_offer["to"]
         }
 
-    def _create_pending_offers_list(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Create list of pending outgoing offers"""
-        # Use pre-formatted pending offers from handler
-        pending_offers = state.get("pending_offers", [])
-
-        # Create rows for each offer
-        rows = []
-        for offer in pending_offers:
-            rows.append({
-                "id": f"cancel_{offer['id']}",
-                "title": f"{offer['amount']} to {offer['to']}"
-            })
-
-        # Return interactive message with list
-        message = "*Cancel Pending Outgoing Offers*\n\nSelect an offer to cancel:"
-        return {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": state.get("mobile_number"),
-            "type": "interactive",
-            "interactive": {
-                "type": "list",
-                "body": {
-                    "text": message
-                },
-                "action": {
-                    "button": "🕹️ Options",
-                    "sections": [
-                        {
-                            "title": "Pending Offers",
-                            "rows": rows
-                        }
-                    ]
-                }
-            }
-        }
-
-    def _create_offer_confirmation(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Create confirmation message for offer flow"""
-        amount = state["amount"]["amount"]
-        denom = state["amount"]["denomination"]
-        handle = state["handle"]["handle"]
-        name = state["handle"]["name"]
-
-        amount_str = self._format_amount(amount, denom)
-        message = (
-            f"Confirm transaction:\n\n"
-            f"Amount: {amount_str}\n"
-            f"To: {name} ({handle})"
-        )
-
-        return {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": state.get("mobile_number"),
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "body": {
-                    "text": message
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "confirm_action",
-                                "title": "Confirm"
-                            }
-                        }
-                    ]
-                }
-            }
-        }
-
-    def _create_cancel_confirmation(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Create confirmation message for canceling an offer"""
-        credex_id = state.get("credex_id")
-        if not credex_id:
-            return {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": state.get("mobile_number"),
-                "type": "text",
-                "text": {
-                    "body": "Missing credex ID"
-                }
-            }
-
-        amount = state.get("amount")
-        counterparty = state.get("counterparty")
-
-        message = (
-            f"*Cancel Credex Offer*\n\n"
-            f"Amount: {amount}\n"
-            f"To: {counterparty}"
-        )
-
-        return {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": state.get("mobile_number"),
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "body": {
-                    "text": message
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "confirm_action",
-                                "title": "Cancel Offer"
-                            }
-                        }
-                    ]
-                }
-            }
-        }
-
-    def _create_action_confirmation(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Create confirmation message for action flows"""
-        amount = state.get("amount", "0.00")
-        denomination = state.get("denomination", "USD")
-        counterparty = state.get("counterparty", "Unknown")
-
-        amount_str = self._format_amount(float(amount), denomination)
-
-        messages = {
-            "accept": f"Accept credex offer for {amount_str}\nFrom: {counterparty}",
-            "decline": f"Decline credex offer for {amount_str}\nFrom: {counterparty}",
-        }
-
-        message = messages[self.flow_type]
-
-        return {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": state.get("mobile_number"),
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "body": {
-                    "text": message
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "confirm_action",
-                                "title": "Confirm"
-                            }
-                        }
-                    ]
-                }
-            }
-        }
-
     def _validate_amount(self, amount_str: str) -> bool:
         """Validate amount format"""
         if not amount_str:
@@ -316,11 +250,11 @@ class CredexFlow(Flow):
         return not denom or denom in self.VALID_DENOMINATIONS
 
     def _transform_amount(self, amount_str: str) -> Dict[str, Any]:
-        """Transform amount to structured data"""
+        """Transform amount string to structured data"""
         match = self.AMOUNT_PATTERN.match(amount_str.strip().upper())
-        if match.group(1):  # Currency first format
+        if match.group(1):  # Currency first
             denom, amount = match.group(1), match.group(2)
-        elif match.group(3):  # Amount first format
+        elif match.group(3):  # Amount first
             amount, denom = match.group(3), match.group(4)
         else:  # Just amount
             amount, denom = match.group(5), None
@@ -344,16 +278,10 @@ class CredexFlow(Flow):
             return {"error": response.get("message", "Invalid handle")}
 
         data = response.get("data", {})
-        account_id = data.get("accountID")
-        name = data.get("accountName")
-
-        if not account_id:
-            return {"error": "Account not found"}
-
         return {
             "handle": handle,
-            "account_id": account_id,
-            "name": name or handle
+            "account_id": data.get("accountID"),
+            "name": data.get("accountName", handle)
         }
 
     def _format_amount(self, amount: float, denomination: str) -> str:
@@ -364,39 +292,29 @@ class CredexFlow(Flow):
             return f"{amount:.4f} {denomination}"
         return f"{amount} {denomination}"
 
-    def _update_dashboard_state(self, response: Dict[str, Any]) -> None:
-        """Update dashboard data in state from API response"""
+    def _update_dashboard(self, response: Dict[str, Any]) -> None:
+        """Update dashboard state"""
         try:
-            if not hasattr(self.credex_service, '_parent_service') or not hasattr(self.credex_service._parent_service, 'user'):
-                logger.warning("Cannot update dashboard state: missing required service attributes")
+            if not hasattr(self.credex_service, '_parent_service'):
                 return
 
-            # Get dashboard data from response
             dashboard = response.get("data", {}).get("dashboard")
-            if dashboard is None:
-                logger.warning("No dashboard data in response to update state with")
+            if not dashboard:
                 return
 
-            # Get current state
             user_state = self.credex_service._parent_service.user.state
             current_state = user_state.state
             current_profile = current_state.get("profile", {})
 
-            # Update dashboard while preserving other profile data
             if "data" in current_profile:
                 current_profile["data"]["dashboard"] = dashboard
             else:
                 current_profile["data"] = {"dashboard": dashboard}
 
-            # Update state
-            user_state.update_state({
-                "profile": current_profile
-            }, "dashboard_update")
-
-            logger.info(f"Successfully updated state with new dashboard data for {self.flow_type} operation")
+            user_state.update_state({"profile": current_profile}, "dashboard_update")
 
         except Exception as e:
-            logger.error(f"Failed to update dashboard state: {str(e)}")
+            logger.error(f"Dashboard update error: {str(e)}")
 
     def complete(self) -> Union[str, Dict[str, Any]]:
         """Complete the flow"""
@@ -404,12 +322,14 @@ class CredexFlow(Flow):
             if not self.credex_service:
                 return "Service not initialized"
 
-            if self.flow_type == "offer":
-                return self._complete_offer()
-            elif self.flow_type == "cancel_credex":
-                return self._complete_cancel()
-            else:
-                return self._complete_action()
+            handlers = {
+                "offer": self._complete_offer,
+                "cancel_credex": self._complete_cancel,
+                "accept": lambda: self._complete_action("accept"),
+                "decline": lambda: self._complete_action("decline")
+            }
+
+            return handlers[self.flow_type]()
 
         except Exception as e:
             logger.error(f"Flow completion error: {str(e)}")
@@ -417,41 +337,22 @@ class CredexFlow(Flow):
 
     def _complete_cancel(self) -> Union[str, Dict[str, Any]]:
         """Complete cancel flow"""
-        if self.current_step.id == "confirm":
-            # Execute cancellation
-            credex_id = self.data.get("credex_id")
-            if not credex_id:
-                return "Missing credex ID"
+        if self.current_step.id != "confirm":
+            return self._create_list_message(self.data)
 
-            # Verify offer still exists
-            pending_offers = self.data.get("pending_offers", [])
-            offer_exists = any(
-                offer["id"] == credex_id
-                for offer in pending_offers
-            )
-            if not offer_exists:
-                return "Selected offer is no longer available"
+        credex_id = self.data.get("credex_id")
+        if not credex_id:
+            return "Missing credex ID"
 
-            success, response = self.credex_service.cancel_credex(credex_id)
-            if not success:
-                return response.get("message", "Failed to cancel offer")
+        success, response = self.credex_service.cancel_credex(credex_id)
+        if not success:
+            return response.get("message", "Failed to cancel offer")
 
-            # Update dashboard state
-            self._update_dashboard_state(response)
-
-            # Show dashboard with success message
-            dashboard_flow = DashboardFlow(success_message="Credex successfully cancelled")
-            dashboard_flow.credex_service = self.credex_service
-            dashboard_flow.data = {
-                "mobile_number": self.data.get("mobile_number")
-            }
-            return dashboard_flow.complete()
-        else:
-            return self._create_pending_offers_list(self.data)
+        self._update_dashboard(response)
+        return self._show_dashboard("Credex successfully cancelled")
 
     def _complete_offer(self) -> Union[str, Dict[str, Any]]:
         """Complete offer flow"""
-        # Create offer
         offer = TransactionOffer(
             authorizer_member_id=self.data["member_id"],
             issuer_member_id=self.data["member_id"],
@@ -463,7 +364,6 @@ class CredexFlow(Flow):
             metadata={"name": self.data["handle"]["name"]}
         )
 
-        # Submit offer
         success, response = self.credex_service.offer_credex({
             "authorizer_member_id": offer.authorizer_member_id,
             "issuerAccountID": self.data["account_id"],
@@ -478,41 +378,30 @@ class CredexFlow(Flow):
         if not success:
             return response.get("message", "Offer failed")
 
-        # Update dashboard state
-        self._update_dashboard_state(response)
+        self._update_dashboard(response)
+        return self._show_dashboard("Credex successfully offered")
 
-        # Show dashboard with success message
-        dashboard_flow = DashboardFlow(success_message="Credex successfully offered")
-        dashboard_flow.credex_service = self.credex_service
-        dashboard_flow.data = {
-            "mobile_number": self.data.get("mobile_number")
-        }
-        return dashboard_flow.complete()
-
-    def _complete_action(self) -> Union[str, Dict[str, Any]]:
+    def _complete_action(self, action: str) -> Union[str, Dict[str, Any]]:
         """Complete action flow"""
         credex_id = self.kwargs.get("credex_id")
         if not credex_id:
             return "Missing credex ID"
 
-        # Execute action
-        if self.flow_type == "accept":
-            success, response = self.credex_service.accept_credex(credex_id)
-        elif self.flow_type == "decline":
-            success, response = self.credex_service.decline_credex(credex_id)
-        else:
-            return f"Invalid action: {self.flow_type}"
-
-        if not success:
-            return response.get("message", f"Failed to {self.flow_type} offer")
-
-        # Update dashboard state
-        self._update_dashboard_state(response)
-
-        # Show dashboard with success message
-        dashboard_flow = DashboardFlow(success_message=f"Successfully {self.flow_type}ed credex offer")
-        dashboard_flow.credex_service = self.credex_service
-        dashboard_flow.data = {
-            "mobile_number": self.data.get("mobile_number")
+        actions = {
+            "accept": self.credex_service.accept_credex,
+            "decline": self.credex_service.decline_credex
         }
-        return dashboard_flow.complete()
+
+        success, response = actions[action](credex_id)
+        if not success:
+            return response.get("message", f"Failed to {action} offer")
+
+        self._update_dashboard(response)
+        return self._show_dashboard(f"Successfully {action}ed credex offer")
+
+    def _show_dashboard(self, message: str) -> Dict[str, Any]:
+        """Show dashboard with success message"""
+        dashboard = DashboardFlow(success_message=message)
+        dashboard.credex_service = self.credex_service
+        dashboard.data = {"mobile_number": self.data.get("mobile_number")}
+        return dashboard.complete()

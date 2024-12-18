@@ -1,8 +1,9 @@
 """WhatsApp message handling implementation"""
 import logging
 import re
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Tuple, Type
 
+from core.messaging.flow import Flow
 from .base_handler import BaseActionHandler
 from .types import BotServiceInterface, WhatsAppMessage
 from .auth_handlers import AuthActionHandler
@@ -10,81 +11,90 @@ from .handlers.credex import CredexFlow
 from .handlers.member.flows import MemberFlow
 from .handlers.member.dashboard import DashboardFlow
 
+
 logger = logging.getLogger(__name__)
 
 
 class CredexBotService(BotServiceInterface, BaseActionHandler):
-    """Simplified WhatsApp bot service"""
+    """WhatsApp bot service implementation"""
+
+    FLOW_TYPES = {
+        "offer_credex": ("offer", CredexFlow),
+        "accept_credex": ("accept", CredexFlow),
+        "decline_credex": ("decline", CredexFlow),
+        "cancel_credex": ("cancel_credex", CredexFlow),
+        "view_transactions": ("transactions", MemberFlow),
+        "start_registration": ("registration", MemberFlow),
+        "upgrade_tier": ("upgrade", MemberFlow)
+    }
+
+    GREETING_KEYWORDS = {"hi", "hello", "hey", "start"}
 
     def __init__(self, payload: Dict[str, Any], user: Any):
+        """Initialize bot service"""
         BotServiceInterface.__init__(self, payload=payload, user=user)
         BaseActionHandler.__init__(self, self)
-        # Get or create the underlying CredEx service
         self.credex_service = user.state.get_or_create_credex_service()
-        # Set parent service reference for dashboard updates
         self.credex_service._parent_service = self
         self.auth_handler = AuthActionHandler(self)
         self.response = self._process_message()
 
     def _get_action(self) -> str:
         """Extract action from message"""
-        # Check for direct message action
-        if isinstance(self.message, dict):
-            action = self.message.get("message")
-            if action:
-                logger.info(f"Found direct action: {action}")
-                return action
+        # Direct message action
+        if isinstance(self.message, dict) and "message" in self.message:
+            return self.message["message"]
 
-        # Check list reply for cancel actions
+        # Interactive list reply
         if self.message_type == "interactive":
             interactive = self.message.get("interactive", {})
-            list_reply = interactive.get("list_reply", {})
-            if list_reply:
-                action = list_reply.get("id")
-                logger.info(f"Found list action: {action}")
-                return action
+            if list_reply := interactive.get("list_reply", {}):
+                return list_reply.get("id", "")
 
-        # Check text message
+        # Text message
         if self.message_type == "text":
-            action = self.body.strip().lower()
-            logger.info(f"Found text action: {action}")
-            return action
+            return self.body.strip().lower()
 
-        logger.info("No action found")
         return ""
 
-    def _start_flow(self, flow_type: str, flow_class, **kwargs) -> WhatsAppMessage:
+    def _get_flow_info(self, action: str) -> Optional[Tuple[str, Type[Flow], Dict[str, Any]]]:
+        """Get flow type, class and kwargs for action"""
+        # Check predefined flows
+        if action in self.FLOW_TYPES:
+            flow_type, flow_class = self.FLOW_TYPES[action]
+            return flow_type, flow_class, {}
+
+        # Check direct cancel command
+        if self.message_type == "text":
+            if match := re.match(r'cancel_([0-9a-f-]+)', action):
+                return "cancel_credex", CredexFlow, {"credex_id": match.group(1)}
+
+        return None
+
+    def _start_flow(self, flow_type: str, flow_class: Type[Flow], **kwargs) -> WhatsAppMessage:
         """Start a new flow"""
         try:
-            logger.info(f"Starting flow: {flow_type}")
             flow = flow_class(flow_type=flow_type, **kwargs)
-            # Pass the cached CredEx service to the flow
             flow.credex_service = self.credex_service
 
             # Initialize flow data
             profile = self.user.state.state.get("profile", {})
             current_account = self.user.state.state.get("current_account", {})
 
-            # Get member_id from profile.action.details.memberID
             member_id = (
                 profile.get("action", {})
                 .get("details", {})
                 .get("memberID")
             )
-
-            # Get account_id from current_account.data.accountID
             account_id = (
                 current_account.get("data", {})
                 .get("accountID")
             )
 
-            logger.info(f"Initializing flow with member_id: {member_id}, account_id: {account_id}")
-
             if not member_id or not account_id:
-                logger.error(f"Missing required IDs - member_id: {member_id}, account_id: {account_id}")
                 return self.get_response_template("Account not properly initialized")
 
-            # Initialize base flow data
+            # Set base flow data
             flow.data = {
                 "phone": self.user.mobile_number,
                 "member_id": member_id,
@@ -92,150 +102,103 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 "mobile_number": self.user.mobile_number
             }
 
-            # For cancel_credex flow, add pending offers to flow data
+            # Add pending offers for cancel flow
             if flow_type == "cancel_credex":
-                logger.info("Adding pending offers to cancel_credex flow")
-                # Get current account's pending outgoing offers
                 pending_out = (
                     current_account.get("data", {})
                     .get("pendingOutData", {})
                     .get("data", [])
                 )
 
-                logger.info(f"Found {len(pending_out)} pending offers")
+                pending_offers = [{
+                    "id": offer.get("credexID"),
+                    "amount": offer.get("formattedInitialAmount", "0").lstrip("-"),
+                    "to": offer.get("counterpartyAccountName")
+                } for offer in pending_out]
 
-                # Format pending offers for display
-                pending_offers = []
-                for offer in pending_out:
-                    amount = offer.get("formattedInitialAmount", "0")
-                    if amount.startswith("-"):  # Remove negative sign
-                        amount = amount[1:]
-                    pending_offers.append({
-                        "id": offer.get("credexID"),
-                        "amount": amount,
-                        "to": offer.get("counterpartyAccountName")
-                    })
-
-                # Add pending offers to flow data
                 flow.data["pending_offers"] = pending_offers
 
-                # Check for direct cancel command
-                if self.message_type == "text":
-                    cancel_match = re.match(r'cancel_([0-9a-f-]+)', self.body.strip().lower())
-                    if cancel_match:
-                        credex_id = cancel_match.group(1)
-                        logger.info(f"Found direct cancel command for credex ID: {credex_id}")
-                        # Verify the credex ID exists in pending offers
-                        if any(offer["id"] == credex_id for offer in pending_offers):
-                            # Find the matching offer
-                            selected_offer = next(
-                                offer for offer in pending_offers
-                                if offer["id"] == credex_id
-                            )
-                            # Set up flow data for confirmation
-                            flow.data.update({
-                                "credex_id": credex_id,
-                                "selection": f"cancel_{credex_id}",
-                                "amount": selected_offer["amount"],
-                                "counterparty": selected_offer["to"]
-                            })
-                            # Skip to confirmation step
-                            flow.current_index = 1
-                            result = flow.current_step.get_message(flow.data)
-                            # Ensure result is properly formatted as WhatsApp message
-                            if isinstance(result, str):
-                                return self.get_response_template(result)
-                            return result
+                # Handle direct cancel command
+                if credex_id := kwargs.get("credex_id"):
+                    if selected_offer := next(
+                        (o for o in pending_offers if o["id"] == credex_id),
+                        None
+                    ):
+                        flow.data.update({
+                            "credex_id": credex_id,
+                            "selection": f"cancel_{credex_id}",
+                            "amount": selected_offer["amount"],
+                            "counterparty": selected_offer["to"]
+                        })
+                        flow.current_index = 1
+                        return flow.current_step.get_message(flow.data)
 
             # Get initial message
             result = flow.current_step.get_message(flow.data)
 
             # Save flow state
-            flow_state = flow.get_state()  # Get base state (id, step, data)
             self.user.state.update_state({
                 "flow_data": {
-                    **flow_state,  # Flow's internal state
-                    "flow_type": flow_type,  # Flow type for recreation
-                    "kwargs": kwargs  # Flow kwargs for recreation
+                    **flow.get_state(),
+                    "flow_type": flow_type,
+                    "kwargs": kwargs
                 }
             }, "flow_start")
 
-            # If result is already a WhatsApp message, return it directly
-            if isinstance(result, dict) and result.get("messaging_product") == "whatsapp":
-                return result
-
-            # Otherwise wrap it in a template
-            return self.get_response_template(result)
+            return (
+                result if isinstance(result, dict) and
+                result.get("messaging_product") == "whatsapp"
+                else self.get_response_template(result)
+            )
 
         except Exception as e:
-            logger.error(f"Error starting flow: {str(e)}")
+            logger.error(f"Flow start error: {str(e)}")
             return self._format_error_response(f"Failed to start flow: {str(e)}")
 
     def _continue_flow(self, flow_data: Dict[str, Any]) -> WhatsAppMessage:
         """Continue an existing flow"""
         try:
-            # Get flow type and kwargs from state
             flow_type = flow_data.get("flow_type")
             kwargs = flow_data.get("kwargs", {})
             if not flow_type:
                 raise ValueError("Missing flow type")
 
-            # Initialize correct flow type
+            # Initialize correct flow
             flow_id = flow_data.get("id", "")
-            if "credex_" in flow_id:
-                flow = CredexFlow(flow_type=flow_type, **kwargs)
-            elif "member_" in flow_id:
-                flow = MemberFlow(flow_type=flow_type, **kwargs)
-            else:
-                raise ValueError("Invalid flow ID")
-
-            # Initialize flow with its expected state structure
-            flow.credex_service = self.credex_service  # Pass the cached CredEx service
-            flow_state = {
+            flow_class = CredexFlow if "credex_" in flow_id else MemberFlow
+            flow = flow_class(flow_type=flow_type, **kwargs)
+            flow.credex_service = self.credex_service
+            flow.set_state({
                 "id": flow_data["id"],
                 "step": flow_data["step"],
                 "data": flow_data["data"]
-            }
-            flow.set_state(flow_state)
+            })
 
-            # Process input based on message type
+            # Process input
+            result = None
             if self.message_type == "interactive":
-                # For interactive messages, pass exact WhatsApp format
                 interactive = self.message.get("interactive", {})
-                logger.debug(f"Processing interactive message: {interactive}")
-
-                # Check for button reply
                 if interactive.get("type") == "button_reply":
-                    button_reply = interactive.get("button_reply", {})
-                    logger.debug(f"Found button reply: {button_reply}")
                     result = flow.process_input({
                         "type": "interactive",
                         "interactive": {
                             "type": "button_reply",
-                            "button_reply": button_reply
+                            "button_reply": interactive.get("button_reply", {})
                         }
                     })
-                # Check for list reply
                 elif interactive.get("type") == "list_reply":
-                    list_reply = interactive.get("list_reply", {})
-                    logger.debug(f"Found list reply: {list_reply}")
                     result = flow.process_input({
                         "type": "interactive",
                         "interactive": {
                             "type": "list_reply",
-                            "list_reply": list_reply
+                            "list_reply": interactive.get("list_reply", {})
                         }
                     })
-                else:
-                    logger.warning(f"Unknown interactive type: {interactive.get('type')}")
-                    result = "Invalid input"
             else:
-                # For text messages, pass the body
-                logger.debug("Processing text message")
                 result = flow.process_input(self.body)
 
+            # Handle invalid input
             if result == "Invalid input":
-                # Show more helpful error for amount validation
                 if flow.current_step and flow.current_step.id == "amount":
                     result = (
                         "Invalid amount format. Examples:\n"
@@ -245,111 +208,75 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                         "XAU 1"
                     )
                 return self.get_response_template(result)
-            elif not result:
-                # Flow complete with no message
-                self.user.state.update_state({
-                    "flow_data": None
-                }, "flow_complete")
-                return self.auth_handler.handle_action_menu()
-            elif flow.current_index >= len(flow.steps):
-                # Flow complete with success message
-                self.user.state.update_state({
-                    "flow_data": None
-                }, "flow_complete")
 
-                # For any credex flow completion, show updated dashboard with success message
+            # Handle flow completion
+            if not result or flow.current_index >= len(flow.steps):
+                self.user.state.update_state({"flow_data": None}, "flow_complete")
+
+                if not result:
+                    return self.auth_handler.handle_action_menu()
+
                 if "credex_" in flow_id:
-                    # Get appropriate success message based on flow type
                     success_messages = {
                         "offer": "Credex successfully offered",
                         "accept": "Credex successfully accepted",
                         "decline": "Credex successfully declined",
                         "cancel_credex": "Credex successfully cancelled"
                     }
-                    success_message = success_messages.get(flow_type, "Operation successful")
+                    dashboard = DashboardFlow(
+                        success_message=success_messages.get(flow_type)
+                    )
+                    dashboard.credex_service = self.credex_service
+                    dashboard.data = {"mobile_number": self.user.mobile_number}
+                    return dashboard.complete()
 
-                    # Initialize dashboard flow with success message
-                    dashboard_flow = DashboardFlow(success_message=success_message)
-                    dashboard_flow.credex_service = self.credex_service
-                    dashboard_flow.data = {
-                        "mobile_number": self.user.mobile_number
-                    }
-                    # Return dashboard view
-                    return dashboard_flow.complete()
-
-                # If result is already a WhatsApp message, return it directly
-                if isinstance(result, dict) and result.get("messaging_product") == "whatsapp":
-                    return result
-
-                # Otherwise wrap it in a template
-                return self.get_response_template(result)
+                return (
+                    result if isinstance(result, dict) and
+                    result.get("messaging_product") == "whatsapp"
+                    else self.get_response_template(result)
+                )
 
             # Update flow state
-            flow_state = flow.get_state()  # Get updated state
             self.user.state.update_state({
                 "flow_data": {
-                    **flow_state,  # Flow's internal state
-                    "flow_type": flow_type,  # Preserve flow type
-                    "kwargs": kwargs  # Preserve flow kwargs
+                    **flow.get_state(),
+                    "flow_type": flow_type,
+                    "kwargs": kwargs
                 }
             }, "flow_continue")
 
-            # If result is already a WhatsApp message, return it directly
-            if isinstance(result, dict) and result.get("messaging_product") == "whatsapp":
-                return result
-
-            # Otherwise wrap it in a template
-            return self.get_response_template(result)
+            return (
+                result if isinstance(result, dict) and
+                result.get("messaging_product") == "whatsapp"
+                else self.get_response_template(result)
+            )
 
         except Exception as e:
             logger.error(f"Flow error: {str(e)}")
-            # Clear flow state on error
-            self.user.state.update_state({
-                "flow_data": None
-            }, "flow_error")
+            self.user.state.update_state({"flow_data": None}, "flow_error")
             return self._format_error_response(str(e))
 
     def _process_message(self) -> WhatsAppMessage:
         """Process incoming message"""
         try:
             # Handle greeting
-            if self.message_type == "text" and self.body.lower() in {"hi", "hello", "hey", "start"}:
+            if (self.message_type == "text" and
+                    self.body.lower() in self.GREETING_KEYWORDS):
                 return self.auth_handler.handle_action_menu(login=True)
 
             # Get action
             action = self._get_action()
             logger.info(f"Processing action: {action}")
 
-            # Handle menu actions first
-            if action == "offer_credex":
-                return self._start_flow("offer", CredexFlow)
-            elif action == "accept_credex":
-                return self._start_flow("accept", CredexFlow)
-            elif action == "decline_credex":
-                return self._start_flow("decline", CredexFlow)
-            elif action == "cancel_credex" or (
-                self.message_type == "text" and
-                re.match(r'cancel_[0-9a-f-]+', self.body.strip().lower())
-            ):
-                logger.info("Starting cancel_credex flow")
-                return self._start_flow("cancel_credex", CredexFlow)
-            elif action == "view_transactions":
-                return self._start_flow("transactions", MemberFlow)
-            elif action == "start_registration":
-                return self._start_flow("registration", MemberFlow)
-            elif action == "upgrade_tier":
-                return self._start_flow("upgrade", MemberFlow)
-
-            # Then check for active flow
-            state = self.user.state.state
-            flow_data = state.get("flow_data", {})
+            # Check for active flow
+            flow_data = self.user.state.state.get("flow_data")
             if flow_data:
-                logger.info("Continuing existing flow")
                 return self._continue_flow(flow_data)
 
-            # Default to menu for unknown actions
-            if action:
-                return self.auth_handler.handle_action_menu()
+            # Start new flow if action matches
+            if flow_info := self._get_flow_info(action):
+                flow_type, flow_class, kwargs = flow_info
+                return self._start_flow(flow_type, flow_class, **kwargs)
 
             # Default to menu
             return self.auth_handler.handle_action_menu()
