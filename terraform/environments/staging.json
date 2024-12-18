@@ -14,5 +14,10 @@
     "max_capacity": 4,
     "cpu_threshold": 80,
     "memory_threshold": 80
+  },
+  "django_env": {
+    "debug": true,
+    "django_log_level": "DEBUG",
+    "app_log_level": "DEBUG"
   }
 }
