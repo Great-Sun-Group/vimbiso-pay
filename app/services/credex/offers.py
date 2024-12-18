@@ -43,7 +43,8 @@ class CredExOffersService(BaseCredExService):
             data = self._validate_response(response)
             if data.get("data", {}).get("action", {}).get("type") == "CREDEX_CREATED":
                 # Get the credexID from the response
-                data["data"]["credexID"] = data["data"]["action"]["id"]
+                credex_id = data["data"]["action"]["id"]
+                data["data"]["credexID"] = credex_id
                 logger.info("CredEx offer created successfully")
                 return True, data
             else:
@@ -53,7 +54,6 @@ class CredExOffersService(BaseCredExService):
                 return False, {"message": error_msg}
 
         except TransactionError as e:
-            # Error message is now a string
             error_msg = str(e)
             logger.warning(f"Transaction error creating offer: {error_msg}")
             return False, {"message": error_msg}
@@ -150,10 +150,10 @@ class CredExOffersService(BaseCredExService):
             logger.exception(f"Bulk CredEx offer acceptance failed: {str(e)}")
             return False, {"message": "An unexpected error occurred. Please try again."}
 
-    def decline_credex(self, credex_id: str) -> Tuple[bool, str]:
+    def decline_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
         """Decline a CredEx offer"""
         if not credex_id:
-            return False, "CredEx ID is required"
+            return False, {"message": "CredEx ID is required"}
 
         try:
             response = self._make_request(
@@ -165,24 +165,24 @@ class CredExOffersService(BaseCredExService):
             if (data.get("message") == "Credex declined successfully" or
                     data.get("data", {}).get("action", {}).get("type") == "CREDEX_DECLINED"):
                 logger.info("CredEx offer declined successfully")
-                return True, "Decline successful"
+                return True, data
             else:
                 error_msg = self._extract_error_message(response)
                 logger.error(f"CredEx offer decline failed: {error_msg}")
-                return False, error_msg
+                return False, {"message": error_msg}
 
         except TransactionError as e:
             error_msg = str(e)
             logger.warning(f"Transaction error declining offer: {error_msg}")
-            return False, error_msg
+            return False, {"message": error_msg}
         except Exception as e:
             logger.exception(f"CredEx offer decline failed: {str(e)}")
-            return False, "An unexpected error occurred. Please try again."
+            return False, {"message": "An unexpected error occurred. Please try again."}
 
-    def cancel_credex(self, credex_id: str) -> Tuple[bool, str]:
+    def cancel_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
         """Cancel a CredEx offer"""
         if not credex_id:
-            return False, "CredEx ID is required"
+            return False, {"message": "CredEx ID is required"}
 
         try:
             response = self._make_request(
@@ -193,19 +193,19 @@ class CredExOffersService(BaseCredExService):
             data = self._validate_response(response)
             if data.get("message") == "Credex cancelled successfully":
                 logger.info("CredEx offer cancelled successfully")
-                return True, "Credex cancelled successfully"
+                return True, data
             else:
                 error_msg = self._extract_error_message(response)
                 logger.error(f"CredEx offer cancellation failed: {error_msg}")
-                return False, error_msg
+                return False, {"message": error_msg}
 
         except TransactionError as e:
             error_msg = str(e)
             logger.warning(f"Transaction error cancelling offer: {error_msg}")
-            return False, error_msg
+            return False, {"message": error_msg}
         except Exception as e:
             logger.exception(f"CredEx offer cancellation failed: {str(e)}")
-            return False, "An unexpected error occurred. Please try again."
+            return False, {"message": "An unexpected error occurred. Please try again."}
 
     def get_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
         """Get details of a specific CredEx offer"""

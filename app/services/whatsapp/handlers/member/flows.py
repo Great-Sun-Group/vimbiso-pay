@@ -91,6 +91,42 @@ class MemberFlow(Flow):
             "[confirm] Hustle Hard"
         )
 
+    def _update_dashboard_state(self, response: Dict[str, Any]) -> None:
+        """Update dashboard data in state from API response"""
+        try:
+            if not hasattr(self.credex_service, '_parent_service') or not hasattr(self.credex_service._parent_service, 'user'):
+                logger.warning("Cannot update dashboard state: missing required service attributes")
+                return
+
+            # Get dashboard data from response
+            dashboard = response.get("data", {}).get("dashboard")
+            if dashboard is None:
+                logger.warning("No dashboard data in response to update state with")
+                return
+
+            # Get current state
+            user_state = self.credex_service._parent_service.user.state
+            current_state = user_state.state
+            current_profile = current_state.get("profile", {})
+
+            # Update dashboard while preserving other profile data
+            if "data" in current_profile:
+                current_profile["data"]["dashboard"] = dashboard
+            else:
+                current_profile["data"] = {"dashboard": dashboard}
+
+            # Update state
+            user_state.update_state({
+                "profile": current_profile
+            }, "dashboard_update")
+
+            logger.info(f"Successfully updated state with new dashboard data for {self.flow_type} operation")
+
+        except Exception as e:
+            logger.error(f"Failed to update dashboard state: {str(e)}")
+            # Don't raise the error since this is a non-critical operation
+            # The member operation itself was successful
+
     def complete(self) -> str:
         """Complete the flow"""
         try:
@@ -127,6 +163,22 @@ class MemberFlow(Flow):
         if not success:
             raise ValueError(response.get("message", "Registration failed"))
 
+        # Update dashboard state with registration response
+        self._update_dashboard_state(response)
+
+        # Store JWT token and auth state
+        token = (
+            response.get("data", {})
+            .get("action", {})
+            .get("details", {})
+            .get("token")
+        )
+        if token and hasattr(self.credex_service, '_parent_service') and hasattr(self.credex_service._parent_service, 'user'):
+            self.credex_service._parent_service.user.state.update_state({
+                "jwt_token": token,
+                "authenticated": True
+            }, "registration_auth")
+
         return f"Welcome {first_name}! Your account has been created successfully! 🎉"
 
     def _complete_upgrade(self) -> str:
@@ -151,5 +203,8 @@ class MemberFlow(Flow):
 
         if not success:
             raise ValueError(response.get("message", "Failed to process subscription"))
+
+        # Update dashboard state with upgrade response
+        self._update_dashboard_state(response)
 
         return "🎉 Successfully upgraded to Hustler tier!"
