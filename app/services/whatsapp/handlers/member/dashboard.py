@@ -25,6 +25,10 @@ class DashboardFlow(Flow):
         super().__init__(f"dashboard_{flow_type}", [])
         self.credex_service = None
 
+    def process_input(self, input_data: Any) -> Optional[str]:
+        """Override to skip input processing for dashboard display"""
+        return self.complete()
+
     def _get_selected_account(
         self,
         accounts: List[Dict[str, Any]],

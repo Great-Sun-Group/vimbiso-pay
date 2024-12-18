@@ -64,7 +64,8 @@ class AuthActionHandler(BaseActionHandler):
             self.service.user.state.update_state({
                 "jwt_token": jwt_token,
                 "authenticated": True,
-                "profile": dashboard_data
+                "profile": dashboard_data,
+                "flow_data": None  # Clear any existing flow data
             }, "login_success")
 
             # Propagate token
@@ -75,18 +76,22 @@ class AuthActionHandler(BaseActionHandler):
             logger.error(f"Login error: {str(e)}")
             return False, None
 
-    def handle_action_menu(self, message: Optional[str] = None, login: bool = False) -> WhatsAppMessage:
-        """Display main menu"""
+    def _show_dashboard(self, flow_type: str = "view", message: Optional[str] = None) -> WhatsAppMessage:
+        """Display dashboard without flow processing"""
         try:
-            # Handle login if needed
-            if login:
-                success, dashboard_data = self._attempt_login()
-                if not success:
-                    return self.handle_action_register(register=True)
+            # Clear any existing flow data first
+            current_state = self.service.user.state.state or {}
+            self.service.user.state.update_state({
+                "flow_data": None,
+                "profile": current_state.get("profile", {}),
+                "current_account": current_state.get("current_account"),
+                "jwt_token": current_state.get("jwt_token"),
+                "authenticated": current_state.get("authenticated", False)
+            }, "clear_flow")
 
             # Initialize dashboard flow
             flow = DashboardFlow(
-                flow_type="login" if login else "view",
+                flow_type=flow_type,
                 message=message
             )
 
@@ -96,8 +101,30 @@ class AuthActionHandler(BaseActionHandler):
                 "mobile_number": self.service.user.mobile_number
             }
 
-            # Complete flow
+            # Complete flow directly
             return flow.complete()
+
+        except Exception as e:
+            logger.error(f"Dashboard display error: {str(e)}")
+            return WhatsAppMessage.create_text(
+                self.service.user.mobile_number,
+                "Failed to load dashboard. Please try again."
+            )
+
+    def handle_action_menu(self, message: Optional[str] = None, login: bool = False) -> WhatsAppMessage:
+        """Display main menu"""
+        try:
+            # Handle login if needed
+            if login:
+                success, dashboard_data = self._attempt_login()
+                if not success:
+                    return self.handle_action_register(register=True)
+
+            # Show dashboard directly
+            return self._show_dashboard(
+                flow_type="login" if login else "view",
+                message=message
+            )
 
         except Exception as e:
             logger.error(f"Menu error: {str(e)}")

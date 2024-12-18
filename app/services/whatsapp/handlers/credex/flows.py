@@ -1,9 +1,11 @@
 """Unified credex flow implementation"""
 import logging
-from typing import Any, Dict, List, Union
 import re
+from typing import Any, Dict, List, Union
+
 from core.messaging.flow import Flow, Step, StepType
 from core.transactions import TransactionOffer, TransactionType
+
 from ...handlers.member.dashboard import DashboardFlow
 
 logger = logging.getLogger(__name__)

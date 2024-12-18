@@ -10,7 +10,9 @@ class StateData:
         "jwt_token",
         "profile",
         "current_account",
-        "member"
+        "member",
+        "flow_data",  # Added to preserve flow state
+        "authenticated"  # Added for completeness
     }
 
     @classmethod
@@ -34,5 +36,16 @@ class StateData:
     def merge(cls, current: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
         """Merge states preserving critical fields"""
         result = current.copy()
+
+        # Special handling for flow_data to ensure complete preservation
+        if "flow_data" in new and "flow_data" in current:
+            # Merge flow data preserving all fields
+            result["flow_data"] = {
+                **(current.get("flow_data", {}) or {}),
+                **(new.get("flow_data", {}) or {})
+            }
+            # Remove flow_data from new to prevent overwrite in update
+            new = {k: v for k, v in new.items() if k != "flow_data"}
+
         result.update(new)
         return cls.preserve(current, result)
