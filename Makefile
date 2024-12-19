@@ -5,7 +5,7 @@ dev:
 	DJANGO_ENV=development docker compose -f app/compose.yaml down
 	DJANGO_ENV=development docker compose -f app/compose.yaml build \
 		--build-arg REQUIREMENTS_FILE=requirements/dev.txt \
-		--build-arg DJANGO_SETTINGS_MODULE=config.settings \
+		--build-arg DJANGO_SETTINGS_MODULE=config.settings.development \
 		--build-arg DJANGO_ENV=development
 	DJANGO_ENV=development docker compose -f app/compose.yaml up
 
@@ -14,7 +14,7 @@ prod:
 	DJANGO_ENV=production docker compose -f app/compose.yaml down
 	DJANGO_ENV=production docker compose -f app/compose.yaml build \
 		--build-arg REQUIREMENTS_FILE=requirements/prod.txt \
-		--build-arg DJANGO_SETTINGS_MODULE=config.settings \
+		--build-arg DJANGO_SETTINGS_MODULE=config.settings.production \
 		--build-arg DJANGO_ENV=production
 	DJANGO_ENV=production docker compose -f app/compose.yaml up -d
 
@@ -22,7 +22,7 @@ prod:
 dev-build:
 	DJANGO_ENV=development docker compose -f app/compose.yaml build \
 		--build-arg REQUIREMENTS_FILE=requirements/dev.txt \
-		--build-arg DJANGO_SETTINGS_MODULE=config.settings \
+		--build-arg DJANGO_SETTINGS_MODULE=config.settings.development \
 		--build-arg DJANGO_ENV=development
 
 # Start the server (development)
@@ -37,7 +37,7 @@ dev-down:
 prod-build:
 	DJANGO_ENV=production docker compose -f app/compose.yaml build \
 		--build-arg REQUIREMENTS_FILE=requirements/prod.txt \
-		--build-arg DJANGO_SETTINGS_MODULE=config.settings \
+		--build-arg DJANGO_SETTINGS_MODULE=config.settings.production \
 		--build-arg DJANGO_ENV=production
 
 # Start the server (production)
@@ -51,6 +51,11 @@ prod-down:
 # Get diff between two branches
 diff:
 	@if [ "$(filter-out $@,$(MAKECMDGOALS))" = "" ]; then \
+		echo "Usage: make diff <source_branch> <target_branch>"; \
+		exit 1; \
+	fi
+	@if [ "$$(echo $(filter-out $@,$(MAKECMDGOALS)) | wc -w)" != "2" ]; then \
+		echo "Error: Exactly two branch names are required"; \
 		echo "Usage: make diff <source_branch> <target_branch>"; \
 		exit 1; \
 	fi

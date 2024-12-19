@@ -4,7 +4,8 @@
 
 VimbisoPay uses Docker for:
 - Application (Django)
-- Redis (State management)
+- Redis Cache (General caching)
+- Redis State (State management)
 - Mock WhatsApp server (Testing)
 
 ## Services
@@ -19,24 +20,61 @@ app:
     - "8000:8000"
   environment:
     - DJANGO_ENV=development
-    - REDIS_URL=redis://redis:6379/0
+    - REDIS_URL=redis://redis-cache:6379/0
+    - REDIS_STATE_URL=redis://redis-state:6379/0
   volumes:
     - ./data:/app/data
     - .:/app
+  depends_on:
+    redis-cache:
+      condition: service_healthy
+    redis-state:
+      condition: service_healthy
 ```
 
-### Redis
+### Redis Services
+
+#### Cache Redis
 ```yaml
-redis:
+redis-cache:
   image: redis:7.0-alpine
   command: >
     redis-server
     --maxmemory 256mb
     --maxmemory-policy allkeys-lru
+    --appendonly no
+    --save ""
   volumes:
-    - ./data/redis:/data
+    - ./data/redis/cache:/data
   ports:
     - "6379:6379"
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 5s
+    timeout: 3s
+    retries: 3
+```
+
+#### State Redis
+```yaml
+redis-state:
+  image: redis:7.0-alpine
+  command: >
+    redis-server
+    --maxmemory 256mb
+    --maxmemory-policy allkeys-lru
+    --appendonly yes
+    --appendfsync everysec
+    --save ""
+  volumes:
+    - ./data/redis/state:/data
+  ports:
+    - "6380:6379"
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 5s
+    timeout: 3s
+    retries: 3
 ```
 
 ### Mock Server
@@ -62,13 +100,15 @@ make dev-up
 # Access services
 Application: http://localhost:8000
 Mock WhatsApp: http://localhost:8001
-Redis: localhost:6379
+Redis Cache: localhost:6379
+Redis State: localhost:6380
 ```
 
 ### Service Communication
 Within Docker network:
 - Application: http://app:8000
-- Redis: redis://redis:6379
+- Redis Cache: redis://redis-cache:6379
+- Redis State: redis://redis-state:6379
 - Mock Server: http://mock:8001
 
 ## Production
@@ -113,9 +153,9 @@ Common issues:
 2. **Redis Issues**
    - Check memory usage
    - Verify configuration
-   - See [Redis Management](../redis-memory-management.md)
+   - See [Redis Management](redis-memory-management.md)
 
 For more details on:
 - Testing: [Testing Guide](testing.md)
-- Deployment: [Deployment](../deployment.md)
+- Deployment: [Deployment](deployment.md)
 - Security: [Security](security.md)

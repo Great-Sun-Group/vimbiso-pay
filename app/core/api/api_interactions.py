@@ -704,14 +704,9 @@ class APIInteractions:
                 current_state["current_account"] = {}
                 logger.info("No eligible account found or member tier too high")
 
-        # Single state update with consistent stage/option
+        # Update state with simplified pattern
         user = CachedUser(self.bot_service.user.mobile_number)
-        user.state.update_state(
-            state=current_state,
-            stage="handle_action_menu",
-            update_from="refresh",
-            option="handle_action_menu"
-        )
+        user.state.update_state(current_state, "refresh")
 
         logger.info("State updated successfully after refresh")
         return None

@@ -14,7 +14,6 @@ from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
 from services.whatsapp.handler import CredexBotService
 
-
 # Configure logging with a standardized format
 logging.basicConfig(
     level=logging.DEBUG,
@@ -35,15 +34,11 @@ class CredexCloudApiWebhook(APIView):
 
     @staticmethod
     def post(request):
-        # Early debug logging
-        logger.debug("==== START OF WEBHOOK REQUEST ====")
-        logger.debug(f"Request META: {request.META}")
-        logger.debug(f"Request Headers: {request.headers}")
-        logger.debug(f"Request Body: {request.body}")
-
         try:
             logger.info("Received webhook request")
-            logger.debug(f"Request data: {request.data}")
+
+            # Log full request data for debugging
+            logger.debug(f"Full webhook payload: {request.data}")
 
             # Validate basic webhook structure
             if not isinstance(request.data, dict):
@@ -68,9 +63,8 @@ class CredexCloudApiWebhook(APIView):
 
             logger.info(f"Webhook payload metadata: {payload.get('metadata', {})}")
 
-            # Check for mock testing header
-            is_mock_testing = request.headers.get('X-Mock-Testing', '').lower() == 'true'
-            logger.debug(f"Mock testing mode: {is_mock_testing}")
+            # Check for mock testing mode
+            is_mock_testing = request.headers.get('X-Mock-Testing') == 'true'
 
             # Only validate phone_number_id for real WhatsApp requests
             if not is_mock_testing:
@@ -96,6 +90,9 @@ class CredexCloudApiWebhook(APIView):
             if not isinstance(message, dict):
                 logger.warning("Invalid message format")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+
+            # Log full message for debugging
+            logger.debug(f"Full message payload: {message}")
 
             message_type = message.get("type")
             if not message_type:
@@ -124,12 +121,12 @@ class CredexCloudApiWebhook(APIView):
                 logger.warning("No WA ID in contact")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Create CachedUser with debug logging
-            logger.info(f"Creating CachedUser for phone: {wa_id}")
+            # Initialize or get cached user - this handles all state management
+            logger.info(f"Initializing CachedUser for phone: {wa_id}")
             user = CachedUser(wa_id)
-            logger.info(f"CachedUser created with state: {user.state.__dict__}")
-
             state = user.state
+
+            logger.info(f"Using CachedUser with state: {state.__dict__}")
 
             # Check message age
             timestamp = message.get("timestamp")
@@ -151,6 +148,8 @@ class CredexCloudApiWebhook(APIView):
             elif message_type == "interactive":
                 interactive = message.get("interactive", {})
                 if isinstance(interactive, dict):
+                    # Log full interactive payload for debugging
+                    logger.debug(f"Interactive message payload: {interactive}")
                     if "button_reply" in interactive:
                         button_reply = interactive["button_reply"]
                         if isinstance(button_reply, dict):
@@ -160,27 +159,30 @@ class CredexCloudApiWebhook(APIView):
                         if isinstance(list_reply, dict):
                             message_text = list_reply.get("id", "")
                     else:
-                        # Log full interactive message for debugging
-                        logger.debug(f"Unhandled interactive message type: {interactive}")
+                        # Log unhandled interactive type
+                        logger.warning(f"Unhandled interactive message type: {interactive}")
                         message_text = str(interactive)
 
+            # Get flow data from state
+            flow_data = state.state.get("flow_data", {}) or {}
+            stage = flow_data.get("stage", "START")
+            option = flow_data.get("option", "NONE")
+
             logger.info(
-                f"Credex [{state.stage}<|>{state.option}] RECEIVED -> {message_text} "
+                f"Credex [{stage}<|>{option}] RECEIVED -> {message_text} "
                 f"FROM {wa_id} @ {message_stamp}"
             )
 
             try:
                 logger.info("Creating CredexBotService...")
-                # Pass the original WhatsApp format request data
+                # Create bot service with cached CredEx service
                 service = CredexBotService(payload=request.data, user=user)
 
                 # For mock testing return the response directly
                 if is_mock_testing:
-                    logger.info("Mock testing mode: Returning response without sending to WhatsApp")
-                    return JsonResponse({"response": service.response}, status=status.HTTP_200_OK)
+                    return JsonResponse(service.response, status=status.HTTP_200_OK)
 
                 # For real requests send via WhatsApp
-                logger.info("Sending response via WhatsApp service...")
                 response = CredexWhatsappService(
                     payload=service.response,
                     phone_number_id=payload["metadata"]["phone_number_id"]

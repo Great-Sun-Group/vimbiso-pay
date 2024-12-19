@@ -1,12 +1,16 @@
-from django.conf import settings
-from datetime import timedelta
-import datetime
-import os
-import redis
-import json
+"""Constants and cached user state management"""
+import logging
+from typing import Any, Dict
 from urllib.parse import urlparse
 
-# Initialize Redis client for state management
+import redis
+from core.utils.redis_atomic import AtomicStateManager
+from django.conf import settings
+from services.credex.service import CredExService
+
+logger = logging.getLogger(__name__)
+
+# Redis Configuration
 redis_url = urlparse(settings.REDIS_STATE_URL)
 state_redis = redis.Redis(
     host=redis_url.hostname or 'localhost',
@@ -19,37 +23,25 @@ state_redis = redis.Redis(
     retry_on_timeout=True
 )
 
-# Increase state TTL to 24 hours (in seconds)
-STATE_TTL = 86400
+# Initialize atomic state manager
+atomic_state = AtomicStateManager(state_redis)
 
-GREETINGS = [
-    "menu",
-    "memu",
-    "hi",
-    "hie",
-    "cancel",
-    "home",
-    "hy",
-    "reset",
-    "hello",
-    "x",
-    "c",
-    "no",
-    "No",
-    "n",
-    "N",
-    "hey",
-    "y",
-    "yes",
-    "retry",
-]
+# TTL Constants
+ACTIVITY_TTL = 300  # 5 minutes
+ABSOLUTE_JWT_TTL = 21600  # 6 hours
 
-# Feature flags
-USE_PROGRESSIVE_FLOW = os.environ.get('USE_PROGRESSIVE_FLOW', 'False') == 'True'
+# Command Recognition
+GREETINGS = {
+    "menu", "memu", "hi", "hie", "cancel", "home", "hy",
+    "reset", "hello", "x", "c", "no", "No", "n", "N",
+    "hey", "y", "yes", "retry"
+}
 
 
-def get_greeting(name):
-    current_time = datetime.datetime.now() + timedelta(hours=2)
+def get_greeting(name: str) -> str:
+    """Get time-appropriate greeting"""
+    from datetime import datetime, timedelta
+    current_time = datetime.now() + timedelta(hours=2)
     hour = current_time.hour
 
     if 5 <= hour < 12:
@@ -63,262 +55,168 @@ def get_greeting(name):
 
 
 class CachedUserState:
+    """Manages user state with atomic operations"""
+
     def __init__(self, user) -> None:
         self.user = user
-        print("USER", user)
+        self.key_prefix = str(user.mobile_number)
+        self.credex_service = None  # Store CredExService instance
 
-        # Get existing state values with debug logging
-        existing_direction = state_redis.get(f"{self.user.mobile_number}_direction")
-        existing_stage = state_redis.get(f"{self.user.mobile_number}_stage")
-        existing_option = state_redis.get(f"{self.user.mobile_number}_option")
-        existing_state = state_redis.get(f"{self.user.mobile_number}")
-        self.jwt_token = state_redis.get(f"{self.user.mobile_number}_jwt_token")
+        # Get initial state atomically
+        state_data, error = atomic_state.atomic_get(self.key_prefix)
+        if error:
+            logger.error(f"Error getting initial state: {error}")
+            state_data = None
 
-        # Log existing state for debugging
-        print("EXISTING STATE:", {
-            "direction": existing_direction,
-            "stage": existing_stage,
-            "option": existing_option,
-            "state": existing_state,
-            "jwt_token": self.jwt_token
-        })
-
-        # Try to restore state from Redis
-        restored_state = None
-        if existing_state:
-            try:
-                },
+        # Initialize state
+        if not state_data:
+            state_data = {
+                "jwt_token": None,
+                "profile": {},
                 "current_account": None,
-                "flow_data": None
-            }
-            state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
-        else:
-            # Ensure existing state has required structure
-            try:
-                current_state = json.loads(existing_state)
-                if not isinstance(current_state, dict):
-                    current_state = {}
-
-                # Ensure profile structure exists
-                if "profile" not in current_state:
-                    current_state["profile"] = {
-                        "data": {
-                            "action": {},
-                            "details": {}
-                        }
-                    }
-                elif not isinstance(current_state["profile"], dict):
-                    current_state["profile"] = {
-                        "data": {
-                            "action": {},
-                            "details": {}
-                        }
-                    }
-                elif "data" not in current_state["profile"]:
-                    current_state["profile"]["data"] = {
-                        "action": {},
-                        "details": {}
-                    }
-
-                # Update state with proper structure
-                state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(current_state))
-            except (json.JSONDecodeError, TypeError):
-                # Reset to initial state if corrupted
-                initial_state = {
-                    "stage": "handle_action_menu",
-                    "option": None,
-                    "profile": {
-                        "data": {
-                            "action": {},
-                            "details": {}
-                        }
-                    },
-                    "current_account": None,
-                    "flow_data": None
-                }
-                state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
-
-        # Refresh expiry for existing values
-        if existing_direction:
-            state_redis.setex(f"{self.user.mobile_number}_direction", 300, existing_direction)
-        if existing_stage:
-            state_redis.setex(f"{self.user.mobile_number}_stage", 300, existing_stage)
-        if existing_option:
-            state_redis.setex(f"{self.user.mobile_number}_option", 300, existing_option)
-
-        # Load current values
-        self.direction = state_redis.get(f"{self.user.mobile_number}_direction")
-        self.stage = state_redis.get(f"{self.user.mobile_number}_stage")
-        self.option = state_redis.get(f"{self.user.mobile_number}_option")
-        self.state = state_redis.get(f"{self.user.mobile_number}")
-        if self.state:
-            try:
-                self.state = json.loads(self.state)
-            except (json.JSONDecodeError, TypeError):
-                self.state = {}
-        else:
-            self.state = {}
-
-    def update_state(
-        self, state: dict, update_from, stage=None, option=None, direction=None
-    ):
-        """Update user state with proper Redis management"""
-        # Ensure we have a valid state object
-        if not isinstance(state, dict):
-            state = {}
-
-        # Ensure profile structure exists
-        if "profile" not in state:
-            state["profile"] = {
-                "data": {
-                    "action": {},
-                    "details": {}
-                }
-            }
-        elif not isinstance(state["profile"], dict):
-            state["profile"] = {
-                "data": {
-                    "action": {},
-                    "details": {}
-                }
-            }
-        elif "data" not in state["profile"]:
-            state["profile"]["data"] = {
-                "action": {},
-                "details": {}
+                "flow_data": None,
+                "member_id": None,  # Added member_id
+                "account_id": None  # Added account_id
             }
 
-        # Convert state to JSON string
-        state_json = json.dumps(state)
+        # Set instance variables
+        self.state = state_data
+        self.jwt_token = state_data.get("jwt_token")
 
-        # Set state with timeout
-        state_redis.setex(f"{self.user.mobile_number}", 300, state_json)
+        # Update state atomically
+        success, error = atomic_state.atomic_update(
+            key_prefix=self.key_prefix,
+            state=state_data,
+            ttl=ACTIVITY_TTL
+        )
+        if not success:
+            logger.error(f"Initial state update failed: {error}")
 
-        # Update stage if provided
-        if stage:
-            state_redis.setex(f"{self.user.mobile_number}_stage", 300, stage)
-            self.stage = stage
+    def get_or_create_credex_service(self) -> CredExService:
+        """Get existing CredExService or create new one"""
+        if not self.credex_service:
+            self.credex_service = CredExService(user=self.user)
+            # Initialize token from state if available
+            if self.jwt_token:
+                self._update_service_token(self.jwt_token)
+        return self.credex_service
 
-        # Update option if provided
-        if option:
-            state_redis.setex(f"{self.user.mobile_number}_option", 300, option)
-            self.option = option
+    def update_state(self, state: Dict[str, Any], update_from: str) -> None:
+        """Update state with atomic operations"""
+        try:
+            # Merge with existing state
+            new_state = self.state.copy()
 
-        # Update direction if provided
-        if direction:
-            state_redis.setex(f"{self.user.mobile_number}_direction", 300, direction)
-            self.direction = direction
+            # Preserve critical fields
+            critical_fields = {
+                "jwt_token": self.jwt_token,
+                "member_id": new_state.get("member_id"),
+                "account_id": new_state.get("account_id")
+            }
 
-        # Update local state
-        self.state = state
+            # Update with new state
+            new_state.update(state or {})
 
-    def get_state(self, user):
-        """Get current state with proper Redis handling"""
-        state_json = state_redis.get(f"{user.mobile_number}")
-        if state_json is None:
-            # Initialize with proper structure
-            state = {
-                "stage": "handle_action_menu",
-                "option": None,
-                "profile": {
-                    "data": {
-                        "action": {},
-                        "details": {}
-                    }
-                },
+            # Ensure critical fields are preserved
+            for field, value in critical_fields.items():
+                if value is not None:
+                    new_state[field] = value
+                    if field == "jwt_token" and "flow_data" in new_state and isinstance(new_state["flow_data"], dict):
+                        new_state["flow_data"]["jwt_token"] = value
+
+            # Update atomically
+            success, error = atomic_state.atomic_update(
+                key_prefix=self.key_prefix,
+                state=new_state,
+                ttl=ACTIVITY_TTL
+            )
+            if not success:
+                logger.error(f"State update failed: {error}")
+                return
+
+            self.state = new_state
+
+        except Exception as e:
+            logger.exception(f"Error in update_state: {e}")
+
+    def get_state(self, user) -> Dict[str, Any]:
+        """Get current state with atomic operation"""
+        state_data, error = atomic_state.atomic_get(str(user.mobile_number))
+
+        if error or not state_data:
+            state_data = {
+                "jwt_token": self.jwt_token,
+                "profile": {},
                 "current_account": None,
-                "flow_data": None
+                "flow_data": None,
+                "member_id": None,  # Added member_id
+                "account_id": None  # Added account_id
             }
-            state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
-        else:
-            try:
-                state = json.loads(state_json)
-                # Ensure profile structure exists
-                if "profile" not in state:
-                    state["profile"] = {
-                        "data": {
-                            "action": {},
-                            "details": {}
-                        }
-                    }
-                elif not isinstance(state["profile"], dict):
-                    state["profile"] = {
-                        "data": {
-                            "action": {},
-                            "details": {}
-                        }
-                    }
-                elif "data" not in state["profile"]:
-                    state["profile"]["data"] = {
-                        "action": {},
-                        "details": {}
-                    }
-                state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
-            except (json.JSONDecodeError, TypeError):
-                state = {
-                    "stage": "handle_action_menu",
-                    "option": None,
-                    "profile": {
-                        "data": {
-                            "action": {},
-                            "details": {}
-                        }
-                    },
-                    "current_account": None,
-                    "flow_data": None
-                }
-                state_redis.setex(f"{user.mobile_number}", 300, json.dumps(state))
 
-        self.state = state
-        return state
+        return state_data
 
-    def set_jwt_token(self, jwt_token):
-        """Set JWT token with proper Redis handling"""
+    def _update_service_token(self, jwt_token: str) -> None:
+        """Update service token without triggering recursion"""
+        if self.credex_service:
+            self.credex_service._jwt_token = jwt_token
+            # Update sub-services
+            if hasattr(self.credex_service, '_auth'):
+                self.credex_service._auth._jwt_token = jwt_token
+            if hasattr(self.credex_service, '_member'):
+                self.credex_service._member._jwt_token = jwt_token
+            if hasattr(self.credex_service, '_offers'):
+                self.credex_service._offers._jwt_token = jwt_token
+            if hasattr(self.credex_service, '_recurring'):
+                self.credex_service._recurring._jwt_token = jwt_token
+
+    def set_jwt_token(self, jwt_token: str) -> None:
+        """Set JWT token with atomic update"""
         if jwt_token:
-            state_redis.setex(f"{self.user.mobile_number}_jwt_token", 300, jwt_token)
             self.jwt_token = jwt_token
+            current_state = self.state.copy()
+            current_state["jwt_token"] = jwt_token
 
-    def reset_state(self):
-        """Reset all user state with proper Redis handling"""
-        # Save current JWT token
-        current_jwt = self.jwt_token
+            if "flow_data" in current_state and isinstance(current_state["flow_data"], dict):
+                current_state["flow_data"]["jwt_token"] = jwt_token
 
-        # Clear all existing state
-        state_redis.delete(f"{self.user.mobile_number}")
-        state_redis.delete(f"{self.user.mobile_number}_stage")
-        state_redis.delete(f"{self.user.mobile_number}_option")
-        state_redis.delete(f"{self.user.mobile_number}_direction")
+            # Update service token directly without using property setter
+            self._update_service_token(jwt_token)
 
-        # Set default values with timeout and proper structure
-        initial_state = {
-            "stage": "handle_action_menu",
-            "option": None,
-            "profile": {
-                "data": {
-                    "action": {},
-                    "details": {}
-                }
-            },
+            self.update_state(current_state, "set_jwt_token")
+
+    def reset_state(self) -> None:
+        """Reset state with atomic cleanup"""
+        preserve_fields = {"jwt_token", "member_id", "account_id"}  # Added member_id and account_id
+        current_values = {
+            field: self.state.get(field)
+            for field in preserve_fields
+            if self.state.get(field) is not None
+        }
+
+        success, error = atomic_state.atomic_cleanup(
+            self.key_prefix,
+            preserve_fields=preserve_fields
+        )
+
+        if not success:
+            logger.error(f"State reset failed: {error}")
+
+        # Reset instance state while preserving critical fields
+        self.state = {
+            "jwt_token": current_values.get("jwt_token"),
+            "member_id": current_values.get("member_id"),
+            "account_id": current_values.get("account_id"),
+            "profile": {},
             "current_account": None,
             "flow_data": None
         }
-        state_redis.setex(f"{self.user.mobile_number}", 300, json.dumps(initial_state))
-        state_redis.setex(f"{self.user.mobile_number}_stage", 300, "handle_action_menu")
-        state_redis.setex(f"{self.user.mobile_number}_direction", 300, "OUT")
-
-        # Update instance variables
-        self.state = initial_state
-        self.stage = "handle_action_menu"
-        self.option = None
-        self.direction = "OUT"
-
-        # Restore JWT token if it exists
-        if current_jwt:
-            self.set_jwt_token(current_jwt)
+        # Clear service instance
+        self.credex_service = None
 
 
 class CachedUser:
-    def __init__(self, mobile_number) -> None:
+    """User representation with cached state"""
+    def __init__(self, mobile_number: str) -> None:
         self.first_name = "Welcome"
         self.last_name = "Visitor"
         self.role = "DEFAULT"
@@ -329,75 +227,8 @@ class CachedUser:
         self.jwt_token = self.state.jwt_token
 
 
-MENU_OPTIONS_1 = {
-    "1": "handle_action_offer_credex",
-    "handle_action_offer_credex": "handle_action_offer_credex",
-    "2": "handle_action_pending_offers_in",
-    "handle_action_pending_offers_in": "handle_action_pending_offers_in",
-    "3": "handle_action_pending_offers_out",
-    "handle_action_pending_offers_out": "handle_action_pending_offers_out",
-    "4": "handle_action_transactions",
-    "handle_action_transactions": "handle_action_transactions",
-    "5": "handle_action_switch_account",
-    "handle_action_switch_account": "handle_action_switch_account",
-}
-
-MENU_OPTIONS_2 = {
-    "1": "handle_action_offer_credex",
-    "handle_action_offer_credex": "handle_action_offer_credex",
-    "2": "handle_action_pending_offers_in",
-    "handle_action_pending_offers_in": "handle_action_pending_offers_in",
-    "3": "handle_action_pending_offers_out",
-    "handle_action_pending_offers_out": "handle_action_pending_offers_out",
-    "4": "handle_action_transactions",
-    "handle_action_transactions": "handle_action_transactions",
-    "5": "handle_action_authorize_member",
-    "handle_action_authorize_member": "handle_action_authorize_member",
-    "6": "handle_action_notifications",
-    "handle_action_notifications": "handle_action_notifications",
-    "7": "handle_action_switch_account",
-    "handle_action_switch_account": "handle_action_switch_account",
-}
-
-ABOUT = """
-Today credex is being used
-for combi rides in Harare.
-Credex solves the problem
-of small change. Riders
-charge their credex account
-with USD at a verified agent,
-and then use that charge in
-any amount to pay for one
-ride at a time.
-
-When a combi accepts your
-credex, your charge is
-transferred to their
-account, and they can cash
-it out at a registered agent.
-There is no fee to charge
-your account, or to use that
-charge to pay for goods and
-services.
-
-Combi drivers and owners can
-use the charge they've received
-to purchase goods and services
-within the credex ecosystem,
-also at no charge. When an
-account charge is cashed out
-at aregistered agent, there
-is a 2% fee.
-"""
-
-# Add the missing constants
-REGISTER = """
-{message}
-"""
-
-PROFILE_SELECTION = """
-> *👤 Profile*
-{message}
-"""
+# Message Templates
+REGISTER = "{message}"
+PROFILE_SELECTION = "> *👤 Profile*\n{message}"
 INVALID_ACTION = "I'm sorry, I didn't understand that. Can you please try again?"
 DELAY = "Please wait while I process your request..."

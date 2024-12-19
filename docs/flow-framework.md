@@ -1,461 +1,230 @@
 # Flow Framework
 
-A comprehensive framework for building progressive, state-aware interactions in WhatsApp that provides type-safe message handling and standardized flow management.
+## Overview
 
-## Architecture Overview
+The Flow Framework provides a progressive interaction system for handling complex, multi-step conversations in WhatsApp. It enables structured data collection, validation, and state management through a series of defined steps.
 
-### Component Architecture
+## Core Components
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Flow Class    │     │  Flow Handler   │     │  State Service  │
-├─────────────────┤     ├─────────────────┤     ├─────────────────┤
-│ - Steps         │     │ - Flow Registry │     │ - Redis Backend │
-│ - State         │◄────┤ - Message Router│◄────┤ - State Lock    │
-│ - Services      │     │ - State Manager │     │ - TTL Management│
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-         ▲                      ▲                        ▲
-         │                      │                        │
-         │                      │                        │
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Step Class     │     │ Message Types   │     │ State Types     │
-├─────────────────┤     ├─────────────────┤     ├─────────────────┤
-│ - Validation    │     │ - Text          │     │ - Stage Enum    │
-│ - Transform     │     │ - Interactive   │     │ - Transitions   │
-│ - Conditions    │     │ - Template      │     │ - Validation    │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
+### Flow Base Class
 
-## WhatsApp Integration
-
-### 1. Message Types
-
-```python
-class MessageType(Enum):
-    """Supported WhatsApp message types"""
-    TEXT = "text"
-    TEMPLATE = "template"
-    INTERACTIVE = "interactive"
-    IMAGE = "image"
-    DOCUMENT = "document"
-    AUDIO = "audio"
-    VIDEO = "video"
-    LOCATION = "location"
-```
-
-### 2. Interactive Messages
-
-```python
-def create_interactive_message(self, state: Dict[str, Any]) -> Message:
-    """Create interactive message"""
-    return ButtonSelection.create_buttons({
-        "text": "Select an option:",
-        "buttons": [
-            {"id": "btn1", "title": "Option 1"},
-            {"id": "btn2", "title": "Option 2"}
-        ],
-        "header": "Optional Header",
-        "footer": "Optional Footer"
-    }, recipient=state.get("phone", ""))
-```
-
-### 3. Template Messages
-
-```python
-def send_template_message(self, recipient: str) -> Dict[str, Any]:
-    """Send template message"""
-    return self.whatsapp.send_template(
-        recipient=MessageRecipient(phone_number=recipient),
-        template_name="welcome_template",
-        language={"code": "en"},
-        components=[{
-            "type": "body",
-            "parameters": [
-                {"type": "text", "text": "User"}
-            ]
-        }]
-    )
-```
-
-### 4. Media Messages
-
-```python
-def send_media_message(self, recipient: str, url: str) -> Dict[str, Any]:
-    """Send media message"""
-    return self.whatsapp.send_message(Message(
-        recipient=MessageRecipient(phone_number=recipient),
-        content=ImageContent(
-            url=url,
-            caption="Optional caption"
-        )
-    ))
-```
-
-## Message Templates
-
-### 1. Text Formatting
-
-```python
-# Basic formatting
-BASIC_TEMPLATE = """*Bold text*
-_Italic text_
-~Strikethrough~
-```Monospace```"""
-
-# Multi-line formatting
-COMPLEX_TEMPLATE = """*{header}*
-{message}
-
-*Options:*
-1. ✅ {option1}
-2. ❌ {option2}"""
-
-# List formatting
-LIST_TEMPLATE = """*{title}*
-
-{items_list}
-
-Type *'{command}'* to continue"""
-```
-
-### 2. Interactive Components
-
-```python
-# Button selection
-BUTTON_TEMPLATE = """*{title}*
-{description}
-
-1. ✅ Confirm
-2. ❌ Cancel"""
-
-# List selection
-LIST_TEMPLATE = """*{category}*
-
-*Available options:*
-{options}
-
-Select an option to continue"""
-```
-
-### 3. Status Messages
-
-```python
-# Success message
-SUCCESS_TEMPLATE = """*✅ Success*
-
-🎉 {message}
-
-Type *'Menu'* to continue"""
-
-# Error message
-ERROR_TEMPLATE = """*❌ Error*
-
-⚠️ {error_message}
-
-Please try again"""
-
-# Progress message
-PROGRESS_TEMPLATE = """*⏳ Processing*
-
-Please wait while we {action}..."""
-```
-
-## UI/UX Guidelines
-
-### 1. Message Structure
-
-1. **Header**
-   - Use bold formatting
-   - Keep it short and clear
-   - Include emoji for visual context
-
-2. **Body**
-   - Break into logical sections
-   - Use proper spacing
-   - Include relevant details
-
-3. **Actions**
-   - Use buttons when possible
-   - Use emoji indicators
-   - Show clear commands
-
-### 2. Formatting Rules
-
-1. **Text Emphasis**
-   - *Bold* for headers and important info
-   - _Italic_ for instructions
-   - ```Monospace``` for code/commands
-
-2. **Emoji Usage**
-   - 📝 For forms/input
-   - ✅ For success/confirmation
-   - ❌ For errors/cancellation
-   - ⚠️ For warnings
-   - 💡 For tips/info
-
-3. **Layout**
-   - Use blank lines for separation
-   - Indent sub-items
-   - Align related information
-
-### 3. Response Times
-
-1. **Immediate Responses**
-   - Acknowledgment messages
-   - Error notifications
-   - Simple validations
-
-2. **Progress Updates**
-   - Long operations
-   - Multi-step processes
-   - External service calls
-
-3. **Timeouts**
-   - Session expiration
-   - Input waiting time
-   - Service timeouts
-
-## Integration Examples
-
-### 1. Registration Flow
-
-```python
-# Message template
-REGISTRATION_TEMPLATE = """*👤 Registration*
-
-Please enter your {field}:
-
-Examples:
-{examples}"""
-
-# Flow implementation
-class RegistrationFlow(Flow):
-    """Registration flow implementation"""
-
-    def _create_steps(self) -> list[Step]:
-        return [
-            Step(
-                id="first_name",
-                type=StepType.TEXT_INPUT,
-                stage=StateStage.REGISTRATION.value,
-                message=lambda state: ProgressiveInput.create_prompt(
-                    "What's your first name?",
-                    ["John", "Jane"],
-                    state.get("phone", "")
-                ),
-                validation=self._validate_name,
-                transform=lambda value: {"first_name": value.strip()}
-            ),
-            # More steps...
-        ]
-```
-
-### 2. Transaction Flow
-
-```python
-# Message template
-TRANSACTION_TEMPLATE = """*💰 Transaction*
-
-*From:* {sender}
-*To:* {recipient}
-*Amount:* ${amount}
-
-1. ✅ Confirm
-2. ❌ Cancel"""
-
-# Flow implementation
-class TransactionFlow(Flow):
-    """Transaction flow implementation"""
-
-    def _create_steps(self) -> list[Step]:
-        return [
-            Step(
-                id="amount",
-                type=StepType.TEXT_INPUT,
-                stage=StateStage.TRANSACTION.value,
-                message=lambda state: ProgressiveInput.create_prompt(
-                    "Enter amount:",
-                    ["100", "USD 100"],
-                    state.get("phone", "")
-                ),
-                validation=self._validate_amount,
-                transform=self._transform_amount
-            ),
-            # More steps...
-        ]
-```
-
-## Testing Strategies
-
-### 1. Unit Tests
-
-```python
-def test_message_formatting():
-    """Test message formatting"""
-    message = ProgressiveInput.create_prompt(
-        text="Test prompt",
-        examples=["ex1", "ex2"],
-        recipient="1234567890"
-    )
-    assert message.content.body == "Test prompt\n\nExamples:\n• ex1\n• ex2"
-
-def test_flow_validation():
-    """Test flow validation"""
-    flow = TestFlow("test", [])
-    assert flow._validate_amount("100") is True
-    assert flow._validate_amount("invalid") is False
-```
-
-### 2. Integration Tests
-
-```python
-def test_flow_progression():
-    """Test flow progression"""
-    handler = FlowHandler(MockStateService())
-
-    # Start flow
-    result = handler.start_flow("test_flow", "1234567890")
-    assert isinstance(result, TestFlow)
-
-    # Process steps
-    messages = [
-        {"type": "text", "text": {"body": "John"}},
-        {"type": "text", "text": {"body": "100"}},
-        {"type": "interactive", "interactive": {
-            "type": "button",
-            "button_reply": {"id": "confirm"}
-        }}
-    ]
-
-    for msg in messages:
-        response = handler.handle_message("1234567890", msg)
-        assert response is not None
-```
-
-### 3. End-to-End Tests
-
-```python
-def test_complete_flow():
-    """Test complete flow"""
-    service = TestService()
-
-    # Initialize flow
-    flow = service.start_flow("test_flow", "1234567890")
-
-    # Complete flow
-    result = service.complete_flow([
-        "John",           # Name input
-        "100",           # Amount input
-        "confirm"        # Confirmation
-    ])
-
-    assert result.success is True
-    assert "transaction_id" in result.data
-```
-
-def _validate_input(self, value: str) -> bool:
-    """Chain multiple validations"""
-    validators = [
-        self._validate_format,
-        self._validate_content,
-        self._validate_business_rules
-    ]
-    return all(validator(value) for validator in validators)
-```
-
-### 3. State Machine
-```python
-def _handle_state_machine(self, action: str) -> Tuple[bool, str]:
-    """Handle state machine transitions"""
-    state_handlers = {
-        "init": self._handle_init,
-        "processing": self._handle_processing,
-        "complete": self._handle_complete
-    }
-    handler = state_handlers.get(self.state.get("stage"))
-    if not handler:
-        return False, "Invalid state"
-    return handler(action)
-```
-
-### 4. Service Integration
-```python
-def _integrate_services(self) -> None:
-    """Integrate multiple services"""
-    services = {
-        "auth": self._setup_auth_service,
-        "data": self._setup_data_service,
-        "notification": self._setup_notification_service
-    }
-    for service_name, setup_func in services.items():
-        try:
-            setup_func()
-        except Exception as e:
-            logger.error(f"Failed to setup {service_name}: {str(e)}")
-```
-
-## Example Flows
-
-### 1. Registration Flow
-See `app/services/whatsapp/handlers/member/registration_flow.py` for a complete example of:
-- Progressive data collection
-- Input validation
+The framework is built around the `Flow` base class which manages:
+- Step progression
+- Data collection
 - State management
-- Service integration
-- Error handling
+- Input validation
+- Data transformation
 
-### 2. CredEx Offer Flow
-See `app/services/whatsapp/handlers/credex/offer_flow_v2.py` for an example of:
-- Complex validation
-- Multiple services
-- State transitions
-- Error recovery
-- Business logic integration
+```python
+class Flow:
+    def __init__(self, id: str, steps: List[Step]):
+        self.id = id
+        self.steps = steps
+        self.current_index = 0
+        self.data: Dict[str, Any] = {}
+```
 
-## Future Enhancements
+### Step Definition
 
-1. **Flow Templates**
-   - Standard flow patterns
-   - Reusable components
-   - Common validations
-   - State templates
+Each step in a flow represents a single interaction:
 
-2. **Visual Builder**
-   - Flow visualization
-   - State inspection
-   - Visual debugging
-   - Flow testing
+```python
+@dataclass
+class Step:
+    id: str                     # Unique step identifier
+    type: StepType             # Interaction type (TEXT/BUTTON/LIST)
+    message: Union[str, Callable]  # Static text or dynamic message generator
+    validator: Optional[Callable]  # Input validation function
+    transformer: Optional[Callable] # Data transformation function
+```
 
-3. **Analytics**
-   - Flow metrics
-   - User behavior
-   - Performance monitoring
-   - Error tracking
+### Step Types
 
-4. **Enhanced Testing**
-   - Automated flow testing
-   - State verification
-   - Service mocking
-   - Load testing
+The framework supports three types of interactions:
+- `TEXT`: Free-form text input
+- `BUTTON`: Button-based responses
+- `LIST`: Selection from a list of options
 
-## Troubleshooting
+## Message Handling
 
-### 1. Common Issues
-- State corruption
-- Invalid transitions
-- Service failures
-- Message formatting
-- Validation errors
+### Core Message Types
 
-### 2. Debugging
-- Enable debug logging
-- Inspect state changes
-- Monitor service health
-- Review message flow
-- Check validations
+The framework uses standardized message types from `core.messaging.types`:
 
-### 3. Recovery
-- Reset corrupted state
-- Retry operations
-- Fallback handlers
-- Error notifications
-- Audit logging
+```python
+@dataclass
+class Message:
+    """Complete message with recipient and content"""
+    recipient: MessageRecipient
+    content: Union[
+        TextContent,
+        InteractiveContent,
+        TemplateContent,
+        MediaContent
+    ]
+```
+
+### Template Organization
+
+1. **Domain-Specific Templates**
+   ```python
+   class MemberTemplates:
+       @staticmethod
+       def create_first_name_prompt(recipient: str) -> Message:
+           return Message(
+               recipient=MessageRecipient(phone_number=recipient),
+               content=TextContent(body="What's your first name?")
+           )
+   ```
+   - Encapsulate domain-specific message creation
+   - Consistent message formatting
+   - Reusable across flows
+   - Type-safe message creation
+
+2. **Flow Integration**
+   ```python
+   class MemberFlow(Flow):
+       def _get_first_name_prompt(self, _) -> Message:
+           return MemberTemplates.create_first_name_prompt(
+               self.data.get("mobile_number")
+           )
+   ```
+   - Use template methods directly
+   - Clean flow implementation
+   - Consistent message handling
+   - Improved maintainability
+
+### Message Types
+
+1. **Text Messages**
+   ```python
+   def create_text_message(recipient: str, text: str) -> Message:
+       return Message(
+           recipient=MessageRecipient(phone_number=recipient),
+           content=TextContent(body=text)
+       )
+   ```
+
+2. **Button Messages**
+   ```python
+   def create_button_message(
+       recipient: str,
+       text: str,
+       buttons: List[Dict[str, str]]
+   ) -> Message:
+       return Message(
+           recipient=MessageRecipient(phone_number=recipient),
+           content=InteractiveContent(
+               interactive_type=InteractiveType.BUTTON,
+               body=text,
+               buttons=[
+                   Button(id=btn["id"], title=btn["title"])
+                   for btn in buttons
+               ]
+           )
+       )
+   ```
+
+3. **List Messages**
+   ```python
+   def create_list_message(
+       recipient: str,
+       text: str,
+       sections: List[Dict[str, Any]]
+   ) -> Message:
+       return Message(
+           recipient=MessageRecipient(phone_number=recipient),
+           content=InteractiveContent(
+               interactive_type=InteractiveType.LIST,
+               body=text,
+               action_items={
+                   "button": "Select",
+                   "sections": sections
+               }
+           )
+       )
+   ```
+
+## Implementation
+
+### Flow Creation
+
+Flows are created by extending the base Flow class and defining steps:
+
+```python
+class CredexFlow(Flow):
+    def __init__(self, flow_type: str, **kwargs):
+        self.flow_type = flow_type
+        steps = self._create_steps()
+        super().__init__(f"credex_{flow_type}", steps)
+```
+
+### Step Definition Example
+
+```python
+Step(
+    id="amount",
+    type=StepType.TEXT,
+    message=self._get_amount_prompt,
+    validator=self._validate_amount,
+    transformer=self._transform_amount
+)
+```
+
+## Best Practices
+
+1. **Message Handling**
+   - Use domain-specific template classes
+   - Return Message objects consistently
+   - Follow WhatsApp Cloud API limits
+   - Handle errors gracefully
+
+2. **Template Organization**
+   - Group related templates in domain classes
+   - Use static methods for template creation
+   - Keep templates focused and reusable
+   - Document template parameters
+
+3. **Flow Implementation**
+   - Use template methods directly
+   - Keep flow logic separate from templates
+   - Handle state updates consistently
+   - Provide clear error messages
+
+4. **Error Handling**
+   ```python
+   def complete(self) -> Message:
+       try:
+           if not self.validate_state():
+               return Templates.create_error_message(
+                   self.data.get("mobile_number"),
+                   "Invalid state"
+               )
+
+           result = self._process_completion()
+           self._update_state(result)
+
+           return Templates.create_success_message(
+               self.data.get("mobile_number"),
+               "Operation completed successfully"
+           )
+       except Exception as e:
+           logger.error(f"Flow completion error: {str(e)}")
+           return Templates.create_error_message(
+               self.data.get("mobile_number"),
+               str(e)
+           )
+   ```
+
+## Integration
+
+The Flow Framework integrates with:
+- WhatsApp message handling through standardized Message objects
+- Redis state management with atomic updates
+- API services with error handling
+- User authentication with token management
+
+For more details on:
+- WhatsApp integration: [WhatsApp](whatsapp.md)
+- State management: [State Management](state-management.md)
+- API integration: [API Integration](api-integration.md)

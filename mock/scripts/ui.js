@@ -8,168 +8,177 @@ export class ChatUI {
         this.sendButton = document.getElementById('sendButton');
         this.chatContainer = document.getElementById('chatContainer');
         this.statusDiv = document.getElementById('status');
-        this.currentFormName = null; // Track current form name
-        this.lastMessageId = null; // Track last message ID for context
+        this.currentFormName = null;
+        this.lastMessageId = null;
     }
 
-    displayMessage(data) {
+    displayMessage(messageData) {
+        console.log('=== DISPLAY MESSAGE START ===');
+        console.log('Raw message data:', messageData);
+        console.log('Message type:', messageData?.type);
+        console.log('Interactive data:', messageData?.interactive);
+
         const messageDiv = document.createElement('div');
-        const messageData = data.response || data;
+        messageDiv.className = 'message bot-message';
 
-        // Store message ID for context in replies
-        if (messageData.messages?.[0]?.id) {
-            this.lastMessageId = messageData.messages[0].id;
-        }
-
-        if (typeof messageData === 'string') {
-            messageDiv.className = 'message bot-message whatsapp-text';
-            messageDiv.innerHTML = formatWhatsAppText(messageData);
-        } else if (messageData.type === 'interactive') {
-            messageDiv.className = 'interactive-message';
-
-            // Display message body if present
-            if (messageData.interactive?.body?.text) {
-                const bodyDiv = document.createElement('div');
-                bodyDiv.className = 'body whatsapp-text';
-                bodyDiv.innerHTML = formatWhatsAppText(messageData.interactive.body.text);
-                messageDiv.appendChild(bodyDiv);
+        try {
+            // Handle direct text content
+            if (typeof messageData === 'string') {
+                console.log('Handling string message');
+                messageDiv.className += ' whatsapp-text';
+                messageDiv.innerHTML = formatWhatsAppText(messageData);
+                console.log('Formatted string message:', messageDiv.innerHTML);
             }
+            // Handle interactive messages
+            else if (messageData?.type === 'interactive') {
+                console.log('Handling interactive message');
+                messageDiv.className = 'interactive-message';
 
-            // Handle interactive components
-            if (messageData.interactive?.action) {
-                this.handleInteractiveAction(messageDiv, messageData.interactive);
-            }
-        } else if (messageData.text?.body) {
-            messageDiv.className = 'message bot-message whatsapp-text';
-            messageDiv.innerHTML = formatWhatsAppText(messageData.text.body);
-        }
-
-        this.chatContainer.appendChild(messageDiv);
-        this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
-    }
-
-    handleInteractiveAction(messageDiv, interactive) {
-        const action = interactive.action;
-
-        // Handle native form messages
-        if (interactive.type === 'nfm') {
-            // Store form name for use in response
-            this.currentFormName = action.name;
-            messageDiv.appendChild(createNativeForm(
-                action.parameters.fields,
-                formData => {
-                    // Include form name in submission
-                    this.messageInput.value = `form:${this.currentFormName}:${Object.entries(formData).map(([k,v]) => `${k}=${v}`).join(',')}`;
-                    this.onSendMessage();
+                // Display message body
+                if (messageData.interactive?.body?.text) {
+                    console.log('Adding body text:', messageData.interactive.body.text);
+                    const bodyDiv = document.createElement('div');
+                    bodyDiv.className = 'body whatsapp-text';
+                    bodyDiv.innerHTML = formatWhatsAppText(messageData.interactive.body.text);
+                    messageDiv.appendChild(bodyDiv);
+                    console.log('Body HTML:', bodyDiv.outerHTML);
                 }
-            ));
-        }
-        // Handle button messages
-        else if (interactive.type === 'button' && action.buttons) {
-            const buttonsContainer = document.createElement('div');
-            buttonsContainer.className = 'buttons';
 
-            action.buttons.forEach(button => {
-                const buttonWrapper = document.createElement('div');
-                buttonWrapper.style.width = '100%';
-                buttonWrapper.style.marginBottom = '8px';
+                // Handle interactive components
+                if (messageData.interactive?.action) {
+                    console.log('Adding interactive action:', messageData.interactive.action);
+                    const action = messageData.interactive.action;
 
-                const buttonElement = document.createElement('button');
-                buttonElement.className = 'button';
-                buttonElement.textContent = button.reply.title;
-                buttonElement.onclick = () => {
-                    this.messageInput.value = button.reply.id;
-                    this.onSendMessage();
-                };
+                    // Create list container
+                    if (messageData.interactive.type === 'list' && action.button) {
+                        console.log('Creating list interface');
+                        const listContainer = document.createElement('div');
+                        listContainer.className = 'list-container';
 
-                buttonWrapper.appendChild(buttonElement);
-                buttonsContainer.appendChild(buttonWrapper);
-            });
+                        // Add main button
+                        const mainButton = document.createElement('button');
+                        mainButton.className = 'list-button';
+                        mainButton.textContent = action.button;
+                        listContainer.appendChild(mainButton);
+                        console.log('Added main button:', mainButton.outerHTML);
 
-            messageDiv.appendChild(buttonsContainer);
-        }
-        // Handle list messages
-        else if (interactive.type === 'list') {
-            const listDiv = document.createElement('div');
-            listDiv.className = 'list-container';
+                        // Create options container
+                        const optionsContainer = document.createElement('div');
+                        optionsContainer.className = 'list-options';
+                        optionsContainer.style.display = 'none';
 
-            // Create list button
-            if (action.button) {
-                const buttonWrapper = document.createElement('div');
-                buttonWrapper.style.width = '100%';
-                buttonWrapper.style.marginBottom = '8px';
+                        // Add sections
+                        if (action.sections) {
+                            action.sections.forEach(section => {
+                                console.log('Processing section:', section);
+                                if (section.title) {
+                                    const sectionTitle = document.createElement('div');
+                                    sectionTitle.className = 'section-title';
+                                    sectionTitle.textContent = section.title;
+                                    optionsContainer.appendChild(sectionTitle);
+                                    console.log('Added section title:', sectionTitle.outerHTML);
+                                }
 
-                const button = document.createElement('button');
-                button.className = 'list-button';
-                button.textContent = action.button;
-                button.onclick = () => {
-                    const options = listDiv.querySelector('.list-options');
-                    if (options) {
-                        options.style.display = options.style.display === 'none' ? 'block' : 'none';
+                                if (section.rows) {
+                                    section.rows.forEach(row => {
+                                        console.log('Processing row:', row);
+                                        const option = document.createElement('button');
+                                        option.className = 'list-option';
+                                        option.textContent = row.title;
+                                        option.onclick = () => {
+                                            this.messageInput.value = row.id;
+                                            this.sendButton.click();
+                                            optionsContainer.style.display = 'none';
+                                        };
+                                        optionsContainer.appendChild(option);
+                                        console.log('Added option:', option.outerHTML);
+                                    });
+                                }
+                            });
+                        }
+
+                        // Toggle options on main button click
+                        mainButton.onclick = () => {
+                            const newDisplay = optionsContainer.style.display === 'none' ? 'block' : 'none';
+                            console.log('Toggling options display:', newDisplay);
+                            optionsContainer.style.display = newDisplay;
+                        };
+
+                        listContainer.appendChild(optionsContainer);
+                        messageDiv.appendChild(listContainer);
+                        console.log('Final list container:', listContainer.outerHTML);
                     }
-                };
+                    // Handle button messages
+                    else if (messageData.interactive.type === 'button' && action.buttons) {
+                        console.log('Creating button interface');
+                        const buttonsContainer = document.createElement('div');
+                        buttonsContainer.className = 'buttons';
 
-                buttonWrapper.appendChild(button);
-                listDiv.appendChild(buttonWrapper);
-            }
-
-            // Create list options
-            if (action.sections) {
-                const optionsDiv = document.createElement('div');
-                optionsDiv.className = 'list-options';
-                optionsDiv.style.display = 'none';
-
-                action.sections.forEach(section => {
-                    if (section.title) {
-                        const titleDiv = document.createElement('div');
-                        titleDiv.className = 'list-section-title';
-                        titleDiv.textContent = section.title;
-                        optionsDiv.appendChild(titleDiv);
-                    }
-
-                    if (section.rows) {
-                        section.rows.forEach(row => {
-                            const optionWrapper = document.createElement('div');
-                            optionWrapper.style.width = '100%';
-                            optionWrapper.style.marginBottom = '8px';
-
-                            const option = document.createElement('button');
-                            option.className = 'list-option';
-                            option.textContent = row.title;
-                            option.onclick = () => {
-                                this.messageInput.value = row.id;
-                                this.onSendMessage();
-                                optionsDiv.style.display = 'none';
+                        action.buttons.forEach(button => {
+                            const buttonElement = document.createElement('button');
+                            buttonElement.className = 'button';
+                            buttonElement.textContent = button.reply.title;
+                            buttonElement.onclick = () => {
+                                this.messageInput.value = button.reply.id;
+                                this.sendButton.click();
                             };
-
-                            optionWrapper.appendChild(option);
-                            optionsDiv.appendChild(optionWrapper);
+                            buttonsContainer.appendChild(buttonElement);
+                            console.log('Added button:', buttonElement.outerHTML);
                         });
-                    }
-                });
 
-                listDiv.appendChild(optionsDiv);
+                        messageDiv.appendChild(buttonsContainer);
+                        console.log('Final buttons container:', buttonsContainer.outerHTML);
+                    }
+                }
+            }
+            // Handle text messages
+            else if (messageData?.text?.body) {
+                console.log('Handling text message');
+                messageDiv.className += ' whatsapp-text';
+                messageDiv.innerHTML = formatWhatsAppText(messageData.text.body);
+                console.log('Formatted text message:', messageDiv.innerHTML);
+            }
+            // Handle unknown message types
+            else {
+                console.log('Unknown message type, displaying raw data');
+                messageDiv.className += ' whatsapp-text';
+                messageDiv.innerHTML = formatWhatsAppText(JSON.stringify(messageData, null, 2));
+                console.log('Raw data display:', messageDiv.innerHTML);
             }
 
-            messageDiv.appendChild(listDiv);
+            // Log final HTML
+            console.log('Final message HTML:', messageDiv.outerHTML);
+
+            // Add message to chat and scroll
+            this.chatContainer.appendChild(messageDiv);
+            this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+
+            console.log('=== DISPLAY MESSAGE END ===');
+
+        } catch (error) {
+            console.error('Error displaying message:', error);
+            // Display error in chat
+            messageDiv.className = 'message bot-message error';
+            messageDiv.textContent = `Error displaying message: ${error.message}`;
+            this.chatContainer.appendChild(messageDiv);
         }
     }
 
     displayUserMessage(text) {
+        console.log('Displaying user message:', text);
         const userMessageDiv = document.createElement('div');
         userMessageDiv.className = 'message user-message';
         userMessageDiv.textContent = text;
         this.chatContainer.appendChild(userMessageDiv);
         this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+        console.log('User message HTML:', userMessageDiv.outerHTML);
     }
 
     updateStatus() {
         const text = this.targetSelect.value === 'local' ?
             'Local Server (localhost:8000)' :
             'Staging Server (stage.whatsapp.vimbisopay.africa)';
-
-        // Create a span for "Connected to:" text
-        this.statusDiv.innerHTML = `<span class="te">Connected to:</span><br>${text}`;
+        this.statusDiv.innerHTML = `Connected to: ${text}`;
         this.statusDiv.className = `status ${this.targetSelect.value}`;
     }
 

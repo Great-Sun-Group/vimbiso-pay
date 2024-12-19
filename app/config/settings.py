@@ -260,13 +260,13 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "json",
-            "level": "INFO",  # Default to INFO level
+            "level": env("HANDLER_LOG_LEVEL", default="DEBUG"),  # Allow DEBUG through
         },
     },
     "loggers": {
         "django": {
             "handlers": ["console"],
-            "level": env("DJANGO_LOG_LEVEL", default="INFO"),  # Default to INFO
+            "level": env("DJANGO_LOG_LEVEL", default="INFO"),
             "propagate": False,
         },
         "django.utils.autoreload": {
@@ -281,7 +281,7 @@ LOGGING = {
         },
         "core": {
             "handlers": ["console"],
-            "level": env("APP_LOG_LEVEL", default="INFO"),
+            "level": env("APP_LOG_LEVEL", default="DEBUG"),  # Set core to DEBUG by default
             "propagate": False,
         },
         "django_redis": {
@@ -297,7 +297,7 @@ LOGGING = {
     },
     "root": {
         "handlers": ["console"],
-        "level": env("ROOT_LOG_LEVEL", default="INFO"),
+        "level": env("ROOT_LOG_LEVEL", default="DEBUG"),  # Allow DEBUG through
     },
 }
 

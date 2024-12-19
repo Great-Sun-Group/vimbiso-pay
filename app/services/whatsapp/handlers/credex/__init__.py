@@ -1,3 +1,6 @@
-from .handler import CredexActionHandler
+"""
+Credex flows package
+"""
+from .flows import CredexFlow
 
-__all__ = ['CredexActionHandler']
+__all__ = ['CredexFlow']

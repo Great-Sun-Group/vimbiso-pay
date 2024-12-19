@@ -66,3 +66,22 @@ class BaseActionHandler:
             "type": "text",
             "text": {"body": message_text}
         }
+
+    def _format_error_response(self, error_message: str) -> WhatsAppMessage:
+        """Format an error response message
+
+        Args:
+            error_message: Error message to format
+
+        Returns:
+            WhatsAppMessage: Formatted error message
+        """
+        return {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": self.service.user.mobile_number,
+            "type": "text",
+            "text": {
+                "body": f"❌ {error_message}"
+            }
+        }

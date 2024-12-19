@@ -56,12 +56,28 @@ app/services/state/
    - Track confirmation steps
    - Handle timeouts
 
-## Redis Integration
+## Redis State Management
+
+VimbisoPay uses a dedicated Redis instance (`REDIS_STATE_URL`) for state management, separate from the caching Redis instance. This separation provides:
+- Optimized persistence for conversation state
+- Dedicated resources for state operations
+- Independent scaling and monitoring
 
 ### Key Structure
 - User-specific: `user:{phone_number}:state`
 - Session-based: `session:{id}:data`
 - Token storage: `token:{phone_number}`
+
+### Configuration
+```yaml
+redis-state:
+  command: >
+    redis-server
+    --maxmemory 256mb
+    --maxmemory-policy allkeys-lru
+    --appendonly yes
+    --appendfsync everysec
+```
 
 ### Timeouts
 - Session: 5 minutes

@@ -7,6 +7,8 @@ VimbisoPay implements multi-layered security for:
 - API integrations
 - User data protection
 - System integrity
+- Flow framework
+- Redis instances
 
 ## Authentication
 
@@ -21,7 +23,7 @@ headers = {
 Features:
 - 5-minute expiration
 - Automatic refresh
-- Redis storage
+- Secure Redis storage
 - Session binding
 
 ### WhatsApp Verification
@@ -34,11 +36,38 @@ def validate_webhook(request):
 
 ## Data Protection
 
+### Redis Security
+
+#### Cache Redis
+- No persistence
+- Memory limits
+- LRU eviction
+- Automatic cleanup
+- Connection pooling
+- Health checks
+
+#### State Redis
+- AOF persistence
+- Memory limits
+- LRU eviction
+- Secure state storage
+- Connection pooling
+- Health checks
+
+### Flow Framework Security
+- Input validation per step
+- State isolation
+- Secure transitions
+- Data transformation
+- Error handling
+- Timeout management
+
 ### State Management
 - User state isolation
 - 5-minute session timeout
 - Secure transitions
 - Automatic cleanup
+- Dedicated Redis instance
 
 ### Sensitive Data
 - Data minimization
@@ -88,9 +117,25 @@ logger.error(f"Error: {sanitize_error_message(error)}")
 
 ### Configuration
 ```python
+# Core Security
 DJANGO_ENV=production
 DEBUG=False
 ALLOWED_HOSTS=*.vimbisopay.africa
+DJANGO_SECRET=secure-key
+
+# Redis Security
+REDIS_URL=redis://redis-cache:6379/0
+REDIS_STATE_URL=redis://redis-state:6379/0
+
+# API Security
+MYCREDEX_APP_URL=https://api.mycredex.com
+CLIENT_API_KEY=secure-api-key
+
+# WhatsApp Security
+WHATSAPP_API_URL=https://graph.facebook.com
+WHATSAPP_ACCESS_TOKEN=secure-token
+WHATSAPP_PHONE_NUMBER_ID=your-phone-id
+WHATSAPP_BUSINESS_ID=your-business-id
 ```
 
 ### Production Settings
@@ -102,6 +147,12 @@ MIDDLEWARE = [
 
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+SECURE_HSTS_SECONDS = 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
 ```
 
 ## Best Practices
@@ -110,13 +161,16 @@ SESSION_COOKIE_SECURE = True
    - Strong JWT config
    - Secure sessions
    - Token validation
+   - API key protection
 
 2. **Data Protection**
    - Minimal collection
    - Proper encryption
    - Regular cleanup
+   - Redis persistence
 
 3. **Input Validation**
+   - Flow framework validation
    - Sanitize all input
    - Validate formats
    - Secure responses
@@ -126,8 +180,11 @@ SESSION_COOKIE_SECURE = True
    - Error tracking
    - Access monitoring
    - Regular audits
+   - Redis monitoring
 
 For more details on:
 - WhatsApp security: [WhatsApp](whatsapp.md)
 - API security: [API Integration](api-integration.md)
+- Flow security: [Flow Framework](flow-framework.md)
+- Redis security: [Redis Management](redis-memory-management.md)
 - Testing security: [Testing](testing.md)

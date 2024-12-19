@@ -1,4 +1,4 @@
-"""Shared utilities for WhatsApp mock implementations"""
+"""WhatsApp message formatting utilities."""
 import json
 import logging
 from datetime import datetime
@@ -160,16 +160,6 @@ def _get_message_content(message_type: str, message_text: Union[str, Dict]) -> D
                 }
             }
 
-        # Handle form data
-        if isinstance(message_text, dict):
-            return {
-                "type": "interactive",
-                "interactive": {
-                    "type": "nfm_reply",
-                    "nfm_reply": _create_form_reply(message_text)
-                }
-            }
-
         # Handle button/list replies
         if isinstance(message_text, str) and ":" in message_text:
             reply_type, reply_id = message_text.split(":", 1)
@@ -197,40 +187,6 @@ def _get_message_content(message_type: str, message_text: Union[str, Dict]) -> D
     raise ValueError(f"Unsupported message type: {message_type}")
 
 
-def _create_form_reply(form_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Create form reply structure following WhatsApp Cloud API format."""
-    timestamp = str(int(datetime.now().timestamp()))
-
-    # Validate and format form data
-    formatted_fields = []
-    for field_id, value in form_data.items():
-        # Ensure field values don't exceed WhatsApp limits
-        formatted_value = str(value)[:1024]  # WhatsApp's form field limit
-        formatted_fields.append({
-            "field_id": str(field_id)[:256],  # WhatsApp's field ID limit
-            "value": formatted_value,
-            "type": "text",
-            "screen": "MAIN",
-            "version": "1",
-            "selected": True
-        })
-
-    return {
-        "submitted_form_data": {
-            "response_at": timestamp,
-            "form_data": {
-                "version": "1",
-                "screen": "MAIN",
-                "response_payload": {
-                    "response_json": json.dumps(form_data),
-                    "version": "1"
-                },
-                "response_fields": formatted_fields
-            }
-        }
-    }
-
-
 def extract_message_text(message: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
     """Extract message text from WhatsApp message following Cloud API format."""
     message_type = message.get("type", "")
@@ -250,58 +206,47 @@ def extract_message_text(message: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
             reply = interactive.get("list_reply", {})
             return reply.get("id", "")
 
-        # Handle form replies
-        elif interactive_type == "nfm_reply":
-            nfm_reply = interactive.get("nfm_reply", {})
-            submitted_data = nfm_reply.get("submitted_form_data", {})
-            form_data = submitted_data.get("form_data", {})
-
-            # Try to get response from response_payload first
-            if "response_payload" in form_data:
-                try:
-                    return json.loads(form_data["response_payload"]["response_json"])
-                except (json.JSONDecodeError, KeyError):
-                    pass
-
-            # Fallback to response_fields
-            response_fields = form_data.get("response_fields", [])
-            return {
-                field["field_id"]: field["value"]
-                for field in response_fields
-                if "field_id" in field and "value" in field
-            }
-
         return "Unknown interactive type"
 
     return "Unsupported message type"
 
 
 def format_json_response(response_text: str) -> Dict[str, Any]:
-    """Format JSON response following WhatsApp Cloud API format."""
+    """Format JSON response text."""
     try:
+        # Parse response text
         data = json.loads(response_text)
-        # Ensure response follows WhatsApp format
+
+        # Log the parsed data
+        logger.debug(f"Parsed response data: {json.dumps(data, indent=2)}")
+
+        # Extract response content
         if isinstance(data, dict):
-            if "response" in data:
-                return data["response"]
-            if "messaging_product" in data:
-                return data
-            # Convert plain dict to text message
-            return {
-                "messaging_product": "whatsapp",
-                "type": "text",
-                "text": {
-                    "body": json.dumps(data),
-                    "preview_url": False
-                }
+            # If response is nested under 'response' key
+            if 'response' in data:
+                return data['response']
+            return data
+
+        return {"text": {"body": str(data)}}
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parsing JSON response: {e}")
+        return {"text": {"body": response_text}}
+
+
+def format_mock_response() -> Dict[str, Any]:
+    """Format mock response following WhatsApp Cloud API format."""
+    return {
+        "messaging_product": "whatsapp",
+        "contacts": [
+            {
+                "input": "263778177125",
+                "wa_id": "263778177125"
             }
-        return data
-    except json.JSONDecodeError:
-        return {
-            "messaging_product": "whatsapp",
-            "type": "text",
-            "text": {
-                "body": response_text,
-                "preview_url": False
+        ],
+        "messages": [
+            {
+                "id": f"wamid.{''.join(['0123456789ABCDEF'[int(datetime.now().timestamp()) % 16] for _ in range(32)])}"
             }
-        }
+        ]
+    }
