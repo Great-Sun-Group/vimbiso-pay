@@ -24,6 +24,7 @@ headers = {
 - Balance and ledger queries
 - Real-time webhooks
 - Internal API endpoints
+- Progressive flow framework
 
 ### Webhook Events
 - Company updates
@@ -37,8 +38,18 @@ For detailed WhatsApp implementation, see [WhatsApp Integration](whatsapp.md).
 ### Key Features
 - Interactive menus and forms
 - Message templates
+- Progressive flow framework
 - State-based conversations
 - Real-time updates
+
+### Flow Framework
+The Flow Framework provides structured conversation handling:
+- Multi-step interactions
+- Input validation
+- State management
+- Data transformation
+
+For details, see [Flow Framework](flow-framework.md).
 
 ### Testing Tools
 - Mock server for local development
@@ -93,10 +104,32 @@ make dev-up
 ### Environment Setup
 Required variables:
 ```bash
+# Core API Configuration
 MYCREDEX_APP_URL=
 CLIENT_API_KEY=
+
+# WhatsApp Configuration
 WHATSAPP_API_URL=
 WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_BUSINESS_ID=
+WHATSAPP_REGISTRATION_FLOW_ID=
+WHATSAPP_COMPANY_REGISTRATION_FLOW_ID=
+
+# Redis Configuration
+REDIS_URL=redis://redis-cache:6379/0
+REDIS_STATE_URL=redis://redis-state:6379/0
+
+# Feature Flags
+USE_PROGRESSIVE_FLOW=True
 ```
 
-For deployment details, see [Deployment](../deployment.md).
+### Service Dependencies
+- Redis Cache: General caching
+- Redis State: Conversation state management
+- Mock WhatsApp: Testing interface
+
+For more details on:
+- Redis configuration: [Redis Management](redis-memory-management.md)
+- Docker services: [Docker](docker.md)
+- Deployment: [Deployment](deployment.md)

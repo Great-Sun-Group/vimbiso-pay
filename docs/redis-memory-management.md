@@ -15,25 +15,37 @@ This warning indicates potential issues with Redis memory allocation and backgro
 
 ### 1. Application Level (Django Settings)
 
-We've implemented several application-level configurations in `settings.py` to handle Redis memory more efficiently:
+We use two Redis instances with specialized configurations:
 
+1. **Cache Redis** (`REDIS_CACHE_URL`):
 ```python
 CACHES = {
     "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_CACHE_URL,
         "OPTIONS": {
-            "REDIS_CLIENT_KWARGS": {
-                # Disable persistence to prevent background saves
-                "save": "",
-                "appendonly": "no",
-                # Memory management
-                "maxmemory": "256mb",
-                "maxmemory-policy": "allkeys-lru",
-                "maxmemory-samples": 10,
-            }
-        }
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "SOCKET_CONNECT_TIMEOUT": 30,
+            "SOCKET_TIMEOUT": 30,
+            "RETRY_ON_TIMEOUT": True,
+            "MAX_CONNECTIONS": 20,
+            "CONNECTION_POOL_KWARGS": {
+                "max_connections": 20,
+                "retry_on_timeout": True,
+                "health_check_interval": 30,
+            },
+            "IGNORE_EXCEPTIONS": True,
+            "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
+            "SERIALIZER": "django_redis.serializers.json.JSONSerializer",
+        },
+        "KEY_PREFIX": "vimbiso",
+        "TIMEOUT": 300,  # 5 minutes default timeout
     }
 }
 ```
+
+2. **State Redis** (`REDIS_STATE_URL`):
+Used for managing conversation state and session data with persistence enabled.
 
 These settings:
 - Disable Redis persistence to prevent background save operations
@@ -65,15 +77,24 @@ Key features:
 
 ### 3. Development Environment (Docker Compose)
 
-In the development environment (`compose.yaml`), we use Redis configuration flags to manage memory:
+In the development environment (`compose.yaml`), we use specialized Redis configurations:
 
 ```yaml
-redis:
+redis-cache:
   command: >
     redis-server
     --maxmemory 256mb
     --maxmemory-policy allkeys-lru
     --appendonly no
+    --save ""
+
+redis-state:
+  command: >
+    redis-server
+    --maxmemory 256mb
+    --maxmemory-policy allkeys-lru
+    --appendonly yes
+    --appendfsync everysec
     --save ""
 ```
 

@@ -14,7 +14,12 @@ mock/
 ├── server.py          # Mock webhook server
 ├── cli.py            # CLI interface
 ├── whatsapp_utils.py # Shared utilities
-└── index.html        # Web interface
+├── scripts/          # Client-side scripts
+│   ├── handlers.js   # Message handlers
+│   ├── main.js      # Core functionality
+│   └── ui.js        # Interface updates
+└── styles/          # UI styling
+    └── main.css     # Core styles
 ```
 
 ### CLI Usage
@@ -30,6 +35,9 @@ mock/
 
 # Button response
 ./mock/cli.py --type button "accept_offer_123"
+
+# Progressive input
+./mock/cli.py --type interactive "form:amount=100,recipientAccountHandle=@user123"
 ```
 
 ### Web Interface
@@ -39,25 +47,35 @@ Access at http://localhost:8001
 - Flow navigation
 - Real-time message display
 - Environment switching (local/staging)
+- Progressive input support
 
 ## Common Test Scenarios
 
-### 1. User Registration
+### 1. User Registration Flow
 ```bash
 # Start registration
 ./mock/cli.py "hi"
 
-# Create account
-./mock/cli.py --type interactive "flow:MEMBER_SIGNUP"
+# Enter first name
+./mock/cli.py "John"
+
+# Enter last name
+./mock/cli.py "Doe"
+
+# Confirm registration
+./mock/cli.py --type button "confirm_action"
 ```
 
-### 2. Transactions
+### 2. Transaction Flows
 ```bash
 # Quick command
 ./mock/cli.py "0.5=>handle"
 
 # Through menu
 ./mock/cli.py --type interactive "handleactionoffercredex"
+
+# Progressive input
+./mock/cli.py --type interactive "form:amount=0.5,handle=user123"
 
 # Flow navigation
 ./mock/cli.py --type interactive "flow:MAKE_SECURE_OFFER"
@@ -93,12 +111,16 @@ Access at http://localhost:8001
 # Flow navigation
 ./mock/cli.py --type interactive "flow:MEMBER_SIGNUP"
 ./mock/cli.py --type interactive "flow:MAKE_SECURE_OFFER"
+
+# Progressive input
+./mock/cli.py --type interactive "form:field1=value1,field2=value2"
 ```
 
 ### 3. Button Responses
 ```bash
 ./mock/cli.py --type button "accept_offer_123"
 ./mock/cli.py --type button "decline_offer_123"
+./mock/cli.py --type button "confirm_action"
 ```
 
 ## Error Testing
@@ -113,6 +135,12 @@ Access at http://localhost:8001
 
 # Malformed command
 ./mock/cli.py "0.5=>"  # Missing handle
+
+# Invalid progressive input
+./mock/cli.py --type interactive "form:amount=invalid"
+
+# Flow validation errors
+./mock/cli.py "not_a_name"  # During name input step
 ```
 
 ### Error Format
@@ -127,30 +155,44 @@ Access at http://localhost:8001
 
 ## Best Practices
 
-1. **Test Organization**
-   - Group related tests
-   - Use descriptive names
-   - Document expected outcomes
+1. **Flow Testing**
+   - Test complete flows end-to-end
+   - Verify state transitions
+   - Test validation at each step
+   - Check error handling
+   - Test timeouts
+   - Verify data transformation
 
-2. **Environment Management**
-   - Use appropriate target
-   - Clean up test data
-   - Reset state between tests
+2. **Progressive Input Testing**
+   - Test all input validations
+   - Verify error messages
+   - Test data transformations
+   - Check state preservation
+   - Test input examples
 
 3. **Message Testing**
    - Test all message types
    - Verify formatting
    - Check interactions
    - Validate responses
+   - Test WhatsApp limits
 
-4. **Flow Testing**
-   - Test complete flows
-   - Verify state transitions
-   - Check error handling
-   - Test timeouts
+4. **Environment Management**
+   - Use appropriate target
+   - Clean up test data
+   - Reset state between tests
+   - Verify Redis instances
+
+5. **Error Testing**
+   - Test validation errors
+   - Check timeout handling
+   - Verify error formats
+   - Test recovery flows
+   - Check error logging
 
 For more details on:
 - WhatsApp integration: [WhatsApp Integration](whatsapp.md)
+- Flow framework: [Flow Framework](flow-framework.md)
 - State management: [State Management](state-management.md)
 - API integration: [API Integration](api-integration.md)
 - Security testing: [Security](security.md)

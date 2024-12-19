@@ -1,5 +1,4 @@
 """WhatsApp service types and interfaces"""
-import json
 import logging
 from typing import Any, Dict, Union, Optional
 
@@ -192,41 +191,11 @@ class BotServiceInterface:
                 self.body = interactive["button_reply"].get("id", "")
             elif "list_reply" in interactive:
                 self.body = interactive["list_reply"].get("id", "")
-            elif "nfm_reply" in interactive:
-                self.message_type = "nfm_reply"
-                self.body = self._parse_form_data(interactive["nfm_reply"])
             else:
                 self.body = ""
         except Exception as e:
             logger.error(f"Interactive parsing error: {str(e)}")
             self.body = ""
-
-    def _parse_form_data(self, nfm_reply: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse form submission data"""
-        form_data = {}
-        try:
-            # Parse submitted form data
-            if "submitted_form_data" in nfm_reply:
-                submitted_form = nfm_reply["submitted_form_data"]
-                if "form_data" in submitted_form:
-                    form_data_obj = submitted_form["form_data"]
-                    if "response_fields" in form_data_obj:
-                        for field in form_data_obj["response_fields"]:
-                            if "field_id" in field and "value" in field:
-                                form_data[field["field_id"]] = field["value"]
-                    elif "response_payload" in form_data_obj:
-                        payload = form_data_obj["response_payload"].get("response_json")
-                        if payload:
-                            form_data.update(json.loads(payload))
-
-            # Parse direct response JSON
-            elif "response_json" in nfm_reply:
-                form_data.update(json.loads(nfm_reply["response_json"]))
-
-        except Exception as e:
-            logger.error(f"Form data parsing error: {str(e)}")
-
-        return form_data
 
     def get_response_template(self, message_text: str) -> Dict[str, Any]:
         """Get WhatsApp message template"""
