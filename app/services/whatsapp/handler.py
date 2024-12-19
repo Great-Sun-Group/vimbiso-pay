@@ -63,24 +63,13 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
         """Extract member and account IDs from state"""
         try:
             state = self.user.state.state or {}
-            profile = state.get("profile", {})
-            current_account = state.get("current_account", {})
 
-            # Extract member ID from profile
-            member_id = None
-            if profile and isinstance(profile, dict):
-                action = profile.get("action", {})
-                if action and isinstance(action, dict):
-                    details = action.get("details", {})
-                    if details and isinstance(details, dict):
-                        member_id = details.get("memberID")
+            # Get IDs directly from state root where auth_handlers.py stores them
+            member_id = state.get("member_id")
+            account_id = state.get("account_id")
 
-            # Extract account ID from current account
-            account_id = None
-            if current_account and isinstance(current_account, dict):
-                data = current_account.get("data", {})
-                if data and isinstance(data, dict):
-                    account_id = data.get("accountID")
+            # Log the values for debugging
+            logger.debug(f"Retrieved member_id: {member_id}, account_id: {account_id} from state")
 
             return member_id, account_id
 
@@ -157,7 +146,9 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 },
                 "profile": current_state.get("profile", {}),
                 "current_account": current_state.get("current_account"),
-                "jwt_token": current_state.get("jwt_token")
+                "jwt_token": current_state.get("jwt_token"),
+                "member_id": current_state.get("member_id"),  # Preserve member_id
+                "account_id": current_state.get("account_id")  # Preserve account_id
             }, "flow_start")
 
             return (
@@ -242,7 +233,9 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                     "flow_data": None,
                     "profile": current_state.get("profile", {}),
                     "current_account": current_state.get("current_account"),
-                    "jwt_token": current_state.get("jwt_token")
+                    "jwt_token": current_state.get("jwt_token"),
+                    "member_id": current_state.get("member_id"),  # Preserve member_id
+                    "account_id": current_state.get("account_id")  # Preserve account_id
                 }, "flow_complete")
 
                 if not result:
@@ -278,7 +271,9 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 },
                 "profile": current_state.get("profile", {}),
                 "current_account": current_state.get("current_account"),
-                "jwt_token": current_state.get("jwt_token")
+                "jwt_token": current_state.get("jwt_token"),
+                "member_id": current_state.get("member_id"),  # Preserve member_id
+                "account_id": current_state.get("account_id")  # Preserve account_id
             }, "flow_continue")
 
             return (
@@ -295,7 +290,9 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 "flow_data": None,
                 "profile": current_state.get("profile", {}),
                 "current_account": current_state.get("current_account"),
-                "jwt_token": current_state.get("jwt_token")
+                "jwt_token": current_state.get("jwt_token"),
+                "member_id": current_state.get("member_id"),  # Preserve member_id
+                "account_id": current_state.get("account_id")  # Preserve account_id
             }, "flow_error")
             return self._format_error_response(str(e))
 
@@ -313,7 +310,9 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                         "profile": current_state.get("profile", {}),
                         "current_account": current_state.get("current_account"),
                         "jwt_token": current_state.get("jwt_token"),
-                        "authenticated": current_state.get("authenticated", False)
+                        "authenticated": current_state.get("authenticated", False),
+                        "member_id": current_state.get("member_id"),  # Preserve member_id
+                        "account_id": current_state.get("account_id")  # Preserve account_id
                     }, "clear_flow_greeting")
                 return self.auth_handler.handle_action_menu(login=True)
 

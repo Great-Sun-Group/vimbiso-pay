@@ -12,7 +12,9 @@ class StateData:
         "current_account",
         "member",
         "flow_data",  # Added to preserve flow state
-        "authenticated"  # Added for completeness
+        "authenticated",  # Added for completeness
+        "member_id",  # Added for member identification
+        "account_id"  # Added for account identification
     }
 
     @classmethod

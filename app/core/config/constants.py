@@ -74,7 +74,9 @@ class CachedUserState:
                 "jwt_token": None,
                 "profile": {},
                 "current_account": None,
-                "flow_data": None
+                "flow_data": None,
+                "member_id": None,  # Added member_id
+                "account_id": None  # Added account_id
             }
 
         # Set instance variables
@@ -104,13 +106,23 @@ class CachedUserState:
         try:
             # Merge with existing state
             new_state = self.state.copy()
+
+            # Preserve critical fields
+            critical_fields = {
+                "jwt_token": self.jwt_token,
+                "member_id": new_state.get("member_id"),
+                "account_id": new_state.get("account_id")
+            }
+
+            # Update with new state
             new_state.update(state or {})
 
-            # Preserve JWT token
-            if self.jwt_token:
-                new_state["jwt_token"] = self.jwt_token
-                if "flow_data" in new_state and isinstance(new_state["flow_data"], dict):
-                    new_state["flow_data"]["jwt_token"] = self.jwt_token
+            # Ensure critical fields are preserved
+            for field, value in critical_fields.items():
+                if value is not None:
+                    new_state[field] = value
+                    if field == "jwt_token" and "flow_data" in new_state and isinstance(new_state["flow_data"], dict):
+                        new_state["flow_data"]["jwt_token"] = value
 
             # Update atomically
             success, error = atomic_state.atomic_update(
@@ -136,7 +148,9 @@ class CachedUserState:
                 "jwt_token": self.jwt_token,
                 "profile": {},
                 "current_account": None,
-                "flow_data": None
+                "flow_data": None,
+                "member_id": None,  # Added member_id
+                "account_id": None  # Added account_id
             }
 
         return state_data
@@ -172,7 +186,12 @@ class CachedUserState:
 
     def reset_state(self) -> None:
         """Reset state with atomic cleanup"""
-        preserve_fields = {"jwt_token"} if self.jwt_token else None
+        preserve_fields = {"jwt_token", "member_id", "account_id"}  # Added member_id and account_id
+        current_values = {
+            field: self.state.get(field)
+            for field in preserve_fields
+            if self.state.get(field) is not None
+        }
 
         success, error = atomic_state.atomic_cleanup(
             self.key_prefix,
@@ -182,9 +201,11 @@ class CachedUserState:
         if not success:
             logger.error(f"State reset failed: {error}")
 
-        # Reset instance state
+        # Reset instance state while preserving critical fields
         self.state = {
-            "jwt_token": self.jwt_token,
+            "jwt_token": current_values.get("jwt_token"),
+            "member_id": current_values.get("member_id"),
+            "account_id": current_values.get("account_id"),
             "profile": {},
             "current_account": None,
             "flow_data": None
