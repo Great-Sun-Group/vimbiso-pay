@@ -1,6 +1,6 @@
 """Constants and cached user state management"""
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 from urllib.parse import urlparse
 
 import redis
@@ -114,6 +114,9 @@ class CachedUserState:
                 "account_id": new_state.get("account_id")
             }
 
+            # Handle flow_data specially - if it's explicitly set to None, respect that
+            flow_data_cleared = "flow_data" in state and state["flow_data"] is None
+
             # Update with new state
             new_state.update(state or {})
 
@@ -121,8 +124,13 @@ class CachedUserState:
             for field, value in critical_fields.items():
                 if value is not None:
                     new_state[field] = value
-                    if field == "jwt_token" and "flow_data" in new_state and isinstance(new_state["flow_data"], dict):
+                    # Only update flow_data jwt_token if flow_data wasn't explicitly cleared
+                    if field == "jwt_token" and not flow_data_cleared and "flow_data" in new_state and isinstance(new_state["flow_data"], dict):
                         new_state["flow_data"]["jwt_token"] = value
+
+            # Ensure flow_data stays None if it was explicitly cleared
+            if flow_data_cleared:
+                new_state["flow_data"] = None
 
             # Update atomically
             success, error = atomic_state.atomic_update(
@@ -184,34 +192,28 @@ class CachedUserState:
 
             self.update_state(current_state, "set_jwt_token")
 
-    def reset_state(self) -> None:
-        """Reset state with atomic cleanup"""
-        preserve_fields = {"jwt_token", "member_id", "account_id"}  # Added member_id and account_id
-        current_values = {
-            field: self.state.get(field)
-            for field in preserve_fields
-            if self.state.get(field) is not None
-        }
-
+    def cleanup_state(self, preserve_fields: set) -> Tuple[bool, Optional[str]]:
+        """Clean up state while preserving specified fields"""
         success, error = atomic_state.atomic_cleanup(
             self.key_prefix,
             preserve_fields=preserve_fields
         )
 
+        if success:
+            # Reset instance state
+            self.state = None
+            # Clear service instance
+            self.credex_service = None
+
+        return success, error
+
+    def reset_state(self) -> None:
+        """Reset state with atomic cleanup"""
+        preserve_fields = {"jwt_token", "member_id", "account_id"}
+        success, error = self.cleanup_state(preserve_fields)
+
         if not success:
             logger.error(f"State reset failed: {error}")
-
-        # Reset instance state while preserving critical fields
-        self.state = {
-            "jwt_token": current_values.get("jwt_token"),
-            "member_id": current_values.get("member_id"),
-            "account_id": current_values.get("account_id"),
-            "profile": {},
-            "current_account": None,
-            "flow_data": None
-        }
-        # Clear service instance
-        self.credex_service = None
 
 
 class CachedUser:

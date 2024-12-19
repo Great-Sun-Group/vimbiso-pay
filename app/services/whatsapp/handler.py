@@ -41,7 +41,15 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
     def _get_action(self) -> str:
         """Extract action from message"""
-        # For all message types, use the parsed body
+        # Handle interactive messages
+        if self.message_type == "interactive":
+            interactive = self.message.get("interactive", {})
+            if interactive.get("type") == "list_reply":
+                return interactive.get("list_reply", {}).get("id", "").lower()
+            elif interactive.get("type") == "button_reply":
+                return interactive.get("button_reply", {}).get("id", "").lower()
+
+        # For text messages
         return self.body.strip().lower()
 
     def _get_flow_info(self, action: str) -> Optional[Tuple[str, Type[Flow], Dict[str, Any]]]:
@@ -75,8 +83,11 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
     def _start_flow(self, flow_type: str, flow_class: Type[Flow], **kwargs) -> WhatsAppMessage:
         """Start a new flow"""
         try:
+            # Start fresh flow
             flow = flow_class(flow_type=flow_type, **kwargs)
             flow.credex_service = self.credex_service
+            flow.current_index = 0  # Ensure we start at first step
+            flow.data = {}  # Start with empty data
 
             # Get member and account IDs
             member_id, account_id = self._get_member_info()
@@ -87,13 +98,16 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                     "Account not properly initialized. Please try sending 'hi' to restart."
                 )
 
-            # Set base flow data
+            # Set only essential base data
             flow.data = {
                 "phone": self.user.mobile_number,
                 "member_id": member_id,
                 "account_id": account_id,
                 "mobile_number": self.user.mobile_number
             }
+
+            # Log flow initialization
+            logger.debug(f"Initialized new flow: {flow.id} at step {flow.current_index}")
 
             # Add pending offers for cancel flow
             if flow_type == "cancel_credex":
@@ -115,7 +129,7 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
             # Save flow state while preserving critical fields
             current_state = self.user.state.state or {}
-            self.user.state.update_state({
+            new_state = {
                 "flow_data": {
                     **flow.get_state(),
                     "flow_type": flow_type,
@@ -126,7 +140,16 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 "jwt_token": current_state.get("jwt_token"),
                 "member_id": current_state.get("member_id"),  # Preserve member_id
                 "account_id": current_state.get("account_id")  # Preserve account_id
-            }, "flow_start")
+            }
+
+            # Log state transition
+            logger.debug(
+                "Flow state transition [START]:\n"
+                f"From: {current_state}\n"
+                f"To: {new_state}"
+            )
+
+            self.user.state.update_state(new_state, "flow_start")
 
             return result  # Already in WhatsAppMessage format
 
@@ -171,23 +194,17 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             # Process input
             result = None
             if self.message_type == "interactive":
-                # Pass full message structure for validation
+                # Pass the original interactive message structure
+                interactive = self.message.get("interactive", {})
+                logger.debug(f"Processing interactive message: {interactive}")
                 result = flow.process_input({
                     "type": "interactive",
-                    "interactive": {
-                        "type": "button_reply",
-                        "button_reply": {"id": self.body}
-                    } if "button_reply" in self.message.get("interactive", {}) else {
-                        "type": "list_reply",
-                        "list_reply": {"id": self.body}
-                    }
+                    "interactive": interactive
                 })
             else:
-                # Check if text message is a button action
-                if self.body.strip().lower() in self.BUTTON_ACTIONS:
-                    result = flow.process_input(self._format_button_response(self.body))
-                else:
-                    result = flow.process_input(self.body)
+                # Handle text messages
+                logger.debug(f"Processing text message: {self.body}")
+                result = flow.process_input(self.body)
 
             # Handle invalid input
             if result == "Invalid input":
@@ -239,7 +256,7 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
             # Update flow state while preserving critical fields
             current_state = self.user.state.state or {}
-            self.user.state.update_state({
+            new_state = {
                 "flow_data": {
                     **flow.get_state(),
                     "flow_type": flow_type,
@@ -250,7 +267,16 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 "jwt_token": current_state.get("jwt_token"),
                 "member_id": current_state.get("member_id"),  # Preserve member_id
                 "account_id": current_state.get("account_id")  # Preserve account_id
-            }, "flow_continue")
+            }
+
+            # Log state transition
+            logger.debug(
+                "Flow state transition [CONTINUE]:\n"
+                f"From: {current_state}\n"
+                f"To: {new_state}"
+            )
+
+            self.user.state.update_state(new_state, "flow_continue")
 
             return result  # Already in WhatsAppMessage format
 
@@ -291,19 +317,51 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                     }, "clear_flow_greeting")
                 return self.auth_handler.handle_action_menu(login=True)
 
-            # Check for active flow
-            flow_data = self.user.state.state.get("flow_data") if self.user.state.state else None
-            if flow_data:
-                return self._continue_flow(flow_data)
-
-            # Get action
+            # Get action first since we need it for both paths
             action = self._get_action()
             logger.info(f"Processing action: {action}")
 
-            # Start new flow if action matches
-            if flow_info := self._get_flow_info(action):
-                flow_type, flow_class, kwargs = flow_info
-                return self._start_flow(flow_type, flow_class, **kwargs)
+            # Check if this is a menu action that should start a new flow
+            if action in self.FLOW_TYPES:
+                # First clear any existing state
+                if self.user.state.state:
+                    current_state = self.user.state.state
+                    # Explicitly clear flow data first
+                    new_state = {
+                        "flow_data": None,
+                        "profile": current_state.get("profile", {}),
+                        "current_account": current_state.get("current_account"),
+                        "jwt_token": current_state.get("jwt_token"),
+                        "member_id": current_state.get("member_id"),
+                        "account_id": current_state.get("account_id")
+                    }
+
+                    # Log state transition
+                    logger.debug(
+                        "Flow state transition [CLEAR]:\n"
+                        f"From: {current_state}\n"
+                        f"To: {new_state}"
+                    )
+
+                    self.user.state.update_state(new_state, "clear_flow_menu_action")
+
+                    # Force a clean state read after clearing
+                    preserve_fields = {"jwt_token", "profile", "current_account", "member_id", "account_id"}
+                    logger.debug(f"Cleaning up state, preserving fields: {preserve_fields}")
+                    success, error = self.user.state.cleanup_state(preserve_fields)
+                    if not success:
+                        logger.error(f"Failed to cleanup state: {error}")
+                    else:
+                        logger.debug("State cleanup successful")
+
+                # Then start the new flow with a fresh state
+                flow_type, flow_class = self.FLOW_TYPES[action]
+                return self._start_flow(flow_type, flow_class)
+
+            # Otherwise check for active flow
+            flow_data = self.user.state.state.get("flow_data") if self.user.state.state else None
+            if flow_data:
+                return self._continue_flow(flow_data)
 
             # Default to menu
             return self.auth_handler.handle_action_menu()

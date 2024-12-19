@@ -147,11 +147,23 @@ class CredexFlow(Flow):
 
     def _validate_button_response(self, response: Dict[str, Any]) -> bool:
         """Validate button response"""
-        return (
-            response.get("type") == "interactive" and
-            response.get("interactive", {}).get("type") == "button_reply" and
-            response.get("interactive", {}).get("button_reply", {}).get("id") == "confirm_action"
-        )
+        if not isinstance(response, dict):
+            return False
+
+        if response.get("type") != "interactive":
+            return False
+
+        interactive = response.get("interactive", {})
+        if not interactive:
+            return False
+
+        # Handle both button and list replies
+        if interactive.get("type") == "button_reply":
+            return interactive.get("button_reply", {}).get("id") == "confirm_action"
+        elif interactive.get("type") == "list_reply":
+            return interactive.get("list_reply", {}).get("id") == "offer_credex"
+
+        return False
 
     def _transform_cancel_selection(self, selection: str) -> Dict[str, Any]:
         """Transform cancel selection"""
@@ -208,14 +220,31 @@ class CredexFlow(Flow):
             "denomination": denom or "USD"
         }
 
-    def _validate_handle(self, handle: str) -> bool:
+    def _validate_handle(self, handle: Union[str, Dict[str, Any]]) -> bool:
         """Validate handle format"""
+        # Handle interactive message
+        if isinstance(handle, dict):
+            interactive = handle.get("interactive", {})
+            if interactive.get("type") == "text":
+                text = interactive.get("text", {}).get("body", "")
+                return bool(text and self.HANDLE_PATTERN.match(text.strip()))
+            return False
+
+        # Handle text input
         return bool(handle and self.HANDLE_PATTERN.match(handle.strip()))
 
-    def _transform_handle(self, handle: str) -> Dict[str, Any]:
+    def _transform_handle(self, handle: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
         """Transform and validate handle"""
         if not self.credex_service:
             return {"error": "Service not initialized"}
+
+        # Extract handle from interactive or text
+        if isinstance(handle, dict):
+            interactive = handle.get("interactive", {})
+            if interactive.get("type") == "text":
+                handle = interactive.get("text", {}).get("body", "")
+            else:
+                return {"error": "Invalid handle format"}
 
         handle = handle.strip()
         success, response = self.credex_service._member.validate_handle(handle)
