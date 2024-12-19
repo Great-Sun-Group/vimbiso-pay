@@ -13,167 +13,195 @@ app/services/whatsapp/
 ├── __init__.py          # Package exports
 ├── handler.py           # Main action handler
 ├── types.py            # Type definitions
-├── screens.py          # Message templates
+├── service.py          # WhatsApp messaging service
 ├── base_handler.py     # Base handler class
 ├── auth_handlers.py    # Authentication handlers
 └── handlers/           # Domain-specific handlers
     ├── credex/         # Credex transaction flows
     │   ├── __init__.py
-    │   └── flows.py    # Credex flow implementations
+    │   ├── flows.py    # Credex flow implementations
+    │   └── templates.py # Credex message templates
     └── member/         # Member management flows
         ├── __init__.py
         ├── dashboard.py # Dashboard handling
-        └── flows.py    # Member flow implementations
+        ├── flows.py    # Member flow implementations
+        └── templates.py # Member message templates
 ```
-
-### Flow Framework Integration
-
-The service uses a progressive flow framework for handling complex interactions:
-
-1. **Flow Types**
-   - Member registration
-   - Credex transactions
-   - Account management
-   - Dashboard navigation
-
-2. **Step Types**
-   - TEXT: Free-form text input
-   - BUTTON: Button-based responses
-   - LIST: Selection from options
-
-3. **Flow Features**
-   - Input validation
-   - Data transformation
-   - State management
-   - Error handling
-
-For details, see [Flow Framework](flow-framework.md).
 
 ### Message Types
 
-The service supports several WhatsApp message types following the Cloud API format:
+The service uses standardized message types from `core.messaging.types`:
 
-1. Text Messages
-   - Basic text communication (up to 4096 characters)
-   - Supports markdown-style formatting
-   - Handles emojis and special characters
-   - Flow step responses
-   - Preview URL control
-
-2. Interactive Messages
-   - Button type (up to 3 buttons, 20 chars per title)
-   - List type (sections with rows, 24 chars per title)
-   - Flow navigation
-   - Menu selection
-   - Response handling
-   - Headers and footers
-
-3. Response Templates
-   - Dynamic message generation
-   - Button/list formatting
-   - Flow step prompts
-   - Error messages
-   - Confirmation dialogs
-   - Dashboard displays
-
-4. Message Parsing
-   - Strict WhatsApp format validation
-   - Interactive message extraction
-   - Button/list reply handling
-   - Flow response processing
-   - Error recovery
-
-### Message Handling
-
-1. Message Creation
+1. **Core Message Types**
    ```python
-   # Text message
-   WhatsAppMessage.create_text(
-       to="phone_number",
-       text="Hello, world!"
-   )
-
-   # Button message
-   WhatsAppMessage.create_button(
-       to="phone_number",
-       text="Select an option:",
-       buttons=[
-           {"id": "btn_1", "title": "Option 1"},
-           {"id": "btn_2", "title": "Option 2"}
-       ],
-       header={"type": "text", "text": "Header"}
-   )
-
-   # List message
-   WhatsAppMessage.create_list(
-       to="phone_number",
-       text="Select from list:",
-       button="Options",
-       sections=[{
-           "title": "Section 1",
-           "rows": [
-               {"id": "item_1", "title": "Item 1"},
-               {"id": "item_2", "title": "Item 2"}
-           ]
-       }]
-   )
+   @dataclass
+   class Message:
+       """Complete message with recipient and content"""
+       recipient: MessageRecipient
+       content: Union[
+           TextContent,
+           InteractiveContent,
+           TemplateContent,
+           MediaContent
+       ]
    ```
 
-2. Response Templates
+2. **Content Types**
    ```python
-   def get_response_template(self, message_text: str) -> Dict[str, Any]:
-       # Check for button format
-       if "\n\n[" in message_text and "]" in message_text:
-           text, button = message_text.rsplit("\n\n", 1)
-           button_id = button[1:button.index("]")].strip()
-           button_label = button[button.index("]")+1:].strip()
-           return WhatsAppMessage.create_button(
-               self.user.mobile_number,
-               text,
-               [{"id": button_id, "title": button_label}]
+   @dataclass
+   class TextContent:
+       """Text message content"""
+       body: str
+
+   @dataclass
+   class InteractiveContent:
+       """Interactive message content"""
+       interactive_type: InteractiveType  # BUTTON or LIST
+       body: str
+       buttons: List[Button] = field(default_factory=list)
+       action_items: Dict[str, Any] = field(default_factory=dict)
+   ```
+
+### Template Organization
+
+1. **Domain-Specific Templates**
+   ```python
+   class MemberTemplates:
+       @staticmethod
+       def create_first_name_prompt(recipient: str) -> Message:
+           return Message(
+               recipient=MessageRecipient(phone_number=recipient),
+               content=TextContent(body="What's your first name?")
            )
 
-       # Default text message
-       return WhatsAppMessage.create_text(
-           self.user.mobile_number,
-           message_text
-       )
+       @staticmethod
+       def create_registration_confirmation(
+           recipient: str,
+           first_name: str,
+           last_name: str
+       ) -> Message:
+           return Message(
+               recipient=MessageRecipient(phone_number=recipient),
+               content=InteractiveContent(
+                   interactive_type=InteractiveType.BUTTON,
+                   body=(
+                       "✅ Please confirm your registration details:\n\n"
+                       f"First Name: {first_name}\n"
+                       f"Last Name: {last_name}\n"
+                       f"Default Currency: USD"
+                   ),
+                   buttons=[
+                       Button(id="confirm_action", title="Confirm Registration")
+                   ]
+               )
+           )
    ```
 
-3. Message Parsing
+2. **Flow Integration**
    ```python
-   def _parse_message(self, payload: Dict[str, Any]) -> None:
-       # Extract message data
-       message_data = (
-           payload.get("entry", [{}])[0]
-           .get("changes", [{}])[0]
-           .get("value", {})
-       )
-       messages = message_data.get("messages", [{}])
+   class MemberFlow(Flow):
+       def _get_first_name_prompt(self, _) -> Message:
+           return MemberTemplates.create_first_name_prompt(
+               self.data.get("mobile_number")
+           )
 
-       # Parse message content
-       message = messages[0]
-       self.message_type = message.get("type", "")
-
-       if self.message_type == "text":
-           self.body = message.get("text", {}).get("body", "")
-       elif self.message_type == "interactive":
-           self._parse_interactive(message.get("interactive", {}))
+       def _create_registration_confirmation(self, state: Dict[str, Any]) -> Message:
+           return MemberTemplates.create_registration_confirmation(
+               recipient=self.data.get("mobile_number"),
+               first_name=state["first_name"]["first_name"],
+               last_name=state["last_name"]["last_name"]
+           )
    ```
 
-### Handler Categories
+### WhatsApp Service
 
-1. Member Flows (`handlers/member/flows.py`)
-   - Registration flow with validation
-   - Profile management with templates
-   - Dashboard navigation with lists
-   - Account settings with buttons
+The WhatsAppMessagingService handles all WhatsApp API interactions:
 
-2. Credex Flows (`handlers/credex/flows.py`)
-   - Offer creation with step validation
-   - Transaction management with confirmations
-   - Balance viewing with formatting
-   - Offer responses with buttons
+```python
+class WhatsAppMessagingService:
+    async def _send_message(self, message: Message) -> Dict[str, Any]:
+        """Send a message via WhatsApp Cloud API"""
+        try:
+            # Convert core message to WhatsApp format
+            whatsapp_message = WhatsAppMessage.from_core_message(message)
+
+            # Send via API client
+            return await self.api_client.send_message(whatsapp_message)
+        except Exception as e:
+            logger.error(f"Error sending message: {str(e)}")
+            raise
+
+    async def send_template(
+        self,
+        recipient: str,
+        template_name: str,
+        language: str,
+        components: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """Send a template message"""
+        try:
+            message = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": recipient,
+                "type": "template",
+                "template": {
+                    "name": template_name,
+                    "language": {"code": language}
+                }
+            }
+            if components:
+                message["template"]["components"] = components
+            return await self.api_client.send_message(message)
+        except Exception as e:
+            logger.error(f"Error sending template: {str(e)}")
+            raise
+```
+
+## Best Practices
+
+1. **Message Creation**
+   - Use domain-specific template classes
+   - Return Message objects consistently
+   - Follow WhatsApp Cloud API limits
+   - Handle errors gracefully
+
+2. **Template Organization**
+   - Group related templates in domain classes
+   - Use static methods for template creation
+   - Keep templates focused and reusable
+   - Document template parameters
+
+3. **Flow Implementation**
+   - Use template methods directly
+   - Keep flow logic separate from templates
+   - Handle state updates consistently
+   - Provide clear error messages
+
+4. **Error Handling**
+   ```python
+   def complete(self) -> Message:
+       try:
+           if not self.validate_state():
+               return Templates.create_error_message(
+                   self.data.get("mobile_number"),
+                   "Invalid state"
+               )
+
+           result = self._process_completion()
+           self._update_state(result)
+
+           return Templates.create_success_message(
+               self.data.get("mobile_number"),
+               "Operation completed successfully"
+           )
+       except Exception as e:
+           logger.error(f"Flow completion error: {str(e)}")
+           return Templates.create_error_message(
+               self.data.get("mobile_number"),
+               str(e)
+           )
+   ```
 
 ## Mock Implementation
 
@@ -194,28 +222,6 @@ mock/
 └── styles/          # UI styling
     └── main.css     # Core styles
 ```
-
-### Components
-
-1. Mock Server (`server.py`)
-   - Simulates WhatsApp webhook endpoint
-   - Forwards requests to the Credex bot
-   - Handles message routing and responses
-   - Provides detailed logging
-   - Supports flow testing
-
-2. Web Interface (`index.html`)
-   - Simulates WhatsApp client UI
-   - Supports all message types
-   - Handles WhatsApp markdown formatting
-   - Real-time message display
-   - Flow visualization
-
-3. CLI Interface (`cli.py`)
-   - Command-line testing tool
-   - Supports all message types
-   - Flow testing commands
-   - Quick testing of specific flows
 
 ### Usage
 
@@ -245,43 +251,6 @@ mock/
    # Menu selection
    ./mock/cli.py --type interactive "handleactionoffercredex"
    ```
-
-## Best Practices
-
-1. Flow Implementation
-   - Define clear step sequences
-   - Implement robust validation
-   - Handle state transitions
-   - Provide clear user feedback
-   - Document flow logic
-
-2. Message Handling
-   - Use type hints consistently
-   - Follow WhatsApp message format
-   - Handle all message types
-   - Validate message content
-   - Support flow progression
-
-3. Error Handling
-   - Provide clear error messages
-   - Log errors with context
-   - Handle edge cases gracefully
-   - Maintain consistent format
-   - Support flow recovery
-
-4. Testing
-   - Test complete flows
-   - Verify all message types
-   - Check state transitions
-   - Test error scenarios
-   - Validate flow completion
-
-5. Code Organization
-   - Separate flow logic
-   - Keep handlers focused
-   - Document methods
-   - Use shared utilities
-   - Follow patterns
 
 For more details on:
 - Flow framework: [Flow Framework](flow-framework.md)

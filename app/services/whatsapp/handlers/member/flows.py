@@ -4,7 +4,8 @@ from datetime import datetime
 from typing import Dict, Any, List
 
 from core.messaging.flow import Flow, Step, StepType
-from ...types import WhatsAppMessage
+from core.messaging.types import Message
+from .templates import MemberTemplates
 
 logger = logging.getLogger(__name__)
 
@@ -55,18 +56,16 @@ class MemberFlow(Flow):
                 )
             ]
 
-    def _get_first_name_prompt(self, _) -> Dict[str, Any]:
+    def _get_first_name_prompt(self, _) -> Message:
         """Get first name prompt"""
-        return WhatsAppMessage.create_text(
-            self.data.get("mobile_number"),
-            "What's your first name?"
+        return MemberTemplates.create_first_name_prompt(
+            self.data.get("mobile_number")
         )
 
-    def _get_last_name_prompt(self, _) -> Dict[str, Any]:
+    def _get_last_name_prompt(self, _) -> Message:
         """Get last name prompt"""
-        return WhatsAppMessage.create_text(
-            self.data.get("mobile_number"),
-            "And what's your last name?"
+        return MemberTemplates.create_last_name_prompt(
+            self.data.get("mobile_number")
         )
 
     def _validate_name(self, name: str) -> bool:
@@ -87,47 +86,27 @@ class MemberFlow(Flow):
             response.get("interactive", {}).get("button_reply", {}).get("id") == "confirm_action"
         )
 
-    def _create_confirmation_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_confirmation_message(self, state: Dict[str, Any]) -> Message:
         """Create confirmation message based on flow type"""
         if self.flow_type == "registration":
             return self._create_registration_confirmation(state)
         return self._create_upgrade_confirmation(state)
 
-    def _create_registration_confirmation(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_registration_confirmation(self, state: Dict[str, Any]) -> Message:
         """Create registration confirmation message"""
         first_name = state["first_name"]["first_name"]
         last_name = state["last_name"]["last_name"]
 
-        return WhatsAppMessage.create_button(
-            to=self.data.get("mobile_number"),
-            text=(
-                "✅ Please confirm your registration details:\n\n"
-                f"First Name: {first_name}\n"
-                f"Last Name: {last_name}\n"
-                f"Default Currency: USD"
-            ),
-            buttons=[{
-                "id": "confirm_action",
-                "title": "Confirm Registration"
-            }]
+        return MemberTemplates.create_registration_confirmation(
+            recipient=self.data.get("mobile_number"),
+            first_name=first_name,
+            last_name=last_name
         )
 
-    def _create_upgrade_confirmation(self, _: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_upgrade_confirmation(self, _: Dict[str, Any]) -> Message:
         """Create tier upgrade confirmation message"""
-        return WhatsAppMessage.create_button(
-            to=self.data.get("mobile_number"),
-            text=(
-                "*Upgrade to the Hustler tier for $1/month.*\n\n"
-                "Subscribe with the button below to unlock unlimited "
-                "credex transactions.\n\n"
-                "Clicking below authorizes a $1 payment to be automatically "
-                "processed from your credex account every 4 weeks (28 days), "
-                "starting today."
-            ),
-            buttons=[{
-                "id": "confirm_action",
-                "title": "Hustle Hard"
-            }]
+        return MemberTemplates.create_upgrade_confirmation(
+            self.data.get("mobile_number")
         )
 
     def _update_dashboard(self, response: Dict[str, Any]) -> None:
@@ -160,7 +139,7 @@ class MemberFlow(Flow):
         except Exception as e:
             logger.error(f"Dashboard update error: {str(e)}")
 
-    def complete(self) -> Dict[str, Any]:
+    def complete(self) -> Message:
         """Complete the flow"""
         try:
             if not self.credex_service:
@@ -172,12 +151,12 @@ class MemberFlow(Flow):
 
         except Exception as e:
             logger.error(f"Flow completion error: {str(e)}")
-            return WhatsAppMessage.create_text(
+            return MemberTemplates.create_error_message(
                 self.data.get("mobile_number"),
-                f"❌ {str(e)}"
+                str(e)
             )
 
-    def _complete_registration(self) -> Dict[str, Any]:
+    def _complete_registration(self) -> Message:
         """Complete registration flow"""
         # Get registration data
         first_name = self.data["first_name"]["first_name"]
@@ -214,12 +193,12 @@ class MemberFlow(Flow):
                     "authenticated": True
                 }, "registration_auth")
 
-        return WhatsAppMessage.create_text(
+        return MemberTemplates.create_registration_success(
             self.data.get("mobile_number"),
-            f"Welcome {first_name}! Your account has been created successfully! 🎉"
+            first_name
         )
 
-    def _complete_upgrade(self) -> Dict[str, Any]:
+    def _complete_upgrade(self) -> Message:
         """Complete tier upgrade flow"""
         account_id = self.data.get("account_id")
         if not account_id:
@@ -243,7 +222,6 @@ class MemberFlow(Flow):
         # Update dashboard state
         self._update_dashboard(response)
 
-        return WhatsAppMessage.create_text(
-            self.data.get("mobile_number"),
-            "🎉 Successfully upgraded to Hustler tier!"
+        return MemberTemplates.create_upgrade_success(
+            self.data.get("mobile_number")
         )
