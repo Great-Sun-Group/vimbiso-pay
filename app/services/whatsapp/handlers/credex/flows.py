@@ -4,7 +4,6 @@ import re
 from typing import Any, Dict, List, Union
 
 from core.messaging.flow import Flow, Step, StepType
-from core.transactions import TransactionOffer, TransactionType
 
 from ...handlers.member.dashboard import DashboardFlow
 from .templates import CredexTemplates
@@ -325,36 +324,38 @@ class CredexFlow(Flow):
 
     def _complete_offer(self) -> Dict[str, Any]:
         """Complete offer flow"""
-        offer = TransactionOffer(
-            authorizer_member_id=self.data["member_id"],
-            issuer_member_id=self.data["member_id"],
-            receiver_account_id=self.data["handle"]["account_id"],
-            amount=self.data["amount"]["amount"],
-            denomination=self.data["amount"]["denomination"],
-            type=TransactionType.SECURED_CREDEX,
-            handle=self.data["handle"]["handle"],
-            metadata={"name": self.data["handle"]["name"]}
-        )
+        try:
+            # Prepare offer data in the format expected by the API
+            offer_data = {
+                "authorizer_member_id": self.data["member_id"],
+                "issuerAccountID": self.data["account_id"],
+                "receiverAccountID": self.data["handle"]["account_id"],
+                "InitialAmount": self.data["amount"]["amount"],
+                "Denomination": self.data["amount"]["denomination"],
+                "credexType": "PURCHASE",
+                "OFFERSorREQUESTS": "OFFERS",
+                "securedCredex": True,
+                "handle": self.data["handle"]["handle"],
+                "metadata": {"name": self.data["handle"]["name"]}
+            }
 
-        success, response = self.credex_service.offer_credex({
-            "authorizer_member_id": offer.authorizer_member_id,
-            "issuerAccountID": self.data["account_id"],
-            "receiverAccountID": offer.receiver_account_id,
-            "InitialAmount": offer.amount,
-            "Denomination": offer.denomination,
-            "type": offer.type.value,
-            "handle": offer.handle,
-            "metadata": offer.metadata
-        })
+            success, response = self.credex_service.offer_credex(offer_data)
 
-        if not success:
+            if not success:
+                return CredexTemplates.create_error_message(
+                    self.data.get("mobile_number"),
+                    response.get("message", "Offer failed")
+                )
+
+            self._update_dashboard(response)
+            return self._show_dashboard("Credex successfully offered")
+
+        except Exception as e:
+            logger.error(f"Error completing offer: {str(e)}")
             return CredexTemplates.create_error_message(
                 self.data.get("mobile_number"),
-                response.get("message", "Offer failed")
+                f"An error occurred: {str(e)}"
             )
-
-        self._update_dashboard(response)
-        return self._show_dashboard("Credex successfully offered")
 
     def _complete_action(self, action: str) -> Dict[str, Any]:
         """Complete action flow"""
