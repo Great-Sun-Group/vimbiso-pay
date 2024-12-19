@@ -323,17 +323,30 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
             # Check if this is a menu action that should start a new flow
             if action in self.FLOW_TYPES:
-                # First clear any existing state
+                # First clean up any existing state while preserving critical fields
                 if self.user.state.state:
                     current_state = self.user.state.state
-                    # Explicitly clear flow data first
+                    preserve_fields = {"jwt_token", "profile", "current_account", "member_id", "account_id"}
+                    logger.debug(f"Cleaning up state, preserving fields: {preserve_fields}")
+                    success, error = self.user.state.cleanup_state(preserve_fields)
+                    if not success:
+                        logger.error(f"Failed to cleanup state: {error}")
+                        return WhatsAppMessage.create_text(
+                            self.user.mobile_number,
+                            "Failed to initialize flow. Please try sending 'hi' to restart."
+                        )
+
+                    # Get preserved state after cleanup
+                    preserved_state = self.user.state.state or {}
+
+                    # Initialize new state with preserved fields
                     new_state = {
                         "flow_data": None,
-                        "profile": current_state.get("profile", {}),
-                        "current_account": current_state.get("current_account"),
-                        "jwt_token": current_state.get("jwt_token"),
-                        "member_id": current_state.get("member_id"),
-                        "account_id": current_state.get("account_id")
+                        "profile": preserved_state.get("profile", {}),
+                        "current_account": preserved_state.get("current_account"),
+                        "jwt_token": preserved_state.get("jwt_token"),
+                        "member_id": preserved_state.get("member_id"),
+                        "account_id": preserved_state.get("account_id")
                     }
 
                     # Log state transition
@@ -343,16 +356,8 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                         f"To: {new_state}"
                     )
 
+                    # Update state with preserved fields
                     self.user.state.update_state(new_state, "clear_flow_menu_action")
-
-                    # Force a clean state read after clearing
-                    preserve_fields = {"jwt_token", "profile", "current_account", "member_id", "account_id"}
-                    logger.debug(f"Cleaning up state, preserving fields: {preserve_fields}")
-                    success, error = self.user.state.cleanup_state(preserve_fields)
-                    if not success:
-                        logger.error(f"Failed to cleanup state: {error}")
-                    else:
-                        logger.debug("State cleanup successful")
 
                 # Then start the new flow with a fresh state
                 flow_type, flow_class = self.FLOW_TYPES[action]
