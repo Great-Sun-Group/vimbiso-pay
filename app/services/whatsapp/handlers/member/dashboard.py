@@ -185,7 +185,9 @@ class DashboardFlow(Flow):
             user_state.update_state({
                 "current_account": selected_account,
                 "profile": profile_data,
-                "jwt_token": current_state.get("jwt_token")
+                "jwt_token": current_state.get("jwt_token"),
+                "member_id": current_state.get("member_id"),  # Preserve member_id
+                "account_id": current_state.get("account_id")  # Preserve account_id
             }, "account_select")
 
             # Format dashboard data
