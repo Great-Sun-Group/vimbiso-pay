@@ -1,11 +1,11 @@
 """Authentication and menu handlers"""
 import logging
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict, Optional, Tuple
 
 from .base_handler import BaseActionHandler
+from .handlers.member.dashboard import DashboardFlow
 from .screens import REGISTER
 from .types import WhatsAppMessage
-from .handlers.member.dashboard import DashboardFlow
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +60,33 @@ class AuthActionHandler(BaseActionHandler):
             dashboard_data = response.get("data", {})
             logger.info(f"Dashboard data from login: {dashboard_data}")
 
-            # Update state
+            # Extract member ID
+            member_id = dashboard_data.get("action", {}).get("details", {}).get("memberID")
+
+            # Find account with accountType=PERSONAL
+            accounts = dashboard_data.get("dashboard", {}).get("accounts", [])
+            personal_account = None
+            for account in accounts:
+                account_data = account.get("data", {})
+                if account_data.get("accountType") == "PERSONAL":
+                    personal_account = account_data
+                    break
+
+            if not personal_account:
+                logger.error("Personal account not found")
+                return False, None
+
+            account_id = personal_account.get("accountID")
+
+            # Update state with IDs and account data
             self.service.user.state.update_state({
                 "jwt_token": jwt_token,
                 "authenticated": True,
                 "profile": dashboard_data,
-                "flow_data": None  # Clear any existing flow data
+                "flow_data": None,  # Clear any existing flow data
+                "member_id": member_id,
+                "account_id": account_id,
+                "current_account": personal_account  # Store full account data
             }, "login_success")
 
             # Propagate token
