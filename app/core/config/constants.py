@@ -1,6 +1,6 @@
 """Constants and cached user state management"""
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 import redis
