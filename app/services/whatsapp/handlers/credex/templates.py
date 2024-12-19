@@ -1,49 +1,38 @@
 """Credex-specific message templates"""
 from typing import List, Dict, Any
 
-from core.messaging.types import (
-    Message,
-    MessageRecipient,
-    TextContent,
-    InteractiveContent,
-    InteractiveType,
-    Button
-)
+from ...types import WhatsAppMessage
 
 
 class CredexTemplates:
     """Templates for credex-related messages"""
 
     @staticmethod
-    def create_amount_prompt(recipient: str) -> Message:
+    def create_amount_prompt(recipient: str) -> dict:
         """Create amount prompt message"""
-        return Message(
-            recipient=MessageRecipient(phone_number=recipient),
-            content=TextContent(
-                body=(
-                    "Enter amount:\n\n"
-                    "Examples:\n"
-                    "100     (USD)\n"
-                    "USD 100\n"
-                    "ZWG 100\n"
-                    "XAU 1"
-                )
-            )
+        return WhatsAppMessage.create_text(
+            recipient,
+            "Enter amount:\n\n"
+            "Examples:\n"
+            "100     (USD)\n"
+            "USD 100\n"
+            "ZWG 100\n"
+            "XAU 1"
         )
 
     @staticmethod
-    def create_handle_prompt(recipient: str) -> Message:
+    def create_handle_prompt(recipient: str) -> dict:
         """Create handle prompt message"""
-        return Message(
-            recipient=MessageRecipient(phone_number=recipient),
-            content=TextContent(body="Enter recipient handle:")
+        return WhatsAppMessage.create_text(
+            recipient,
+            "Enter recipient handle:"
         )
 
     @staticmethod
     def create_pending_offers_list(
         recipient: str,
         pending_offers: List[Dict[str, Any]]
-    ) -> Message:
+    ) -> dict:
         """Create pending offers list message"""
         rows = [
             {
@@ -53,19 +42,14 @@ class CredexTemplates:
             for offer in pending_offers
         ]
 
-        return Message(
-            recipient=MessageRecipient(phone_number=recipient),
-            content=InteractiveContent(
-                interactive_type=InteractiveType.LIST,
-                body="Select an offer to cancel:",
-                action_items={
-                    "button": "🕹️ Options",
-                    "sections": [{
-                        "title": "Pending Offers",
-                        "rows": rows
-                    }]
-                }
-            )
+        return WhatsAppMessage.create_list(
+            recipient,
+            "Select an offer to cancel:",
+            "🕹️ Options",
+            [{
+                "title": "Pending Offers",
+                "rows": rows
+            }]
         )
 
     @staticmethod
@@ -74,7 +58,7 @@ class CredexTemplates:
         amount: str,
         handle: str,
         name: str
-    ) -> Message:
+    ) -> dict:
         """Create offer confirmation message"""
         text = (
             f"Confirm transaction:\n\n"
@@ -82,15 +66,10 @@ class CredexTemplates:
             f"To: {name} ({handle})"
         )
 
-        return Message(
-            recipient=MessageRecipient(phone_number=recipient),
-            content=InteractiveContent(
-                interactive_type=InteractiveType.BUTTON,
-                body=text,
-                buttons=[
-                    Button(id="confirm_action", title="Confirm")
-                ]
-            )
+        return WhatsAppMessage.create_button(
+            recipient,
+            text,
+            [{"id": "confirm_action", "title": "Confirm"}]
         )
 
     @staticmethod
@@ -98,7 +77,7 @@ class CredexTemplates:
         recipient: str,
         amount: str,
         counterparty: str
-    ) -> Message:
+    ) -> dict:
         """Create cancel confirmation message"""
         text = (
             f"Cancel Credex Offer\n\n"
@@ -106,15 +85,10 @@ class CredexTemplates:
             f"To: {counterparty}"
         )
 
-        return Message(
-            recipient=MessageRecipient(phone_number=recipient),
-            content=InteractiveContent(
-                interactive_type=InteractiveType.BUTTON,
-                body=text,
-                buttons=[
-                    Button(id="confirm_action", title="Cancel Offer")
-                ]
-            )
+        return WhatsAppMessage.create_button(
+            recipient,
+            text,
+            [{"id": "confirm_action", "title": "Cancel Offer"}]
         )
 
     @staticmethod
@@ -123,7 +97,7 @@ class CredexTemplates:
         amount: str,
         counterparty: str,
         action: str
-    ) -> Message:
+    ) -> dict:
         """Create action confirmation message"""
         text = (
             f"{action} credex offer\n\n"
@@ -131,29 +105,24 @@ class CredexTemplates:
             f"From: {counterparty}"
         )
 
-        return Message(
-            recipient=MessageRecipient(phone_number=recipient),
-            content=InteractiveContent(
-                interactive_type=InteractiveType.BUTTON,
-                body=text,
-                buttons=[
-                    Button(id="confirm_action", title="Confirm")
-                ]
-            )
+        return WhatsAppMessage.create_button(
+            recipient,
+            text,
+            [{"id": "confirm_action", "title": "Confirm"}]
         )
 
     @staticmethod
-    def create_error_message(recipient: str, error: str) -> Message:
+    def create_error_message(recipient: str, error: str) -> dict:
         """Create error message"""
-        return Message(
-            recipient=MessageRecipient(phone_number=recipient),
-            content=TextContent(body=f"❌ {error}")
+        return WhatsAppMessage.create_text(
+            recipient,
+            f"❌ {error}"
         )
 
     @staticmethod
-    def create_success_message(recipient: str, message: str) -> Message:
+    def create_success_message(recipient: str, message: str) -> dict:
         """Create success message"""
-        return Message(
-            recipient=MessageRecipient(phone_number=recipient),
-            content=TextContent(body=f"✅ {message}")
+        return WhatsAppMessage.create_text(
+            recipient,
+            f"✅ {message}"
         )

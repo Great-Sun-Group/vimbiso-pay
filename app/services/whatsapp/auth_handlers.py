@@ -67,9 +67,8 @@ class AuthActionHandler(BaseActionHandler):
             accounts = dashboard_data.get("dashboard", {}).get("accounts", [])
             personal_account = None
             for account in accounts:
-                account_data = account.get("data", {})
-                if account_data.get("accountType") == "PERSONAL":
-                    personal_account = account_data
+                if account.get("accountType") == "PERSONAL":
+                    personal_account = account
                     break
 
             if not personal_account:

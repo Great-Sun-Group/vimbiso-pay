@@ -4,7 +4,6 @@ import re
 from typing import Any, Dict, List, Union
 
 from core.messaging.flow import Flow, Step, StepType
-from core.messaging.types import Message
 from core.transactions import TransactionOffer, TransactionType
 
 from ...handlers.member.dashboard import DashboardFlow
@@ -81,20 +80,20 @@ class CredexFlow(Flow):
                 )
             ]
 
-    def _get_amount_prompt(self, _) -> Message:
+    def _get_amount_prompt(self, _) -> Dict[str, Any]:
         """Get amount prompt message"""
         return CredexTemplates.create_amount_prompt(
             self.data.get("mobile_number")
         )
 
-    def _create_list_message(self, state: Dict[str, Any]) -> Message:
+    def _create_list_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Create list selection message"""
         return CredexTemplates.create_pending_offers_list(
             self.data.get("mobile_number"),
             state.get("pending_offers", [])
         )
 
-    def _create_confirmation_message(self, state: Dict[str, Any]) -> Message:
+    def _create_confirmation_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Create confirmation message based on flow type"""
         messages = {
             "offer": self._create_offer_confirmation,
@@ -105,7 +104,7 @@ class CredexFlow(Flow):
 
         return messages[self.flow_type](state)
 
-    def _create_offer_confirmation(self, state: Dict[str, Any]) -> Message:
+    def _create_offer_confirmation(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Create offer confirmation message"""
         amount = self._format_amount(
             state["amount"]["amount"],
@@ -121,7 +120,7 @@ class CredexFlow(Flow):
             name
         )
 
-    def _create_cancel_confirmation(self, state: Dict[str, Any]) -> Message:
+    def _create_cancel_confirmation(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Create cancel confirmation message"""
         amount = state.get("amount", "0")
         counterparty = state.get("counterparty", "Unknown")
@@ -132,7 +131,7 @@ class CredexFlow(Flow):
             counterparty
         )
 
-    def _create_action_confirmation(self, state: Dict[str, Any], action: str) -> Message:
+    def _create_action_confirmation(self, state: Dict[str, Any], action: str) -> Dict[str, Any]:
         """Create action confirmation message"""
         amount = self._format_amount(
             float(state.get("amount", "0.00")),
@@ -253,23 +252,31 @@ class CredexFlow(Flow):
             current_state = user_state.state
             current_profile = current_state.get("profile", {}).copy()
 
-            # Preserve existing profile data
-            if "data" in current_profile:
-                current_profile["data"]["dashboard"] = dashboard
-            else:
-                current_profile["data"] = {"dashboard": dashboard}
+            # Update profile with new dashboard data
+            current_profile["dashboard"] = dashboard
+
+            # Find personal account in new dashboard data
+            accounts = dashboard.get("accounts", [])
+            mobile_number = self.data.get("mobile_number")
+            personal_account = next(
+                (account for account in accounts if account.get("accountType") == "PERSONAL"),
+                next(
+                    (account for account in accounts if account.get("accountHandle") == mobile_number),
+                    current_state.get("current_account")
+                )
+            )
 
             # Update state while preserving other critical fields
             user_state.update_state({
                 "profile": current_profile,
-                "current_account": current_state.get("current_account"),
+                "current_account": personal_account,
                 "jwt_token": current_state.get("jwt_token")
             }, "dashboard_update")
 
         except Exception as e:
             logger.error(f"Dashboard update error: {str(e)}")
 
-    def complete(self) -> Message:
+    def complete(self) -> Dict[str, Any]:
         """Complete the flow"""
         try:
             if not self.credex_service:
@@ -294,7 +301,7 @@ class CredexFlow(Flow):
                 str(e)
             )
 
-    def _complete_cancel(self) -> Message:
+    def _complete_cancel(self) -> Dict[str, Any]:
         """Complete cancel flow"""
         if self.current_step.id != "confirm":
             return self._create_list_message(self.data)
@@ -316,7 +323,7 @@ class CredexFlow(Flow):
         self._update_dashboard(response)
         return self._show_dashboard("Credex successfully cancelled")
 
-    def _complete_offer(self) -> Message:
+    def _complete_offer(self) -> Dict[str, Any]:
         """Complete offer flow"""
         offer = TransactionOffer(
             authorizer_member_id=self.data["member_id"],
@@ -349,7 +356,7 @@ class CredexFlow(Flow):
         self._update_dashboard(response)
         return self._show_dashboard("Credex successfully offered")
 
-    def _complete_action(self, action: str) -> Message:
+    def _complete_action(self, action: str) -> Dict[str, Any]:
         """Complete action flow"""
         credex_id = self.kwargs.get("credex_id")
         if not credex_id:
@@ -373,7 +380,7 @@ class CredexFlow(Flow):
         self._update_dashboard(response)
         return self._show_dashboard(f"Successfully {action}ed credex offer")
 
-    def _show_dashboard(self, message: str) -> Message:
+    def _show_dashboard(self, message: str) -> Dict[str, Any]:
         """Show dashboard with success message"""
         dashboard = DashboardFlow(success_message=message)
         dashboard.credex_service = self.credex_service

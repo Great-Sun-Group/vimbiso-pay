@@ -1,9 +1,8 @@
 """Clean flow management implementation"""
+import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Callable, Union
-
-import logging
+from typing import Any, Callable, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ class Step:
     """Single interaction step"""
     id: str
     type: StepType
-    message: Union[str, Callable[[Dict[str, Any]], str]]
+    message: Union[Dict[str, Any], Callable[[Dict[str, Any]], Dict[str, Any]]]
     validator: Optional[Callable[[Any], bool]] = None
     transformer: Optional[Callable[[Any], Any]] = None
 
@@ -40,7 +39,7 @@ class Step:
             logger.error(f"Transform error in {self.id}: {str(e)}")
             raise ValueError(str(e))
 
-    def get_message(self, state: Dict[str, Any]) -> str:
+    def get_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Get step message"""
         try:
             return self.message(state) if callable(self.message) else self.message
@@ -63,7 +62,7 @@ class Flow:
         """Get current step"""
         return self.steps[self.current_index] if 0 <= self.current_index < len(self.steps) else None
 
-    def process_input(self, input_data: Any) -> Optional[str]:
+    def process_input(self, input_data: Any) -> Optional[Dict[str, Any]]:
         """Process input and return next message or None if complete"""
         step = self.current_step
         if not step:
@@ -71,7 +70,11 @@ class Flow:
 
         # Validate and transform input
         if not step.validate(input_data):
-            return "Invalid input"
+            from services.whatsapp.types import WhatsAppMessage
+            return WhatsAppMessage.create_text(
+                self.data.get("mobile_number", ""),
+                "Invalid input"
+            )
 
         try:
             # Update flow data
@@ -91,9 +94,13 @@ class Flow:
 
         except Exception as e:
             logger.error(f"Process error in {step.id}: {str(e)}")
-            return f"Error: {str(e)}"
+            from services.whatsapp.types import WhatsAppMessage
+            return WhatsAppMessage.create_text(
+                self.data.get("mobile_number", ""),
+                f"Error: {str(e)}"
+            )
 
-    def complete(self) -> Optional[str]:
+    def complete(self) -> Optional[Dict[str, Any]]:
         """Handle flow completion - override in subclasses"""
         return None
 

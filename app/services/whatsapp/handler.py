@@ -1,6 +1,5 @@
 """WhatsApp message handling implementation"""
 import logging
-import re
 from typing import Dict, Any, Optional, Tuple, Type
 
 from core.messaging.flow import Flow
@@ -52,11 +51,7 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             flow_type, flow_class = self.FLOW_TYPES[action]
             return flow_type, flow_class, {}
 
-        # Check direct cancel command
-        if self.message_type == "text":
-            if match := re.match(r'cancel_([0-9a-f-]+)', action):
-                return "cancel_credex", CredexFlow, {"credex_id": match.group(1)}
-
+        # No direct commands in production - users will use the list interface
         return None
 
     def _get_member_info(self) -> Tuple[Optional[str], Optional[str]]:
@@ -87,7 +82,8 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             member_id, account_id = self._get_member_info()
             if not member_id or not account_id:
                 logger.error(f"Missing required IDs - member_id: {member_id}, account_id: {account_id}")
-                return self.get_response_template(
+                return WhatsAppMessage.create_text(
+                    self.user.mobile_number,
                     "Account not properly initialized. Please try sending 'hi' to restart."
                 )
 
@@ -102,11 +98,7 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             # Add pending offers for cancel flow
             if flow_type == "cancel_credex":
                 current_account = self.user.state.state.get("current_account", {})
-                pending_out = (
-                    current_account.get("data", {})
-                    .get("pendingOutData", {})
-                    .get("data", [])
-                )
+                pending_out = current_account.get("pendingOutData", [])
 
                 pending_offers = [{
                     "id": offer.get("credexID"),
@@ -118,22 +110,7 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
                 flow.data["pending_offers"] = pending_offers
 
-                # Handle direct cancel command
-                if credex_id := kwargs.get("credex_id"):
-                    if selected_offer := next(
-                        (o for o in pending_offers if o["id"] == credex_id),
-                        None
-                    ):
-                        flow.data.update({
-                            "credex_id": credex_id,
-                            "selection": f"cancel_{credex_id}",
-                            "amount": selected_offer["amount"],
-                            "counterparty": selected_offer["to"]
-                        })
-                        flow.current_index = 1
-                        return flow.current_step.get_message(flow.data)
-
-            # Get initial message
+            # Get initial message (already in WhatsAppMessage format)
             result = flow.current_step.get_message(flow.data)
 
             # Save flow state while preserving critical fields
@@ -151,15 +128,14 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 "account_id": current_state.get("account_id")  # Preserve account_id
             }, "flow_start")
 
-            return (
-                result if isinstance(result, dict) and
-                result.get("messaging_product") == "whatsapp"
-                else self.get_response_template(result)
-            )
+            return result  # Already in WhatsAppMessage format
 
         except Exception as e:
             logger.error(f"Flow start error: {str(e)}")
-            return self._format_error_response(f"Failed to start flow: {str(e)}")
+            return WhatsAppMessage.create_text(
+                self.user.mobile_number,
+                f"❌ Failed to start flow: {str(e)}"
+            )
 
     def _format_button_response(self, action: str) -> Dict[str, Any]:
         """Format text message as button response"""
@@ -216,14 +192,18 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             # Handle invalid input
             if result == "Invalid input":
                 if flow.current_step and flow.current_step.id == "amount":
-                    result = (
+                    return WhatsAppMessage.create_text(
+                        self.user.mobile_number,
                         "Invalid amount format. Examples:\n"
                         "100     (USD)\n"
                         "USD 100\n"
                         "ZWG 100\n"
                         "XAU 1"
                     )
-                return self.get_response_template(result)
+                return WhatsAppMessage.create_text(
+                    self.user.mobile_number,
+                    "Invalid input"
+                )
 
             # Handle flow completion
             if not result or flow.current_index >= len(flow.steps):
@@ -255,11 +235,7 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                     dashboard.data = {"mobile_number": self.user.mobile_number}
                     return dashboard.complete()
 
-                return (
-                    result if isinstance(result, dict) and
-                    result.get("messaging_product") == "whatsapp"
-                    else self.get_response_template(result)
-                )
+                return result  # Already in WhatsAppMessage format
 
             # Update flow state while preserving critical fields
             current_state = self.user.state.state or {}
@@ -276,11 +252,7 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 "account_id": current_state.get("account_id")  # Preserve account_id
             }, "flow_continue")
 
-            return (
-                result if isinstance(result, dict) and
-                result.get("messaging_product") == "whatsapp"
-                else self.get_response_template(result)
-            )
+            return result  # Already in WhatsAppMessage format
 
         except Exception as e:
             logger.error(f"Flow error: {str(e)}")
@@ -294,7 +266,10 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 "member_id": current_state.get("member_id"),  # Preserve member_id
                 "account_id": current_state.get("account_id")  # Preserve account_id
             }, "flow_error")
-            return self._format_error_response(str(e))
+            return WhatsAppMessage.create_text(
+                self.user.mobile_number,
+                f"❌ {str(e)}"
+            )
 
     def _process_message(self) -> WhatsAppMessage:
         """Process incoming message"""
@@ -335,7 +310,10 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
         except Exception as e:
             logger.error(f"Message processing error: {str(e)}")
-            return self._format_error_response(str(e))
+            return WhatsAppMessage.create_text(
+                self.user.mobile_number,
+                f"❌ {str(e)}"
+            )
 
     def handle(self) -> WhatsAppMessage:
         """Return processed response"""

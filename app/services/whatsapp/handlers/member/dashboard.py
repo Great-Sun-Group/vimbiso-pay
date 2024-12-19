@@ -42,8 +42,7 @@ class DashboardFlow(Flow):
             # Try to find personal account first
             personal_account = next(
                 (account for account in accounts
-                 if account.get("success") and
-                 account["data"].get("accountType") == "PERSONAL"),
+                 if account.get("accountType") == "PERSONAL"),
                 None
             )
             if personal_account:
@@ -52,8 +51,7 @@ class DashboardFlow(Flow):
             # Fallback to mobile number match
             return next(
                 (account for account in accounts
-                 if account.get("success") and
-                 account["data"].get("accountHandle") == mobile_number),
+                 if account.get("accountHandle") == mobile_number),
                 None
             )
 
@@ -68,13 +66,13 @@ class DashboardFlow(Flow):
     ) -> Dict[str, Any]:
         """Format dashboard data for display"""
         try:
-            account_data = account["data"]
-            balance_data = account_data["balanceData"]["data"]
+            account_data = account
+            balance_data = account_data["balanceData"]
             dashboard = profile_data.get("dashboard", {})
 
             # Get counts
-            pending_in = len(account_data["pendingInData"].get("data", []))
-            pending_out = len(account_data["pendingOutData"].get("data", []))
+            pending_in = len(account_data.get("pendingInData", []))
+            pending_out = len(account_data.get("pendingOutData", []))
 
             # Format balances
             balances = "\n".join(
@@ -83,8 +81,8 @@ class DashboardFlow(Flow):
             )
 
             # Get tier info
-            member_tier = dashboard.get("memberTier", {}).get("low", 1)
-            remaining_usd = dashboard.get("remainingAvailableUSD", {}).get("low", 0)
+            member_tier = dashboard.get("member", {}).get("memberTier", 1)
+            remaining_usd = dashboard.get("remainingAvailableUSD", 0)
 
             # Format tier display
             tier_limit_display = ""
@@ -97,9 +95,9 @@ class DashboardFlow(Flow):
 
             return {
                 "account_name": account_data.get("accountName", "Personal Account"),
-                "handle": account_data["accountHandle"],
+                "handle": account_data.get("accountHandle"),
                 "balances": balances,
-                "net_assets": balance_data["netCredexAssetsInDefaultDenom"],
+                "net_assets": balance_data.get("netCredexAssetsInDefaultDenom"),
                 "tier_limit_display": tier_limit_display,
                 "is_owned": account_data.get("isOwnedAccount", False),
                 "pending_in": pending_in,
