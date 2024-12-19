@@ -200,8 +200,22 @@ class CachedUserState:
         )
 
         if success:
-            # Reset instance state
-            self.state = None
+            # Get preserved state after cleanup
+            preserved_state, get_error = atomic_state.atomic_get(self.key_prefix)
+            if get_error:
+                logger.error(f"Error getting preserved state: {get_error}")
+                preserved_state = {}
+
+            # Initialize with preserved fields
+            self.state = {
+                "jwt_token": preserved_state.get("jwt_token"),
+                "profile": preserved_state.get("profile", {}),
+                "current_account": preserved_state.get("current_account"),
+                "flow_data": None,
+                "member_id": preserved_state.get("member_id"),
+                "account_id": preserved_state.get("account_id")
+            }
+
             # Clear service instance
             self.credex_service = None
 
