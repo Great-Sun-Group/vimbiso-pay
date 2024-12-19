@@ -247,6 +247,20 @@ class CredexFlow(Flow):
                 return {"error": "Invalid handle format"}
 
         handle = handle.strip()
+
+        # Ensure we have profile data
+        if not hasattr(self.credex_service, '_parent_service'):
+            return {"error": "Service not properly initialized"}
+
+        user_state = self.credex_service._parent_service.user.state
+        if not user_state or not user_state.state:
+            return {"error": "State not initialized"}
+
+        current_state = user_state.state
+        if not current_state.get("profile"):
+            return {"error": "Profile data not found"}
+
+        # Validate handle
         success, response = self.credex_service._member.validate_handle(handle)
         if not success:
             return {"error": response.get("message", "Invalid handle")}
