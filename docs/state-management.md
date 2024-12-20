@@ -2,124 +2,127 @@
 
 ## Overview
 
-VimbisoPay uses atomic Redis-based state management to handle WhatsApp conversations and user sessions. This enables:
-- Atomic state operations with optimistic locking
-- Stateful conversations with context
+VimbisoPay uses a multi-layered state management system built on Redis to handle WhatsApp conversations and user sessions. The system provides:
+
+- Atomic state operations
+- Stateful conversations
 - Multi-step form handling
-- Menu navigation tracking
-- Session timeouts with JWT token management
+- Session management
+- Error recovery
+- Comprehensive audit logging
 
 ## Architecture
 
-The state management system is implemented in `app/core/utils/redis_atomic.py` using the AtomicStateManager class, which provides:
+### 1. Core Components
 
-- Atomic operations using Redis WATCH/MULTI/EXEC
-- Version tracking and conflict detection
-- Automatic retries for concurrent modifications
-- JWT token management with 5-minute expiry
-- Preservation of critical fields during cleanup
+- **AtomicStateManager** (redis_atomic.py)
+  - Handles atomic Redis operations
+  - Manages version tracking
+  - Handles concurrent modifications
+  - Manages TTL and cleanup
 
-## Core Features
+- **StateValidator** (state_validator.py)
+  - Validates state structure
+  - Checks field types
+  - Ensures critical field preservation
+  - Provides validation results
 
-### Atomic State Operations
+- **FlowStateManager** (flow_state.py)
+  - Manages flow state transitions
+  - Handles validation state
+  - Provides rollback mechanisms
+  - Preserves context during transitions
 
-```python
-class AtomicStateManager:
-    """Manages atomic state operations with Redis"""
+- **FlowAuditLogger** (flow_audit.py)
+  - Logs flow events and transitions
+  - Tracks validation results
+  - Provides error context
+  - Enables state recovery
 
-    def atomic_update(self, key_prefix: str, state: Dict[str, Any], ttl: int) -> Tuple[bool, Optional[str]]:
-        """Atomically update state with optimistic locking"""
+### 2. State Structure
 
-    def atomic_get(self, key_prefix: str, include_metadata: bool = True) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-        """Atomically get state and metadata"""
+Core state includes:
+- JWT token (5-minute expiry)
+- User profile and accounts
+- Flow state and context
+- Version tracking
+- Validation state
+- Audit trail data
 
-    def atomic_cleanup(self, key_prefix: str, preserve_fields: Optional[set] = None) -> Tuple[bool, Optional[str]]:
-        """Atomically cleanup state while preserving fields"""
-```
+Flow state includes:
+- Current step and data
+- Validation context
+- Previous state for rollback
+- Version information
+- Error recovery context
 
-### State Structure
-```python
-{
-    "jwt_token": str,          # 5-minute expiry token
-    "profile": {
-        "member": {...},       # Member details
-        "accounts": [...]      # Account information
-    },
-    "current_account": {...},  # Active account context
-    "_version": int,          # State version for conflict detection
-    "_last_updated": str      # ISO timestamp of last update
-}
-```
+### 3. Key Features
 
-### State Flow
-1. **Initial Contact**
-   - Create new state with version tracking
-   - Initialize user context
-   - Set JWT token with 5-minute expiry
+1. **Version Management**
+   - Incremental version tracking
+   - Conflict detection
+   - Automatic retries
+   - Version preservation
 
-2. **Menu Navigation**
-   - Atomic updates with optimistic locking
-   - Automatic retry on concurrent modifications
-   - Preserve critical fields during updates
+2. **TTL Management**
+   - 5-minute session timeout
+   - Aligned TTLs for related data
+   - Automatic cleanup
+   - Critical field preservation
 
-3. **Form Handling**
-   - Atomic state transitions
-   - Validation before state changes
-   - Cleanup of abandoned forms
+3. **Error Recovery**
+   - Automatic state recovery
+   - Last valid state restoration
+   - Validation preservation
+   - Error context tracking
+   - Recovery attempt logging
 
-4. **Transaction Context**
-   - Atomic transaction state updates
-   - Version-tracked changes
-   - Automatic cleanup of expired states
+4. **Audit Logging**
+   - Flow event tracking
+   - State transition history
+   - Validation result logging
+   - Error scenario documentation
+   - Recovery attempt tracking
 
 ## Redis Configuration
 
-VimbisoPay uses a dedicated Redis instance (`REDIS_STATE_URL`) for state management:
-- Optimized for atomic operations
-- Configured for persistence
+Uses dedicated Redis instance with:
+- Atomic operations support
+- Persistence enabled
+- Memory limits
 - Independent scaling
 
-### Key Structure
-- State: `{key_prefix}` (e.g., "user:123")
-- Metadata: `{key_prefix}_stage`, `{key_prefix}_option`, `{key_prefix}_direction`
+## Best Practices
 
-### Configuration
-```yaml
-redis-state:
-  command: >
-    redis-server
-    --maxmemory 256mb
-    --maxmemory-policy allkeys-lru
-    --appendonly yes
-    --appendfsync everysec
-```
+1. **State Updates**
+   - Always use atomic operations
+   - Validate before updates
+   - Preserve critical fields
+   - Handle concurrent access
+   - Log state transitions
 
-### Timeouts
-- JWT Token: 5 minutes (refreshed on use)
-- State TTL: 5 minutes (aligned with JWT)
-- Metadata: 5 minutes
+2. **Flow Integration**
+   - Use FlowStateManager
+   - Track validation state
+   - Handle transitions properly
+   - Implement proper rollback
+   - Maintain audit trail
 
-## Error Recovery
+3. **Error Handling**
+   - Use structured errors
+   - Preserve context
+   - Log error details
+   - Clean up properly
+   - Enable automatic recovery
 
-1. **Concurrent Modifications**
-   - Optimistic locking with WATCH
-   - Automatic retry (max 3 attempts)
-   - Version conflict detection
-
-2. **Failed Operations**
-   - Atomic rollback
-   - Detailed error logging
-   - Preserved critical fields
-
-## Security
-
-- Atomic operations prevent race conditions
-- Short-lived JWT tokens (5 minutes)
-- Version tracking prevents stale updates
-- Automatic cleanup of expired states
-- Isolated Redis instance
+4. **Audit Trail**
+   - Log all state transitions
+   - Track validation results
+   - Document error scenarios
+   - Monitor recovery attempts
+   - Maintain debugging context
 
 For more details on:
-- WhatsApp integration: [WhatsApp](whatsapp.md)
-- API integration: [API Integration](api-integration.md)
-- Redis configuration: [Redis Management](../redis-memory-management.md)
+- Flow Framework: [Flow Framework](flow-framework.md)
+- Redis Management: [Redis Management](redis-memory-management.md)
+- Security: [Security](security.md)

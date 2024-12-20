@@ -3,8 +3,10 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Union
+from core.utils.flow_audit import FlowAuditLogger
 
 logger = logging.getLogger(__name__)
+audit = FlowAuditLogger()
 
 
 class StepType(Enum):
@@ -118,12 +120,40 @@ class Flow:
             }
         }
 
+        # Log flow event at start of processing
+        audit.log_flow_event(
+            self.id,
+            "step_start",
+            step.id,
+            self._previous_data,
+            "in_progress"
+        )
+
         # Validate and transform input
-        if not step.validate(input_data):
+        validation_result = step.validate(input_data)
+        audit.log_validation_event(
+            self.id,
+            step.id,
+            input_data,
+            validation_result
+        )
+
+        if not validation_result:
             from services.whatsapp.types import WhatsAppMessage
             # Restore previous state on validation failure, preserving validation context
             self.data = {k: v for k, v in self._previous_data.items()
                          if not k.startswith('_')}
+
+            # Log validation failure
+            audit.log_flow_event(
+                self.id,
+                "validation_error",
+                step.id,
+                self.data,
+                "failure",
+                "Invalid input"
+            )
+
             if step.id == "amount":
                 return WhatsAppMessage.create_text(
                     self.data.get("mobile_number", ""),
@@ -163,6 +193,14 @@ class Flow:
                     "transformed": transformed_data
                 }
 
+            # Log successful state transition
+            audit.log_state_transition(
+                self.id,
+                self._previous_data,
+                self.data,
+                "success"
+            )
+
             # Complete or get next message
             next_message = (
                 self.complete()
@@ -175,9 +213,28 @@ class Flow:
             return next_message
 
         except Exception as e:
-            logger.error(f"Process error in {step.id}: {str(e)}")
-            # Restore previous state on error
-            self.data = self._previous_data
+            error_msg = f"Process error in {step.id}: {str(e)}"
+            logger.error(error_msg)
+
+            # Log error event
+            audit.log_flow_event(
+                self.id,
+                "process_error",
+                step.id,
+                self._previous_data,
+                "failure",
+                error_msg
+            )
+
+            # Attempt recovery from last valid state
+            last_valid_state = audit.get_last_valid_state(self.id)
+            if last_valid_state:
+                self.data = last_valid_state
+                logger.info(f"Recovered to last valid state for flow {self.id}")
+            else:
+                # Fallback to previous state if recovery fails
+                self.data = self._previous_data
+
             from services.whatsapp.types import WhatsAppMessage
             return WhatsAppMessage.create_text(
                 self.data.get("mobile_number", ""),
@@ -186,16 +243,33 @@ class Flow:
 
     def complete(self) -> Optional[Dict[str, Any]]:
         """Handle flow completion - override in subclasses"""
+        # Log flow completion
+        audit.log_flow_event(
+            self.id,
+            "complete",
+            None,
+            self.data,
+            "success"
+        )
         return None
 
     def get_state(self) -> Dict[str, Any]:
         """Get flow state"""
-        return {
+        state = {
             "id": self.id,
             "step": self.current_index,
             "data": self.data,
             "_previous_data": self._previous_data  # Include previous state
         }
+        # Log state retrieval
+        audit.log_flow_event(
+            self.id,
+            "get_state",
+            None,
+            state,
+            "success"
+        )
+        return state
 
     def set_state(self, state: Dict[str, Any]) -> None:
         """Set flow state while preserving existing data"""
@@ -205,6 +279,8 @@ class Flow:
             logger.debug(f"[Flow {self.id}] Current data: {self.data}")
             logger.debug(f"[Flow {self.id}] Current step: {self.current_index}")
             logger.debug(f"[Flow {self.id}] New state to merge: {state}")
+
+            old_state = self.get_state()
 
             # Merge new data with existing data
             if "data" in state:
@@ -228,6 +304,14 @@ class Flow:
             old_step = self.current_index
             self.current_index = state.get("step", 0)
             logger.debug(f"[Flow {self.id}] Step transition: {old_step} -> {self.current_index}")
+
+            # Log state transition
+            audit.log_state_transition(
+                self.id,
+                old_state,
+                self.get_state(),
+                "success"
+            )
 
             # Log final state summary
             logger.debug(f"[Flow {self.id}] State update complete")
