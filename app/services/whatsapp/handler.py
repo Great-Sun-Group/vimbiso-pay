@@ -300,7 +300,12 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
     def _process_message(self) -> WhatsAppMessage:
         """Process incoming message"""
         try:
-            # Handle greeting first
+            # Check for active flow first
+            flow_data = self.user.state.state.get("flow_data") if self.user.state.state else None
+            if flow_data:
+                return self._continue_flow(flow_data)
+
+            # Handle greeting
             if (self.message_type == "text" and
                     self.body.lower() in self.GREETING_KEYWORDS):
                 # Clear any existing flow data
@@ -312,16 +317,15 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                         "current_account": current_state.get("current_account"),
                         "jwt_token": current_state.get("jwt_token"),
                         "authenticated": current_state.get("authenticated", False),
-                        "member_id": current_state.get("member_id"),  # Preserve member_id
-                        "account_id": current_state.get("account_id")  # Preserve account_id
+                        "member_id": current_state.get("member_id"),
+                        "account_id": current_state.get("account_id")
                     }, "clear_flow_greeting")
                 return self.auth_handler.handle_action_menu(login=True)
 
-            # Get action first since we need it for both paths
+            # Get action and check if it's a menu action
             action = self._get_action()
             logger.info(f"Processing action: {action}")
 
-            # Check if this is a menu action that should start a new flow
             if action in self.FLOW_TYPES:
                 # First clean up any existing state while preserving critical fields
                 if self.user.state.state:
@@ -363,12 +367,7 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 flow_type, flow_class = self.FLOW_TYPES[action]
                 return self._start_flow(flow_type, flow_class)
 
-            # Otherwise check for active flow
-            flow_data = self.user.state.state.get("flow_data") if self.user.state.state else None
-            if flow_data:
-                return self._continue_flow(flow_data)
-
-            # Default to menu
+            # If no active flow and not a menu action, default to menu
             return self.auth_handler.handle_action_menu()
 
         except Exception as e:
