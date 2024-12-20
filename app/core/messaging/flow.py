@@ -65,12 +65,12 @@ class Step:
             if self.id == "amount" and isinstance(input_data, str):
                 parts = input_data.strip().split()
                 amount = parts[-1].replace(',', '')  # Handle comma-formatted numbers
-                currency = parts[0] if len(parts) > 1 else "USD"
+                denomination = parts[0] if len(parts) > 1 else "USD"
                 # Log the transformation
-                logger.debug(f"Transforming amount: {amount} {currency}")
+                logger.debug(f"Transforming amount: {amount} {denomination}")
                 return {
                     "amount": float(amount),
-                    "currency": currency
+                    "denomination": denomination
                 }
 
             return self.transformer(input_data) if self.transformer else input_data
@@ -134,8 +134,10 @@ class Flow:
         try:
             # Update flow data
             transformed_data = step.transform(input_data)
-            if isinstance(transformed_data, dict):
-                self.data.update(transformed_data)
+            # Store transformed data under step ID to preserve structure
+            if step.id == "amount":
+                # Store amount data under amount_denom key to better reflect its structure
+                self.data["amount_denom"] = transformed_data
             else:
                 self.data[step.id] = transformed_data
 

@@ -105,9 +105,10 @@ class CredexFlow(Flow):
 
     def _create_offer_confirmation(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Create offer confirmation message"""
+        amount_data = state.get("amount_denom", {})
         amount = self._format_amount(
-            state["amount"]["amount"],
-            state["amount"]["denomination"]
+            amount_data.get("amount", 0),
+            amount_data.get("denomination", "USD")
         )
         handle = state["handle"]["handle"]
         name = state["handle"]["name"]
@@ -369,17 +370,18 @@ class CredexFlow(Flow):
         """Complete offer flow"""
         try:
             # Prepare offer data in the format expected by the API
+            amount_data = self.data.get("amount_denom", {})
             offer_data = {
-                "authorizer_member_id": self.data["member_id"],
-                "issuerAccountID": self.data["account_id"],
-                "receiverAccountID": self.data["handle"]["account_id"],
-                "InitialAmount": self.data["amount"]["amount"],
-                "Denomination": self.data["amount"]["denomination"],
+                "authorizer_member_id": self.data.get("member_id"),
+                "issuerAccountID": self.data.get("account_id"),
+                "receiverAccountID": self.data.get("handle", {}).get("account_id"),
+                "InitialAmount": amount_data.get("amount", 0),
+                "Denomination": amount_data.get("denomination", "USD"),
                 "credexType": "PURCHASE",
                 "OFFERSorREQUESTS": "OFFERS",
                 "securedCredex": True,
-                "handle": self.data["handle"]["handle"],
-                "metadata": {"name": self.data["handle"]["name"]}
+                "handle": self.data.get("handle", {}).get("handle"),
+                "metadata": {"name": self.data.get("handle", {}).get("name")}
             }
 
             success, response = self.credex_service.offer_credex(offer_data)
