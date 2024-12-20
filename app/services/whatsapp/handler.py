@@ -108,6 +108,7 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
             # Log flow initialization
             logger.debug(f"Initialized new flow: {flow.id} at step {flow.current_index}")
+            logger.debug(f"Initial flow data: {flow.data}")
 
             # Add pending offers for cancel flow
             if flow_type == "cancel_credex":
@@ -123,6 +124,7 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 )]
 
                 flow.data["pending_offers"] = pending_offers
+                logger.debug(f"Added pending offers to flow: {pending_offers}")
 
             # Get initial message (already in WhatsAppMessage format)
             result = flow.current_step.get_message(flow.data)
@@ -142,11 +144,14 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 "account_id": current_state.get("account_id")  # Preserve account_id
             }
 
-            # Log state transition
+            # Log state transition with detailed flow info
             logger.debug(
-                "Flow state transition [START]:\n"
-                f"From: {current_state}\n"
-                f"To: {new_state}"
+                f"Flow state transition [START - {flow_type}]:\n"
+                f"Flow ID: {flow.id}\n"
+                f"Initial step: {flow.current_index}\n"
+                f"Initial data: {flow.data}\n"
+                f"From state: {current_state}\n"
+                f"To state: {new_state}"
             )
 
             self.user.state.update_state(new_state, "flow_start")
@@ -185,6 +190,11 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             flow_class = CredexFlow if "credex_" in flow_id else MemberFlow
             flow = flow_class(flow_type=flow_type, **kwargs)
             flow.credex_service = self.credex_service
+
+            # Log flow state before setting new state
+            logger.debug(f"Flow continuation - Type: {flow_type}, ID: {flow_id}")
+            logger.debug(f"Current flow data: {flow_data}")
+
             flow.set_state({
                 "id": flow_data["id"],
                 "step": flow_data["step"],
@@ -224,6 +234,10 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
             # Handle flow completion
             if not result or flow.current_index >= len(flow.steps):
+                # Log completion
+                logger.debug(f"Flow completed - Type: {flow_type}, ID: {flow_id}")
+                logger.debug(f"Final flow data: {flow.data}")
+
                 # Preserve critical fields when clearing flow data
                 current_state = self.user.state.state or {}
                 self.user.state.update_state({
@@ -269,11 +283,14 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 "account_id": current_state.get("account_id")  # Preserve account_id
             }
 
-            # Log state transition
+            # Log state transition with detailed flow info
             logger.debug(
-                "Flow state transition [CONTINUE]:\n"
-                f"From: {current_state}\n"
-                f"To: {new_state}"
+                f"Flow state transition [CONTINUE - {flow_type}]:\n"
+                f"Flow ID: {flow.id}\n"
+                f"Current step: {flow.current_index}\n"
+                f"Current data: {flow.data}\n"
+                f"From state: {current_state}\n"
+                f"To state: {new_state}"
             )
 
             self.user.state.update_state(new_state, "flow_continue")
@@ -353,11 +370,13 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                         "account_id": preserved_state.get("account_id")
                     }
 
-                    # Log state transition
+                    # Log state transition with cleanup details
                     logger.debug(
                         "Flow state transition [CLEAR]:\n"
-                        f"From: {current_state}\n"
-                        f"To: {new_state}"
+                        f"Action: {action}\n"
+                        f"Preserved fields: {preserve_fields}\n"
+                        f"From state: {current_state}\n"
+                        f"To state: {new_state}"
                     )
 
                     # Update state with preserved fields

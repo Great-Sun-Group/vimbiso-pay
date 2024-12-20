@@ -113,7 +113,35 @@ class Flow:
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
-        """Set flow state"""
+        """Set flow state while preserving existing data"""
         if isinstance(state, dict):
-            self.data = state.get("data", {})
+            # Log current state before changes
+            logger.debug(f"[Flow {self.id}] Setting flow state")
+            logger.debug(f"[Flow {self.id}] Current data: {self.data}")
+            logger.debug(f"[Flow {self.id}] Current step: {self.current_index}")
+            logger.debug(f"[Flow {self.id}] New state to merge: {state}")
+
+            # Merge new data with existing data
+            if "data" in state:
+                logger.debug(f"[Flow {self.id}] Merging data fields:")
+                logger.debug(f"[Flow {self.id}] - Existing data fields: {list(self.data.keys())}")
+                logger.debug(f"[Flow {self.id}] - New data fields: {list(state['data'].keys())}")
+
+                self.data = {
+                    **self.data,  # Keep existing data
+                    **state.get("data", {})  # Merge new data
+                }
+
+                logger.debug(f"[Flow {self.id}] - Merged data fields: {list(self.data.keys())}")
+                logger.debug(f"[Flow {self.id}] - Full merged data: {self.data}")
+
+            # Update step index
+            old_step = self.current_index
             self.current_index = state.get("step", 0)
+            logger.debug(f"[Flow {self.id}] Step transition: {old_step} -> {self.current_index}")
+
+            # Log final state summary
+            logger.debug(f"[Flow {self.id}] State update complete")
+            logger.debug(f"[Flow {self.id}] - Final step: {self.current_index}")
+            logger.debug(f"[Flow {self.id}] - Final data keys: {list(self.data.keys())}")
+            logger.debug(f"[Flow {self.id}] - Final data values: {self.data}")
