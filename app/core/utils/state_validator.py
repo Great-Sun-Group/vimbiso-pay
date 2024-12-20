@@ -21,13 +21,8 @@ class StateValidator:
     """Centralized state validation"""
 
     CRITICAL_FIELDS = {
-        "phone",
         "profile",
         "current_account",
-        "authorizer_member_id",
-        "issuer_member_id",
-        "sender_account",
-        "sender_account_id",
         "jwt_token"
     }
 
