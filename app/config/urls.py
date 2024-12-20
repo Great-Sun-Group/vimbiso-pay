@@ -12,11 +12,13 @@ from rest_framework.permissions import AllowAny
 from rest_framework import routers
 from core.utils.throttling import HealthCheckRateThrottle
 from core.utils.redis_atomic import AtomicStateManager
+import redis
 
 from api import views
 
 # Initialize Redis clients
-state_redis = AtomicStateManager(settings.REDIS_STATE_URL).redis
+state_redis_client = redis.from_url(settings.REDIS_STATE_URL)
+state_redis = AtomicStateManager(state_redis_client).redis
 
 # Create a router and register our viewsets with it
 router = routers.DefaultRouter()
