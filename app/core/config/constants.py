@@ -91,6 +91,30 @@ class CachedUserState:
                     "account_id": None
                 }
 
+            # Ensure critical fields are preserved
+            if state_data:
+                # Log current state for debugging
+                logger.debug(f"Current state before initialization: {state_data}")
+
+                # Ensure all required fields exist
+                state_data.setdefault("jwt_token", None)
+                state_data.setdefault("profile", {})
+                state_data.setdefault("current_account", None)
+                state_data.setdefault("flow_data", None)
+                state_data.setdefault("member_id", None)
+                state_data.setdefault("account_id", None)
+
+                # Preserve critical fields from existing state
+                if "_previous_state" in state_data:
+                    previous_state = state_data["_previous_state"]
+                    for field in ["jwt_token", "profile", "current_account", "member_id", "account_id"]:
+                        if field in previous_state and previous_state[field] is not None:
+                            state_data[field] = previous_state[field]
+
+                # Store current state as previous for next initialization
+                state_data["_previous_state"] = state_data.copy()
+                state_data["_previous_state"].pop("_previous_state", None)
+
             # Set instance variables
             self.state = state_data
             self.jwt_token = state_data.get("jwt_token")
@@ -115,16 +139,20 @@ class CachedUserState:
             if not success:
                 logger.error(f"Initial state update failed after {max_retries} retries: {last_error}")
 
+            # Log final state for debugging
+            logger.debug(f"Final state after initialization: {self.state}")
+
         except Exception as e:
             logger.exception(f"Error initializing state: {e}")
-            # Set safe defaults
+            # Set safe defaults while preserving any existing state
             self.state = {
                 "jwt_token": None,
                 "profile": {},
                 "current_account": None,
                 "flow_data": None,
                 "member_id": None,
-                "account_id": None
+                "account_id": None,
+                "_previous_state": {}  # Empty but present to maintain structure
             }
             self.jwt_token = None
 
