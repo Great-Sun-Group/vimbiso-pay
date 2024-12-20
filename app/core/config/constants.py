@@ -194,32 +194,58 @@ class CachedUserState:
 
     def cleanup_state(self, preserve_fields: set) -> Tuple[bool, Optional[str]]:
         """Clean up state while preserving specified fields"""
-        success, error = atomic_state.atomic_cleanup(
-            self.key_prefix,
-            preserve_fields=preserve_fields
-        )
+        try:
+            # Get current state first to ensure we have all fields to preserve
+            current_state = self.state.copy()
 
-        if success:
+            # Perform atomic cleanup while preserving fields
+            success, error = atomic_state.atomic_cleanup(
+                self.key_prefix,
+                preserve_fields=preserve_fields
+            )
+
+            if not success:
+                return False, error
+
             # Get preserved state after cleanup
             preserved_state, get_error = atomic_state.atomic_get(self.key_prefix)
             if get_error:
                 logger.error(f"Error getting preserved state: {get_error}")
                 preserved_state = {}
 
-            # Initialize with preserved fields
-            self.state = {
-                "jwt_token": preserved_state.get("jwt_token"),
-                "profile": preserved_state.get("profile", {}),
-                "current_account": preserved_state.get("current_account"),
-                "flow_data": None,
-                "member_id": preserved_state.get("member_id"),
-                "account_id": preserved_state.get("account_id")
+            # Initialize new state preserving all critical fields
+            new_state = {
+                "jwt_token": preserved_state.get("jwt_token") or current_state.get("jwt_token"),
+                "profile": preserved_state.get("profile", {}) or current_state.get("profile", {}),
+                "current_account": preserved_state.get("current_account") or current_state.get("current_account"),
+                "flow_data": None,  # Always reset flow data
+                "member_id": preserved_state.get("member_id") or current_state.get("member_id"),
+                "account_id": preserved_state.get("account_id") or current_state.get("account_id")
             }
+
+            # Update state atomically to ensure consistency
+            update_success, update_error = atomic_state.atomic_update(
+                key_prefix=self.key_prefix,
+                state=new_state,
+                ttl=ACTIVITY_TTL
+            )
+
+            if not update_success:
+                logger.error(f"Failed to update state after cleanup: {update_error}")
+                return False, update_error
+
+            # Update instance state
+            self.state = new_state
+            self.jwt_token = new_state.get("jwt_token")
 
             # Clear service instance
             self.credex_service = None
 
-        return success, error
+            return True, None
+
+        except Exception as e:
+            logger.error(f"Error in cleanup_state: {str(e)}")
+            return False, str(e)
 
     def reset_state(self) -> None:
         """Reset state with atomic cleanup"""
