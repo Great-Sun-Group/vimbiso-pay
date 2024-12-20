@@ -104,10 +104,16 @@ class CachedUserState:
                 state_data.setdefault("member_id", None)
                 state_data.setdefault("account_id", None)
 
-                # Preserve critical fields from existing state
-                if "_previous_state" in state_data:
-                    previous_state = state_data["_previous_state"]
-                    for field in ["jwt_token", "profile", "current_account", "member_id", "account_id"]:
+                # Preserve critical fields from both current and previous state
+                critical_fields = ["jwt_token", "profile", "current_account", "member_id", "account_id"]
+
+                # First try to get from current state
+                for field in critical_fields:
+                    if field in state_data and state_data[field] is not None:
+                        continue  # Keep current value
+                    # If not in current state, try previous state
+                    if "_previous_state" in state_data:
+                        previous_state = state_data["_previous_state"]
                         if field in previous_state and previous_state[field] is not None:
                             state_data[field] = previous_state[field]
 
