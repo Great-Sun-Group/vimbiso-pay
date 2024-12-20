@@ -5,10 +5,13 @@ from urllib.parse import urlparse
 
 import redis
 from core.utils.redis_atomic import AtomicStateManager
+from core.utils.state_validator import StateValidator
+from core.utils.flow_audit import FlowAuditLogger
 from django.conf import settings
 from services.credex.service import CredExService
 
 logger = logging.getLogger(__name__)
+audit = FlowAuditLogger()
 
 # Redis Configuration
 redis_url = urlparse(settings.REDIS_STATE_URL)
@@ -62,6 +65,15 @@ class CachedUserState:
         self.credex_service = None  # Store CredExService instance
 
         try:
+            # Log initialization attempt
+            audit.log_flow_event(
+                "user_state",
+                "initialization",
+                None,
+                {"mobile_number": user.mobile_number},
+                "in_progress"
+            )
+
             # Get initial state atomically with retry
             max_retries = 3
             retry_count = 0
@@ -78,6 +90,13 @@ class CachedUserState:
 
             if last_error:
                 logger.error(f"Error getting initial state after {max_retries} retries: {last_error}")
+                audit.log_flow_event(
+                    "user_state",
+                    "state_retrieval_error",
+                    None,
+                    {"error": last_error},
+                    "failure"
+                )
 
             # Initialize state with defaults if needed
             if not state_data:
@@ -90,6 +109,29 @@ class CachedUserState:
                     "account_id": None,
                     "authenticated": False
                 }
+
+            # Validate state structure
+            validation = StateValidator.validate_state(state_data)
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    "user_state",
+                    "state_validation_error",
+                    None,
+                    state_data,
+                    "failure",
+                    validation.error_message
+                )
+                # Attempt recovery from last valid state
+                last_valid = audit.get_last_valid_state("user_state")
+                if last_valid:
+                    state_data = last_valid
+                    audit.log_flow_event(
+                        "user_state",
+                        "state_recovery",
+                        None,
+                        state_data,
+                        "success"
+                    )
 
             # Ensure critical fields are preserved
             if state_data:
@@ -145,12 +187,35 @@ class CachedUserState:
 
             if not success:
                 logger.error(f"Initial state update failed after {max_retries} retries: {last_error}")
+                audit.log_flow_event(
+                    "user_state",
+                    "state_update_error",
+                    None,
+                    {"error": last_error},
+                    "failure"
+                )
+
+            # Log successful initialization
+            audit.log_flow_event(
+                "user_state",
+                "initialization",
+                None,
+                {"mobile_number": user.mobile_number},
+                "success"
+            )
 
             # Log final state for debugging
             logger.debug(f"Final state after initialization: {self.state}")
 
         except Exception as e:
             logger.exception(f"Error initializing state: {e}")
+            audit.log_flow_event(
+                "user_state",
+                "initialization_error",
+                None,
+                {"error": str(e)},
+                "failure"
+            )
             # Set safe defaults while preserving any existing state
             self.state = {
                 "jwt_token": None,
@@ -176,6 +241,15 @@ class CachedUserState:
     def update_state(self, state: Dict[str, Any], update_from: str) -> None:
         """Update state with atomic operations"""
         try:
+            # Log state update attempt
+            audit.log_flow_event(
+                "user_state",
+                "state_update_attempt",
+                None,
+                {"update_from": update_from},
+                "in_progress"
+            )
+
             # Get current state for merging
             new_state = self.state.copy()
 
@@ -236,6 +310,37 @@ class CachedUserState:
             if flow_data_cleared:
                 new_state["flow_data"] = None
 
+            # Validate new state
+            validation = StateValidator.validate_state(new_state)
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    "user_state",
+                    "state_validation_error",
+                    None,
+                    new_state,
+                    "failure",
+                    validation.error_message
+                )
+                # Attempt recovery from last valid state
+                last_valid = audit.get_last_valid_state("user_state")
+                if last_valid:
+                    new_state = last_valid
+                    audit.log_flow_event(
+                        "user_state",
+                        "state_recovery",
+                        None,
+                        new_state,
+                        "success"
+                    )
+
+            # Log state transition
+            audit.log_state_transition(
+                "user_state",
+                self.state,
+                new_state,
+                "success"
+            )
+
             # Update atomically
             success, error = atomic_state.atomic_update(
                 key_prefix=self.key_prefix,
@@ -244,16 +349,47 @@ class CachedUserState:
             )
             if not success:
                 logger.error(f"State update failed: {error}")
+                audit.log_flow_event(
+                    "user_state",
+                    "state_update_error",
+                    None,
+                    {"error": error},
+                    "failure"
+                )
                 return
 
             self.state = new_state
 
+            audit.log_flow_event(
+                "user_state",
+                "state_update_success",
+                None,
+                {"update_from": update_from},
+                "success"
+            )
+
         except Exception as e:
             logger.exception(f"Error in update_state: {e}")
+            audit.log_flow_event(
+                "user_state",
+                "state_update_error",
+                None,
+                {"error": str(e)},
+                "failure"
+            )
 
     def get_state(self, user) -> Dict[str, Any]:
         """Get current state with atomic operation"""
         try:
+            # Log state retrieval attempt
+            audit.log_flow_event(
+                "user_state",
+                "state_retrieval",
+                None,
+                {"mobile_number": user.mobile_number},
+                "in_progress"
+            )
+
             # Get state with retry
             max_retries = 3
             retry_count = 0
@@ -270,6 +406,13 @@ class CachedUserState:
 
             if last_error:
                 logger.error(f"Error getting state in get_state after {max_retries} retries: {last_error}")
+                audit.log_flow_event(
+                    "user_state",
+                    "state_retrieval_error",
+                    None,
+                    {"error": last_error},
+                    "failure"
+                )
 
             # If no state or error, initialize with current instance state
             if error or not state_data:
@@ -284,11 +427,50 @@ class CachedUserState:
                     "authenticated": self.state.get("authenticated", False)
                 }
 
+            # Validate state
+            validation = StateValidator.validate_state(state_data)
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    "user_state",
+                    "state_validation_error",
+                    None,
+                    state_data,
+                    "failure",
+                    validation.error_message
+                )
+                # Attempt recovery from last valid state
+                last_valid = audit.get_last_valid_state("user_state")
+                if last_valid:
+                    state_data = last_valid
+                    audit.log_flow_event(
+                        "user_state",
+                        "state_recovery",
+                        None,
+                        state_data,
+                        "success"
+                    )
+
             logger.debug(f"Current state in get_state: {state_data}")
+
+            audit.log_flow_event(
+                "user_state",
+                "state_retrieval",
+                None,
+                {"mobile_number": user.mobile_number},
+                "success"
+            )
+
             return state_data
 
         except Exception as e:
             logger.exception(f"Error in get_state: {e}")
+            audit.log_flow_event(
+                "user_state",
+                "state_retrieval_error",
+                None,
+                {"error": str(e)},
+                "failure"
+            )
             # Return safe defaults based on instance state
             return {
                 "jwt_token": self.jwt_token,
@@ -316,22 +498,59 @@ class CachedUserState:
 
     def set_jwt_token(self, jwt_token: str) -> None:
         """Set JWT token with atomic update"""
-        if jwt_token:
-            self.jwt_token = jwt_token
-            current_state = self.state.copy()
-            current_state["jwt_token"] = jwt_token
+        try:
+            # Log token update attempt
+            audit.log_flow_event(
+                "user_state",
+                "token_update",
+                None,
+                {"mobile_number": self.user.mobile_number},
+                "in_progress"
+            )
 
-            if "flow_data" in current_state and isinstance(current_state["flow_data"], dict):
-                current_state["flow_data"]["jwt_token"] = jwt_token
+            if jwt_token:
+                self.jwt_token = jwt_token
+                current_state = self.state.copy()
+                current_state["jwt_token"] = jwt_token
 
-            # Update service token directly without using property setter
-            self._update_service_token(jwt_token)
+                if "flow_data" in current_state and isinstance(current_state["flow_data"], dict):
+                    current_state["flow_data"]["jwt_token"] = jwt_token
 
-            self.update_state(current_state, "set_jwt_token")
+                # Update service token directly without using property setter
+                self._update_service_token(jwt_token)
+
+                self.update_state(current_state, "set_jwt_token")
+
+                audit.log_flow_event(
+                    "user_state",
+                    "token_update",
+                    None,
+                    {"mobile_number": self.user.mobile_number},
+                    "success"
+                )
+
+        except Exception as e:
+            logger.error(f"Error in set_jwt_token: {str(e)}")
+            audit.log_flow_event(
+                "user_state",
+                "token_update_error",
+                None,
+                {"error": str(e)},
+                "failure"
+            )
 
     def cleanup_state(self, preserve_fields: set) -> Tuple[bool, Optional[str]]:
         """Clean up state while preserving specified fields"""
         try:
+            # Log cleanup attempt
+            audit.log_flow_event(
+                "user_state",
+                "cleanup",
+                None,
+                {"preserve_fields": list(preserve_fields)},
+                "in_progress"
+            )
+
             # Get current state first to ensure we have all fields to preserve
             current_state = self.state.copy()
 
@@ -342,6 +561,13 @@ class CachedUserState:
             )
 
             if not success:
+                audit.log_flow_event(
+                    "user_state",
+                    "cleanup_error",
+                    None,
+                    {"error": error},
+                    "failure"
+                )
                 return False, error
 
             # Get preserved state after cleanup
@@ -361,6 +587,27 @@ class CachedUserState:
                 "authenticated": preserved_state.get("authenticated", False)
             }
 
+            # Validate new state
+            validation = StateValidator.validate_state(new_state)
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    "user_state",
+                    "state_validation_error",
+                    None,
+                    new_state,
+                    "failure",
+                    validation.error_message
+                )
+                return False, validation.error_message
+
+            # Log state transition
+            audit.log_state_transition(
+                "user_state",
+                current_state,
+                new_state,
+                "success"
+            )
+
             # Update state atomically to ensure consistency
             update_success, update_error = atomic_state.atomic_update(
                 key_prefix=self.key_prefix,
@@ -370,6 +617,13 @@ class CachedUserState:
 
             if not update_success:
                 logger.error(f"Failed to update state after cleanup: {update_error}")
+                audit.log_flow_event(
+                    "user_state",
+                    "cleanup_error",
+                    None,
+                    {"error": update_error},
+                    "failure"
+                )
                 return False, update_error
 
             # Update instance state
@@ -379,19 +633,70 @@ class CachedUserState:
             # Clear service instance
             self.credex_service = None
 
+            audit.log_flow_event(
+                "user_state",
+                "cleanup",
+                None,
+                {"preserve_fields": list(preserve_fields)},
+                "success"
+            )
+
             return True, None
 
         except Exception as e:
             logger.error(f"Error in cleanup_state: {str(e)}")
+            audit.log_flow_event(
+                "user_state",
+                "cleanup_error",
+                None,
+                {"error": str(e)},
+                "failure"
+            )
             return False, str(e)
 
     def reset_state(self) -> None:
         """Reset state with atomic cleanup"""
-        preserve_fields = {"jwt_token", "member_id", "account_id"}
-        success, error = self.cleanup_state(preserve_fields)
+        try:
+            # Log reset attempt
+            audit.log_flow_event(
+                "user_state",
+                "reset",
+                None,
+                {"mobile_number": self.user.mobile_number},
+                "in_progress"
+            )
 
-        if not success:
-            logger.error(f"State reset failed: {error}")
+            preserve_fields = {"jwt_token", "member_id", "account_id"}
+            success, error = self.cleanup_state(preserve_fields)
+
+            if not success:
+                logger.error(f"State reset failed: {error}")
+                audit.log_flow_event(
+                    "user_state",
+                    "reset_error",
+                    None,
+                    {"error": error},
+                    "failure"
+                )
+                return
+
+            audit.log_flow_event(
+                "user_state",
+                "reset",
+                None,
+                {"mobile_number": self.user.mobile_number},
+                "success"
+            )
+
+        except Exception as e:
+            logger.error(f"Error in reset_state: {str(e)}")
+            audit.log_flow_event(
+                "user_state",
+                "reset_error",
+                None,
+                {"error": str(e)},
+                "failure"
+            )
 
 
 class CachedUser:

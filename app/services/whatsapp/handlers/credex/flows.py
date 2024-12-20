@@ -4,9 +4,12 @@ import re
 from typing import Any, Dict, List, Union
 
 from core.messaging.flow import Flow, Step, StepType
-
+from core.utils.state_validator import StateValidator
+from core.utils.flow_audit import FlowAuditLogger
 from ...handlers.member.dashboard import DashboardFlow
 from .templates import CredexTemplates
+
+audit = FlowAuditLogger()
 
 logger = logging.getLogger(__name__)
 
@@ -285,15 +288,48 @@ class CredexFlow(Flow):
         """Update dashboard state"""
         try:
             if not hasattr(self.credex_service, '_parent_service'):
+                audit.log_flow_event(
+                    self.id,
+                    "dashboard_update_error",
+                    None,
+                    self.data,
+                    "failure",
+                    "Service not properly initialized"
+                )
                 return
 
             dashboard = response.get("data", {}).get("dashboard")
             if not dashboard:
+                audit.log_flow_event(
+                    self.id,
+                    "dashboard_update_error",
+                    None,
+                    self.data,
+                    "failure",
+                    "No dashboard data in response"
+                )
                 return
 
             user_state = self.credex_service._parent_service.user.state
             current_state = user_state.state
             current_profile = current_state.get("profile", {}).copy()
+
+            # Validate state before update
+            validation = StateValidator.validate_state(current_state)
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    self.id,
+                    "state_validation_error",
+                    None,
+                    current_state,
+                    "failure",
+                    validation.error_message
+                )
+                # Attempt recovery from last valid state
+                last_valid = audit.get_last_valid_state(self.id)
+                if last_valid:
+                    current_state = last_valid
+                    current_profile = current_state.get("profile", {}).copy()
 
             # Update profile with new dashboard data
             current_profile["dashboard"] = dashboard
@@ -310,11 +346,34 @@ class CredexFlow(Flow):
             )
 
             # Update state while preserving other critical fields
-            user_state.update_state({
+            new_state = {
                 "profile": current_profile,
                 "current_account": personal_account,
                 "jwt_token": current_state.get("jwt_token")
-            }, "dashboard_update")
+            }
+
+            # Validate new state before update
+            validation = StateValidator.validate_state(new_state)
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    self.id,
+                    "state_validation_error",
+                    None,
+                    new_state,
+                    "failure",
+                    validation.error_message
+                )
+                return
+
+            # Log state transition
+            audit.log_state_transition(
+                self.id,
+                current_state,
+                new_state,
+                "success"
+            )
+
+            user_state.update_state(new_state, "dashboard_update")
 
         except Exception as e:
             logger.error(f"Dashboard update error: {str(e)}")
@@ -322,7 +381,34 @@ class CredexFlow(Flow):
     def complete(self) -> Dict[str, Any]:
         """Complete the flow"""
         try:
+            # Validate final state
+            validation = StateValidator.validate_flow_state(
+                self.data,
+                {"mobile_number", "member_id"}
+            )
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    self.id,
+                    "completion_validation_error",
+                    None,
+                    self.data,
+                    "failure",
+                    validation.error_message
+                )
+                return CredexTemplates.create_error_message(
+                    self.data.get("mobile_number"),
+                    f"Invalid flow state: {validation.error_message}"
+                )
+
             if not self.credex_service:
+                audit.log_flow_event(
+                    self.id,
+                    "completion_error",
+                    None,
+                    self.data,
+                    "failure",
+                    "Service not initialized"
+                )
                 return CredexTemplates.create_error_message(
                     self.data.get("mobile_number"),
                     "Service not initialized"

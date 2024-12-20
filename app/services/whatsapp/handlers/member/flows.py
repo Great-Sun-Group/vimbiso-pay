@@ -5,9 +5,12 @@ from typing import Dict, Any, List
 
 from core.messaging.flow import Flow, Step, StepType
 from core.messaging.types import Message
+from core.utils.state_validator import StateValidator
+from core.utils.flow_audit import FlowAuditLogger
 from .templates import MemberTemplates
 
 logger = logging.getLogger(__name__)
+audit = FlowAuditLogger()
 
 
 class MemberFlow(Flow):
@@ -20,6 +23,15 @@ class MemberFlow(Flow):
         steps = self._create_steps()
         super().__init__(f"member_{flow_type}", steps)
         self.credex_service = None
+
+        # Log flow initialization
+        audit.log_flow_event(
+            self.id,
+            "initialization",
+            None,
+            {"flow_type": flow_type, **kwargs},
+            "success"
+        )
 
     def _create_steps(self) -> List[Step]:
         """Create flow steps based on type"""
@@ -70,21 +82,61 @@ class MemberFlow(Flow):
 
     def _validate_name(self, name: str) -> bool:
         """Validate name input"""
-        if not name:
+        try:
+            if not name:
+                return False
+            name = name.strip()
+            is_valid = (
+                3 <= len(name) <= 50 and
+                name.replace(" ", "").isalpha()
+            )
+
+            audit.log_validation_event(
+                self.id,
+                self.current_step.id,
+                name,
+                is_valid,
+                None if is_valid else "Invalid name format"
+            )
+            return is_valid
+
+        except Exception as e:
+            audit.log_validation_event(
+                self.id,
+                self.current_step.id,
+                name,
+                False,
+                str(e)
+            )
             return False
-        name = name.strip()
-        return (
-            3 <= len(name) <= 50 and
-            name.replace(" ", "").isalpha()
-        )
 
     def _validate_button_response(self, response: Dict[str, Any]) -> bool:
         """Validate button response"""
-        return (
-            response.get("type") == "interactive" and
-            response.get("interactive", {}).get("type") == "button_reply" and
-            response.get("interactive", {}).get("button_reply", {}).get("id") == "confirm_action"
-        )
+        try:
+            is_valid = (
+                response.get("type") == "interactive" and
+                response.get("interactive", {}).get("type") == "button_reply" and
+                response.get("interactive", {}).get("button_reply", {}).get("id") == "confirm_action"
+            )
+
+            audit.log_validation_event(
+                self.id,
+                self.current_step.id,
+                response,
+                is_valid,
+                None if is_valid else "Invalid button response"
+            )
+            return is_valid
+
+        except Exception as e:
+            audit.log_validation_event(
+                self.id,
+                self.current_step.id,
+                response,
+                False,
+                str(e)
+            )
+            return False
 
     def _create_confirmation_message(self, state: Dict[str, Any]) -> Message:
         """Create confirmation message based on flow type"""
@@ -113,14 +165,47 @@ class MemberFlow(Flow):
         """Update dashboard state"""
         try:
             if not hasattr(self.credex_service, '_parent_service'):
+                audit.log_flow_event(
+                    self.id,
+                    "dashboard_update_error",
+                    None,
+                    self.data,
+                    "failure",
+                    "Service not properly initialized"
+                )
                 return
 
             dashboard = response.get("data", {}).get("dashboard")
             if not dashboard:
+                audit.log_flow_event(
+                    self.id,
+                    "dashboard_update_error",
+                    None,
+                    self.data,
+                    "failure",
+                    "No dashboard data in response"
+                )
                 return
 
             user_state = self.credex_service._parent_service.user.state
             current_state = user_state.state
+
+            # Validate current state
+            validation = StateValidator.validate_state(current_state)
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    self.id,
+                    "state_validation_error",
+                    None,
+                    current_state,
+                    "failure",
+                    validation.error_message
+                )
+                # Attempt recovery from last valid state
+                last_valid = audit.get_last_valid_state(self.id)
+                if last_valid:
+                    current_state = last_valid
+
             current_profile = current_state.get("profile", {}).copy()
 
             # Preserve existing profile data
@@ -129,21 +214,82 @@ class MemberFlow(Flow):
             else:
                 current_profile["data"] = {"dashboard": dashboard}
 
-            # Update state while preserving critical fields
-            user_state.update_state({
+            # Prepare new state
+            new_state = {
                 "profile": current_profile,
                 "current_account": current_state.get("current_account"),
                 "jwt_token": current_state.get("jwt_token")
-            }, "dashboard_update")
+            }
+
+            # Validate new state
+            validation = StateValidator.validate_state(new_state)
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    self.id,
+                    "state_validation_error",
+                    None,
+                    new_state,
+                    "failure",
+                    validation.error_message
+                )
+                return
+
+            # Log state transition
+            audit.log_state_transition(
+                self.id,
+                current_state,
+                new_state,
+                "success"
+            )
+
+            user_state.update_state(new_state, "dashboard_update")
 
         except Exception as e:
             logger.error(f"Dashboard update error: {str(e)}")
+            audit.log_flow_event(
+                self.id,
+                "dashboard_update_error",
+                None,
+                self.data,
+                "failure",
+                str(e)
+            )
 
     def complete(self) -> Message:
         """Complete the flow"""
         try:
+            # Validate final state
+            validation = StateValidator.validate_flow_state(
+                self.data,
+                {"mobile_number"}
+            )
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    self.id,
+                    "completion_validation_error",
+                    None,
+                    self.data,
+                    "failure",
+                    validation.error_message
+                )
+                return MemberTemplates.create_error_message(
+                    self.data.get("mobile_number"),
+                    f"Invalid flow state: {validation.error_message}"
+                )
+
             if not self.credex_service:
-                raise ValueError("Service not initialized")
+                audit.log_flow_event(
+                    self.id,
+                    "completion_error",
+                    None,
+                    self.data,
+                    "failure",
+                    "Service not initialized"
+                )
+                return MemberTemplates.create_error_message(
+                    self.data.get("mobile_number"),
+                    "Service not initialized"
+                )
 
             if self.flow_type == "registration":
                 return self._complete_registration()
@@ -151,6 +297,14 @@ class MemberFlow(Flow):
 
         except Exception as e:
             logger.error(f"Flow completion error: {str(e)}")
+            audit.log_flow_event(
+                self.id,
+                "completion_error",
+                None,
+                self.data,
+                "failure",
+                str(e)
+            )
             return MemberTemplates.create_error_message(
                 self.data.get("mobile_number"),
                 str(e)
@@ -158,70 +312,158 @@ class MemberFlow(Flow):
 
     def _complete_registration(self) -> Message:
         """Complete registration flow"""
-        # Get registration data
-        first_name = self.data["first_name"]["first_name"]
-        last_name = self.data["last_name"]["last_name"]
-        phone = self.data.get("phone")
+        try:
+            # Get registration data
+            first_name = self.data["first_name"]["first_name"]
+            last_name = self.data["last_name"]["last_name"]
+            phone = self.data.get("phone")
 
-        if not phone:
-            raise ValueError("Missing phone number")
+            if not phone:
+                raise ValueError("Missing phone number")
 
-        # Register member
-        success, response = self.credex_service._auth.register_member({
-            "phone": phone,
-            "firstname": first_name,
-            "lastname": last_name,
-            "defaultDenom": "USD"
-        })
+            # Log registration attempt
+            audit.log_flow_event(
+                self.id,
+                "registration_attempt",
+                None,
+                {
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "phone": phone
+                },
+                "in_progress"
+            )
 
-        if not success:
-            raise ValueError(response.get("message", "Registration failed"))
+            # Register member
+            success, response = self.credex_service._auth.register_member({
+                "phone": phone,
+                "firstname": first_name,
+                "lastname": last_name,
+                "defaultDenom": "USD"
+            })
 
-        # Update dashboard state
-        self._update_dashboard(response)
+            if not success:
+                audit.log_flow_event(
+                    self.id,
+                    "registration_error",
+                    None,
+                    response,
+                    "failure",
+                    response.get("message", "Registration failed")
+                )
+                raise ValueError(response.get("message", "Registration failed"))
 
-        # Store JWT token
-        if token := (
-            response.get("data", {})
-            .get("action", {})
-            .get("details", {})
-            .get("token")
-        ):
-            if hasattr(self.credex_service, '_parent_service'):
-                self.credex_service._parent_service.user.state.update_state({
-                    "jwt_token": token,
-                    "authenticated": True
-                }, "registration_auth")
+            # Update dashboard state
+            self._update_dashboard(response)
 
-        return MemberTemplates.create_registration_success(
-            self.data.get("mobile_number"),
-            first_name
-        )
+            # Store JWT token
+            if token := (
+                response.get("data", {})
+                .get("action", {})
+                .get("details", {})
+                .get("token")
+            ):
+                if hasattr(self.credex_service, '_parent_service'):
+                    new_state = {
+                        "jwt_token": token,
+                        "authenticated": True
+                    }
+
+                    # Validate auth state
+                    validation = StateValidator.validate_state(new_state)
+                    if validation.is_valid:
+                        self.credex_service._parent_service.user.state.update_state(
+                            new_state,
+                            "registration_auth"
+                        )
+
+            audit.log_flow_event(
+                self.id,
+                "registration_complete",
+                None,
+                response,
+                "success"
+            )
+
+            return MemberTemplates.create_registration_success(
+                self.data.get("mobile_number"),
+                first_name
+            )
+
+        except Exception as e:
+            logger.error(f"Registration error: {str(e)}")
+            audit.log_flow_event(
+                self.id,
+                "registration_error",
+                None,
+                self.data,
+                "failure",
+                str(e)
+            )
+            raise
 
     def _complete_upgrade(self) -> Message:
         """Complete tier upgrade flow"""
-        account_id = self.data.get("account_id")
-        if not account_id:
-            raise ValueError("Missing account ID")
+        try:
+            account_id = self.data.get("account_id")
+            if not account_id:
+                raise ValueError("Missing account ID")
 
-        # Create recurring payment
-        success, response = self.credex_service._recurring.create_recurring({
-            "sourceAccountID": account_id,
-            "templateType": "MEMBERTIER_SUBSCRIPTION",
-            "payFrequency": 28,
-            "startDate": datetime.now().strftime("%Y-%m-%d"),
-            "memberTier": 3,
-            "securedCredex": True,
-            "amount": 1.00,
-            "denomination": "USD"
-        })
+            # Log upgrade attempt
+            audit.log_flow_event(
+                self.id,
+                "upgrade_attempt",
+                None,
+                {"account_id": account_id},
+                "in_progress"
+            )
 
-        if not success:
-            raise ValueError(response.get("message", "Failed to process subscription"))
+            # Create recurring payment
+            success, response = self.credex_service._recurring.create_recurring({
+                "sourceAccountID": account_id,
+                "templateType": "MEMBERTIER_SUBSCRIPTION",
+                "payFrequency": 28,
+                "startDate": datetime.now().strftime("%Y-%m-%d"),
+                "memberTier": 3,
+                "securedCredex": True,
+                "amount": 1.00,
+                "denomination": "USD"
+            })
 
-        # Update dashboard state
-        self._update_dashboard(response)
+            if not success:
+                audit.log_flow_event(
+                    self.id,
+                    "upgrade_error",
+                    None,
+                    response,
+                    "failure",
+                    response.get("message", "Failed to process subscription")
+                )
+                raise ValueError(response.get("message", "Failed to process subscription"))
 
-        return MemberTemplates.create_upgrade_success(
-            self.data.get("mobile_number")
-        )
+            # Update dashboard state
+            self._update_dashboard(response)
+
+            audit.log_flow_event(
+                self.id,
+                "upgrade_complete",
+                None,
+                response,
+                "success"
+            )
+
+            return MemberTemplates.create_upgrade_success(
+                self.data.get("mobile_number")
+            )
+
+        except Exception as e:
+            logger.error(f"Upgrade error: {str(e)}")
+            audit.log_flow_event(
+                self.id,
+                "upgrade_error",
+                None,
+                self.data,
+                "failure",
+                str(e)
+            )
+            raise

@@ -3,10 +3,13 @@ import logging
 from typing import Dict, Any, List, Optional
 
 from core.messaging.flow import Flow
+from core.utils.state_validator import StateValidator
+from core.utils.flow_audit import FlowAuditLogger
 from ...screens import format_account
 from ...types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
+audit = FlowAuditLogger()
 
 
 class DashboardFlow(Flow):
@@ -27,6 +30,14 @@ class DashboardFlow(Flow):
 
     def process_input(self, input_data: Any) -> Optional[str]:
         """Override to skip input processing for dashboard display"""
+        # Log flow event
+        audit.log_flow_event(
+            self.id,
+            "process_input",
+            None,
+            self.data,
+            "in_progress"
+        )
         return self.complete()
 
     def _get_selected_account(
@@ -37,6 +48,14 @@ class DashboardFlow(Flow):
         """Get selected account from dashboard data"""
         try:
             if not accounts:
+                audit.log_flow_event(
+                    self.id,
+                    "account_selection",
+                    None,
+                    {"accounts": accounts},
+                    "failure",
+                    "No accounts available"
+                )
                 return None
 
             # Try to find personal account first
@@ -46,17 +65,41 @@ class DashboardFlow(Flow):
                 None
             )
             if personal_account:
+                audit.log_flow_event(
+                    self.id,
+                    "account_selection",
+                    None,
+                    {"selected": personal_account},
+                    "success"
+                )
                 return personal_account
 
             # Fallback to mobile number match
-            return next(
+            mobile_account = next(
                 (account for account in accounts
                  if account.get("accountHandle") == mobile_number),
                 None
             )
 
+            audit.log_flow_event(
+                self.id,
+                "account_selection",
+                None,
+                {"selected": mobile_account},
+                "success" if mobile_account else "failure"
+            )
+            return mobile_account
+
         except Exception as e:
             logger.error(f"Account selection error: {str(e)}")
+            audit.log_flow_event(
+                self.id,
+                "account_selection",
+                None,
+                {"accounts": accounts},
+                "failure",
+                str(e)
+            )
             return None
 
     def _format_dashboard_data(
@@ -93,7 +136,7 @@ class DashboardFlow(Flow):
                     f"  ${remaining_usd} USD"
                 )
 
-            return {
+            formatted_data = {
                 "account_name": account_data.get("accountName", "Personal Account"),
                 "handle": account_data.get("accountHandle"),
                 "balances": balances,
@@ -105,8 +148,25 @@ class DashboardFlow(Flow):
                 "member_tier": member_tier
             }
 
+            audit.log_flow_event(
+                self.id,
+                "format_dashboard",
+                None,
+                formatted_data,
+                "success"
+            )
+            return formatted_data
+
         except Exception as e:
             logger.error(f"Dashboard formatting error: {str(e)}")
+            audit.log_flow_event(
+                self.id,
+                "format_dashboard",
+                None,
+                {"account": account},
+                "failure",
+                str(e)
+            )
             return {}
 
     def _build_menu_options(
@@ -146,10 +206,19 @@ class DashboardFlow(Flow):
                 "title": "⭐️ Upgrade Member Tier",
             })
 
-        return {
+        menu = {
             "button": "🕹️ Options",
             "sections": [{"title": "Options", "rows": options}]
         }
+
+        audit.log_flow_event(
+            self.id,
+            "build_menu",
+            None,
+            menu,
+            "success"
+        )
+        return menu
 
     def complete(self) -> Dict[str, Any]:
         """Complete flow and return formatted dashboard"""
@@ -164,6 +233,25 @@ class DashboardFlow(Flow):
             # Get current state
             user_state = self.credex_service._parent_service.user.state
             current_state = user_state.state
+
+            # Validate current state
+            validation = StateValidator.validate_state(current_state)
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    self.id,
+                    "state_validation_error",
+                    None,
+                    current_state,
+                    "failure",
+                    validation.error_message
+                )
+                # Attempt recovery from last valid state
+                last_valid = audit.get_last_valid_state(self.id)
+                if last_valid:
+                    current_state = last_valid
+                else:
+                    raise ValueError(f"Invalid state: {validation.error_message}")
+
             profile_data = current_state.get("profile", {})
             if not profile_data:
                 raise ValueError("No profile data found")
@@ -181,14 +269,41 @@ class DashboardFlow(Flow):
             if not selected_account:
                 raise ValueError("Personal account not found")
 
-            # Update state while preserving critical fields
-            user_state.update_state({
+            # Prepare new state
+            new_state = {
                 "current_account": selected_account,
                 "profile": profile_data,
                 "jwt_token": current_state.get("jwt_token"),
-                "member_id": current_state.get("member_id"),  # Preserve member_id
-                "account_id": current_state.get("account_id")  # Preserve account_id
-            }, "account_select")
+                "member_id": current_state.get("member_id"),
+                "account_id": current_state.get("account_id")
+            }
+
+            # Validate new state
+            validation = StateValidator.validate_state(new_state)
+            if not validation.is_valid:
+                audit.log_flow_event(
+                    self.id,
+                    "state_validation_error",
+                    None,
+                    new_state,
+                    "failure",
+                    validation.error_message
+                )
+                return WhatsAppMessage.create_text(
+                    self.data.get("mobile_number"),
+                    f"Failed to update state: {validation.error_message}"
+                )
+
+            # Log state transition
+            audit.log_state_transition(
+                self.id,
+                current_state,
+                new_state,
+                "success"
+            )
+
+            # Update state
+            user_state.update_state(new_state, "account_select")
 
             # Format dashboard data
             display_data = self._format_dashboard_data(selected_account, profile_data)
@@ -225,6 +340,14 @@ class DashboardFlow(Flow):
 
         except Exception as e:
             logger.error(f"Dashboard completion error: {str(e)}")
+            audit.log_flow_event(
+                self.id,
+                "completion_error",
+                None,
+                self.data,
+                "failure",
+                str(e)
+            )
             return WhatsAppMessage.create_text(
                 self.data.get("mobile_number"),
                 f"Failed to load dashboard: {str(e)}"
