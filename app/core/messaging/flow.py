@@ -26,6 +26,33 @@ class Step:
     def validate(self, input_data: Any) -> bool:
         """Validate step input"""
         try:
+            # Special validation for amount step
+            if self.id == "amount":
+                if isinstance(input_data, str):
+                    # Handle currency prefix
+                    parts = input_data.strip().split()
+                    amount = parts[-1] if len(parts) > 1 else parts[0]
+                    try:
+                        # Log the validation attempt
+                        logger.debug(f"Validating amount: {amount}")
+                        float(amount.replace(',', ''))  # Handle comma-formatted numbers
+                        return True
+                    except ValueError as e:
+                        logger.debug(f"Amount validation failed: {str(e)}")
+                        return False
+                elif isinstance(input_data, (int, float)):
+                    return True
+                return False
+
+            # Special validation for confirmation
+            if self.id == "confirm" and isinstance(input_data, dict):
+                interactive = input_data.get("interactive", {})
+                if (interactive.get("type") == "button_reply" and
+                        interactive.get("button_reply", {}).get("id") == "confirm_action"):
+                    return True
+                return False
+
+            # Use custom validator if provided
             return self.validator(input_data) if self.validator else True
         except Exception as e:
             logger.error(f"Validation error in {self.id}: {str(e)}")
@@ -34,6 +61,18 @@ class Step:
     def transform(self, input_data: Any) -> Any:
         """Transform step input"""
         try:
+            # Special transformation for amount
+            if self.id == "amount" and isinstance(input_data, str):
+                parts = input_data.strip().split()
+                amount = parts[-1].replace(',', '')  # Handle comma-formatted numbers
+                currency = parts[0] if len(parts) > 1 else "USD"
+                # Log the transformation
+                logger.debug(f"Transforming amount: {amount} {currency}")
+                return {
+                    "amount": float(amount),
+                    "currency": currency
+                }
+
             return self.transformer(input_data) if self.transformer else input_data
         except Exception as e:
             logger.error(f"Transform error in {self.id}: {str(e)}")
@@ -56,6 +95,7 @@ class Flow:
         self.steps = steps
         self.current_index = 0
         self.data: Dict[str, Any] = {}
+        self._previous_data: Dict[str, Any] = {}  # Store previous state for rollback
 
     @property
     def current_step(self) -> Optional[Step]:
@@ -68,9 +108,24 @@ class Flow:
         if not step:
             return None
 
+        # Store current state before modification
+        self._previous_data = self.data.copy()
+
         # Validate and transform input
         if not step.validate(input_data):
             from services.whatsapp.types import WhatsAppMessage
+            # Restore previous state on validation failure
+            self.data = self._previous_data
+            if step.id == "amount":
+                return WhatsAppMessage.create_text(
+                    self.data.get("mobile_number", ""),
+                    "Invalid amount format. Examples:\n"
+                    "100     (USD)\n"
+                    "USD 100\n"
+                    "ZWG 100\n"
+                    "XAU 1\n\n"
+                    "Please ensure you enter a valid number with an optional currency code."
+                )
             return WhatsAppMessage.create_text(
                 self.data.get("mobile_number", ""),
                 "Invalid input"
@@ -78,7 +133,11 @@ class Flow:
 
         try:
             # Update flow data
-            self.data[step.id] = step.transform(input_data)
+            transformed_data = step.transform(input_data)
+            if isinstance(transformed_data, dict):
+                self.data.update(transformed_data)
+            else:
+                self.data[step.id] = transformed_data
 
             # Move to next step
             self.current_index += 1
@@ -94,6 +153,8 @@ class Flow:
 
         except Exception as e:
             logger.error(f"Process error in {step.id}: {str(e)}")
+            # Restore previous state on error
+            self.data = self._previous_data
             from services.whatsapp.types import WhatsAppMessage
             return WhatsAppMessage.create_text(
                 self.data.get("mobile_number", ""),
@@ -109,7 +170,8 @@ class Flow:
         return {
             "id": self.id,
             "step": self.current_index,
-            "data": self.data
+            "data": self.data,
+            "_previous_data": self._previous_data  # Include previous state
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -131,6 +193,10 @@ class Flow:
                     **self.data,  # Keep existing data
                     **state.get("data", {})  # Merge new data
                 }
+
+                # Restore previous data if available
+                if "_previous_data" in state:
+                    self._previous_data = state["_previous_data"]
 
                 logger.debug(f"[Flow {self.id}] - Merged data fields: {list(self.data.keys())}")
                 logger.debug(f"[Flow {self.id}] - Full merged data: {self.data}")

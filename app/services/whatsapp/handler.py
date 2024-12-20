@@ -83,11 +83,17 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
     def _start_flow(self, flow_type: str, flow_class: Type[Flow], **kwargs) -> WhatsAppMessage:
         """Start a new flow"""
         try:
+            # Preserve existing state before starting new flow
+            current_state = self.user.state.state or {}
+            existing_flow_data = current_state.get("flow_data", {})
+
             # Start fresh flow
             flow = flow_class(flow_type=flow_type, **kwargs)
             flow.credex_service = self.credex_service
             flow.current_index = 0  # Ensure we start at first step
-            flow.data = {}  # Start with empty data
+
+            # Initialize with existing data if available
+            flow.data = existing_flow_data.get("data", {}) if existing_flow_data else {}
 
             # Get member and account IDs
             member_id, account_id = self._get_member_info()
@@ -204,9 +210,26 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             # Process input
             result = None
             if self.message_type == "interactive":
-                # Pass the original interactive message structure
                 interactive = self.message.get("interactive", {})
                 logger.debug(f"Processing interactive message: {interactive}")
+
+                # Special handling for confirm_action
+                if (interactive.get("type") == "button_reply" and
+                        interactive.get("button_reply", {}).get("id") == "confirm_action"):
+                    if flow.current_step and flow.current_step.id == "amount":
+                        try:
+                            amount = flow.data.get("amount")
+                            if not amount or not isinstance(amount, (int, float, str)):
+                                return WhatsAppMessage.create_text(
+                                    self.user.mobile_number,
+                                    "Invalid amount. Please enter a valid number."
+                                )
+                        except ValueError:
+                            return WhatsAppMessage.create_text(
+                                self.user.mobile_number,
+                                "Invalid amount format. Please try again."
+                            )
+
                 result = flow.process_input({
                     "type": "interactive",
                     "interactive": interactive
@@ -216,7 +239,7 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 logger.debug(f"Processing text message: {self.body}")
                 result = flow.process_input(self.body)
 
-            # Handle invalid input
+            # Enhanced invalid input handling
             if result == "Invalid input":
                 if flow.current_step and flow.current_step.id == "amount":
                     return WhatsAppMessage.create_text(
@@ -225,11 +248,12 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                         "100     (USD)\n"
                         "USD 100\n"
                         "ZWG 100\n"
-                        "XAU 1"
+                        "XAU 1\n\n"
+                        "Please ensure you enter a valid number with an optional currency code."
                     )
                 return WhatsAppMessage.create_text(
                     self.user.mobile_number,
-                    "Invalid input"
+                    "Invalid input. Please try again with a valid option."
                 )
 
             # Handle flow completion
