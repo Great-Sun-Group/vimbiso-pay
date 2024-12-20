@@ -173,31 +173,48 @@ class CachedUserState:
     def update_state(self, state: Dict[str, Any], update_from: str) -> None:
         """Update state with atomic operations"""
         try:
-            # Merge with existing state
+            # Get current state for merging
             new_state = self.state.copy()
 
-            # Preserve critical fields
+            # Track critical fields and their sources
             critical_fields = {
-                "jwt_token": self.jwt_token,
-                "member_id": new_state.get("member_id"),
-                "account_id": new_state.get("account_id")
+                "jwt_token": (self.jwt_token, "instance"),
+                "member_id": (new_state.get("member_id"), "current_state"),
+                "account_id": (new_state.get("account_id"), "current_state")
             }
 
-            # Handle flow_data specially - if it's explicitly set to None, respect that
+            # Handle flow data state transitions
             flow_data_cleared = "flow_data" in state and state["flow_data"] is None
+            current_flow_data = new_state.get("flow_data", {})
+            new_flow_data = state.get("flow_data", {})
 
-            # Update with new state
+            # Preserve flow validation state during transitions
+            if (not flow_data_cleared and isinstance(current_flow_data, dict)
+                    and isinstance(new_flow_data, dict)):
+                # Preserve validation state and previous data
+                if "_validation_state" in current_flow_data:
+                    new_flow_data["_validation_state"] = current_flow_data["_validation_state"]
+                if "_previous_data" in current_flow_data:
+                    new_flow_data["_previous_data"] = current_flow_data["_previous_data"]
+
+            # Update state while preserving structure
             new_state.update(state or {})
 
-            # Ensure critical fields are preserved
-            for field, value in critical_fields.items():
+            # Restore flow data with preserved validation state
+            if not flow_data_cleared:
+                new_state["flow_data"] = new_flow_data
+
+            # Ensure critical fields are preserved with proper context
+            for field, (value, source) in critical_fields.items():
                 if value is not None:
                     new_state[field] = value
-                    # Only update flow_data jwt_token if flow_data wasn't explicitly cleared
-                    if field == "jwt_token" and not flow_data_cleared and "flow_data" in new_state and isinstance(new_state["flow_data"], dict):
+                    # Update flow data token only if appropriate
+                    if (field == "jwt_token" and not flow_data_cleared
+                            and isinstance(new_state.get("flow_data"), dict)):
                         new_state["flow_data"]["jwt_token"] = value
+                        new_state["flow_data"]["_token_source"] = source
 
-            # Ensure flow_data stays None if it was explicitly cleared
+            # Clear flow data if explicitly requested
             if flow_data_cleared:
                 new_state["flow_data"] = None
 

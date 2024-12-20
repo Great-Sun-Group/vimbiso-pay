@@ -108,14 +108,22 @@ class Flow:
         if not step:
             return None
 
-        # Store current state before modification
-        self._previous_data = self.data.copy()
+        # Store complete current state before any modifications
+        self._previous_data = {
+            **self.data,
+            "_step": self.current_index,
+            "_validation_state": {
+                "step_id": step.id,
+                "input": input_data
+            }
+        }
 
         # Validate and transform input
         if not step.validate(input_data):
             from services.whatsapp.types import WhatsAppMessage
-            # Restore previous state on validation failure
-            self.data = self._previous_data
+            # Restore previous state on validation failure, preserving validation context
+            self.data = {k: v for k, v in self._previous_data.items()
+                         if not k.startswith('_')}
             if step.id == "amount":
                 return WhatsAppMessage.create_text(
                     self.data.get("mobile_number", ""),
@@ -141,17 +149,30 @@ class Flow:
             else:
                 self.data[step.id] = transformed_data
 
-            # Move to next step
+            # Move to next step only after successful transformation
             self.current_index += 1
 
+            # Store validation success in previous state
+            self._previous_data["_validation_success"] = True
+
+            # Update flow data with validation result
+            if step.id == "amount":
+                # Ensure amount data is properly structured
+                self.data["_amount_validation"] = {
+                    "original_input": input_data,
+                    "transformed": transformed_data
+                }
+
             # Complete or get next message
-            return (
+            next_message = (
                 self.complete()
                 if self.current_index >= len(self.steps)
                 else self.current_step.get_message(self.data)
                 if self.current_step
                 else None
             )
+
+            return next_message
 
         except Exception as e:
             logger.error(f"Process error in {step.id}: {str(e)}")

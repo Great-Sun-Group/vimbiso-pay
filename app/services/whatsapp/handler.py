@@ -292,27 +292,39 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
                 return result  # Already in WhatsAppMessage format
 
-            # Update flow state while preserving critical fields
+            # Get current state and flow state
             current_state = self.user.state.state or {}
+            flow_state = flow.get_state()
+
+            # Preserve previous flow data if it exists
+            if "_previous_data" in flow_state:
+                flow_state["_previous_data"] = {
+                    **flow_state.get("_previous_data", {}),
+                    **current_state.get("flow_data", {}).get("_previous_data", {})
+                }
+
+            # Create new state preserving all critical fields
             new_state = {
                 "flow_data": {
-                    **flow.get_state(),
+                    **flow_state,
                     "flow_type": flow_type,
-                    "kwargs": kwargs
+                    "kwargs": kwargs,
                 },
                 "profile": current_state.get("profile", {}),
                 "current_account": current_state.get("current_account"),
                 "jwt_token": current_state.get("jwt_token"),
-                "member_id": current_state.get("member_id"),  # Preserve member_id
-                "account_id": current_state.get("account_id")  # Preserve account_id
+                "member_id": current_state.get("member_id"),
+                "account_id": current_state.get("account_id"),
+                "_previous_state": current_state  # Store full previous state
             }
 
-            # Log state transition with detailed flow info
+            # Enhanced logging for state transitions
             logger.debug(
                 f"Flow state transition [CONTINUE - {flow_type}]:\n"
                 f"Flow ID: {flow.id}\n"
                 f"Current step: {flow.current_index}\n"
                 f"Current data: {flow.data}\n"
+                f"Previous flow data: {flow_state.get('_previous_data')}\n"
                 f"From state: {current_state}\n"
                 f"To state: {new_state}"
             )
