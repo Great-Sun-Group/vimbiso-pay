@@ -2,71 +2,86 @@
 
 ## Overview
 
-VimbisoPay uses Redis-based state management to handle WhatsApp conversations and user sessions. This enables:
+VimbisoPay uses atomic Redis-based state management to handle WhatsApp conversations and user sessions. This enables:
+- Atomic state operations with optimistic locking
 - Stateful conversations with context
 - Multi-step form handling
 - Menu navigation tracking
-- Session timeouts
-- Token management
+- Session timeouts with JWT token management
 
 ## Architecture
 
-```
-app/services/state/
-├── interface.py    # Service interface
-├── service.py     # Implementation
-├── exceptions.py  # Error handling
-└── config.py      # Configuration
-```
+The state management system is implemented in `app/core/utils/redis_atomic.py` using the AtomicStateManager class, which provides:
+
+- Atomic operations using Redis WATCH/MULTI/EXEC
+- Version tracking and conflict detection
+- Automatic retries for concurrent modifications
+- JWT token management with 5-minute expiry
+- Preservation of critical fields during cleanup
 
 ## Core Features
 
-### Conversation State
+### Atomic State Operations
+
+```python
+class AtomicStateManager:
+    """Manages atomic state operations with Redis"""
+
+    def atomic_update(self, key_prefix: str, state: Dict[str, Any], ttl: int) -> Tuple[bool, Optional[str]]:
+        """Atomically update state with optimistic locking"""
+
+    def atomic_get(self, key_prefix: str, include_metadata: bool = True) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """Atomically get state and metadata"""
+
+    def atomic_cleanup(self, key_prefix: str, preserve_fields: Optional[set] = None) -> Tuple[bool, Optional[str]]:
+        """Atomically cleanup state while preserving fields"""
+```
+
+### State Structure
 ```python
 {
-    "stage": "handle_action_menu",
-    "option": "handle_action_offer_credex",
-    "direction": "OUT",
+    "jwt_token": str,          # 5-minute expiry token
     "profile": {
-        "member": {...},
-        "accounts": [...]
+        "member": {...},       # Member details
+        "accounts": [...]      # Account information
     },
-    "current_account": {...}
+    "current_account": {...},  # Active account context
+    "_version": int,          # State version for conflict detection
+    "_last_updated": str      # ISO timestamp of last update
 }
 ```
 
 ### State Flow
 1. **Initial Contact**
-   - Create new state
-   - Set default menu stage
+   - Create new state with version tracking
    - Initialize user context
+   - Set JWT token with 5-minute expiry
 
 2. **Menu Navigation**
-   - Track selected options
-   - Store menu context
-   - Handle back navigation
+   - Atomic updates with optimistic locking
+   - Automatic retry on concurrent modifications
+   - Preserve critical fields during updates
 
 3. **Form Handling**
-   - Store partial submissions
-   - Validate inputs
-   - Track completion
+   - Atomic state transitions
+   - Validation before state changes
+   - Cleanup of abandoned forms
 
 4. **Transaction Context**
-   - Store offer details
-   - Track confirmation steps
-   - Handle timeouts
+   - Atomic transaction state updates
+   - Version-tracked changes
+   - Automatic cleanup of expired states
 
-## Redis State Management
+## Redis Configuration
 
-VimbisoPay uses a dedicated Redis instance (`REDIS_STATE_URL`) for state management, separate from the caching Redis instance. This separation provides:
-- Optimized persistence for conversation state
-- Dedicated resources for state operations
-- Independent scaling and monitoring
+VimbisoPay uses a dedicated Redis instance (`REDIS_STATE_URL`) for state management:
+- Optimized for atomic operations
+- Configured for persistence
+- Independent scaling
 
 ### Key Structure
-- User-specific: `user:{phone_number}:state`
-- Session-based: `session:{id}:data`
-- Token storage: `token:{phone_number}`
+- State: `{key_prefix}` (e.g., "user:123")
+- Metadata: `{key_prefix}_stage`, `{key_prefix}_option`, `{key_prefix}_direction`
 
 ### Configuration
 ```yaml
@@ -80,28 +95,29 @@ redis-state:
 ```
 
 ### Timeouts
-- Session: 5 minutes
-- Tokens: 30 minutes
-- Forms: 10 minutes
+- JWT Token: 5 minutes (refreshed on use)
+- State TTL: 5 minutes (aligned with JWT)
+- Metadata: 5 minutes
 
 ## Error Recovery
 
-1. **Session Expiry**
-   - Clear expired state
-   - Return to menu
-   - Preserve critical data
+1. **Concurrent Modifications**
+   - Optimistic locking with WATCH
+   - Automatic retry (max 3 attempts)
+   - Version conflict detection
 
 2. **Failed Operations**
-   - State rollback
-   - Error logging
-   - User notification
+   - Atomic rollback
+   - Detailed error logging
+   - Preserved critical fields
 
 ## Security
 
-- Automatic session cleanup
-- Secure token storage
-- Input validation
-- State isolation
+- Atomic operations prevent race conditions
+- Short-lived JWT tokens (5 minutes)
+- Version tracking prevents stale updates
+- Automatic cleanup of expired states
+- Isolated Redis instance
 
 For more details on:
 - WhatsApp integration: [WhatsApp](whatsapp.md)

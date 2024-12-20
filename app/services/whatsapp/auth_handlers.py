@@ -77,9 +77,11 @@ class AuthActionHandler(BaseActionHandler):
 
             account_id = personal_account.get("accountID")
 
-            # Update state with IDs and account data
+            # First set the JWT token to ensure proper propagation
+            self.service.user.state.set_jwt_token(jwt_token)
+
+            # Then update the rest of the state
             self.service.user.state.update_state({
-                "jwt_token": jwt_token,
                 "authenticated": True,
                 "profile": dashboard_data,
                 "flow_data": None,  # Clear any existing flow data
@@ -88,8 +90,8 @@ class AuthActionHandler(BaseActionHandler):
                 "current_account": personal_account  # Store full account data
             }, "login_success")
 
-            # Propagate token
-            self.service.credex_service.jwt_token = jwt_token
+            # Ensure token is propagated to credex service
+            self.service.credex_service = self.service.user.state.get_or_create_credex_service()
             return True, dashboard_data
 
         except Exception as e:

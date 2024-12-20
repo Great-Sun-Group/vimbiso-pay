@@ -87,7 +87,8 @@ class CachedUserState:
                     "current_account": None,
                     "flow_data": None,
                     "member_id": None,
-                    "account_id": None
+                    "account_id": None,
+                    "authenticated": False
                 }
 
             # Ensure critical fields are preserved
@@ -102,9 +103,10 @@ class CachedUserState:
                 state_data.setdefault("flow_data", None)
                 state_data.setdefault("member_id", None)
                 state_data.setdefault("account_id", None)
+                state_data.setdefault("authenticated", False)
 
                 # Preserve critical fields from both current and previous state
-                critical_fields = ["jwt_token", "profile", "current_account", "member_id", "account_id"]
+                critical_fields = ["jwt_token", "profile", "current_account", "member_id", "account_id", "authenticated"]
 
                 # First try to get from current state
                 for field in critical_fields:
@@ -157,6 +159,7 @@ class CachedUserState:
                 "flow_data": None,
                 "member_id": None,
                 "account_id": None,
+                "authenticated": False,
                 "_previous_state": {}  # Empty but present to maintain structure
             }
             self.jwt_token = None
@@ -176,12 +179,37 @@ class CachedUserState:
             # Get current state for merging
             new_state = self.state.copy()
 
-            # Track critical fields and their sources
+            # Track critical fields and their sources with priority
             critical_fields = {
-                "jwt_token": (self.jwt_token, "instance"),
-                "member_id": (new_state.get("member_id"), "current_state"),
-                "account_id": (new_state.get("account_id"), "current_state")
+                "jwt_token": [
+                    (state.get("jwt_token"), "update"),
+                    (self.jwt_token, "instance"),
+                    (new_state.get("jwt_token"), "current_state")
+                ],
+                "member_id": [
+                    (state.get("member_id"), "update"),
+                    (new_state.get("member_id"), "current_state")
+                ],
+                "account_id": [
+                    (state.get("account_id"), "update"),
+                    (new_state.get("account_id"), "current_state")
+                ],
+                "authenticated": [
+                    (state.get("authenticated"), "update"),
+                    (new_state.get("authenticated"), "current_state")
+                ]
             }
+
+            # Update critical fields based on priority
+            for field, sources in critical_fields.items():
+                for value, source in sources:
+                    if value is not None:
+                        new_state[field] = value
+                        if field == "jwt_token":
+                            self.jwt_token = value
+                            # Update service token if needed
+                            self._update_service_token(value)
+                        break
 
             # Handle flow data state transitions
             flow_data_cleared = "flow_data" in state and state["flow_data"] is None
@@ -203,16 +231,6 @@ class CachedUserState:
             # Restore flow data with preserved validation state
             if not flow_data_cleared:
                 new_state["flow_data"] = new_flow_data
-
-            # Ensure critical fields are preserved with proper context
-            for field, (value, source) in critical_fields.items():
-                if value is not None:
-                    new_state[field] = value
-                    # Update flow data token only if appropriate
-                    if (field == "jwt_token" and not flow_data_cleared
-                            and isinstance(new_state.get("flow_data"), dict)):
-                        new_state["flow_data"]["jwt_token"] = value
-                        new_state["flow_data"]["_token_source"] = source
 
             # Clear flow data if explicitly requested
             if flow_data_cleared:
@@ -262,7 +280,8 @@ class CachedUserState:
                     "current_account": self.state.get("current_account"),
                     "flow_data": self.state.get("flow_data"),
                     "member_id": self.state.get("member_id"),
-                    "account_id": self.state.get("account_id")
+                    "account_id": self.state.get("account_id"),
+                    "authenticated": self.state.get("authenticated", False)
                 }
 
             logger.debug(f"Current state in get_state: {state_data}")
@@ -277,7 +296,8 @@ class CachedUserState:
                 "current_account": self.state.get("current_account"),
                 "flow_data": self.state.get("flow_data"),
                 "member_id": self.state.get("member_id"),
-                "account_id": self.state.get("account_id")
+                "account_id": self.state.get("account_id"),
+                "authenticated": self.state.get("authenticated", False)
             }
 
     def _update_service_token(self, jwt_token: str) -> None:
@@ -337,7 +357,8 @@ class CachedUserState:
                 "current_account": preserved_state.get("current_account") or current_state.get("current_account"),
                 "flow_data": None,  # Always reset flow data
                 "member_id": preserved_state.get("member_id") or current_state.get("member_id"),
-                "account_id": preserved_state.get("account_id") or current_state.get("account_id")
+                "account_id": preserved_state.get("account_id") or current_state.get("account_id"),
+                "authenticated": preserved_state.get("authenticated", False)
             }
 
             # Update state atomically to ensure consistency
