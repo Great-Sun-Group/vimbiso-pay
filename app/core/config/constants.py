@@ -28,7 +28,6 @@ atomic_state = AtomicStateManager(state_redis)
 
 # TTL Constants
 ACTIVITY_TTL = 300  # 5 minutes
-ABSOLUTE_JWT_TTL = 21600  # 6 hours
 
 # Command Recognition
 GREETINGS = {

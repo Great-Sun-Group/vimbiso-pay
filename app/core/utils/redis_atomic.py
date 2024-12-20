@@ -25,7 +25,7 @@ class AtomicStateManager:
         max_retries: int = 3
     ) -> Tuple[bool, Optional[str]]:
         """
-        Atomically update multiple state components
+        Atomically update state components
         Returns (success, error_message)
         """
         retry_count = 0
@@ -51,7 +51,7 @@ class AtomicStateManager:
                     # Start transaction
                     pipe.multi()
 
-                    # Set main state with TTL
+                    # Store state with TTL
                     pipe.setex(
                         key_prefix,
                         ttl,
@@ -195,10 +195,10 @@ class AtomicStateManager:
                     preserved_state['_version'] = int(datetime.now().timestamp())
                     preserved_state['_last_updated'] = datetime.now().isoformat()
 
-                    # Set with same TTL as atomic_update (21600 - 6 hours)
+                    # Set with same TTL as atomic_update (300 - 5 minutes)
                     pipe.setex(
                         key_prefix,
-                        21600,  # Match ABSOLUTE_JWT_TTL from constants.py
+                        300,  # Match ACTIVITY_TTL from constants.py
                         json.dumps(preserved_state)
                     )
                 else:
