@@ -62,35 +62,71 @@ class CachedUserState:
         self.key_prefix = str(user.mobile_number)
         self.credex_service = None  # Store CredExService instance
 
-        # Get initial state atomically
-        state_data, error = atomic_state.atomic_get(self.key_prefix)
-        if error:
-            logger.error(f"Error getting initial state: {error}")
+        try:
+            # Get initial state atomically with retry
+            max_retries = 3
+            retry_count = 0
             state_data = None
+            last_error = None
 
-        # Initialize state
-        if not state_data:
-            state_data = {
+            while retry_count < max_retries:
+                state_data, error = atomic_state.atomic_get(self.key_prefix)
+                if not error:
+                    break
+                last_error = error
+                retry_count += 1
+                logger.warning(f"Retry {retry_count}/{max_retries} getting state: {error}")
+
+            if last_error:
+                logger.error(f"Error getting initial state after {max_retries} retries: {last_error}")
+
+            # Initialize state with defaults if needed
+            if not state_data:
+                state_data = {
+                    "jwt_token": None,
+                    "profile": {},
+                    "current_account": None,
+                    "flow_data": None,
+                    "member_id": None,
+                    "account_id": None
+                }
+
+            # Set instance variables
+            self.state = state_data
+            self.jwt_token = state_data.get("jwt_token")
+
+            # Update state atomically with retry
+            retry_count = 0
+            success = False
+            last_error = None
+
+            while retry_count < max_retries:
+                success, error = atomic_state.atomic_update(
+                    key_prefix=self.key_prefix,
+                    state=state_data,
+                    ttl=ACTIVITY_TTL
+                )
+                if success:
+                    break
+                last_error = error
+                retry_count += 1
+                logger.warning(f"Retry {retry_count}/{max_retries} updating state: {error}")
+
+            if not success:
+                logger.error(f"Initial state update failed after {max_retries} retries: {last_error}")
+
+        except Exception as e:
+            logger.exception(f"Error initializing state: {e}")
+            # Set safe defaults
+            self.state = {
                 "jwt_token": None,
                 "profile": {},
                 "current_account": None,
                 "flow_data": None,
-                "member_id": None,  # Added member_id
-                "account_id": None  # Added account_id
+                "member_id": None,
+                "account_id": None
             }
-
-        # Set instance variables
-        self.state = state_data
-        self.jwt_token = state_data.get("jwt_token")
-
-        # Update state atomically
-        success, error = atomic_state.atomic_update(
-            key_prefix=self.key_prefix,
-            state=state_data,
-            ttl=ACTIVITY_TTL
-        )
-        if not success:
-            logger.error(f"Initial state update failed: {error}")
+            self.jwt_token = None
 
     def get_or_create_credex_service(self) -> CredExService:
         """Get existing CredExService or create new one"""
@@ -149,19 +185,50 @@ class CachedUserState:
 
     def get_state(self, user) -> Dict[str, Any]:
         """Get current state with atomic operation"""
-        state_data, error = atomic_state.atomic_get(str(user.mobile_number))
+        try:
+            # Get state with retry
+            max_retries = 3
+            retry_count = 0
+            state_data = None
+            last_error = None
 
-        if error or not state_data:
-            state_data = {
+            while retry_count < max_retries:
+                state_data, error = atomic_state.atomic_get(str(user.mobile_number))
+                if not error:
+                    break
+                last_error = error
+                retry_count += 1
+                logger.warning(f"Retry {retry_count}/{max_retries} getting state in get_state: {error}")
+
+            if last_error:
+                logger.error(f"Error getting state in get_state after {max_retries} retries: {last_error}")
+
+            # If no state or error, initialize with current instance state
+            if error or not state_data:
+                logger.debug("Initializing new state in get_state with current instance state")
+                state_data = {
+                    "jwt_token": self.jwt_token,
+                    "profile": self.state.get("profile", {}),
+                    "current_account": self.state.get("current_account"),
+                    "flow_data": self.state.get("flow_data"),
+                    "member_id": self.state.get("member_id"),
+                    "account_id": self.state.get("account_id")
+                }
+
+            logger.debug(f"Current state in get_state: {state_data}")
+            return state_data
+
+        except Exception as e:
+            logger.exception(f"Error in get_state: {e}")
+            # Return safe defaults based on instance state
+            return {
                 "jwt_token": self.jwt_token,
-                "profile": {},
-                "current_account": None,
-                "flow_data": None,
-                "member_id": None,  # Added member_id
-                "account_id": None  # Added account_id
+                "profile": self.state.get("profile", {}),
+                "current_account": self.state.get("current_account"),
+                "flow_data": self.state.get("flow_data"),
+                "member_id": self.state.get("member_id"),
+                "account_id": self.state.get("account_id")
             }
-
-        return state_data
 
     def _update_service_token(self, jwt_token: str) -> None:
         """Update service token without triggering recursion"""
