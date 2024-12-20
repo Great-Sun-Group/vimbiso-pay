@@ -174,25 +174,38 @@ class AtomicStateManager:
             else:
                 preserved_state = {}
 
-            # Delete all keys atomically
+            # Start pipeline with optimistic locking
             pipe = self.redis.pipeline()
+            pipe.watch(key_prefix)
+
             try:
-                # Delete all related keys
+                # Start transaction
+                pipe.multi()
+
+                # Delete metadata keys
                 pipe.delete(
-                    key_prefix,
                     f"{key_prefix}_stage",
                     f"{key_prefix}_option",
                     f"{key_prefix}_direction"
                 )
 
-                # If we have preserved fields, set new minimal state
+                # If we have preserved fields, update main state
                 if preserved_state:
+                    # Add version and timestamp
+                    preserved_state['_version'] = int(datetime.now().timestamp())
+                    preserved_state['_last_updated'] = datetime.now().isoformat()
+
+                    # Set with same TTL as atomic_update (21600 - 6 hours)
                     pipe.setex(
                         key_prefix,
-                        300,  # 5 minute TTL for preserved data
+                        21600,  # Match ABSOLUTE_JWT_TTL from constants.py
                         json.dumps(preserved_state)
                     )
+                else:
+                    # If no fields to preserve, delete main state
+                    pipe.delete(key_prefix)
 
+                # Execute transaction
                 pipe.execute()
                 return True, None
 
