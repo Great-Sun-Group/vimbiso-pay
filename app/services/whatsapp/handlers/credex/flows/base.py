@@ -1,17 +1,16 @@
-"""Unified credex flow implementation"""
+"""Base credex flow implementation"""
 import logging
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Union
 
-from core.messaging.flow import Flow, Step, StepType
+from core.messaging.flow import Flow, Step
 from core.utils.flow_audit import FlowAuditLogger
 
-from .templates import CredexTemplates
-from .validator import CredexFlowValidator
+from ..templates import CredexTemplates
+from ..validator import CredexFlowValidator
 
 audit = FlowAuditLogger()
-
 logger = logging.getLogger(__name__)
 
 
@@ -32,57 +31,8 @@ class CredexFlow(Flow):
         self.credex_service = None
 
     def _create_steps(self) -> List[Step]:
-        """Create flow steps based on type"""
-        if self.flow_type == "offer":
-            return [
-                Step(
-                    id="amount",
-                    type=StepType.TEXT,
-                    message=self._get_amount_prompt,
-                    validator=self._validate_amount,
-                    transformer=self._transform_amount
-                ),
-                Step(
-                    id="handle",
-                    type=StepType.TEXT,
-                    message=lambda s: CredexTemplates.create_handle_prompt(
-                        self.data.get("mobile_number")
-                    ),
-                    validator=self._validate_handle,
-                    transformer=self._transform_handle
-                ),
-                Step(
-                    id="confirm",
-                    type=StepType.BUTTON,
-                    message=self._create_confirmation_message,
-                    validator=self._validate_button_response
-                )
-            ]
-        elif self.flow_type == "cancel_credex":
-            return [
-                Step(
-                    id="list",
-                    type=StepType.LIST,
-                    message=self._create_list_message,
-                    validator=lambda x: x.startswith("cancel_"),
-                    transformer=self._transform_cancel_selection
-                ),
-                Step(
-                    id="confirm",
-                    type=StepType.BUTTON,
-                    message=self._create_confirmation_message,
-                    validator=self._validate_button_response
-                )
-            ]
-        else:
-            return [
-                Step(
-                    id="confirm",
-                    type=StepType.BUTTON,
-                    message=self._create_confirmation_message,
-                    validator=self._validate_button_response
-                )
-            ]
+        """Create flow steps based on type - to be implemented by subclasses"""
+        raise NotImplementedError
 
     def _get_amount_prompt(self, _) -> Dict[str, Any]:
         """Get amount prompt message"""
@@ -398,144 +348,3 @@ class CredexFlow(Flow):
 
         except Exception as e:
             logger.error(f"Dashboard update error: {str(e)}")
-
-    def complete(self) -> Dict[str, Any]:
-        """Complete the flow"""
-        try:
-            # Validate final state
-            validation = self.validator.validate_flow_state(self.data)
-            if not validation.is_valid:
-                return {
-                    "success": False,
-                    "message": f"Invalid flow state: {validation.error_message}"
-                }
-
-            if not self.credex_service:
-                return {
-                    "success": False,
-                    "message": "Service not initialized"
-                }
-
-            handlers = {
-                "offer": self._complete_offer,
-                "cancel_credex": self._complete_cancel,
-                "accept": lambda: self._complete_action("accept"),
-                "decline": lambda: self._complete_action("decline")
-            }
-
-            return handlers[self.flow_type]()
-
-        except Exception as e:
-            logger.error(f"Flow completion error: {str(e)}")
-            return {
-                "success": False,
-                "message": str(e)
-            }
-
-    def _complete_cancel(self) -> Dict[str, Any]:
-        """Complete cancel flow"""
-        if self.current_step.id != "confirm":
-            return {
-                "success": False,
-                "message": "Confirmation required"
-            }
-
-        credex_id = self.data.get("credex_id")
-        if not credex_id:
-            return {
-                "success": False,
-                "message": "Missing credex ID"
-            }
-
-        success, response = self.credex_service.cancel_credex(credex_id)
-        if not success:
-            return {
-                "success": False,
-                "message": response.get("message", "Failed to cancel offer"),
-                "response": response
-            }
-
-        self._update_dashboard(response)
-        return {
-            "success": True,
-            "message": "Credex successfully cancelled",
-            "response": response
-        }
-
-    def _complete_offer(self) -> Dict[str, Any]:
-        """Complete offer flow"""
-        try:
-            # Prepare offer data
-            amount_data = self.data.get("amount_denom", {})
-            handle_data = self.data.get("handle", {})
-
-            if not amount_data or not handle_data:
-                return {
-                    "success": False,
-                    "message": "Missing required offer data"
-                }
-
-            # Make API call
-            success, response = self.credex_service.offer_credex({
-                "authorizer_member_id": self.data.get("member_id"),
-                "issuerAccountID": self.data.get("account_id"),
-                "receiverAccountID": handle_data.get("account_id"),
-                "InitialAmount": amount_data.get("amount", 0),
-                "Denomination": amount_data.get("denomination", "USD"),
-                "credexType": "PURCHASE",
-                "OFFERSorREQUESTS": "OFFERS",
-                "securedCredex": True,
-                "handle": handle_data.get("handle"),
-                "metadata": {"name": handle_data.get("name")}
-            })
-
-            # Return structured response with API result
-            if success:
-                self._update_dashboard(response)
-                return {
-                    "success": True,
-                    "message": "Credex successfully offered",
-                    "response": response
-                }
-
-            return {
-                "success": False,
-                "message": response.get("message", "Offer failed"),
-                "response": response
-            }
-
-        except Exception as e:
-            logger.error(f"Error completing offer: {str(e)}")
-            return {
-                "success": False,
-                "message": f"An error occurred: {str(e)}"
-            }
-
-    def _complete_action(self, action: str) -> Dict[str, Any]:
-        """Complete action flow"""
-        credex_id = self.kwargs.get("credex_id")
-        if not credex_id:
-            return {
-                "success": False,
-                "message": "Missing credex ID"
-            }
-
-        actions = {
-            "accept": self.credex_service.accept_credex,
-            "decline": self.credex_service.decline_credex
-        }
-
-        success, response = actions[action](credex_id)
-        if not success:
-            return {
-                "success": False,
-                "message": response.get("message", f"Failed to {action} offer"),
-                "response": response
-            }
-
-        self._update_dashboard(response)
-        return {
-            "success": True,
-            "message": f"Successfully {action}ed credex offer",
-            "response": response
-            }
