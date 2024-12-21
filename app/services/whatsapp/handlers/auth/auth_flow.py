@@ -35,7 +35,7 @@ class AuthFlow(BaseActionHandler):
                     text=REGISTER,
                     buttons=[{
                         "id": "start_registration",
-                        "title": "Provide your name to continue"
+                        "title": "Register"
                     }]
                 )
 
@@ -74,8 +74,9 @@ class AuthFlow(BaseActionHandler):
             )
 
             if not success:
-                if any(
-                    phrase in response.lower()
+                # Check if response is a dict with a message indicating new user
+                if isinstance(response, dict) and any(
+                    phrase in response.get("message", "").lower()
                     for phrase in ["new user", "new here", "member not found"]
                 ):
                     audit.log_flow_event(
@@ -87,14 +88,33 @@ class AuthFlow(BaseActionHandler):
                     )
                     return False, None
 
-                logger.error(f"Login failed: {response}")
+                error_msg = response.get("message", "") if isinstance(response, dict) else str(response)
+
+                # Handle server availability issues gracefully
+                if any(phrase in error_msg.lower() for phrase in ["temporarily unavailable", "technical difficulties"]):
+                    logger.error(f"Server availability issue: {error_msg}")
+                    audit.log_flow_event(
+                        "auth_handler",
+                        "server_error",
+                        None,
+                        {"mobile_number": self.service.user.mobile_number},
+                        "failure",
+                        error_msg
+                    )
+                    return False, {
+                        "message": "😔 We're having some technical difficulties connecting to our services. "
+                        "Please try again in a few minutes. Thank you for your patience!"
+                    }
+
+                # Handle other login failures
+                logger.error(f"Login failed: {error_msg}")
                 audit.log_flow_event(
                     "auth_handler",
                     "login_error",
                     None,
                     {"mobile_number": self.service.user.mobile_number},
                     "failure",
-                    str(response)
+                    error_msg
                 )
                 return False, None
 

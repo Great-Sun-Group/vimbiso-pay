@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 
 from core.messaging.flow import Step, StepType
 
+from ..templates import CredexTemplates
 from .base import CredexFlow
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ class OfferFlow(CredexFlow):
             Step(
                 id="handle",
                 type=StepType.TEXT,
-                message=lambda s: self.templates.create_handle_prompt(
+                message=lambda s: CredexTemplates.create_handle_prompt(
                     self.data.get("mobile_number")
                 ),
                 validator=self._validate_handle,

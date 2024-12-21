@@ -70,8 +70,10 @@ class BaseCredExService:
                 return "Recipient account not found. Please check the handle and try again."
             elif response.status_code == 403:
                 return "You don't have permission to perform this action."
+            elif response.status_code == 502:
+                return "The service is temporarily unavailable. Please try again in a few minutes."
             elif response.status_code >= 500:
-                return "Server error. Please try again later."
+                return "The service is experiencing technical difficulties. Please try again later."
 
             # Last resort - return raw response content if nothing else found
             if error_data:
