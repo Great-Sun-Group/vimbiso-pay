@@ -2,12 +2,12 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from core.utils.state_validator import StateValidator
 from core.utils.flow_audit import FlowAuditLogger
 from .base_handler import BaseActionHandler
 from .handlers.member.dashboard import DashboardFlow
 from .screens import REGISTER
 from .types import WhatsAppMessage
+from .auth_validator import AuthFlowValidator
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -15,6 +15,10 @@ audit = FlowAuditLogger()
 
 class AuthActionHandler(BaseActionHandler):
     """Handler for authentication and menu-related actions"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.validator = AuthFlowValidator()
 
     def handle_action_register(self, register: bool = False) -> WhatsAppMessage:
         """Handle registration flow"""
@@ -152,11 +156,12 @@ class AuthActionHandler(BaseActionHandler):
                 "member_id": member_id,
                 "account_id": account_id,
                 "current_account": personal_account,  # Store full account data
-                "jwt_token": jwt_token  # Include token in validation
+                "jwt_token": jwt_token,  # Include token in validation
+                "mobile_number": self.service.user.mobile_number
             }
 
-            # Validate new state
-            validation = StateValidator.validate_state(new_state)
+            # Validate login state specifically
+            validation = self.validator.validate_login_state(new_state)
             if not validation.is_valid:
                 audit.log_flow_event(
                     "auth_handler",
@@ -211,7 +216,7 @@ class AuthActionHandler(BaseActionHandler):
             current_state = self.service.user.state.state or {}
 
             # Validate current state
-            validation = StateValidator.validate_state(current_state)
+            validation = self.validator.validate_flow_state(current_state)
             if not validation.is_valid:
                 audit.log_flow_event(
                     "auth_handler",
@@ -232,11 +237,14 @@ class AuthActionHandler(BaseActionHandler):
                 "profile": current_state.get("profile", {}),
                 "current_account": current_state.get("current_account"),
                 "jwt_token": current_state.get("jwt_token"),
-                "authenticated": current_state.get("authenticated", False)
+                "member_id": current_state.get("member_id"),
+                "account_id": current_state.get("account_id"),
+                "authenticated": current_state.get("authenticated", False),
+                "mobile_number": self.service.user.mobile_number
             }
 
             # Validate new state
-            validation = StateValidator.validate_state(new_state)
+            validation = self.validator.validate_flow_state(new_state)
             if not validation.is_valid:
                 audit.log_flow_event(
                     "auth_handler",

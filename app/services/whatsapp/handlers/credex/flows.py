@@ -4,10 +4,10 @@ import re
 from typing import Any, Dict, List, Union
 
 from core.messaging.flow import Flow, Step, StepType
-from core.utils.state_validator import StateValidator
 from core.utils.flow_audit import FlowAuditLogger
 from ...handlers.member.dashboard import DashboardFlow
 from .templates import CredexTemplates
+from .validator import CredexFlowValidator
 
 audit = FlowAuditLogger()
 
@@ -25,6 +25,7 @@ class CredexFlow(Flow):
         """Initialize flow"""
         self.flow_type = flow_type
         self.kwargs = kwargs
+        self.validator = CredexFlowValidator()
         steps = self._create_steps()
         super().__init__(f"credex_{flow_type}", steps)
         self.credex_service = None
@@ -315,7 +316,7 @@ class CredexFlow(Flow):
             current_profile = current_state.get("profile", {}).copy()
 
             # Validate state before update
-            validation = StateValidator.validate_state(current_state)
+            validation = self.validator.validate_flow_state(current_state)
             if not validation.is_valid:
                 audit.log_flow_event(
                     self.id,
@@ -349,11 +350,13 @@ class CredexFlow(Flow):
             new_state = {
                 "profile": current_profile,
                 "current_account": personal_account,
-                "jwt_token": current_state.get("jwt_token")
+                "jwt_token": current_state.get("jwt_token"),
+                "member_id": current_state.get("member_id"),
+                "account_id": current_state.get("account_id")
             }
 
             # Validate new state before update
-            validation = StateValidator.validate_state(new_state)
+            validation = self.validator.validate_flow_state(new_state)
             if not validation.is_valid:
                 audit.log_flow_event(
                     self.id,
@@ -382,10 +385,7 @@ class CredexFlow(Flow):
         """Complete the flow"""
         try:
             # Validate final state
-            validation = StateValidator.validate_flow_state(
-                self.data,
-                {"mobile_number", "member_id"}
-            )
+            validation = self.validator.validate_flow_state(self.data)
             if not validation.is_valid:
                 audit.log_flow_event(
                     self.id,
