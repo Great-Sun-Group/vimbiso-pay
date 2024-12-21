@@ -333,11 +333,6 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             # Get current state
             current_state = self.user.state.state or {}
 
-            # Initialize flow
-            flow = flow_class(flow_type=flow_type, **kwargs)
-            flow.credex_service = self.credex_service
-            flow.current_index = 0
-
             # Get member and account IDs
             member_id, account_id = self._get_member_info()
             if not member_id or not account_id:
@@ -347,12 +342,16 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                     "Account not properly initialized. Please try sending 'hi' to restart."
                 )
 
-            # Set base flow data
-            flow.data = {
-                "phone": self.user.mobile_number,
-                "member_id": member_id,
-                "account_id": account_id,
-                "mobile_number": self.user.mobile_number
+            # Prepare initial state
+            initial_state = {
+                "id": f"{flow_type}_{member_id}",
+                "step": 0,
+                "data": {
+                    "phone": self.user.mobile_number,
+                    "member_id": member_id,
+                    "account_id": account_id,
+                    "mobile_number": self.user.mobile_number
+                }
             }
 
             # Add pending offers for cancel flow
@@ -368,7 +367,15 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                     offer.get(k) for k in ["credexID", "formattedInitialAmount", "counterpartyAccountName"]
                 )]
 
-                flow.data["pending_offers"] = pending_offers
+                initial_state["data"]["pending_offers"] = pending_offers
+
+            # Initialize flow with state
+            flow = flow_class(
+                flow_type=flow_type,
+                state=initial_state,
+                **kwargs
+            )
+            flow.credex_service = self.credex_service
 
             # Get initial message
             result = flow.current_step.get_message(flow.data)
@@ -462,24 +469,40 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             if not flow_type:
                 raise ValueError("Missing flow type")
 
-            # Initialize flow
+            # Initialize flow with state
             flow_id = flow_data.get("id", "")
             flow_class = CredexFlow if "credex_" in flow_id else MemberFlow
-            flow = flow_class(flow_type=flow_type, **kwargs)
-            flow.credex_service = self.credex_service
 
-            # Set flow state
-            flow.set_state({
+            # Create initial state
+            initial_state = {
                 "id": flow_data["id"],
                 "step": flow_data["step"],
                 "data": flow_data["data"]
-            })
+            }
 
-            # Process input using parsed message type and body
-            result = flow.process_input({
-                "type": self.message_type,
-                "body": self.body
-            })
+            # Initialize flow with state and ensure current_index matches step
+            flow = flow_class(
+                flow_type=flow_type,
+                state=initial_state,
+                **kwargs
+            )
+            flow.credex_service = self.credex_service
+            flow.current_index = flow_data["step"]  # Ensure we're on the correct step
+
+            # Extract input value based on message type
+            input_value = self.body
+            if self.message_type == "interactive":
+                interactive = self.message.get("interactive", {})
+                if interactive.get("type") == "button_reply":
+                    input_value = interactive.get("button_reply", {})
+                elif interactive.get("type") == "list_reply":
+                    input_value = interactive.get("list_reply", {})
+
+            # Log current step before processing
+            logger.debug(f"Processing input for step {flow.current_index}: {input_value}")
+
+            # Process input with proper value extraction
+            result = flow.process_input(input_value)
 
             # Handle invalid input
             if result == "Invalid input":
@@ -533,7 +556,11 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 )
 
             # Handle flow completion
-            if not result or flow.current_index >= len(flow.steps):
+            if not result:
+                return self.auth_handler.handle_action_menu()
+
+            # Check if we're at confirmation step
+            if flow.current_step and flow.current_step.id == "confirm":
                 audit.log_flow_event(
                     "bot_service",
                     "flow_complete",
@@ -545,42 +572,76 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 # Get current state
                 current_state = self.user.state.state or {}
 
-                # Prepare completion state
+                if "credex_" in flow_id:
+                    # Complete the flow and check result
+                    result = flow.complete()
+
+                    # Check if result indicates an error
+                    if isinstance(result, dict):
+                        if not result.get("success", False):
+                            # Return error message if API call failed
+                            return WhatsAppMessage.create_text(
+                                self.user.mobile_number,
+                                result.get("message", "Operation failed")
+                            )
+
+                        # Get API response for dashboard update
+                        api_response = result.get("response", {})
+                        if api_response:
+                            # Update dashboard with API response
+                            flow.credex_service._update_dashboard(api_response)
+
+                        # Prepare completion state after successful API call
+                        new_state = StateManager.prepare_state_update(
+                            current_state,
+                            clear_flow=True,
+                            mobile_number=self.user.mobile_number
+                        )
+
+                        # Update state for completion
+                        error = StateManager.validate_and_update(
+                            self.user.state,
+                            new_state,
+                            current_state,
+                            "flow_complete",
+                            self.user.mobile_number
+                        )
+                        if error:
+                            return error
+
+                        # Only show success message if API call succeeded
+                        dashboard = DashboardFlow(
+                            success_message=result.get("message")
+                        )
+                        dashboard.credex_service = self.credex_service
+                        dashboard.data = {"mobile_number": self.user.mobile_number}
+                        return dashboard.complete()
+
+                    # If not a dict response, treat as error
+                    return WhatsAppMessage.create_text(
+                        self.user.mobile_number,
+                        "Operation failed: Invalid response format"
+                    )
+
+                return result
+
+            # Not at confirmation step yet, continue flow
+            if flow.current_index >= len(flow.steps):
+                # Reset flow if we somehow got past all steps without confirmation
+                current_state = self.user.state.state or {}
                 new_state = StateManager.prepare_state_update(
                     current_state,
                     clear_flow=True,
                     mobile_number=self.user.mobile_number
                 )
-
-                # Update state for completion
-                error = StateManager.validate_and_update(
+                StateManager.validate_and_update(
                     self.user.state,
                     new_state,
                     current_state,
-                    "flow_complete",
+                    "flow_reset",
                     self.user.mobile_number
                 )
-                if error:
-                    return error
-
-                if not result:
-                    return self.auth_handler.handle_action_menu()
-
-                if "credex_" in flow_id:
-                    success_messages = {
-                        "offer": "Credex successfully offered",
-                        "accept": "Credex successfully accepted",
-                        "decline": "Credex successfully declined",
-                        "cancel_credex": "Credex successfully cancelled"
-                    }
-                    dashboard = DashboardFlow(
-                        success_message=success_messages.get(flow_type)
-                    )
-                    dashboard.credex_service = self.credex_service
-                    dashboard.data = {"mobile_number": self.user.mobile_number}
-                    return dashboard.complete()
-
-                return result
+                return self.auth_handler.handle_action_menu()
 
             # Get current state
             current_state = self.user.state.state or {}

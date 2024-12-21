@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Union
 from core.messaging.flow import Flow, Step, StepType
 from core.utils.flow_audit import FlowAuditLogger
 
-from ...handlers.member.dashboard import DashboardFlow
 from .templates import CredexTemplates
 from .validator import CredexFlowValidator
 
@@ -406,32 +405,16 @@ class CredexFlow(Flow):
             # Validate final state
             validation = self.validator.validate_flow_state(self.data)
             if not validation.is_valid:
-                audit.log_flow_event(
-                    self.id,
-                    "completion_validation_error",
-                    None,
-                    self.data,
-                    "failure",
-                    validation.error_message
-                )
-                return CredexTemplates.create_error_message(
-                    self.data.get("mobile_number"),
-                    f"Invalid flow state: {validation.error_message}"
-                )
+                return {
+                    "success": False,
+                    "message": f"Invalid flow state: {validation.error_message}"
+                }
 
             if not self.credex_service:
-                audit.log_flow_event(
-                    self.id,
-                    "completion_error",
-                    None,
-                    self.data,
-                    "failure",
-                    "Service not initialized"
-                )
-                return CredexTemplates.create_error_message(
-                    self.data.get("mobile_number"),
-                    "Service not initialized"
-                )
+                return {
+                    "success": False,
+                    "message": "Service not initialized"
+                }
 
             handlers = {
                 "offer": self._complete_offer,
@@ -444,77 +427,98 @@ class CredexFlow(Flow):
 
         except Exception as e:
             logger.error(f"Flow completion error: {str(e)}")
-            return CredexTemplates.create_error_message(
-                self.data.get("mobile_number"),
-                str(e)
-            )
+            return {
+                "success": False,
+                "message": str(e)
+            }
 
     def _complete_cancel(self) -> Dict[str, Any]:
         """Complete cancel flow"""
         if self.current_step.id != "confirm":
-            return self._create_list_message(self.data)
+            return {
+                "success": False,
+                "message": "Confirmation required"
+            }
 
         credex_id = self.data.get("credex_id")
         if not credex_id:
-            return CredexTemplates.create_error_message(
-                self.data.get("mobile_number"),
-                "Missing credex ID"
-            )
+            return {
+                "success": False,
+                "message": "Missing credex ID"
+            }
 
         success, response = self.credex_service.cancel_credex(credex_id)
         if not success:
-            return CredexTemplates.create_error_message(
-                self.data.get("mobile_number"),
-                response.get("message", "Failed to cancel offer")
-            )
+            return {
+                "success": False,
+                "message": response.get("message", "Failed to cancel offer"),
+                "response": response
+            }
 
         self._update_dashboard(response)
-        return self._show_dashboard("Credex successfully cancelled")
+        return {
+            "success": True,
+            "message": "Credex successfully cancelled",
+            "response": response
+        }
 
     def _complete_offer(self) -> Dict[str, Any]:
         """Complete offer flow"""
         try:
-            # Prepare offer data in the format expected by the API
+            # Prepare offer data
             amount_data = self.data.get("amount_denom", {})
-            offer_data = {
+            handle_data = self.data.get("handle", {})
+
+            if not amount_data or not handle_data:
+                return {
+                    "success": False,
+                    "message": "Missing required offer data"
+                }
+
+            # Make API call
+            success, response = self.credex_service.offer_credex({
                 "authorizer_member_id": self.data.get("member_id"),
                 "issuerAccountID": self.data.get("account_id"),
-                "receiverAccountID": self.data.get("handle", {}).get("account_id"),
+                "receiverAccountID": handle_data.get("account_id"),
                 "InitialAmount": amount_data.get("amount", 0),
                 "Denomination": amount_data.get("denomination", "USD"),
                 "credexType": "PURCHASE",
                 "OFFERSorREQUESTS": "OFFERS",
                 "securedCredex": True,
-                "handle": self.data.get("handle", {}).get("handle"),
-                "metadata": {"name": self.data.get("handle", {}).get("name")}
+                "handle": handle_data.get("handle"),
+                "metadata": {"name": handle_data.get("name")}
+            })
+
+            # Return structured response with API result
+            if success:
+                self._update_dashboard(response)
+                return {
+                    "success": True,
+                    "message": "Credex successfully offered",
+                    "response": response
+                }
+
+            return {
+                "success": False,
+                "message": response.get("message", "Offer failed"),
+                "response": response
             }
-
-            success, response = self.credex_service.offer_credex(offer_data)
-
-            if not success:
-                return CredexTemplates.create_error_message(
-                    self.data.get("mobile_number"),
-                    response.get("message", "Offer failed")
-                )
-
-            self._update_dashboard(response)
-            return self._show_dashboard("Credex successfully offered")
 
         except Exception as e:
             logger.error(f"Error completing offer: {str(e)}")
-            return CredexTemplates.create_error_message(
-                self.data.get("mobile_number"),
-                f"An error occurred: {str(e)}"
-            )
+            return {
+                "success": False,
+                "message": f"An error occurred: {str(e)}"
+            }
 
     def _complete_action(self, action: str) -> Dict[str, Any]:
         """Complete action flow"""
         credex_id = self.kwargs.get("credex_id")
         if not credex_id:
-            return CredexTemplates.create_error_message(
-                self.data.get("mobile_number"),
-                "Missing credex ID"
-            )
+            return {
+                "success": False,
+                "message": "Missing credex ID"
+            }
 
         actions = {
             "accept": self.credex_service.accept_credex,
@@ -523,17 +527,15 @@ class CredexFlow(Flow):
 
         success, response = actions[action](credex_id)
         if not success:
-            return CredexTemplates.create_error_message(
-                self.data.get("mobile_number"),
-                response.get("message", f"Failed to {action} offer")
-            )
+            return {
+                "success": False,
+                "message": response.get("message", f"Failed to {action} offer"),
+                "response": response
+            }
 
         self._update_dashboard(response)
-        return self._show_dashboard(f"Successfully {action}ed credex offer")
-
-    def _show_dashboard(self, message: str) -> Dict[str, Any]:
-        """Show dashboard with success message"""
-        dashboard = DashboardFlow(success_message=message)
-        dashboard.credex_service = self.credex_service
-        dashboard.data = {"mobile_number": self.data.get("mobile_number")}
-        return dashboard.complete()
+        return {
+            "success": True,
+            "message": f"Successfully {action}ed credex offer",
+            "response": response
+            }
