@@ -116,26 +116,44 @@ class CredexFlowValidator(FlowValidatorInterface):
 
     def _validate_cancel_data(self, data: Dict[str, Any]) -> ValidationResult:
         """Validate cancel-specific data"""
-        required_fields = {"mobile_number", "member_id", "credex_id"}
-        missing = required_fields - set(data.keys())
-        if missing:
+        # For list selection step, only require basic fields
+        basic_fields = {"mobile_number", "member_id"}
+        missing_basic = basic_fields - set(data.keys())
+        if missing_basic:
             return ValidationResult(
                 is_valid=False,
-                error_message=f"Missing cancel data fields: {', '.join(missing)}",
-                missing_fields=missing
+                error_message=f"Missing basic data fields: {', '.join(missing_basic)}",
+                missing_fields=missing_basic
+            )
+
+        # For confirmation step, require credex_id
+        if "credex_id" not in data and data.get("step", 0) > 0:
+            return ValidationResult(
+                is_valid=False,
+                error_message="Missing credex_id for confirmation",
+                missing_fields={"credex_id"}
             )
 
         return ValidationResult(is_valid=True)
 
     def _validate_action_data(self, data: Dict[str, Any]) -> ValidationResult:
         """Validate accept/decline-specific data"""
-        required_fields = {"mobile_number", "member_id", "credex_id"}
-        missing = required_fields - set(data.keys())
-        if missing:
+        # For list selection step, only require basic fields
+        basic_fields = {"mobile_number", "member_id"}
+        missing_basic = basic_fields - set(data.keys())
+        if missing_basic:
             return ValidationResult(
                 is_valid=False,
-                error_message=f"Missing action data fields: {', '.join(missing)}",
-                missing_fields=missing
+                error_message=f"Missing basic data fields: {', '.join(missing_basic)}",
+                missing_fields=missing_basic
+            )
+
+        # For confirmation step, require credex_id
+        if "credex_id" not in data and data.get("step", 0) > 0:
+            return ValidationResult(
+                is_valid=False,
+                error_message="Missing credex_id for confirmation",
+                missing_fields={"credex_id"}
             )
 
         return ValidationResult(is_valid=True)

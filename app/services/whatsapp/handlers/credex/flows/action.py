@@ -49,20 +49,33 @@ class ActionFlow(CredexFlow):
         if not credex_id:
             return {"error": "Invalid selection"}
 
-        pending_offers = self.data.get("pending_offers", [])
+        # Get offers from current account
+        if self.flow_type in ["accept", "decline"]:
+            pending_offers = self.data.get("current_account", {}).get("pendingInData", [])
+        else:
+            pending_offers = self.data.get("current_account", {}).get("pendingOutData", [])
+
+        if not pending_offers:
+            return {"error": "No pending offers found"}
+
         selected_offer = next(
-            (offer for offer in pending_offers if offer["id"] == credex_id),
+            (offer for offer in pending_offers if offer["credexID"] == credex_id),
             None
         )
 
         if not selected_offer:
             return {"error": "Selected offer not found"}
 
-        return {
+        result = {
             "credex_id": credex_id,
-            "amount": selected_offer["amount"],
-            "counterparty": selected_offer["to"]
+            "amount": selected_offer["formattedInitialAmount"],
+            "counterparty": selected_offer["counterpartyAccountName"]
         }
+
+        # Update flow data with the transformed selection
+        self.data.update(result)
+
+        return result
 
     def complete(self) -> Dict[str, Any]:
         """Complete the action flow"""

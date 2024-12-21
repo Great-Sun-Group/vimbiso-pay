@@ -76,16 +76,24 @@ class FlowManager:
                 }
             }
 
-            # Add pending offers for cancel flow
-            if flow_type == "cancel":
-                initial_state["data"]["pending_offers"] = self._get_pending_offers()
+            # Add current account data for action flows
+            if flow_type in ["cancel", "accept", "decline"]:
+                current_state = self.service.user.state.state or {}
+                initial_state["data"]["flow_type"] = flow_type
+                initial_state["data"]["current_account"] = current_state.get("current_account", {})
 
             # Initialize flow with state
             flow = self._create_flow(flow_type, flow_class, initial_state, **kwargs)
             flow.credex_service = self.service.credex_service
 
             # Get initial message
-            result = flow.current_step.get_message(flow.data)
+            if flow.current_step:
+                result = flow.current_step.get_message(flow.data)
+            else:
+                result = WhatsAppMessage.create_text(
+                    self.service.user.mobile_number,
+                    "Flow not properly initialized"
+                )
 
             # If result is a WhatsAppMessage, return it immediately
             if isinstance(result, WhatsAppMessage):
@@ -118,19 +126,10 @@ class FlowManager:
                 f"❌ Failed to start flow: {str(e)}"
             )
 
-    def _get_pending_offers(self) -> list:
-        """Get pending offers from current account state"""
+    def _get_pending_offers(self) -> Dict[str, Any]:
+        """Get current account with pending offers"""
         current_state = self.service.user.state.state or {}
-        current_account = current_state.get("current_account", {})
-        pending_out = current_account.get("pendingOutData", [])
-
-        return [{
-            "id": offer.get("credexID"),
-            "amount": offer.get("formattedInitialAmount", "0").lstrip("-"),
-            "to": offer.get("counterpartyAccountName")
-        } for offer in pending_out if all(
-            offer.get(k) for k in ["credexID", "formattedInitialAmount", "counterpartyAccountName"]
-        )]
+        return current_state.get("current_account", {})
 
     def _create_flow(self, flow_type: str, flow_class: Any, initial_state: Dict, **kwargs) -> Flow:
         """Create flow instance with proper initialization"""

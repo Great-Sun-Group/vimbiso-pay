@@ -71,9 +71,12 @@ class Step:
             logger.error(f"Transform error in {self.id}: {str(e)}")
             raise ValueError(str(e))
 
-    def get_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def get_message(self, state: Any) -> Dict[str, Any]:
         """Get step message"""
         try:
+            # Ensure state is a dictionary
+            if not isinstance(state, dict):
+                state = {"data": state}
             return self.message(state) if callable(self.message) else self.message
         except Exception as e:
             logger.error(f"Message error in {self.id}: {str(e)}")

@@ -157,27 +157,6 @@ class CredexFlow(Flow):
 
         raise ValueError("Invalid confirmation format")
 
-    def _transform_cancel_selection(self, selection: str) -> Dict[str, Any]:
-        """Transform cancel selection"""
-        credex_id = selection[7:] if selection.startswith("cancel_") else None
-        if not credex_id:
-            return {"error": "Invalid selection"}
-
-        pending_offers = self.data.get("pending_offers", [])
-        selected_offer = next(
-            (offer for offer in pending_offers if offer["id"] == credex_id),
-            None
-        )
-
-        if not selected_offer:
-            return {"error": "Selected offer not found"}
-
-        return {
-            "credex_id": credex_id,
-            "amount": selected_offer["amount"],
-            "counterparty": selected_offer["to"]
-        }
-
     def _validate_amount(self, amount_data: Union[str, Dict[str, Any]]) -> bool:
         """Validate amount format"""
         # Handle already transformed amount

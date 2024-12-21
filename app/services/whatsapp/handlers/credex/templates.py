@@ -1,5 +1,5 @@
 """Credex-specific message templates"""
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 from ...types import WhatsAppMessage
 
@@ -31,23 +31,43 @@ class CredexTemplates:
     @staticmethod
     def create_pending_offers_list(
         recipient: str,
-        pending_offers: List[Dict[str, Any]]
+        data: Dict[str, Any]
     ) -> dict:
         """Create pending offers list message"""
-        rows = [
-            {
-                "id": f"cancel_{offer['id']}",
-                "title": f"{offer['amount']} to {offer['to']}"
-            }
-            for offer in pending_offers
-        ]
+        flow_type = data.get("flow_type", "cancel")
+        current_account = data.get("current_account", {})
+
+        # Get offers from current account
+        if flow_type in ["accept", "decline"]:
+            offers = current_account.get("pendingInData", [])
+            action_text = "accept" if flow_type == "accept" else "decline"
+            title = "Incoming Offers"
+        else:
+            offers = current_account.get("pendingOutData", [])
+            action_text = "cancel"
+            title = "Outgoing Offers"
+
+        if not offers:
+            return WhatsAppMessage.create_text(
+                recipient,
+                f"No {title.lower()} available"
+            )
+
+        rows = []
+        for offer in offers:
+            # Remove negative sign from amount for display
+            amount = offer['formattedInitialAmount'].lstrip('-')
+            rows.append({
+                "id": f"{flow_type}_{offer['credexID']}",
+                "title": f"{amount} {action_text == 'cancel' and 'to' or 'from'} {offer['counterpartyAccountName']}"
+            })
 
         return WhatsAppMessage.create_list(
             recipient,
-            "Select an offer to cancel:",
+            f"Select an offer to {action_text}:",
             "🕹️ Options",
             [{
-                "title": "Pending Offers",
+                "title": title,
                 "rows": rows
             }]
         )
