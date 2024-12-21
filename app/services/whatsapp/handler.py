@@ -475,16 +475,11 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 "data": flow_data["data"]
             })
 
-            # Process input
-            result = None
-            if self.message_type == "interactive":
-                interactive = self.message.get("interactive", {})
-                result = flow.process_input({
-                    "type": "interactive",
-                    "interactive": interactive
-                })
-            else:
-                result = flow.process_input(self.body)
+            # Process input using parsed message type and body
+            result = flow.process_input({
+                "type": self.message_type,
+                "body": self.body
+            })
 
             # Handle invalid input
             if result == "Invalid input":

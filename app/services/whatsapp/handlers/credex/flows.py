@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Union
 
 from core.messaging.flow import Flow, Step, StepType
 from core.utils.flow_audit import FlowAuditLogger
+
 from ...handlers.member.dashboard import DashboardFlow
 from .templates import CredexTemplates
 from .validator import CredexFlowValidator
@@ -151,23 +152,32 @@ class CredexFlow(Flow):
             action
         )
 
-    def _validate_button_response(self, response: Dict[str, Any]) -> bool:
+    def _validate_button_response(self, response: Union[str, Dict[str, Any]]) -> bool:
         """Validate button response"""
-        if not isinstance(response, dict):
-            return False
+        # Log the response for debugging
+        logger.debug(f"Validating button response: {response}")
 
-        if response.get("type") != "interactive":
-            return False
+        # Handle string input (already parsed by BotServiceInterface)
+        if isinstance(response, str):
+            return response == "confirm_action"
 
-        interactive = response.get("interactive", {})
-        if not interactive:
-            return False
+        # Handle dict input (from BotServiceInterface)
+        if isinstance(response, dict):
+            # Get message type and body from BotServiceInterface parsing
+            msg_type = response.get("type")
+            body = response.get("body", "")
 
-        # Handle both button and list replies
-        if interactive.get("type") == "button_reply":
-            return interactive.get("button_reply", {}).get("id") == "confirm_action"
-        elif interactive.get("type") == "list_reply":
-            return interactive.get("list_reply", {}).get("id") == "offer_credex"
+            # Handle button press
+            if msg_type == "button":
+                return body == "confirm_action"
+
+            # Handle text input (for backwards compatibility)
+            if msg_type == "text":
+                # Check if we're in a flow step
+                if self.current_step and self.current_step.id == "confirm":
+                    return body.lower() == "confirm_action"
+                # Otherwise this is a menu selection
+                return False
 
         return False
 
@@ -360,7 +370,8 @@ class CredexFlow(Flow):
                 "current_account": personal_account,
                 "jwt_token": current_state.get("jwt_token"),
                 "member_id": current_state.get("member_id"),
-                "account_id": current_state.get("account_id")
+                "account_id": current_state.get("account_id"),
+                "authenticated": current_state.get("authenticated", True)
             }
 
             # Validate new state before update

@@ -174,7 +174,17 @@ class BotServiceInterface:
             elif self.message_type == "button":
                 self.body = message.get("button", {}).get("payload", "")
             elif self.message_type == "interactive":
-                self._parse_interactive(message.get("interactive", {}))
+                interactive = message.get("interactive", {})
+                if "button_reply" in interactive:
+                    self.message_type = "button"  # Treat as button press
+                    self.body = interactive["button_reply"].get("id", "")
+                elif "list_reply" in interactive:
+                    self.message_type = "list"  # Treat as list selection
+                    self.body = interactive["list_reply"].get("id", "")
+                else:
+                    logger.warning("Unknown interactive type")
+                    self.message_type = "text"
+                    self.body = ""
             else:
                 logger.warning(f"Unsupported message type: {self.message_type}")
                 self.body = ""
