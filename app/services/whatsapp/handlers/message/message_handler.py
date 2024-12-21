@@ -2,6 +2,11 @@
 import logging
 from typing import Any
 
+from services.whatsapp.handlers.credex import (
+    OfferFlow, AcceptFlow, DeclineFlow, CancelFlow
+)
+from services.whatsapp.handlers.member import RegistrationFlow, UpgradeFlow
+
 from core.utils.flow_audit import FlowAuditLogger
 from services.whatsapp.types import WhatsAppMessage
 from .flow_manager import FlowManager
@@ -17,12 +22,12 @@ class MessageHandler:
     """Handler for WhatsApp messages and flows"""
 
     FLOW_TYPES = {
-        "offer_credex": ("offer", "OfferFlow"),
-        "accept_credex": ("accept", "AcceptFlow"),
-        "decline_credex": ("decline", "DeclineFlow"),
-        "cancel_credex": ("cancel", "CancelFlow"),
-        "start_registration": ("registration", "RegistrationFlow"),
-        "upgrade_tier": ("upgrade", "UpgradeFlow")
+        "offer_credex": ("offer", OfferFlow),
+        "accept_credex": ("accept", AcceptFlow),
+        "decline_credex": ("decline", DeclineFlow),
+        "cancel_credex": ("cancel", CancelFlow),
+        "start_registration": ("registration", RegistrationFlow),
+        "upgrade_tier": ("upgrade", UpgradeFlow)
     }
 
     def __init__(self, service: Any):
@@ -51,7 +56,7 @@ class MessageHandler:
             # Handle greeting
             if (self.service.message_type == "text" and
                     self.input_handler.is_greeting(self.service.body)):
-                error = self.state_handler.prepare_flow_start()
+                error = self.state_handler.prepare_flow_start(is_greeting=True)
                 if error:
                     return error
                 return self.service.auth_handler.handle_action_menu(login=True)
@@ -62,7 +67,7 @@ class MessageHandler:
                 # Handle greeting during active flow
                 if (self.service.message_type == "text" and
                         self.input_handler.is_greeting(self.service.body)):
-                    error = self.state_handler.prepare_flow_start()
+                    error = self.state_handler.prepare_flow_start(is_greeting=True)
                     if error:
                         return error
                     return self.service.auth_handler.handle_action_menu(login=True)

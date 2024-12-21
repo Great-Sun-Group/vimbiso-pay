@@ -28,7 +28,13 @@ class ProfileManager(BaseAPIClient):
                 "type": action.get("type", action_type),
                 "timestamp": datetime.now().isoformat(),
                 "actor": self.bot_service.user.mobile_number,
-                "details": action.get("details", {})
+                "details": action.get("details", {}),
+                "message": (
+                    action.get("message") or  # Try direct message
+                    action.get("details", {}).get("message") or  # Try details.message
+                    ("CredEx offer created successfully" if action.get("type") == "CREDEX_CREATED" else "")  # Default success message
+                ),
+                "status": "success" if action.get("type") == "CREDEX_CREATED" else action.get("status", "")
             },
             "dashboard": dashboard
         }

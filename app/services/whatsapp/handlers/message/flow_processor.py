@@ -4,9 +4,11 @@ from typing import Any, Dict, Type
 
 from core.messaging.flow import Flow
 from core.utils.flow_audit import FlowAuditLogger
-from ..credex import CredexFlow
-from ..member import RegistrationFlow, UpgradeFlow, DashboardFlow
+
 from ...types import WhatsAppMessage
+from ..credex.flows import (AcceptFlow, CancelFlow, CredexFlow, DeclineFlow,
+                            OfferFlow)
+from ..member import DashboardFlow, RegistrationFlow, UpgradeFlow
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -26,14 +28,16 @@ class FlowProcessor:
             return RegistrationFlow
         elif "member_upgrade" in flow_id:
             return UpgradeFlow
-        elif "offer_" in flow_id:
-            return CredexFlow
+        elif "offer_" in flow_id or flow_id == "credex_offer":
+            return OfferFlow
         elif "accept_" in flow_id:
-            return CredexFlow
+            return AcceptFlow
         elif "decline_" in flow_id:
-            return CredexFlow
+            return DeclineFlow
         elif "cancel_" in flow_id:
-            return CredexFlow
+            return CancelFlow
+        # Log warning for unknown flow type
+        logger.warning(f"Unknown flow type for ID: {flow_id}, using base CredexFlow")
         return CredexFlow
 
     def initialize_flow(
@@ -44,30 +48,34 @@ class FlowProcessor:
         kwargs: Dict
     ) -> Flow:
         """Initialize flow with state"""
-        initial_state = {
+        # Prepare complete state including flow data
+        state = {
             "id": flow_data["id"],
             "step": flow_data["step"],
-            "data": flow_data["data"]
+            "data": flow_data["data"],
+            "flow_data": {
+                "flow_type": flow_type,
+                **flow_data
+            }
         }
 
-        if flow_class in {RegistrationFlow, UpgradeFlow}:
-            flow = flow_class(**kwargs)
-        else:
-            # Initialize flow with state
-            flow_kwargs = kwargs.copy()
-            if flow_class == CredexFlow:
-                flow_kwargs['flow_type'] = flow_type
-            flow = flow_class(
-                state=initial_state,
-                **flow_kwargs
-            )
+        # Initialize flow with state and kwargs
+        flow = flow_class(state=state, **kwargs)
 
-        flow.credex_service = self.service.credex_service
-        flow.current_index = flow_data["step"]
+        # Set service for Credex flows
+        if isinstance(flow, CredexFlow):
+            flow.credex_service = self.service.credex_service
+
         return flow
 
     def process_flow(self, flow_data: Dict) -> WhatsAppMessage:
         """Process flow continuation"""
+        # Initialize variables outside try block
+        flow = None
+        flow_type = None
+        flow_id = None
+        input_value = None
+
         try:
             # Get flow info
             flow_type = flow_data.get("flow_type")
@@ -82,38 +90,34 @@ class FlowProcessor:
 
             # Process input
             input_value = self.input_handler.extract_input_value()
+
+            # High-level flow info at INFO level
+            logger.info(f"Processing {flow_type} flow step {flow.current_step.id if flow.current_step else 'None'}")
+
+            # Detailed state at DEBUG level
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("=== Flow Processing Details ===")
+                logger.debug(f"Input: {input_value}")
+                logger.debug(f"Flow ID: {flow.id}")
+                logger.debug(f"Initial state: {flow.get_state()}")
+
+            # Process input through flow
             result = flow.process_input(input_value)
 
-            # Handle invalid input
-            if result == "Invalid input":
-                audit.log_flow_event(
-                    "bot_service",
-                    "invalid_input",
-                    flow.current_step.id if flow.current_step else None,
-                    {"input": self.service.body},
-                    "failure"
-                )
+            # If result is a WhatsAppMessage, it's a direct response (error/validation)
+            if isinstance(result, WhatsAppMessage):
+                return result
 
-                error = self.state_handler.handle_invalid_input_state(
-                    flow, flow_type, kwargs
-                )
-                if error:
-                    return error
-
-                return self.input_handler.handle_invalid_input(
-                    flow.current_step.id if flow.current_step else None
-                )
-
-            # Handle flow completion
+            # If no result, flow is complete
             if not result:
                 return self.service.auth_handler.handle_action_menu()
 
-            # Handle confirmation step
-            if flow.current_step and flow.current_step.id == "confirm":
-                return self._handle_confirmation_step(flow, flow_id)
-
-            # Handle step completion
+            # Handle flow completion
             if flow.current_index >= len(flow.steps):
+                # Only complete the flow if we've processed the confirmation
+                if flow.current_step and flow.current_step.id == "confirm":
+                    return self._handle_confirmation_step(flow, flow_id)
+
                 error = self.state_handler.handle_flow_completion()
                 if error:
                     return error
@@ -129,15 +133,39 @@ class FlowProcessor:
             return result
 
         except Exception as e:
-            logger.error(f"Flow error: {str(e)}")
+            # Only log detailed context if we have an empty error
+            error_msg = str(e)
+            error_context = {
+                "error_type": type(e).__name__,
+                "flow_type": flow_type,
+                "flow_id": flow_id,
+                "step": flow.current_step.id if flow and flow.current_step else None,
+                "input": input_value,
+                "state": flow.get_state() if flow else None
+            }
+
+            if not error_msg:
+                logger.error(
+                    "Flow processing failed with empty error message",
+                    extra=error_context,
+                    exc_info=True
+                )
+            else:
+                logger.error(f"Flow error: {error_msg}", extra=error_context)
+
+            # Log flow event with safe access to flow properties
+            step_id = flow.current_step.id if flow and flow.current_step else None
             audit.log_flow_event(
                 "bot_service",
                 "flow_error",
-                None,
-                {"error": str(e)},
+                step_id,
+                {"error": error_msg or "Empty error - check logs for context"},
                 "failure"
             )
-            return self.state_handler.handle_error_state(str(e))
+
+            return self.state_handler.handle_error_state(
+                str(e) or "Flow processing failed - check logs for details"
+            )
 
     def _handle_confirmation_step(self, flow: Flow, flow_id: str) -> WhatsAppMessage:
         """Handle confirmation step processing"""
@@ -170,9 +198,17 @@ class FlowProcessor:
                 result.get("message", "Operation failed")
             )
 
-        # Update dashboard if needed
+        # Get success message and API response
+        success_message = result.get("message")
         api_response = result.get("response", {})
+
+        # Update dashboard with API response
         if api_response:
+            # Add success message to API response action
+            if "data" in api_response and "action" in api_response["data"]:
+                api_response["data"]["action"]["message"] = success_message
+
+            # Update dashboard state
             flow.credex_service._update_dashboard(api_response)
 
         # Handle completion state
@@ -180,10 +216,14 @@ class FlowProcessor:
         if error:
             return error
 
-        # Show success message
+        # Show dashboard with success message
         dashboard = DashboardFlow(
-            success_message=result.get("message")
+            flow_type="view",
+            success_message=success_message
         )
         dashboard.credex_service = self.service.credex_service
-        dashboard.data = {"mobile_number": self.service.user.mobile_number}
+        dashboard.data = {
+            "mobile_number": self.service.user.mobile_number,
+            "success_message": success_message  # Also store in data for state preservation
+        }
         return dashboard.complete()

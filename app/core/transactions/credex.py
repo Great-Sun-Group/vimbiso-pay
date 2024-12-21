@@ -274,6 +274,13 @@ class CredexTransactionService(BaseTransactionService):
                 "full_name": details.get("receiverAccountName", "")
             }
 
+            # Add success message to details
+            details["message"] = (
+                action.get("message") or  # Try direct message
+                action.get("details", {}).get("message") or  # Try details.message
+                "CredEx offer created successfully"  # Default success message
+            )
+
             # Create transaction with metadata
             transaction = self._create_transaction_from_response({
                 **details,

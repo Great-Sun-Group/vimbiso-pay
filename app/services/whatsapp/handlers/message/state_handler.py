@@ -2,8 +2,9 @@
 import logging
 from typing import Any, Dict, Optional
 
-from core.utils.flow_audit import FlowAuditLogger
 from core.messaging.flow import Flow
+from core.utils.flow_audit import FlowAuditLogger
+
 from ...state_manager import StateManager
 from ...types import WhatsAppMessage
 
@@ -17,20 +18,29 @@ class StateHandler:
     def __init__(self, service: Any):
         self.service = service
 
-    def prepare_flow_start(self, clear_menu: bool = True) -> Optional[WhatsAppMessage]:
+    def prepare_flow_start(self, clear_menu: bool = True, is_greeting: bool = False) -> Optional[WhatsAppMessage]:
         """Prepare state for starting a new flow"""
         current_state = self.service.user.state.state or {}
-        new_state = StateManager.prepare_state_update(
-            current_state,
-            clear_flow=True,
-            mobile_number=self.service.user.mobile_number
-        )
+
+        # For greetings, only keep mobile number
+        if is_greeting:
+            new_state = {
+                "mobile_number": self.service.user.mobile_number,
+                "_last_updated": audit.get_current_timestamp()
+            }
+        else:
+            new_state = StateManager.prepare_state_update(
+                current_state,
+                clear_flow=True,
+                mobile_number=self.service.user.mobile_number,
+                preserve_validation=False  # Don't preserve validation when starting new flow
+            )
 
         error = StateManager.validate_and_update(
             self.service.user.state,
             new_state,
             current_state,
-            "clear_flow_menu_action" if clear_menu else "flow_start",
+            "greeting" if is_greeting else ("clear_flow_menu_action" if clear_menu else "flow_start"),
             self.service.user.mobile_number
         )
         return error
@@ -38,10 +48,24 @@ class StateHandler:
     def handle_error_state(self, error_message: str) -> WhatsAppMessage:
         """Handle error state and return error message"""
         current_state = self.service.user.state.state or {}
+
+        # Log error details for debugging
+        logger.error(f"Flow error state: {error_message}")
+        logger.debug(f"Current state: {current_state}")
+
+        # Preserve validation context
+        validation_context = {
+            k: v for k, v in current_state.get("flow_data", {}).items()
+            if k.startswith("_")
+        }
+        logger.debug(f"Preserved validation context: {validation_context}")
+
         error_state = StateManager.prepare_state_update(
             current_state,
+            flow_data=validation_context if validation_context else None,
             clear_flow=True,
-            mobile_number=self.service.user.mobile_number
+            mobile_number=self.service.user.mobile_number,
+            preserve_validation=True  # Explicitly preserve validation context
         )
 
         StateManager.validate_and_update(
@@ -52,9 +76,10 @@ class StateHandler:
             self.service.user.mobile_number
         )
 
+        # Return detailed error message
         return WhatsAppMessage.create_text(
             self.service.user.mobile_number,
-            f"❌ {error_message}"
+            f"❌ Error: {error_message}"
         )
 
     def handle_invalid_input_state(
@@ -65,15 +90,25 @@ class StateHandler:
     ) -> Optional[WhatsAppMessage]:
         """Handle invalid input state update"""
         current_state = self.service.user.state.state or {}
+        flow_state = flow.get_state()
+
+        # Preserve validation context
+        validation_context = {
+            k: v for k, v in current_state.get("flow_data", {}).items()
+            if k.startswith("_")
+        }
+
         error_state = StateManager.prepare_state_update(
             current_state,
             flow_data={
-                **flow.get_state(),
+                **flow_state,
                 "flow_type": flow_type,
                 "kwargs": kwargs,
-                "_validation_error": True
+                "_validation_error": True,
+                **validation_context  # Restore validation context
             },
-            mobile_number=self.service.user.mobile_number
+            mobile_number=self.service.user.mobile_number,
+            preserve_validation=True  # Explicitly preserve validation context
         )
 
         return StateManager.validate_and_update(
@@ -90,7 +125,8 @@ class StateHandler:
         new_state = StateManager.prepare_state_update(
             current_state,
             clear_flow=clear_flow,
-            mobile_number=self.service.user.mobile_number
+            mobile_number=self.service.user.mobile_number,
+            preserve_validation=True  # Explicitly preserve validation context
         )
 
         return StateManager.validate_and_update(
@@ -118,7 +154,8 @@ class StateHandler:
                 "flow_type": flow_type,
                 "kwargs": kwargs
             },
-            mobile_number=self.service.user.mobile_number
+            mobile_number=self.service.user.mobile_number,
+            preserve_validation=True  # Explicitly preserve validation context
         )
 
         return StateManager.validate_and_update(

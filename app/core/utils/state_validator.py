@@ -43,7 +43,11 @@ class StateValidator:
                 if not f.startswith('_')
             }
 
-        # Check for required fields
+        # Allow minimal state with just mobile_number and _last_updated during greeting
+        if len(state) == 2 and "mobile_number" in state and "_last_updated" in state:
+            return ValidationResult(is_valid=True)
+
+        # For non-greeting states, check for required fields
         state_keys = set(state.keys())
         missing = required_fields - state_keys
 
@@ -100,7 +104,9 @@ class StateValidator:
             "type": "",
             "timestamp": "",
             "actor": "",
-            "details": {}
+            "details": {},
+            "message": "",
+            "status": ""
         }
         for field, default in required_action_fields.items():
             if field not in action:
@@ -173,7 +179,9 @@ class StateValidator:
                     "type": "",
                     "timestamp": "",
                     "actor": "",
-                    "details": {}
+                    "details": {},
+                    "message": "",
+                    "status": ""
                 },
                 "dashboard": {
                     "member": {},
@@ -199,7 +207,9 @@ class StateValidator:
                 "type": "",
                 "timestamp": "",
                 "actor": "",
-                "details": {}
+                "details": {},
+                "message": "",
+                "status": ""
             }
             for field, default in action_fields.items():
                 if field not in result["action"]:

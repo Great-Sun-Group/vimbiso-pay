@@ -33,13 +33,34 @@ class InputHandler:
 
     def extract_input_value(self) -> Union[str, Dict]:
         """Extract input value based on message type"""
+        # Log essential info at INFO level
+        logger.info(f"Processing {self.service.message_type} message")
+
+        # Detailed message info at DEBUG level
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Raw message: {self.service.message}")
+            logger.debug(f"Message body: {self.service.body}")
+
         if self.service.message_type == "interactive":
             interactive = self.service.message.get("interactive", {})
-            if interactive.get("type") == "button_reply":
-                return interactive.get("button_reply", {})
-            elif interactive.get("type") == "list_reply":
-                return interactive.get("list_reply", {})
+            interactive_type = interactive.get("type")
 
+            # Log interactive type at INFO level
+            logger.info(f"Interactive type: {interactive_type}")
+
+            if interactive_type == "button_reply":
+                value = interactive.get("button_reply", {})
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Button reply data: {value}")
+                return value
+            elif interactive_type == "list_reply":
+                value = interactive.get("list_reply", {})
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"List reply data: {value}")
+                return value
+
+        # Log final input at INFO level
+        logger.info(f"Input type: text, length: {len(self.service.body)}")
         return self.service.body
 
     def is_greeting(self, text: str) -> bool:

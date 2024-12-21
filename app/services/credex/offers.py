@@ -59,6 +59,15 @@ class CredExOffersService(BaseCredExService):
                 # Get the credexID from the response
                 credex_id = data["data"]["action"]["id"]
                 data["data"]["credexID"] = credex_id
+
+                # Add success message to action
+                if "data" not in data:
+                    data["data"] = {}
+                if "action" not in data["data"]:
+                    data["data"]["action"] = {}
+
+                data["data"]["action"]["message"] = f"CredEx offer {credex_id} created successfully"
+
                 logger.info(f"CredEx offer created successfully with ID: {credex_id}")
                 return True, data
             else:

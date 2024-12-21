@@ -21,14 +21,36 @@ class CredexFlow(Flow):
     AMOUNT_PATTERN = re.compile(r'^(?:([A-Z]{3})\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:\(?([A-Z]{3})\)?)|(\d+(?:\.\d+)?))$')
     HANDLE_PATTERN = re.compile(r'^[a-zA-Z0-9_]+$')
 
-    def __init__(self, flow_type: str, **kwargs):
-        """Initialize flow"""
+    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
+        """Initialize flow
+
+        Args:
+            flow_type: The type of flow (e.g. 'offer', 'accept', etc.)
+            state: Optional state dictionary for flow restoration
+            **kwargs: Additional keyword arguments
+        """
+        # Extract flow type from state if not provided directly
+        if flow_type is None and state is not None:
+            flow_data = state.get('flow_data', {})
+            flow_type = flow_data.get('flow_type')
+
+        if flow_type is None:
+            raise ValueError("flow_type must be provided either directly or through state")
+
         self.flow_type = flow_type
         self.kwargs = kwargs
         self.validator = CredexFlowValidator()
-        steps = self._create_steps()
-        super().__init__(f"credex_{flow_type}", steps)
         self.credex_service = None
+
+        # Create steps before parent initialization
+        steps = self._create_steps()
+
+        # Initialize parent with flow ID and steps
+        super().__init__(f"credex_{flow_type}", steps)
+
+        # Restore state if provided
+        if state is not None:
+            self.set_state(state)
 
     def _create_steps(self) -> List[Step]:
         """Create flow steps based on type - to be implemented by subclasses"""
@@ -108,7 +130,9 @@ class CredexFlow(Flow):
 
         # Handle string input (already parsed by BotServiceInterface)
         if isinstance(response, str):
-            return response == "confirm_action"
+            if response != "confirm_action":
+                raise ValueError("Please use the confirmation button")
+            return True
 
         # Handle dict input (from BotServiceInterface)
         if isinstance(response, dict):
@@ -118,17 +142,20 @@ class CredexFlow(Flow):
 
             # Handle button press
             if msg_type == "button":
-                return body == "confirm_action"
+                if body != "confirm_action":
+                    raise ValueError("Please use the confirmation button")
+                return True
 
             # Handle text input (for backwards compatibility)
             if msg_type == "text":
                 # Check if we're in a flow step
                 if self.current_step and self.current_step.id == "confirm":
-                    return body.lower() == "confirm_action"
-                # Otherwise this is a menu selection
-                return False
+                    if body.lower() != "confirm_action":
+                        raise ValueError("Please use the confirmation button")
+                    return True
+                raise ValueError("Invalid confirmation format")
 
-        return False
+        raise ValueError("Invalid confirmation format")
 
     def _transform_cancel_selection(self, selection: str) -> Dict[str, Any]:
         """Transform cancel selection"""
@@ -155,35 +182,78 @@ class CredexFlow(Flow):
         """Validate amount format"""
         # Handle already transformed amount
         if isinstance(amount_data, dict):
-            return (
-                "amount" in amount_data and
-                "denomination" in amount_data and
-                isinstance(amount_data["amount"], (int, float)) and
-                (not amount_data["denomination"] or amount_data["denomination"] in self.VALID_DENOMINATIONS)
-            )
+            if not ("amount" in amount_data and "denomination" in amount_data):
+                raise ValueError("Amount data missing required fields")
+
+            if not isinstance(amount_data["amount"], (int, float)):
+                raise ValueError("Amount must be a number")
+
+            if amount_data["denomination"] and amount_data["denomination"] not in self.VALID_DENOMINATIONS:
+                raise ValueError(f"Invalid currency. Valid options are: {', '.join(self.VALID_DENOMINATIONS)}")
+
+            return True
 
         # Handle string input
         if not amount_data:
-            return False
-        match = self.AMOUNT_PATTERN.match(str(amount_data).strip().upper())
+            raise ValueError("Amount cannot be empty")
+
+        # Try to match the pattern
+        amount_str = str(amount_data).strip().upper()
+        match = self.AMOUNT_PATTERN.match(amount_str)
+
         if not match:
-            return False
+            raise ValueError(
+                "Invalid amount format. Examples:\n"
+                "100     (USD)\n"
+                "USD 100\n"
+                "ZWG 100\n"
+                "XAU 1"
+            )
+
+        # Validate denomination
         denom = match.group(1) or match.group(4)
-        return not denom or denom in self.VALID_DENOMINATIONS
+        if denom and denom not in self.VALID_DENOMINATIONS:
+            raise ValueError(f"Invalid currency. Valid options are: {', '.join(self.VALID_DENOMINATIONS)}")
+
+        return True
 
     def _transform_amount(self, amount_str: str) -> Dict[str, Any]:
         """Transform amount string to structured data"""
         match = self.AMOUNT_PATTERN.match(amount_str.strip().upper())
-        if match.group(1):  # Currency first
-            denom, amount = match.group(1), match.group(2)
-        elif match.group(3):  # Amount first
-            amount, denom = match.group(3), match.group(4)
-        else:  # Just amount
-            amount, denom = match.group(5), None
-        return {
-            "amount": float(amount),
-            "denomination": denom or "USD"
-        }
+
+        try:
+            # Extract amount and denomination
+            if match.group(1):  # Currency first
+                denom, amount = match.group(1), match.group(2)
+            elif match.group(3):  # Amount first
+                amount, denom = match.group(3), match.group(4)
+            else:  # Just amount
+                amount, denom = match.group(5), None
+
+            # Log transformation at INFO level
+            logger.info(f"Transforming amount: {amount} {denom or 'USD'}")
+
+            result = {
+                "amount": float(amount),
+                "denomination": denom or "USD"
+            }
+
+            # Log details at DEBUG level
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Input: {amount_str}")
+                logger.debug(f"Parsed: {result}")
+
+            return result
+
+        except Exception as e:
+            # Log error with context
+            error_context = {
+                "input": amount_str,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+            logger.error("Amount transformation failed", extra=error_context, exc_info=True)
+            raise ValueError(f"Failed to transform amount: {str(e)}")
 
     def _validate_handle(self, handle: Union[str, Dict[str, Any]]) -> bool:
         """Validate handle format"""
@@ -192,16 +262,24 @@ class CredexFlow(Flow):
             interactive = handle.get("interactive", {})
             if interactive.get("type") == "text":
                 text = interactive.get("text", {}).get("body", "")
-                return bool(text and self.HANDLE_PATTERN.match(text.strip()))
-            return False
+                if not text:
+                    raise ValueError("Handle cannot be empty")
+                if not self.HANDLE_PATTERN.match(text.strip()):
+                    raise ValueError("Handle can only contain letters, numbers, and underscores")
+                return True
+            raise ValueError("Invalid handle format")
 
         # Handle text input
-        return bool(handle and self.HANDLE_PATTERN.match(handle.strip()))
+        if not handle:
+            raise ValueError("Handle cannot be empty")
+        if not self.HANDLE_PATTERN.match(handle.strip()):
+            raise ValueError("Handle can only contain letters, numbers, and underscores")
+        return True
 
     def _transform_handle(self, handle: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
         """Transform and validate handle"""
         if not self.credex_service:
-            return {"error": "Service not initialized"}
+            raise ValueError("Service not initialized")
 
         # Extract handle from interactive or text
         if isinstance(handle, dict):
@@ -209,33 +287,90 @@ class CredexFlow(Flow):
             if interactive.get("type") == "text":
                 handle = interactive.get("text", {}).get("body", "")
             else:
-                return {"error": "Invalid handle format"}
+                raise ValueError("Invalid handle format")
 
         handle = handle.strip()
 
         # Ensure we have profile data
         if not hasattr(self.credex_service, '_parent_service'):
-            return {"error": "Service not properly initialized"}
+            raise ValueError("Service not properly initialized")
 
         user_state = self.credex_service._parent_service.user.state
         if not user_state or not user_state.state:
-            return {"error": "State not initialized"}
+            raise ValueError("State not initialized")
 
         current_state = user_state.state
         if not current_state.get("profile"):
-            return {"error": "Profile data not found"}
+            raise ValueError("Profile data not found")
 
-        # Validate handle
-        success, response = self.credex_service._member.validate_handle(handle)
-        if not success:
-            return {"error": response.get("message", "Invalid handle")}
+        try:
+            # Store validation context and current state
+            validation_context = {
+                "_validation_state": {
+                    "step_id": "handle",
+                    "input": handle,
+                    "timestamp": audit.get_current_timestamp()
+                },
+                "_validation_context": self.data.get("_validation_context", {})
+            }
 
-        data = response.get("data", {})
-        return {
-            "handle": handle,
-            "account_id": data.get("accountID"),
-            "name": data.get("accountName", handle)
-        }
+            # Log validation attempt
+            audit.log_validation_event(
+                self.id,
+                "handle",
+                handle,
+                True,
+                "Attempting API validation"
+            )
+
+            # Validate handle through API
+            success, response = self.credex_service._member.validate_handle(handle)
+            if not success:
+                # Log validation failure
+                audit.log_validation_event(
+                    self.id,
+                    "handle",
+                    handle,
+                    False,
+                    response.get("message", "Invalid handle")
+                )
+                raise ValueError(response.get("message", "Invalid handle"))
+
+            # Get account data
+            data = response.get("data", {})
+            if not data or not data.get("accountID"):
+                raise ValueError("Invalid account data received from API")
+
+            # Create result with validation context
+            result = {
+                "handle": handle,
+                "account_id": data.get("accountID"),
+                "name": data.get("accountName", handle),
+                **validation_context,
+                "_validation_success": True
+            }
+
+            # Log successful validation
+            audit.log_validation_event(
+                self.id,
+                "handle",
+                handle,
+                True,
+                "Handle validated successfully"
+            )
+
+            return result
+
+        except Exception as e:
+            # Log validation error
+            audit.log_flow_event(
+                self.id,
+                "handle_validation_error",
+                "handle",
+                {"error": str(e), "handle": handle},
+                "failure"
+            )
+            raise ValueError(f"Handle validation failed: {str(e)}")
 
     def _format_amount(self, amount: float, denomination: str) -> str:
         """Format amount based on denomination"""
@@ -291,13 +426,20 @@ class CredexFlow(Flow):
                     current_state = last_valid
 
             # Structure profile data properly
+            action = response.get("data", {}).get("action", {})
             profile_data = {
                 "action": {
-                    "id": current_state.get("profile", {}).get("action", {}).get("id", ""),
-                    "type": current_state.get("profile", {}).get("action", {}).get("type", self.flow_type),
+                    "id": action.get("id", ""),
+                    "type": action.get("type", self.flow_type),
                     "timestamp": datetime.now().isoformat(),
                     "actor": self.data.get("mobile_number", ""),
-                    "details": current_state.get("profile", {}).get("action", {}).get("details", {})
+                    "details": action.get("details", {}),
+                    "message": (
+                        action.get("message") or  # Try direct message
+                        action.get("details", {}).get("message") or  # Try details.message
+                        ("CredEx offer created successfully" if action.get("type") == "CREDEX_CREATED" else "")  # Default
+                    ),
+                    "status": "success" if action.get("type") == "CREDEX_CREATED" else action.get("status", "")
                 },
                 "dashboard": dashboard
             }
@@ -313,15 +455,35 @@ class CredexFlow(Flow):
                 )
             )
 
-            # Update state while preserving other critical fields
+            # Build complete state with all required components
             new_state = {
+                # Core state fields
                 "profile": profile_data,
                 "current_account": personal_account,
                 "jwt_token": current_state.get("jwt_token"),
                 "member_id": current_state.get("member_id"),
                 "account_id": current_state.get("account_id"),
-                "authenticated": current_state.get("authenticated", True)
+                "authenticated": current_state.get("authenticated", True),
+                "mobile_number": current_state.get("mobile_number"),
+
+                # Flow data
+                "flow_data": {
+                    "id": self.id,
+                    "step": self.current_index,
+                    "data": self.data,
+                    "flow_type": self.flow_type,
+                    "_previous_data": self._previous_data
+                },
+
+                # Validation context
+                "_validation_state": current_state.get("_validation_state", {}),
+                "_validation_context": current_state.get("_validation_context", {})
             }
+
+            # Preserve any additional validation or context fields
+            for key in current_state:
+                if key.startswith('_') and key not in new_state:
+                    new_state[key] = current_state[key]
 
             # Validate new state before update
             validation = self.validator.validate_flow_state(new_state)

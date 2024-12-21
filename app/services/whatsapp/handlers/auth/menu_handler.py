@@ -82,6 +82,16 @@ class MenuHandler(BaseActionHandler):
             {"mobile_number": self.service.user.mobile_number},
             "in_progress"
         )
+
+        # Clear any existing flow state
+        current_state = self.service.user.state.state
+        new_state = self.service.state_manager.prepare_state_update(
+            current_state,
+            clear_flow=True,
+            mobile_number=self.service.user.mobile_number
+        )
+        self.service.user.state.update_state(new_state, "greeting")
+
         return self.handle_menu(login=True)
 
     def handle_refresh(self) -> WhatsAppMessage:

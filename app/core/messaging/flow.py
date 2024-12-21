@@ -28,24 +28,6 @@ class Step:
     def validate(self, input_data: Any) -> bool:
         """Validate step input"""
         try:
-            # Special validation for amount step
-            if self.id == "amount":
-                if isinstance(input_data, str):
-                    # Handle currency prefix
-                    parts = input_data.strip().split()
-                    amount = parts[-1] if len(parts) > 1 else parts[0]
-                    try:
-                        # Log the validation attempt
-                        logger.debug(f"Validating amount: {amount}")
-                        float(amount.replace(',', ''))  # Handle comma-formatted numbers
-                        return True
-                    except ValueError as e:
-                        logger.debug(f"Amount validation failed: {str(e)}")
-                        return False
-                elif isinstance(input_data, (int, float)):
-                    return True
-                return False
-
             # Special validation for confirmation
             if self.id == "confirm" and isinstance(input_data, dict):
                 interactive = input_data.get("interactive", {})
@@ -55,26 +37,35 @@ class Step:
                 return False
 
             # Use custom validator if provided
-            return self.validator(input_data) if self.validator else True
+            if not self.validator:
+                return True
+
+            try:
+                return self.validator(input_data)
+            except Exception as validation_error:
+                # Log validation error with context
+                logger.error(
+                    f"Validation failed in step {self.id}",
+                    extra={
+                        "step_id": self.id,
+                        "validator": self.validator.__name__ if hasattr(self.validator, '__name__') else str(self.validator),
+                        "input": input_data,
+                        "error": str(validation_error)
+                    },
+                    exc_info=True
+                )
+                # Re-raise with context
+                raise ValueError(f"Validation error in step {self.id}: {str(validation_error)}")
+
         except Exception as e:
-            logger.error(f"Validation error in {self.id}: {str(e)}")
-            return False
+            # Only log non-validation errors
+            if not isinstance(e, ValueError):
+                logger.error(f"Unexpected error in step {self.id}: {str(e)}")
+            raise
 
     def transform(self, input_data: Any) -> Any:
         """Transform step input"""
         try:
-            # Special transformation for amount
-            if self.id == "amount" and isinstance(input_data, str):
-                parts = input_data.strip().split()
-                amount = parts[-1].replace(',', '')  # Handle comma-formatted numbers
-                denomination = parts[0] if len(parts) > 1 else "USD"
-                # Log the transformation
-                logger.debug(f"Transforming amount: {amount} {denomination}")
-                return {
-                    "amount": float(amount),
-                    "denomination": denomination
-                }
-
             return self.transformer(input_data) if self.transformer else input_data
         except Exception as e:
             logger.error(f"Transform error in {self.id}: {str(e)}")
@@ -137,43 +128,67 @@ class Flow:
         )
 
         # Validate and transform input
-        validation_result = step.validate(input_data)
-        audit.log_validation_event(
-            self.id,
-            step.id,
-            input_data,
-            validation_result
-        )
+        try:
+            validation_result = step.validate(input_data)
+            audit.log_validation_event(
+                self.id,
+                step.id,
+                input_data,
+                validation_result
+            )
 
-        if not validation_result:
+            if not validation_result:
+                from services.whatsapp.types import WhatsAppMessage
+                # Restore previous state while preserving ALL context
+                self.data = self._previous_data.copy()
+                self.data["_validation_error"] = True
+
+                # Log validation failure
+                audit.log_flow_event(
+                    self.id,
+                    "validation_error",
+                    step.id,
+                    self.data,
+                    "failure",
+                    "Invalid input"
+                )
+
+                if step.id == "amount":
+                    return WhatsAppMessage.create_text(
+                        self.data.get("mobile_number", ""),
+                        "Invalid amount format. Examples:\n"
+                        "100     (USD)\n"
+                        "USD 100\n"
+                        "ZWG 100\n"
+                        "XAU 1\n\n"
+                        "Please ensure you enter a valid number with an optional currency code."
+                    )
+                return WhatsAppMessage.create_text(
+                    self.data.get("mobile_number", ""),
+                    "Invalid input"
+                )
+
+        except ValueError as validation_error:
+            # Handle validation errors with context
             from services.whatsapp.types import WhatsAppMessage
-            # Restore previous state while preserving ALL context
+
+            # Restore previous state
             self.data = self._previous_data.copy()
             self.data["_validation_error"] = True
 
-            # Log validation failure
+            # Log validation error
             audit.log_flow_event(
                 self.id,
                 "validation_error",
                 step.id,
                 self.data,
                 "failure",
-                "Invalid input"
+                str(validation_error)
             )
 
-            if step.id == "amount":
-                return WhatsAppMessage.create_text(
-                    self.data.get("mobile_number", ""),
-                    "Invalid amount format. Examples:\n"
-                    "100     (USD)\n"
-                    "USD 100\n"
-                    "ZWG 100\n"
-                    "XAU 1\n\n"
-                    "Please ensure you enter a valid number with an optional currency code."
-                )
             return WhatsAppMessage.create_text(
                 self.data.get("mobile_number", ""),
-                "Invalid input"
+                str(validation_error)
             )
 
         try:

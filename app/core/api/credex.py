@@ -40,8 +40,8 @@ class CredExManager(BaseAPIClient):
                         "credex_offer",
                         "credex_offer"
                     )
-                    logger.info("Offer successful")
-                    return True, response_data
+
+                    # Refresh dashboard to show success message
                 else:
                     logger.error("Offer failed")
                     return False, {"error": response_data.get("error")}

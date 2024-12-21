@@ -22,23 +22,21 @@ class StateManager:
         preserve_validation: bool = True
     ) -> Dict[str, Any]:
         """Prepare state update with proper context preservation"""
-        # For greeting messages (clear_flow=True), preserve critical fields
+        # For greeting messages or flow clearing, reset state while preserving core data
         if clear_flow:
             new_state = {
+                "_last_updated": audit.get_current_timestamp(),
                 "profile": current_state.get("profile", {}),
-                "current_account": current_state.get("current_account", {}),
-                "jwt_token": current_state.get("jwt_token", ""),
-                "member_id": current_state.get("member_id", ""),
-                "account_id": current_state.get("account_id", ""),
-                "_validation_context": {},
-                "_validation_state": {},
-                "_last_updated": audit.get_current_timestamp()
+                "current_account": current_state.get("current_account"),
+                "jwt_token": current_state.get("jwt_token"),
+                "member_id": current_state.get("member_id"),
+                "account_id": current_state.get("account_id"),
+                "authenticated": current_state.get("authenticated", False),
+                "_validation_context": {},  # Initialize empty validation context
+                "_validation_state": {}     # Initialize empty validation state
             }
             if mobile_number:
                 new_state["mobile_number"] = mobile_number
-            # Preserve authentication state
-            if "authenticated" in current_state:
-                new_state["authenticated"] = current_state["authenticated"]
             return new_state
 
         # Extract validation context if needed
@@ -57,7 +55,9 @@ class StateManager:
             "jwt_token": current_state.get("jwt_token"),
             "member_id": current_state.get("member_id"),
             "account_id": current_state.get("account_id"),
-            "_last_updated": audit.get_current_timestamp()
+            "_last_updated": audit.get_current_timestamp(),
+            "_validation_context": current_state.get("_validation_context", {}),
+            "_validation_state": current_state.get("_validation_state", {})
         }
 
         # Add mobile number if provided

@@ -12,9 +12,18 @@ logger = logging.getLogger(__name__)
 class ActionFlow(CredexFlow):
     """Base class for credex action flows (accept/decline/cancel)"""
 
-    def __init__(self, flow_type: str, **kwargs):
+    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
+        # Extract flow type from state if not provided directly
+        if flow_type is None and state is not None:
+            flow_data = state.get('flow_data', {})
+            flow_type = flow_data.get('flow_type')
+
+        if flow_type is None:
+            raise ValueError("flow_type must be provided either directly or through state")
+
+        # Set action prefix before parent initialization
         self.action_prefix = flow_type  # e.g. "cancel_", "accept_", "decline_"
-        super().__init__(flow_type, **kwargs)
+        super().__init__(flow_type=flow_type, state=state, **kwargs)
 
     def _create_steps(self) -> List[Step]:
         """Create steps for action flow"""
@@ -96,19 +105,28 @@ class ActionFlow(CredexFlow):
 class CancelFlow(ActionFlow):
     """Flow for canceling a credex offer"""
 
-    def __init__(self, **kwargs):
-        super().__init__("cancel_credex", **kwargs)
+    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
+        # Default to cancel_credex if not provided
+        if flow_type is None and (state is None or "flow_type" not in state.get("flow_data", {})):
+            flow_type = "cancel_credex"
+        super().__init__(flow_type=flow_type, state=state, **kwargs)
 
 
 class AcceptFlow(ActionFlow):
     """Flow for accepting a credex offer"""
 
-    def __init__(self, **kwargs):
-        super().__init__("accept", **kwargs)
+    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
+        # Default to accept if not provided
+        if flow_type is None and (state is None or "flow_type" not in state.get("flow_data", {})):
+            flow_type = "accept"
+        super().__init__(flow_type=flow_type, state=state, **kwargs)
 
 
 class DeclineFlow(ActionFlow):
     """Flow for declining a credex offer"""
 
-    def __init__(self, **kwargs):
-        super().__init__("decline", **kwargs)
+    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
+        # Default to decline if not provided
+        if flow_type is None and (state is None or "flow_type" not in state.get("flow_data", {})):
+            flow_type = "decline"
+        super().__init__(flow_type=flow_type, state=state, **kwargs)

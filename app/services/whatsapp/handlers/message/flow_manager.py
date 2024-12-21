@@ -1,6 +1,6 @@
 """Flow initialization and management"""
 import logging
-from typing import Any, Dict, Optional, Type, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from core.messaging.flow import Flow
 from core.utils.flow_audit import FlowAuditLogger
@@ -37,7 +37,7 @@ class FlowManager:
             )
             return None, None
 
-    def initialize_flow(self, flow_type: str, flow_class: Type[Flow], **kwargs) -> WhatsAppMessage:
+    def initialize_flow(self, flow_type: str, flow_class: Any, **kwargs) -> WhatsAppMessage:
         """Initialize a new flow"""
         try:
             # Log flow start attempt
@@ -47,7 +47,7 @@ class FlowManager:
                 None,
                 {
                     "flow_type": flow_type,
-                    "flow_class": flow_class.__name__,
+                    "flow_class": flow_class.__name__ if hasattr(flow_class, '__name__') else str(flow_class),
                     **kwargs
                 },
                 "in_progress"
@@ -70,7 +70,9 @@ class FlowManager:
                     "phone": self.service.user.mobile_number,
                     "member_id": member_id,
                     "account_id": account_id,
-                    "mobile_number": self.service.user.mobile_number
+                    "mobile_number": self.service.user.mobile_number,
+                    "_validation_context": {},  # Initialize validation context
+                    "_validation_state": {}     # Initialize validation state
                 }
             }
 
@@ -85,7 +87,11 @@ class FlowManager:
             # Get initial message
             result = flow.current_step.get_message(flow.data)
 
-            # Update state
+            # If result is a WhatsAppMessage, return it immediately
+            if isinstance(result, WhatsAppMessage):
+                return result
+
+            # Update state only for non-WhatsAppMessage responses
             self._update_flow_state(flow, flow_type, flow_class, kwargs)
 
             audit.log_flow_event(
@@ -126,7 +132,7 @@ class FlowManager:
             offer.get(k) for k in ["credexID", "formattedInitialAmount", "counterpartyAccountName"]
         )]
 
-    def _create_flow(self, flow_type: str, flow_class: Type[Flow], initial_state: Dict, **kwargs) -> Flow:
+    def _create_flow(self, flow_type: str, flow_class: Any, initial_state: Dict, **kwargs) -> Flow:
         """Create flow instance with proper initialization"""
         if flow_class in {RegistrationFlow, UpgradeFlow}:
             return flow_class(**kwargs)
@@ -140,7 +146,7 @@ class FlowManager:
             **flow_kwargs
         )
 
-    def _update_flow_state(self, flow: Flow, flow_type: str, flow_class: Type[Flow], kwargs: Dict):
+    def _update_flow_state(self, flow: Flow, flow_type: str, flow_class: Any, kwargs: Dict):
         """Update state with flow data"""
         current_state = self.service.user.state.state or {}
 
