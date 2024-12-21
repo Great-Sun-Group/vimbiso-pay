@@ -80,7 +80,7 @@ class ActionFlow(CredexFlow):
             }
 
         actions = {
-            "cancel_credex": self.credex_service.cancel_credex,
+            "cancel": self.credex_service.cancel_credex,
             "accept": self.credex_service.accept_credex,
             "decline": self.credex_service.decline_credex
         }
@@ -106,9 +106,9 @@ class CancelFlow(ActionFlow):
     """Flow for canceling a credex offer"""
 
     def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
-        # Default to cancel_credex if not provided
+        # Default to cancel if not provided
         if flow_type is None and (state is None or "flow_type" not in state.get("flow_data", {})):
-            flow_type = "cancel_credex"
+            flow_type = "cancel"
         super().__init__(flow_type=flow_type, state=state, **kwargs)
 
 

@@ -46,7 +46,7 @@ class CredexFlow(Flow):
         steps = self._create_steps()
 
         # Initialize parent with flow ID and steps
-        super().__init__(f"credex_{flow_type}", steps)
+        super().__init__(flow_type, steps)
 
         # Restore state if provided
         if state is not None:
@@ -73,7 +73,7 @@ class CredexFlow(Flow):
         """Create confirmation message based on flow type"""
         messages = {
             "offer": self._create_offer_confirmation,
-            "cancel_credex": self._create_cancel_confirmation,
+            "cancel": self._create_cancel_confirmation,
             "accept": lambda s: self._create_action_confirmation(s, "Accept"),
             "decline": lambda s: self._create_action_confirmation(s, "Decline")
         }

@@ -28,13 +28,6 @@ class CredexFlowValidator(FlowValidatorInterface):
                 missing_fields=missing
             )
 
-        # Validate flow type
-        if flow_data["id"] not in {"credex_offer", "credex_cancel", "credex_accept", "credex_decline"}:
-            return ValidationResult(
-                is_valid=False,
-                error_message="Invalid credex flow type"
-            )
-
         # Validate step
         if not isinstance(flow_data["step"], int) or flow_data["step"] < 0:
             return ValidationResult(
@@ -50,12 +43,16 @@ class CredexFlowValidator(FlowValidatorInterface):
                 error_message="Flow data must be a dictionary"
             )
 
+        # Extract flow type from ID
+        flow_id = flow_data["id"]
+        flow_type = flow_id.split("_")[0] if "_" in flow_id else flow_id
+
         # Validate data based on flow type
-        if flow_data["id"] == "credex_offer":
+        if flow_type == "offer":
             return self._validate_offer_data(data)
-        elif flow_data["id"] == "credex_cancel":
+        elif flow_type == "cancel":
             return self._validate_cancel_data(data)
-        elif flow_data["id"] in {"credex_accept", "credex_decline"}:
+        elif flow_type in {"accept", "decline"}:
             return self._validate_action_data(data)
 
         return ValidationResult(is_valid=True)

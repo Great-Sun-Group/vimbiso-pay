@@ -1,6 +1,6 @@
 """CredEx operations"""
 import logging
-from typing import Dict, Any, Tuple
+from typing import Any, Dict, Tuple
 
 from .base import BaseAPIClient
 from .profile import ProfileManager
@@ -34,6 +34,16 @@ class CredExManager(BaseAPIClient):
                     response_data.get("data", {}).get("action", {}).get("type")
                     == "CREDEX_CREATED"
                 ):
+                    # Add success message and status to response
+                    if "data" not in response_data:
+                        response_data["data"] = {}
+                    if "action" not in response_data["data"]:
+                        response_data["data"]["action"] = {}
+                    response_data["data"]["action"].update({
+                        "message": "CredEx offer created successfully",
+                        "status": "success"
+                    })
+
                     # Update profile and state
                     self.profile_manager.update_profile_from_response(
                         response_data,
@@ -41,7 +51,8 @@ class CredExManager(BaseAPIClient):
                         "credex_offer"
                     )
 
-                    # Refresh dashboard to show success message
+                    # Return success response with message
+                    return True, response_data
                 else:
                     logger.error("Offer failed")
                     return False, {"error": response_data.get("error")}

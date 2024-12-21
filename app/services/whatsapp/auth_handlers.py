@@ -4,7 +4,8 @@ import logging
 from .base_handler import BaseActionHandler
 from .types import WhatsAppMessage
 from .auth_validator import AuthFlowValidator
-from .handlers.auth import AuthFlow, MenuHandler
+from .handlers.auth.auth_flow import AuthFlow
+from .handlers.auth.menu_handler import MenuHandler
 
 logger = logging.getLogger(__name__)
 

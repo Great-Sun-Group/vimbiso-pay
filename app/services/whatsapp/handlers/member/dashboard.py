@@ -180,19 +180,19 @@ class DashboardFlow(Flow):
         """Build menu options"""
         options = [
             {
-                "id": "offer_credex",
+                "id": "offer",
                 "title": "💸 Offer Secured Credex",
             },
             {
-                "id": "accept_credex",
+                "id": "accept",
                 "title": f"✅ Accept Offers ({pending_in})",
             },
             {
-                "id": "decline_credex",
+                "id": "decline",
                 "title": f"❌ Decline Offers ({pending_in})",
             },
             {
-                "id": "cancel_credex",
+                "id": "cancel",
                 "title": f"📤 Cancel Outgoing ({pending_out})",
             },
             {

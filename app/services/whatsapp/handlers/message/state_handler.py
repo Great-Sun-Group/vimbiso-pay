@@ -98,15 +98,24 @@ class StateHandler:
             if k.startswith("_")
         }
 
+        # Get member ID from flow data
+        member_id = flow_state.get("data", {}).get("member_id")
+        if not member_id:
+            raise ValueError("Missing member ID in flow data")
+
+        # Construct proper flow ID
+        flow_data = {
+            **flow_state,
+            "id": f"{flow_type}_{member_id}",  # Ensure consistent ID format
+            "flow_type": flow_type,
+            "kwargs": kwargs,
+            "_validation_error": True,
+            **validation_context  # Restore validation context
+        }
+
         error_state = StateManager.prepare_state_update(
             current_state,
-            flow_data={
-                **flow_state,
-                "flow_type": flow_type,
-                "kwargs": kwargs,
-                "_validation_error": True,
-                **validation_context  # Restore validation context
-            },
+            flow_data=flow_data,
             mobile_number=self.service.user.mobile_number,
             preserve_validation=True  # Explicitly preserve validation context
         )
@@ -147,13 +156,22 @@ class StateHandler:
         current_state = self.service.user.state.state or {}
         flow_state = flow.get_state()
 
+        # Get member ID from flow data
+        member_id = flow_state.get("data", {}).get("member_id")
+        if not member_id:
+            raise ValueError("Missing member ID in flow data")
+
+        # Construct proper flow ID
+        flow_data = {
+            **flow_state,
+            "id": f"{flow_type}_{member_id}",  # Ensure consistent ID format
+            "flow_type": flow_type,
+            "kwargs": kwargs
+        }
+
         new_state = StateManager.prepare_state_update(
             current_state,
-            flow_data={
-                **flow_state,
-                "flow_type": flow_type,
-                "kwargs": kwargs
-            },
+            flow_data=flow_data,
             mobile_number=self.service.user.mobile_number,
             preserve_validation=True  # Explicitly preserve validation context
         )

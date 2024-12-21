@@ -24,17 +24,17 @@ class FlowProcessor:
 
     def determine_flow_class(self, flow_id: str) -> Type[Flow]:
         """Determine flow class based on flow ID"""
-        if "member_registration" in flow_id:
+        if flow_id.startswith("member_registration"):
             return RegistrationFlow
-        elif "member_upgrade" in flow_id:
+        elif flow_id.startswith("member_upgrade"):
             return UpgradeFlow
-        elif "offer_" in flow_id or flow_id == "credex_offer":
+        elif flow_id.startswith("offer_"):
             return OfferFlow
-        elif "accept_" in flow_id:
+        elif flow_id.startswith("accept_"):
             return AcceptFlow
-        elif "decline_" in flow_id:
+        elif flow_id.startswith("decline_"):
             return DeclineFlow
-        elif "cancel_" in flow_id:
+        elif flow_id.startswith("cancel_"):
             return CancelFlow
         # Log warning for unknown flow type
         logger.warning(f"Unknown flow type for ID: {flow_id}, using base CredexFlow")
@@ -48,9 +48,14 @@ class FlowProcessor:
         kwargs: Dict
     ) -> Flow:
         """Initialize flow with state"""
+        # Get member ID from data
+        member_id = flow_data.get("data", {}).get("member_id")
+        if not member_id:
+            raise ValueError("Missing member ID in flow data")
+
         # Prepare complete state including flow data
         state = {
-            "id": flow_data["id"],
+            "id": f"{flow_type}_{member_id}",  # Construct proper flow ID
             "step": flow_data["step"],
             "data": flow_data["data"],
             "flow_data": {
@@ -177,7 +182,7 @@ class FlowProcessor:
             "success"
         )
 
-        if any(t in flow_id for t in ["offer_", "accept_", "decline_", "cancel_"]):
+        if any(flow_id.startswith(t) for t in ["offer_", "accept_", "decline_", "cancel_"]):
             return self._complete_credex_flow(flow)
 
         return flow.complete()

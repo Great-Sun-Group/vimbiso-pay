@@ -2,10 +2,11 @@
 import logging
 from typing import Any
 
-from services.whatsapp.handlers.credex import (
+from services.whatsapp.handlers.credex.flows import (
     OfferFlow, AcceptFlow, DeclineFlow, CancelFlow
 )
-from services.whatsapp.handlers.member import RegistrationFlow, UpgradeFlow
+from services.whatsapp.handlers.member.registration import RegistrationFlow
+from services.whatsapp.handlers.member.upgrade import UpgradeFlow
 
 from core.utils.flow_audit import FlowAuditLogger
 from services.whatsapp.types import WhatsAppMessage
@@ -22,10 +23,10 @@ class MessageHandler:
     """Handler for WhatsApp messages and flows"""
 
     FLOW_TYPES = {
-        "offer_credex": ("offer", OfferFlow),
-        "accept_credex": ("accept", AcceptFlow),
-        "decline_credex": ("decline", DeclineFlow),
-        "cancel_credex": ("cancel", CancelFlow),
+        "offer": ("offer", OfferFlow),
+        "accept": ("accept", AcceptFlow),
+        "decline": ("decline", DeclineFlow),
+        "cancel": ("cancel", CancelFlow),
         "start_registration": ("registration", RegistrationFlow),
         "upgrade_tier": ("upgrade", UpgradeFlow)
     }

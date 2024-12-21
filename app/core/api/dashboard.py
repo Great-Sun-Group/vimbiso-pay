@@ -28,11 +28,29 @@ class DashboardManager(BaseAPIClient):
             response = self._make_api_request(url, headers, payload, login=False)
             if response.status_code == 200:
                 response_data = response.json()
+                # Get current state
+                current_state = self.profile_manager._get_current_state()
+
+                # Add current state's action data to response to preserve it
+                if "data" not in response_data:
+                    response_data["data"] = {}
+                if "action" not in response_data["data"]:
+                    response_data["data"]["action"] = {}
+
+                # Preserve existing action data
+                current_action = current_state.get("profile", {}).get("action", {})
+                response_data["data"]["action"].update({
+                    "message": current_action.get("message", ""),
+                    "status": current_action.get("status", ""),
+                    "type": current_action.get("type", "dashboard_fetch")
+                })
+
                 # Structure profile data from dashboard response
                 profile_data = self.profile_manager._structure_profile_data(
                     response_data,
                     "dashboard_fetch"
                 )
+
                 logger.info("Dashboard fetched successfully")
                 return True, {
                     "data": {
@@ -50,10 +68,29 @@ class DashboardManager(BaseAPIClient):
                     response = self._make_api_request(url, headers, payload)
                     if response.status_code == 200:
                         response_data = response.json()
+                        # Get current state
+                        current_state = self.profile_manager._get_current_state()
+
+                        # Add current state's action data to response to preserve it
+                        if "data" not in response_data:
+                            response_data["data"] = {}
+                        if "action" not in response_data["data"]:
+                            response_data["data"]["action"] = {}
+
+                        # Preserve existing action data
+                        current_action = current_state.get("profile", {}).get("action", {})
+                        response_data["data"]["action"].update({
+                            "message": current_action.get("message", ""),
+                            "status": current_action.get("status", ""),
+                            "type": current_action.get("type", "dashboard_fetch")
+                        })
+
+                        # Structure profile data from dashboard response
                         profile_data = self.profile_manager._structure_profile_data(
                             response_data,
                             "dashboard_fetch"
                         )
+
                         logger.info("Dashboard fetched successfully after reauth")
                         return True, {
                             "data": {

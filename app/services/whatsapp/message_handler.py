@@ -1,4 +1,4 @@
 """WhatsApp message handling implementation"""
-from .handlers.message import MessageHandler
+from .handlers.message.message_handler import MessageHandler
 
 __all__ = ['MessageHandler']

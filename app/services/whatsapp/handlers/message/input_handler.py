@@ -18,27 +18,27 @@ class InputHandler:
     def __init__(self, service: Any):
         self.service = service
 
+    # Map incoming actions to flow types
+    ACTION_MAP = {
+        "offer_credex": "offer",
+        "accept_credex": "accept",
+        "decline_credex": "decline",
+        "cancel_credex": "cancel"
+    }
+
     def get_action(self) -> str:
         """Extract action from message"""
         # Handle interactive messages
         if self.service.message_type == "interactive":
             interactive = self.service.message.get("interactive", {})
             if interactive.get("type") == "list_reply":
-                return interactive.get("list_reply", {}).get("id", "").lower()
+                action = interactive.get("list_reply", {}).get("id", "").lower()
             elif interactive.get("type") == "button_reply":
-                return interactive.get("button_reply", {}).get("id", "").lower()
+                action = interactive.get("button_reply", {}).get("id", "").lower()
+        else:
+            # For text messages
+            action = self.service.body.strip().lower()
 
-        # For text messages
-        return self.service.body.strip().lower()
-
-    def extract_input_value(self) -> Union[str, Dict]:
-        """Extract input value based on message type"""
-        # Log essential info at INFO level
-        logger.info(f"Processing {self.service.message_type} message")
-
-        # Detailed message info at DEBUG level
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Raw message: {self.service.message}")
             logger.debug(f"Message body: {self.service.body}")
 
         if self.service.message_type == "interactive":

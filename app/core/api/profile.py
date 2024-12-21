@@ -1,16 +1,28 @@
 """Profile and state management"""
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from .base import BaseAPIClient
 from ..config.constants import CachedUser
+from .base import BaseAPIClient
 
 logger = logging.getLogger(__name__)
 
 
 class ProfileManager(BaseAPIClient):
     """Handles profile data structuring and state management"""
+
+    def _get_action_message(self, action: Dict[str, Any], action_type: str) -> str:
+        """Get action message from response"""
+        # Return explicit message if present
+        if action.get("message"):
+            return action["message"]
+
+        # Check details for message
+        if action.get("details", {}).get("message"):
+            return action["details"]["message"]
+
+        return ""
 
     def _structure_profile_data(
         self,
@@ -29,12 +41,8 @@ class ProfileManager(BaseAPIClient):
                 "timestamp": datetime.now().isoformat(),
                 "actor": self.bot_service.user.mobile_number,
                 "details": action.get("details", {}),
-                "message": (
-                    action.get("message") or  # Try direct message
-                    action.get("details", {}).get("message") or  # Try details.message
-                    ("CredEx offer created successfully" if action.get("type") == "CREDEX_CREATED" else "")  # Default success message
-                ),
-                "status": "success" if action.get("type") == "CREDEX_CREATED" else action.get("status", "")
+                "message": self._get_action_message(action, action_type),
+                "status": action.get("status", "")
             },
             "dashboard": dashboard
         }
@@ -214,23 +222,30 @@ class ProfileManager(BaseAPIClient):
             # Extract and validate dashboard data
             data = member_info.get("data", {})
             dashboard_data = data.get("dashboard")
-            action_data = data.get("action", {})
-
             if not dashboard_data:
                 logger.error("Missing required dashboard data")
                 return "Missing dashboard data"
 
+            # Add current state's action data to member info to preserve it
+            if "data" not in member_info:
+                member_info["data"] = {}
+            if "action" not in member_info["data"]:
+                member_info["data"]["action"] = {}
+
+            # Preserve existing action data while keeping any new action data
+            current_action = current_state.get("profile", {}).get("action", {})
+            existing_action = member_info["data"]["action"]
+            member_info["data"]["action"].update({
+                "id": existing_action.get("id", current_action.get("id", "")),
+                "message": current_action.get("message", ""),  # Preserve message from current state
+                "status": current_action.get("status", ""),  # Preserve status from current state
+                "type": current_action.get("type", "refresh"),  # Preserve type from current state
+                "details": existing_action.get("details", current_action.get("details", {}))  # Keep any new details
+            })
+
             # Structure profile data
-            profile_data = {
-                "action": {
-                    "id": action_data.get("id", ""),
-                    "type": action_data.get("type", "refresh"),
-                    "timestamp": datetime.now().isoformat(),
-                    "actor": self.bot_service.user.mobile_number,
-                    "details": action_data.get("details", {})
-                },
-                "dashboard": dashboard_data
-            }
+            profile_data = self._structure_profile_data(member_info, "refresh")
+            profile_data["dashboard"] = dashboard_data
 
             # Validate current_state
             if not isinstance(current_state, dict):
