@@ -14,20 +14,39 @@ class StateValidator:
         "current_account",
         "jwt_token",
         "member_id",
-        "account_id"
+        "account_id",
+        "_validation_context",  # Add validation context tracking
+        "_validation_state"     # Add validation state
     }
 
     @classmethod
-    def validate_state(cls, state: Dict[str, Any]) -> ValidationResult:
-        """Validate core state structure"""
+    def validate_state(cls, state: Dict[str, Any], preserve_context: bool = True) -> ValidationResult:
+        """
+        Validate core state structure
+
+        Args:
+            state: State dictionary to validate
+            preserve_context: Whether to preserve validation context in validation
+        """
         if not isinstance(state, dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="State must be a dictionary"
             )
 
+        # Get required fields based on context preservation
+        required_fields = cls.CRITICAL_FIELDS
+        if not preserve_context:
+            # Exclude context fields if not preserving
+            required_fields = {
+                f for f in required_fields
+                if not f.startswith('_')
+            }
+
         # Check for required fields
-        missing = cls.CRITICAL_FIELDS - set(state.keys())
+        state_keys = set(state.keys())
+        missing = required_fields - state_keys
+
         if missing:
             return ValidationResult(
                 is_valid=False,
@@ -46,6 +65,15 @@ class StateValidator:
             account_validation = cls.validate_account_structure(current_account)
             if not account_validation.is_valid:
                 return account_validation
+
+        # Validate validation context if present and preserving
+        if preserve_context and "_validation_context" in state:
+            context = state["_validation_context"]
+            if not isinstance(context, dict):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Validation context must be a dictionary"
+                )
 
         return ValidationResult(is_valid=True)
 
@@ -193,5 +221,27 @@ class StateValidator:
                 result["dashboard"]["accounts"] = []
             elif not isinstance(result["dashboard"]["accounts"], list):
                 result["dashboard"]["accounts"] = []
+
+        return result
+
+    @classmethod
+    def ensure_validation_context(cls, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure validation context structure while preserving data"""
+        if not isinstance(state, dict):
+            return {}
+
+        result = state.copy()
+
+        # Initialize validation context if not present
+        if "_validation_context" not in result:
+            result["_validation_context"] = {}
+        elif not isinstance(result["_validation_context"], dict):
+            result["_validation_context"] = {}
+
+        # Initialize validation state if not present
+        if "_validation_state" not in result:
+            result["_validation_state"] = {}
+        elif not isinstance(result["_validation_state"], dict):
+            result["_validation_state"] = {}
 
         return result

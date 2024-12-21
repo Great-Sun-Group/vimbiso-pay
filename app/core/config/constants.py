@@ -4,11 +4,13 @@ from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 import redis
+from django.conf import settings
+
+from core.utils.flow_audit import FlowAuditLogger
 from core.utils.redis_atomic import AtomicStateManager
 from core.utils.state_validator import StateValidator
-from core.utils.flow_audit import FlowAuditLogger
-from django.conf import settings
 from services.credex.service import CredExService
+
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -56,6 +58,57 @@ def get_greeting(name: str) -> str:
         return f"Hello There {name} 🌙"
 
 
+def create_initial_state() -> Dict[str, Any]:
+    """Create initial state with proper structure and validation context"""
+    # Create base state
+    base_state = {
+        "jwt_token": None,
+        "profile": StateValidator.ensure_profile_structure({}),
+        "current_account": {},  # Initialize as empty dict
+        "flow_data": None,
+        "member_id": None,
+        "account_id": None,
+        "authenticated": False,
+        "_validation_context": {},
+        "_validation_state": {},
+        "_previous_state": {}  # Initialize with empty dict
+    }
+
+    # First ensure validation context
+    state = StateValidator.ensure_validation_context(base_state)
+
+    # Create a copy for previous state
+    previous = state.copy()
+    previous.pop("_previous_state", None)  # Avoid recursive previous states
+
+    # Set the previous state
+    state["_previous_state"] = previous
+
+    # Final validation context check
+    return StateValidator.ensure_validation_context(state)
+
+
+def prepare_state_update(current_state: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+    """Prepare state update while preserving validation context"""
+    # Create a copy of current state as previous state
+    previous_state = current_state.copy()
+    previous_state.pop("_previous_state", None)  # Avoid recursive previous states
+
+    # Create new state starting with current state
+    new_state = current_state.copy()
+
+    # Apply updates
+    new_state.update(updates)
+
+    # Ensure validation context
+    new_state = StateValidator.ensure_validation_context(new_state)
+
+    # Set previous state
+    new_state["_previous_state"] = previous_state
+
+    return new_state
+
+
 class CachedUserState:
     """Manages user state with atomic operations"""
 
@@ -100,15 +153,7 @@ class CachedUserState:
 
             # Initialize state with defaults if needed
             if not state_data:
-                state_data = {
-                    "jwt_token": None,
-                    "profile": StateValidator.ensure_profile_structure({}),
-                    "current_account": {},  # Initialize as empty dict
-                    "flow_data": None,
-                    "member_id": None,
-                    "account_id": None,
-                    "authenticated": False
-                }
+                state_data = create_initial_state()
 
             # Validate state structure
             validation = StateValidator.validate_state(state_data)
@@ -147,6 +192,9 @@ class CachedUserState:
                 state_data.setdefault("account_id", None)
                 state_data.setdefault("authenticated", False)
 
+                # Ensure validation context fields
+                state_data = StateValidator.ensure_validation_context(state_data)
+
                 # Preserve critical fields from both current and previous state
                 critical_fields = ["jwt_token", "profile", "current_account", "member_id", "account_id", "authenticated"]
 
@@ -168,8 +216,9 @@ class CachedUserState:
                                 state_data[field] = previous_state[field]
 
                 # Store current state as previous for next initialization
-                state_data["_previous_state"] = state_data.copy()
-                state_data["_previous_state"].pop("_previous_state", None)
+                previous_state = state_data.copy()
+                previous_state.pop("_previous_state", None)  # Avoid recursive previous states
+                state_data["_previous_state"] = previous_state
 
             # Set instance variables
             self.state = state_data
@@ -224,16 +273,7 @@ class CachedUserState:
                 "failure"
             )
             # Set safe defaults while preserving any existing state
-            self.state = {
-                "jwt_token": None,
-                "profile": StateValidator.ensure_profile_structure({}),
-                "current_account": {},  # Initialize as empty dict
-                "flow_data": None,
-                "member_id": None,
-                "account_id": None,
-                "authenticated": False,
-                "_previous_state": {}  # Empty but present to maintain structure
-            }
+            self.state = create_initial_state()
             self.jwt_token = None
 
     def get_or_create_credex_service(self) -> CredExService:
@@ -306,8 +346,8 @@ class CachedUserState:
                 if "_previous_data" in current_flow_data:
                     new_flow_data["_previous_data"] = current_flow_data["_previous_data"]
 
-            # Update state while preserving structure
-            new_state.update(state or {})
+            # Prepare state update with proper context preservation
+            new_state = prepare_state_update(new_state, state or {})
 
             # Restore flow data with preserved validation state
             if not flow_data_cleared:
@@ -428,15 +468,16 @@ class CachedUserState:
             # If no state or error, initialize with current instance state
             if error or not state_data:
                 logger.debug("Initializing new state in get_state with current instance state")
-                state_data = {
+                state_data = create_initial_state()
+                state_data.update({
                     "jwt_token": self.jwt_token,
                     "profile": StateValidator.ensure_profile_structure(self.state.get("profile", {})),
-                    "current_account": self.state.get("current_account", {}),  # Initialize as empty dict
+                    "current_account": self.state.get("current_account", {}),
                     "flow_data": self.state.get("flow_data"),
                     "member_id": self.state.get("member_id"),
                     "account_id": self.state.get("account_id"),
                     "authenticated": self.state.get("authenticated", False)
-                }
+                })
 
             # Validate state
             validation = StateValidator.validate_state(state_data)
@@ -483,15 +524,7 @@ class CachedUserState:
                 "failure"
             )
             # Return safe defaults based on instance state
-            return {
-                "jwt_token": self.jwt_token,
-                "profile": StateValidator.ensure_profile_structure(self.state.get("profile", {})),
-                "current_account": self.state.get("current_account", {}),  # Initialize as empty dict
-                "flow_data": self.state.get("flow_data"),
-                "member_id": self.state.get("member_id"),
-                "account_id": self.state.get("account_id"),
-                "authenticated": self.state.get("authenticated", False)
-            }
+            return create_initial_state()
 
     def _update_service_token(self, jwt_token: str) -> None:
         """Update service token without triggering recursion"""
@@ -523,9 +556,6 @@ class CachedUserState:
                 self.jwt_token = jwt_token
                 current_state = self.state.copy()
                 current_state["jwt_token"] = jwt_token
-
-                if "flow_data" in current_state and isinstance(current_state["flow_data"], dict):
-                    current_state["flow_data"]["jwt_token"] = jwt_token
 
                 # Update service token directly without using property setter
                 self._update_service_token(jwt_token)
@@ -588,7 +618,8 @@ class CachedUserState:
                 preserved_state = {}
 
             # Initialize new state preserving all critical fields
-            new_state = {
+            new_state = create_initial_state()
+            new_state.update({
                 "jwt_token": preserved_state.get("jwt_token") or current_state.get("jwt_token"),
                 "profile": StateValidator.ensure_profile_structure(preserved_state.get("profile", {}) or current_state.get("profile", {})),
                 "current_account": preserved_state.get("current_account", {}) or current_state.get("current_account", {}),
@@ -596,7 +627,7 @@ class CachedUserState:
                 "member_id": preserved_state.get("member_id") or current_state.get("member_id"),
                 "account_id": preserved_state.get("account_id") or current_state.get("account_id"),
                 "authenticated": preserved_state.get("authenticated", False)
-            }
+            })
 
             # Validate new state
             validation = StateValidator.validate_state(new_state)

@@ -1,10 +1,11 @@
 """Dashboard flow implementation"""
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from core.messaging.flow import Flow
-from core.utils.state_validator import StateValidator
 from core.utils.flow_audit import FlowAuditLogger
+from core.utils.state_validator import StateValidator
+
 from ...screens import format_account
 from ...types import WhatsAppMessage
 
@@ -232,7 +233,10 @@ class DashboardFlow(Flow):
 
             # Get current state
             user_state = self.credex_service._parent_service.user.state
-            current_state = user_state.state
+            current_state = user_state.state or {}
+
+            # Ensure validation context is present before validation
+            current_state = StateValidator.ensure_validation_context(current_state)
 
             # Validate current state
             validation = StateValidator.validate_state(current_state)
@@ -269,7 +273,7 @@ class DashboardFlow(Flow):
             if not selected_account:
                 raise ValueError("Personal account not found")
 
-            # Prepare new state
+            # Prepare new state with validation context
             new_state = {
                 "current_account": selected_account,
                 "profile": profile_data,
@@ -278,7 +282,9 @@ class DashboardFlow(Flow):
                 "account_id": current_state.get("account_id"),
                 "authenticated": current_state.get("authenticated", False),
                 "mobile_number": self.data.get("mobile_number"),
-                "flow_data": {}  # Initialize as empty dict
+                "flow_data": {},  # Initialize as empty dict
+                "_validation_context": current_state.get("_validation_context", {}),
+                "_validation_state": current_state.get("_validation_state", {})
             }
 
             # Validate new state

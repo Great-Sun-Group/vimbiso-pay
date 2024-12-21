@@ -26,6 +26,11 @@ class FlowAuditLogger:
     """Handles flow-specific audit logging and recovery"""
 
     @staticmethod
+    def get_current_timestamp() -> str:
+        """Get current timestamp in ISO format"""
+        return datetime.now().isoformat()
+
+    @staticmethod
     def log_flow_event(
         flow_id: str,
         event_type: str,
@@ -45,7 +50,7 @@ class FlowAuditLogger:
         :param error: Error message if applicable
         """
         event_data = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": FlowAuditLogger.get_current_timestamp(),
             "flow_id": flow_id,
             "event_type": event_type,
             "step_id": step_id,
@@ -77,7 +82,7 @@ class FlowAuditLogger:
         :param error: Error message if applicable
         """
         transition_data = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": FlowAuditLogger.get_current_timestamp(),
             "flow_id": flow_id,
             "from_state": from_state,
             "to_state": to_state,
@@ -108,7 +113,7 @@ class FlowAuditLogger:
         :param error: Validation error message if applicable
         """
         validation_data = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": FlowAuditLogger.get_current_timestamp(),
             "flow_id": flow_id,
             "step_id": step_id,
             "input": input_data,
@@ -155,7 +160,8 @@ class FlowAuditLogger:
         for event in reversed(history):
             if (
                 event.get("status") == "success" and
-                event.get("state") is not None
+                event.get("state") is not None and
+                not event.get("state", {}).get("_validation_error")  # Skip states with validation errors
             ):
                 return event["state"]
         return None

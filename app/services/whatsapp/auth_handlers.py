@@ -38,7 +38,7 @@ class AuthActionHandler(BaseActionHandler):
                     text=REGISTER,
                     buttons=[{
                         "id": "start_registration",
-                        "title": "Introduce yourself"
+                        "title": "Provide your name to continue"
                     }]
                 )
 
@@ -163,16 +163,18 @@ class AuthActionHandler(BaseActionHandler):
                 }
             }
 
-            # Prepare new state
+            # Prepare new state with validation context
             new_state = {
                 "authenticated": True,
                 "profile": profile_data,
-                "flow_data": {},  # Initialize as empty dict
+                "flow_data": None,  # No flow data needed for initial state
                 "member_id": member_id,
                 "account_id": account_id,
-                "current_account": personal_account,  # Store full account data
-                "jwt_token": jwt_token,  # Include token in validation
-                "mobile_number": self.service.user.mobile_number
+                "current_account": personal_account,
+                "jwt_token": jwt_token,
+                "mobile_number": self.service.user.mobile_number,
+                "_validation_context": {},
+                "_validation_state": {}
             }
 
             # Validate login state specifically
@@ -227,93 +229,12 @@ class AuthActionHandler(BaseActionHandler):
     def _show_dashboard(self, flow_type: str = "view", message: Optional[str] = None) -> WhatsAppMessage:
         """Display dashboard without flow processing"""
         try:
-            # Get current state for transition logging
-            current_state = self.service.user.state.state or {}
-
-            # Validate current state
-            validation = self.validator.validate_flow_state(current_state)
-            if not validation.is_valid:
-                audit.log_flow_event(
-                    "auth_handler",
-                    "state_validation_error",
-                    None,
-                    current_state,
-                    "failure",
-                    validation.error_message
-                )
-                # Attempt recovery from last valid state
-                last_valid = audit.get_last_valid_state("auth_handler")
-                if last_valid:
-                    current_state = last_valid
-
-            # Get profile from current state and ensure proper structure
-            current_profile = current_state.get("profile", {})
-            profile_data = {
-                "action": {
-                    "id": current_profile.get("action", {}).get("id", ""),
-                    "type": current_profile.get("action", {}).get("type", "view"),
-                    "timestamp": current_profile.get("action", {}).get("timestamp", ""),
-                    "actor": current_profile.get("action", {}).get("actor", self.service.user.mobile_number),
-                    "details": current_profile.get("action", {}).get("details", {})
-                },
-                "dashboard": {
-                    "member": current_profile.get("dashboard", {}).get("member", {}),
-                    "accounts": current_profile.get("dashboard", {}).get("accounts", [])
-                }
-            }
-
-            # Prepare new state
-            new_state = {
-                "flow_data": {},  # Initialize as empty dict
-                "profile": profile_data,
-                "current_account": current_state.get("current_account"),
-                "jwt_token": current_state.get("jwt_token"),
-                "member_id": current_state.get("member_id"),
-                "account_id": current_state.get("account_id"),
-                "authenticated": current_state.get("authenticated", False),
-                "mobile_number": self.service.user.mobile_number
-            }
-
-            # Validate new state
-            validation = self.validator.validate_flow_state(new_state)
-            if not validation.is_valid:
-                audit.log_flow_event(
-                    "auth_handler",
-                    "state_validation_error",
-                    None,
-                    new_state,
-                    "failure",
-                    validation.error_message
-                )
-                return WhatsAppMessage.create_text(
-                    self.service.user.mobile_number,
-                    f"Failed to update state: {validation.error_message}"
-                )
-
-            # Log state transition
-            audit.log_state_transition(
-                "auth_handler",
-                current_state,
-                new_state,
-                "success"
-            )
-
-            # Update state
-            self.service.user.state.update_state(new_state, "clear_flow")
-
             # Initialize dashboard flow
-            flow = DashboardFlow(
-                flow_type=flow_type,
-                success_message=message
-            )
-
-            # Use cached credex service
+            flow = DashboardFlow(flow_type=flow_type, success_message=message)
             flow.credex_service = self.service.credex_service
-            flow.data = {
-                "mobile_number": self.service.user.mobile_number
-            }
+            flow.data = {"mobile_number": self.service.user.mobile_number}
 
-            # Complete flow directly
+            # Complete flow directly - this will handle state management
             return flow.complete()
 
         except Exception as e:

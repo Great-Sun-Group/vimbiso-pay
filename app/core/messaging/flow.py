@@ -110,14 +110,21 @@ class Flow:
         if not step:
             return None
 
-        # Store complete current state before any modifications
-        self._previous_data = {
-            **self.data,
+        # Store complete current state with validation context
+        validation_state = {
             "_step": self.current_index,
             "_validation_state": {
                 "step_id": step.id,
-                "input": input_data
+                "input": input_data,
+                "timestamp": audit.get_current_timestamp()
             }
+        }
+
+        # Preserve existing validation context while adding new state
+        self._previous_data = {
+            **self.data,
+            **validation_state,
+            "_previous_validation": self.data.get("_validation_state", {})
         }
 
         # Log flow event at start of processing
@@ -140,9 +147,9 @@ class Flow:
 
         if not validation_result:
             from services.whatsapp.types import WhatsAppMessage
-            # Restore previous state on validation failure, preserving validation context
-            self.data = {k: v for k, v in self._previous_data.items()
-                         if not k.startswith('_')}
+            # Restore previous state while preserving ALL context
+            self.data = self._previous_data.copy()
+            self.data["_validation_error"] = True
 
             # Log validation failure
             audit.log_flow_event(
@@ -172,6 +179,7 @@ class Flow:
         try:
             # Update flow data
             transformed_data = step.transform(input_data)
+
             # Store transformed data under step ID to preserve structure
             if step.id == "amount":
                 # Store amount data under amount_denom key to better reflect its structure
@@ -182,16 +190,20 @@ class Flow:
             # Move to next step only after successful transformation
             self.current_index += 1
 
-            # Store validation success in previous state
-            self._previous_data["_validation_success"] = True
-
-            # Update flow data with validation result
-            if step.id == "amount":
-                # Ensure amount data is properly structured
-                self.data["_amount_validation"] = {
-                    "original_input": input_data,
-                    "transformed": transformed_data
+            # Store validation context
+            validation_context = {
+                "_validation_success": True,
+                "_validation_state": {
+                    "step_id": step.id,
+                    "input": input_data,
+                    "transformed": transformed_data,
+                    "timestamp": audit.get_current_timestamp()
                 }
+            }
+
+            # Update flow data preserving context
+            self.data.update(validation_context)
+            self._previous_data.update(validation_context)
 
             # Log successful state transition
             audit.log_state_transition(
@@ -288,7 +300,11 @@ class Flow:
                 logger.debug(f"[Flow {self.id}] - Existing data fields: {list(self.data.keys())}")
                 logger.debug(f"[Flow {self.id}] - New data fields: {list(state['data'].keys())}")
 
+                # Preserve validation context during merge
+                validation_context = {k: v for k, v in self.data.items() if k.startswith('_')}
+
                 self.data = {
+                    **validation_context,  # Keep validation context
                     **self.data,  # Keep existing data
                     **state.get("data", {})  # Merge new data
                 }

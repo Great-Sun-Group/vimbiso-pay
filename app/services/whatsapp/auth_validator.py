@@ -13,6 +13,10 @@ class AuthFlowValidator(FlowValidatorInterface):
         if flow_data is None:
             return ValidationResult(is_valid=True)
 
+        # Ensure validation context if flow_data is a dict
+        if isinstance(flow_data, dict):
+            flow_data = StateValidator.ensure_validation_context(flow_data)
+
         if not isinstance(flow_data, dict):
             return ValidationResult(
                 is_valid=False,
@@ -32,13 +36,6 @@ class AuthFlowValidator(FlowValidatorInterface):
                 missing_fields=missing
             )
 
-        # Validate flow type
-        if flow_data["id"] not in {"auth_login", "auth_register"}:
-            return ValidationResult(
-                is_valid=False,
-                error_message="Invalid auth flow type"
-            )
-
         # Validate step
         if not isinstance(flow_data["step"], int) or flow_data["step"] < 0:
             return ValidationResult(
@@ -54,16 +51,20 @@ class AuthFlowValidator(FlowValidatorInterface):
                 error_message="Flow data must be a dictionary"
             )
 
-        # Validate data based on flow type
-        if flow_data["id"] == "auth_login":
-            return self._validate_login_data(data)
-        elif flow_data["id"] == "auth_register":
-            return self._validate_register_data(data)
+        # Validate mobile_number is present in data
+        if "mobile_number" not in data:
+            return ValidationResult(
+                is_valid=False,
+                error_message="Flow data must contain mobile_number"
+            )
 
         return ValidationResult(is_valid=True)
 
     def validate_flow_state(self, state: Dict[str, Any]) -> ValidationResult:
         """Validate complete flow state"""
+        # Ensure validation context is present
+        state = StateValidator.ensure_validation_context(state)
+
         # First validate core state structure
         core_validation = StateValidator.validate_state(state)
         if not core_validation.is_valid:
@@ -102,34 +103,11 @@ class AuthFlowValidator(FlowValidatorInterface):
         """Get required fields for auth flows"""
         return {"mobile_number"}
 
-    def _validate_login_data(self, data: Dict[str, Any]) -> ValidationResult:
-        """Validate login-specific data"""
-        required_fields = {"mobile_number"}
-        missing = required_fields - set(data.keys())
-        if missing:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing login data fields: {', '.join(missing)}",
-                missing_fields=missing
-            )
-
-        return ValidationResult(is_valid=True)
-
-    def _validate_register_data(self, data: Dict[str, Any]) -> ValidationResult:
-        """Validate register-specific data"""
-        required_fields = {"mobile_number"}
-        missing = required_fields - set(data.keys())
-        if missing:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing register data fields: {', '.join(missing)}",
-                missing_fields=missing
-            )
-
-        return ValidationResult(is_valid=True)
-
     def validate_login_state(self, state: Dict[str, Any]) -> ValidationResult:
         """Validate login state specifically"""
+        # Ensure validation context is present
+        state = StateValidator.ensure_validation_context(state)
+
         # First validate basic state
         basic_validation = self.validate_flow_state(state)
         if not basic_validation.is_valid:
