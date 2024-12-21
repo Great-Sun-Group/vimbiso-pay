@@ -83,18 +83,24 @@ class WhatsAppMessage(Dict[str, Any]):
         header: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Create a list message"""
+        action_items = {
+            "button": button[:20],  # WhatsApp limit
+            "sections": sections
+        }
+
         interactive = {
             "type": "list",
             "body": {"text": text},
-            "action": {
-                "button": button[:20],  # WhatsApp limit
-                "sections": sections
-            }
+            "action": action_items
         }
         if header:
             interactive["header"] = header
 
-        return cls.create_message(to, "interactive", interactive=interactive)
+        return cls.create_message(
+            to=to,
+            message_type="interactive",
+            interactive=interactive
+        )
 
     @classmethod
     def from_core_message(cls, message: Union[CoreMessage, Dict[str, Any], 'WhatsAppMessage']) -> Dict[str, Any]:

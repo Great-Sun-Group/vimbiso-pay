@@ -62,14 +62,23 @@ class CredexTemplates:
                 "title": f"{amount} {action_text == 'cancel' and 'to' or 'from'} {offer['counterpartyAccountName']}"
             })
 
+        # Ensure sections are properly structured
+        sections = [{
+            "title": title,
+            "rows": [
+                {
+                    "id": row["id"],
+                    "title": row["title"]
+                }
+                for row in rows
+            ]
+        }]
+
         return WhatsAppMessage.create_list(
             recipient,
             f"Select an offer to {action_text}:",
             "🕹️ Options",
-            [{
-                "title": title,
-                "rows": rows
-            }]
+            sections
         )
 
     @staticmethod

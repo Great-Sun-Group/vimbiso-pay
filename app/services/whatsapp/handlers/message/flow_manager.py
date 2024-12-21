@@ -1,11 +1,13 @@
 """Flow initialization and management"""
 import logging
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 from core.messaging.flow import Flow
 from core.utils.flow_audit import FlowAuditLogger
-from ...types import WhatsAppMessage
+
 from ...state_manager import StateManager
+from ...types import WhatsAppMessage
 from ..credex import CredexFlow
 from ..member import RegistrationFlow, UpgradeFlow
 
@@ -19,10 +21,46 @@ class FlowManager:
     def __init__(self, service: Any):
         self.service = service
 
+    def _initialize_state(self) -> Dict[str, Any]:
+        """Initialize state if needed"""
+        state = self.service.user.state.state
+
+        # If state is not a dict, initialize it
+        if not isinstance(state, dict):
+            initial_state = {
+                "mobile_number": self.service.user.mobile_number,
+                "_last_updated": datetime.now().isoformat(),
+                "profile": {
+                    "action": {
+                        "id": "",
+                        "type": "",
+                        "timestamp": "",
+                        "actor": "",
+                        "details": {},
+                        "message": "",
+                        "status": ""
+                    },
+                    "dashboard": {
+                        "member": {},
+                        "accounts": []
+                    }
+                },
+                "current_account": {},
+                "jwt_token": None,
+                "member_id": None,
+                "account_id": None,
+                "authenticated": False,
+                "_validation_context": {},
+                "_validation_state": {}
+            }
+            self.service.user.state.update_state(initial_state, "init")
+            return initial_state
+        return state
+
     def _get_member_info(self) -> Tuple[Optional[str], Optional[str]]:
         """Extract member and account IDs from state"""
         try:
-            state = self.service.user.state.state or {}
+            state = self._initialize_state()
             member_id = state.get("member_id")
             account_id = state.get("account_id")
             return member_id, account_id
@@ -78,7 +116,7 @@ class FlowManager:
 
             # Add current account data for action flows
             if flow_type in ["cancel", "accept", "decline"]:
-                current_state = self.service.user.state.state or {}
+                current_state = self._initialize_state()
                 initial_state["data"]["flow_type"] = flow_type
                 initial_state["data"]["current_account"] = current_state.get("current_account", {})
 
@@ -128,8 +166,8 @@ class FlowManager:
 
     def _get_pending_offers(self) -> Dict[str, Any]:
         """Get current account with pending offers"""
-        current_state = self.service.user.state.state or {}
-        return current_state.get("current_account", {})
+        state = self._initialize_state()
+        return state.get("current_account", {})
 
     def _create_flow(self, flow_type: str, flow_class: Any, initial_state: Dict, **kwargs) -> Flow:
         """Create flow instance with proper initialization"""
@@ -147,7 +185,7 @@ class FlowManager:
 
     def _update_flow_state(self, flow: Flow, flow_type: str, flow_class: Any, kwargs: Dict):
         """Update state with flow data"""
-        current_state = self.service.user.state.state or {}
+        current_state = self._initialize_state()
 
         # Store the modified kwargs in state
         flow_kwargs = kwargs.copy()

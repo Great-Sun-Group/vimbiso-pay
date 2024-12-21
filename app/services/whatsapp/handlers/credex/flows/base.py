@@ -66,7 +66,7 @@ class CredexFlow(Flow):
         """Create list selection message"""
         return CredexTemplates.create_pending_offers_list(
             self.data.get("mobile_number"),
-            state.get("pending_offers", [])
+            self.data
         )
 
     def _create_confirmation_message(self, state: Dict[str, Any]) -> Dict[str, Any]:

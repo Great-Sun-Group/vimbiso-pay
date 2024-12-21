@@ -28,40 +28,64 @@ class InputHandler:
 
     def get_action(self) -> str:
         """Extract action from message"""
-        # Handle interactive messages
-        if self.service.message_type == "interactive":
-            interactive = self.service.message.get("interactive", {})
-            if interactive.get("type") == "list_reply":
-                action = interactive.get("list_reply", {}).get("id", "").lower()
-            elif interactive.get("type") == "button_reply":
-                action = interactive.get("button_reply", {}).get("id", "").lower()
-        else:
+        try:
+            # Handle interactive messages
+            if self.service.message_type == "interactive":
+                interactive = self.service.message.get("interactive", {})
+                interactive_type = interactive.get("type")
+
+                # Log interactive type at INFO level
+                logger.info(f"Interactive type: {interactive_type}")
+
+                if interactive_type == "list_reply":
+                    action = interactive.get("list_reply", {}).get("id", "").lower()
+                    logger.debug(f"List reply action: {action}")
+                elif interactive_type == "button_reply":
+                    action = interactive.get("button_reply", {}).get("id", "").lower()
+                    logger.debug(f"Button reply action: {action}")
+                else:
+                    action = ""
+            else:
+                # For text messages
+                action = self.service.body.strip().lower()
+                logger.debug(f"Text message action: {action}")
+
+            # Map action to flow type if it exists
+            mapped_action = self.ACTION_MAP.get(action, action)
+            logger.info(f"Final mapped action: {mapped_action}")
+            return mapped_action
+
+        except Exception as e:
+            logger.error(f"Error extracting action: {str(e)}")
+            return ""
+
+    def extract_input_value(self) -> Union[str, Dict[str, Any]]:
+        """Extract input value from message"""
+        try:
+            # Handle interactive messages
+            if self.service.message_type == "interactive":
+                interactive = self.service.message.get("interactive", {})
+                interactive_type = interactive.get("type")
+
+                logger.info(f"Extracting input from interactive type: {interactive_type}")
+
+                if interactive_type == "list_reply":
+                    value = interactive.get("list_reply", {}).get("id")
+                    logger.debug(f"List reply value: {value}")
+                    return value
+                elif interactive_type == "button_reply":
+                    value = interactive.get("button_reply", {})
+                    logger.debug(f"Button reply value: {value}")
+                    return value
+
             # For text messages
-            action = self.service.body.strip().lower()
+            value = self.service.body
+            logger.debug(f"Text message value: {value}")
+            return value
 
-            logger.debug(f"Message body: {self.service.body}")
-
-        if self.service.message_type == "interactive":
-            interactive = self.service.message.get("interactive", {})
-            interactive_type = interactive.get("type")
-
-            # Log interactive type at INFO level
-            logger.info(f"Interactive type: {interactive_type}")
-
-            if interactive_type == "button_reply":
-                value = interactive.get("button_reply", {})
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Button reply data: {value}")
-                return value
-            elif interactive_type == "list_reply":
-                value = interactive.get("list_reply", {})
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"List reply data: {value}")
-                return value
-
-        # Log final input at INFO level
-        logger.info(f"Input type: text, length: {len(self.service.body)}")
-        return self.service.body
+        except Exception as e:
+            logger.error(f"Error extracting input value: {str(e)}")
+            return ""
 
     def is_greeting(self, text: str) -> bool:
         """Check if message is a greeting"""
