@@ -28,20 +28,23 @@ class StateManager:
         preserve_validation: bool = True
     ) -> Dict[str, Any]:
         """Prepare state update with proper context preservation"""
-        # For greeting messages (clear_flow=True), create fresh state
+        # For greeting messages (clear_flow=True), preserve critical fields
         if clear_flow:
             new_state = {
-                "profile": {},
-                "current_account": {},
-                "jwt_token": "",
-                "member_id": "",
-                "account_id": "",
+                "profile": current_state.get("profile", {}),
+                "current_account": current_state.get("current_account", {}),
+                "jwt_token": current_state.get("jwt_token", ""),
+                "member_id": current_state.get("member_id", ""),
+                "account_id": current_state.get("account_id", ""),
                 "_validation_context": {},
                 "_validation_state": {},
                 "_last_updated": audit.get_current_timestamp()
             }
             if mobile_number:
                 new_state["mobile_number"] = mobile_number
+            # Preserve authentication state
+            if "authenticated" in current_state:
+                new_state["authenticated"] = current_state["authenticated"]
             return new_state
 
         # Extract validation context if needed
