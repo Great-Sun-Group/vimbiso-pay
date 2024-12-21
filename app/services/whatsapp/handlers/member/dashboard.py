@@ -275,7 +275,10 @@ class DashboardFlow(Flow):
                 "profile": profile_data,
                 "jwt_token": current_state.get("jwt_token"),
                 "member_id": current_state.get("member_id"),
-                "account_id": current_state.get("account_id")
+                "account_id": current_state.get("account_id"),
+                "authenticated": current_state.get("authenticated", False),
+                "mobile_number": self.data.get("mobile_number"),
+                "flow_data": {}  # Initialize as empty dict
             }
 
             # Validate new state

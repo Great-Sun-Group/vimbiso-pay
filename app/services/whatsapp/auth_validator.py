@@ -9,6 +9,10 @@ class AuthFlowValidator(FlowValidatorInterface):
 
     def validate_flow_data(self, flow_data: Dict[str, Any]) -> ValidationResult:
         """Validate auth flow data structure"""
+        # Allow None for flow_data when clearing flow
+        if flow_data is None:
+            return ValidationResult(is_valid=True)
+
         if not isinstance(flow_data, dict):
             return ValidationResult(
                 is_valid=False,
@@ -85,9 +89,12 @@ class AuthFlowValidator(FlowValidatorInterface):
                     missing_fields=missing_auth
                 )
 
-        # Validate flow data if present
-        if "flow_data" in state:
-            return self.validate_flow_data(state["flow_data"])
+        # Validate flow data if present and not None
+        # Allow None as valid state when clearing flow
+        if "flow_data" in state and state["flow_data"] is not None:
+            flow_validation = self.validate_flow_data(state["flow_data"])
+            if not flow_validation.is_valid:
+                return flow_validation
 
         return ValidationResult(is_valid=True)
 

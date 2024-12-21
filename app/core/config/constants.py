@@ -102,8 +102,8 @@ class CachedUserState:
             if not state_data:
                 state_data = {
                     "jwt_token": None,
-                    "profile": {},
-                    "current_account": None,
+                    "profile": StateValidator.ensure_profile_structure({}),
+                    "current_account": {},  # Initialize as empty dict
                     "flow_data": None,
                     "member_id": None,
                     "account_id": None,
@@ -140,8 +140,8 @@ class CachedUserState:
 
                 # Ensure all required fields exist
                 state_data.setdefault("jwt_token", None)
-                state_data.setdefault("profile", {})
-                state_data.setdefault("current_account", None)
+                state_data.setdefault("profile", StateValidator.ensure_profile_structure({}))
+                state_data.setdefault("current_account", {})  # Initialize as empty dict
                 state_data.setdefault("flow_data", None)
                 state_data.setdefault("member_id", None)
                 state_data.setdefault("account_id", None)
@@ -153,12 +153,19 @@ class CachedUserState:
                 # First try to get from current state
                 for field in critical_fields:
                     if field in state_data and state_data[field] is not None:
+                        # Special handling for current_account
+                        if field == "current_account" and not isinstance(state_data[field], dict):
+                            state_data[field] = {}
                         continue  # Keep current value
                     # If not in current state, try previous state
                     if "_previous_state" in state_data:
                         previous_state = state_data["_previous_state"]
                         if field in previous_state and previous_state[field] is not None:
-                            state_data[field] = previous_state[field]
+                            # Special handling for current_account
+                            if field == "current_account":
+                                state_data[field] = previous_state[field] if isinstance(previous_state[field], dict) else {}
+                            else:
+                                state_data[field] = previous_state[field]
 
                 # Store current state as previous for next initialization
                 state_data["_previous_state"] = state_data.copy()
@@ -219,8 +226,8 @@ class CachedUserState:
             # Set safe defaults while preserving any existing state
             self.state = {
                 "jwt_token": None,
-                "profile": {},
-                "current_account": None,
+                "profile": StateValidator.ensure_profile_structure({}),
+                "current_account": {},  # Initialize as empty dict
                 "flow_data": None,
                 "member_id": None,
                 "account_id": None,
@@ -309,6 +316,10 @@ class CachedUserState:
             # Clear flow data if explicitly requested
             if flow_data_cleared:
                 new_state["flow_data"] = None
+
+            # Ensure current_account is a dictionary
+            if not isinstance(new_state.get("current_account"), dict):
+                new_state["current_account"] = {}
 
             # Validate new state
             validation = StateValidator.validate_state(new_state)
@@ -419,8 +430,8 @@ class CachedUserState:
                 logger.debug("Initializing new state in get_state with current instance state")
                 state_data = {
                     "jwt_token": self.jwt_token,
-                    "profile": self.state.get("profile", {}),
-                    "current_account": self.state.get("current_account"),
+                    "profile": StateValidator.ensure_profile_structure(self.state.get("profile", {})),
+                    "current_account": self.state.get("current_account", {}),  # Initialize as empty dict
                     "flow_data": self.state.get("flow_data"),
                     "member_id": self.state.get("member_id"),
                     "account_id": self.state.get("account_id"),
@@ -474,8 +485,8 @@ class CachedUserState:
             # Return safe defaults based on instance state
             return {
                 "jwt_token": self.jwt_token,
-                "profile": self.state.get("profile", {}),
-                "current_account": self.state.get("current_account"),
+                "profile": StateValidator.ensure_profile_structure(self.state.get("profile", {})),
+                "current_account": self.state.get("current_account", {}),  # Initialize as empty dict
                 "flow_data": self.state.get("flow_data"),
                 "member_id": self.state.get("member_id"),
                 "account_id": self.state.get("account_id"),
@@ -579,8 +590,8 @@ class CachedUserState:
             # Initialize new state preserving all critical fields
             new_state = {
                 "jwt_token": preserved_state.get("jwt_token") or current_state.get("jwt_token"),
-                "profile": preserved_state.get("profile", {}) or current_state.get("profile", {}),
-                "current_account": preserved_state.get("current_account") or current_state.get("current_account"),
+                "profile": StateValidator.ensure_profile_structure(preserved_state.get("profile", {}) or current_state.get("profile", {})),
+                "current_account": preserved_state.get("current_account", {}) or current_state.get("current_account", {}),
                 "flow_data": None,  # Always reset flow data
                 "member_id": preserved_state.get("member_id") or current_state.get("member_id"),
                 "account_id": preserved_state.get("account_id") or current_state.get("account_id"),

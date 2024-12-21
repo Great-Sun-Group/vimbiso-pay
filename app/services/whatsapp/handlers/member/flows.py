@@ -207,17 +207,21 @@ class MemberFlow(Flow):
                 if last_valid:
                     current_state = last_valid
 
-            current_profile = current_state.get("profile", {}).copy()
-
-            # Preserve existing profile data
-            if "data" in current_profile:
-                current_profile["data"]["dashboard"] = dashboard
-            else:
-                current_profile["data"] = {"dashboard": dashboard}
+            # Structure profile data properly
+            profile_data = {
+                "action": {
+                    "id": current_state.get("profile", {}).get("action", {}).get("id", ""),
+                    "type": current_state.get("profile", {}).get("action", {}).get("type", "update"),
+                    "timestamp": datetime.now().isoformat(),
+                    "actor": self.data.get("mobile_number", ""),
+                    "details": current_state.get("profile", {}).get("action", {}).get("details", {})
+                },
+                "dashboard": dashboard
+            }
 
             # Prepare new state
             new_state = {
-                "profile": current_profile,
+                "profile": profile_data,
                 "current_account": current_state.get("current_account"),
                 "jwt_token": current_state.get("jwt_token"),
                 "member_id": current_state.get("member_id"),

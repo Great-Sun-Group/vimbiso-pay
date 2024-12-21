@@ -148,11 +148,26 @@ class AuthActionHandler(BaseActionHandler):
             # First set the JWT token to ensure proper propagation
             self.service.user.state.set_jwt_token(jwt_token)
 
+            # Structure profile data properly
+            profile_data = {
+                "action": {
+                    "id": dashboard_data.get("action", {}).get("id", ""),
+                    "type": dashboard_data.get("action", {}).get("type", "login"),
+                    "timestamp": dashboard_data.get("action", {}).get("timestamp", ""),
+                    "actor": dashboard_data.get("action", {}).get("actor", self.service.user.mobile_number),
+                    "details": dashboard_data.get("action", {}).get("details", {})
+                },
+                "dashboard": {
+                    "member": dashboard_data.get("dashboard", {}).get("member", {}),
+                    "accounts": dashboard_data.get("dashboard", {}).get("accounts", [])
+                }
+            }
+
             # Prepare new state
             new_state = {
                 "authenticated": True,
-                "profile": dashboard_data,
-                "flow_data": None,  # Clear any existing flow data
+                "profile": profile_data,
+                "flow_data": {},  # Initialize as empty dict
                 "member_id": member_id,
                 "account_id": account_id,
                 "current_account": personal_account,  # Store full account data
@@ -231,10 +246,26 @@ class AuthActionHandler(BaseActionHandler):
                 if last_valid:
                     current_state = last_valid
 
+            # Get profile from current state and ensure proper structure
+            current_profile = current_state.get("profile", {})
+            profile_data = {
+                "action": {
+                    "id": current_profile.get("action", {}).get("id", ""),
+                    "type": current_profile.get("action", {}).get("type", "view"),
+                    "timestamp": current_profile.get("action", {}).get("timestamp", ""),
+                    "actor": current_profile.get("action", {}).get("actor", self.service.user.mobile_number),
+                    "details": current_profile.get("action", {}).get("details", {})
+                },
+                "dashboard": {
+                    "member": current_profile.get("dashboard", {}).get("member", {}),
+                    "accounts": current_profile.get("dashboard", {}).get("accounts", [])
+                }
+            }
+
             # Prepare new state
             new_state = {
-                "flow_data": None,
-                "profile": current_state.get("profile", {}),
+                "flow_data": {},  # Initialize as empty dict
+                "profile": profile_data,
                 "current_account": current_state.get("current_account"),
                 "jwt_token": current_state.get("jwt_token"),
                 "member_id": current_state.get("member_id"),

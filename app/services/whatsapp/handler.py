@@ -112,6 +112,138 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
             )
             return None, None
 
+    def _process_message(self) -> WhatsAppMessage:
+        """Process incoming message"""
+        try:
+            # Log message processing start
+            audit.log_flow_event(
+                "bot_service",
+                "message_processing",
+                None,
+                {
+                    "message_type": self.message_type,
+                    "body": self.body if self.message_type == "text" else None
+                },
+                "in_progress"
+            )
+
+            # Handle greeting first - always reset state and show menu
+            if (self.message_type == "text" and
+                    self.body.lower() in self.GREETING_KEYWORDS):
+                # Clear any active flows and reset state
+                # Get current state for transition logging
+                current_state = self.user.state.state or {}
+
+                # Prepare new state - preserve only essential data
+                new_state = {
+                    "flow_data": None,  # Clear any active flow
+                    "profile": current_state.get("profile", {}),
+                    "current_account": current_state.get("current_account"),
+                    "jwt_token": current_state.get("jwt_token"),
+                    "authenticated": current_state.get("authenticated", False),
+                    "member_id": current_state.get("member_id"),
+                    "account_id": current_state.get("account_id"),
+                    "mobile_number": self.user.mobile_number
+                }
+
+                # Validate new state
+                validation = StateValidator.validate_state(new_state)
+                if not validation.is_valid:
+                    audit.log_flow_event(
+                        "bot_service",
+                        "state_validation_error",
+                        None,
+                        new_state,
+                        "failure",
+                        validation.error_message
+                    )
+                    return WhatsAppMessage.create_text(
+                        self.user.mobile_number,
+                        f"Failed to update state: {validation.error_message}"
+                    )
+
+                # Log state transition
+                audit.log_state_transition(
+                    "bot_service",
+                    current_state,
+                    new_state,
+                    "success"
+                )
+
+                # Update state and show menu
+                self.user.state.update_state(new_state, "greeting_reset")
+                return self.auth_handler.handle_action_menu(login=True)
+
+            # Check for active flow
+            flow_data = self.user.state.state.get("flow_data") if self.user.state.state else None
+            if flow_data:
+                return self._continue_flow(flow_data)
+
+            # Get action and check if it's a menu action
+            action = self._get_action()
+            logger.info(f"Processing action: {action}")
+
+            if action in self.FLOW_TYPES:
+                # Get current state for transition logging
+                current_state = self.user.state.state or {}
+
+                # Prepare new state
+                new_state = {
+                    "flow_data": None,
+                    "profile": current_state.get("profile", {}),
+                    "current_account": current_state.get("current_account"),
+                    "jwt_token": current_state.get("jwt_token"),
+                    "member_id": current_state.get("member_id"),
+                    "account_id": current_state.get("account_id")
+                }
+
+                # Validate new state
+                validation = StateValidator.validate_state(new_state)
+                if not validation.is_valid:
+                    audit.log_flow_event(
+                        "bot_service",
+                        "state_validation_error",
+                        None,
+                        new_state,
+                        "failure",
+                        validation.error_message
+                    )
+                    return WhatsAppMessage.create_text(
+                        self.user.mobile_number,
+                        f"Failed to update state: {validation.error_message}"
+                    )
+
+                # Log state transition
+                audit.log_state_transition(
+                    "bot_service",
+                    current_state,
+                    new_state,
+                    "success"
+                )
+
+                self.user.state.update_state(new_state, "clear_flow_menu_action")
+
+                # Then start the new flow with a fresh state
+                flow_type, flow_class = self.FLOW_TYPES[action]
+                return self._start_flow(flow_type, flow_class)
+
+            # If no active flow and not a menu action, default to menu
+            return self.auth_handler.handle_action_menu()
+
+        except Exception as e:
+            logger.error(f"Message processing error: {str(e)}")
+            audit.log_flow_event(
+                "bot_service",
+                "message_processing_error",
+                None,
+                {"error": str(e)},
+                "failure"
+            )
+            return WhatsAppMessage.create_text(
+                self.user.mobile_number,
+                f"❌ {str(e)}"
+            )
+
     def _start_flow(self, flow_type: str, flow_class: Type[Flow], **kwargs) -> WhatsAppMessage:
         """Start a new flow"""
         try:
@@ -263,21 +395,55 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
                 f"❌ Failed to start flow: {str(e)}"
             )
 
-    def _format_button_response(self, action: str) -> Dict[str, Any]:
-        """Format text message as button response"""
-        return {
-            "type": "interactive",
-            "interactive": {
-                "type": "button_reply",
-                "button_reply": {
-                    "id": action
-                }
-            }
-        }
-
     def _continue_flow(self, flow_data: Dict[str, Any]) -> WhatsAppMessage:
         """Continue an existing flow"""
         try:
+            # Check for greeting first - always reset state and show menu
+            if (self.message_type == "text" and
+                    self.body.lower() in self.GREETING_KEYWORDS):
+                # Get current state for transition logging
+                current_state = self.user.state.state or {}
+
+                # Prepare new state - preserve only essential data
+                new_state = {
+                    "flow_data": None,  # Clear any active flow
+                    "profile": current_state.get("profile", {}),
+                    "current_account": current_state.get("current_account"),
+                    "jwt_token": current_state.get("jwt_token"),
+                    "authenticated": current_state.get("authenticated", False),
+                    "member_id": current_state.get("member_id"),
+                    "account_id": current_state.get("account_id"),
+                    "mobile_number": self.user.mobile_number
+                }
+
+                # Validate new state
+                validation = StateValidator.validate_state(new_state)
+                if not validation.is_valid:
+                    audit.log_flow_event(
+                        "bot_service",
+                        "state_validation_error",
+                        None,
+                        new_state,
+                        "failure",
+                        validation.error_message
+                    )
+                    return WhatsAppMessage.create_text(
+                        self.user.mobile_number,
+                        f"Failed to update state: {validation.error_message}"
+                    )
+
+                # Log state transition
+                audit.log_state_transition(
+                    "bot_service",
+                    current_state,
+                    new_state,
+                    "success"
+                )
+
+                # Update state and show menu
+                self.user.state.update_state(new_state, "greeting_reset")
+                return self.auth_handler.handle_action_menu(login=True)
+
             # Log flow continuation attempt
             audit.log_flow_event(
                 "bot_service",
@@ -510,135 +676,6 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
             self.user.state.update_state(new_state, "flow_error")
 
-            return WhatsAppMessage.create_text(
-                self.user.mobile_number,
-                f"❌ {str(e)}"
-            )
-
-    def _process_message(self) -> WhatsAppMessage:
-        """Process incoming message"""
-        try:
-            # Log message processing start
-            audit.log_flow_event(
-                "bot_service",
-                "message_processing",
-                None,
-                {
-                    "message_type": self.message_type,
-                    "body": self.body if self.message_type == "text" else None
-                },
-                "in_progress"
-            )
-
-            # Check for active flow first
-            flow_data = self.user.state.state.get("flow_data") if self.user.state.state else None
-            if flow_data:
-                return self._continue_flow(flow_data)
-
-            # Handle greeting
-            if (self.message_type == "text" and
-                    self.body.lower() in self.GREETING_KEYWORDS):
-                # Get current state for transition logging
-                current_state = self.user.state.state or {}
-
-                # Prepare new state
-                new_state = {
-                    "flow_data": None,
-                    "profile": current_state.get("profile", {}),
-                    "current_account": current_state.get("current_account"),
-                    "jwt_token": current_state.get("jwt_token"),
-                    "authenticated": current_state.get("authenticated", False),
-                    "member_id": current_state.get("member_id"),
-                    "account_id": current_state.get("account_id")
-                }
-
-                # Validate new state
-                validation = StateValidator.validate_state(new_state)
-                if not validation.is_valid:
-                    audit.log_flow_event(
-                        "bot_service",
-                        "state_validation_error",
-                        None,
-                        new_state,
-                        "failure",
-                        validation.error_message
-                    )
-                    return WhatsAppMessage.create_text(
-                        self.user.mobile_number,
-                        f"Failed to update state: {validation.error_message}"
-                    )
-
-                # Log state transition
-                audit.log_state_transition(
-                    "bot_service",
-                    current_state,
-                    new_state,
-                    "success"
-                )
-
-                self.user.state.update_state(new_state, "clear_flow_greeting")
-                return self.auth_handler.handle_action_menu(login=True)
-
-            # Get action and check if it's a menu action
-            action = self._get_action()
-            logger.info(f"Processing action: {action}")
-
-            if action in self.FLOW_TYPES:
-                # Get current state for transition logging
-                current_state = self.user.state.state or {}
-
-                # Prepare new state
-                new_state = {
-                    "flow_data": None,
-                    "profile": current_state.get("profile", {}),
-                    "current_account": current_state.get("current_account"),
-                    "jwt_token": current_state.get("jwt_token"),
-                    "member_id": current_state.get("member_id"),
-                    "account_id": current_state.get("account_id")
-                }
-
-                # Validate new state
-                validation = StateValidator.validate_state(new_state)
-                if not validation.is_valid:
-                    audit.log_flow_event(
-                        "bot_service",
-                        "state_validation_error",
-                        None,
-                        new_state,
-                        "failure",
-                        validation.error_message
-                    )
-                    return WhatsAppMessage.create_text(
-                        self.user.mobile_number,
-                        f"Failed to update state: {validation.error_message}"
-                    )
-
-                # Log state transition
-                audit.log_state_transition(
-                    "bot_service",
-                    current_state,
-                    new_state,
-                    "success"
-                )
-
-                self.user.state.update_state(new_state, "clear_flow_menu_action")
-
-                # Then start the new flow with a fresh state
-                flow_type, flow_class = self.FLOW_TYPES[action]
-                return self._start_flow(flow_type, flow_class)
-
-            # If no active flow and not a menu action, default to menu
-            return self.auth_handler.handle_action_menu()
-
-        except Exception as e:
-            logger.error(f"Message processing error: {str(e)}")
-            audit.log_flow_event(
-                "bot_service",
-                "message_processing_error",
-                None,
-                {"error": str(e)},
-                "failure"
-            )
             return WhatsAppMessage.create_text(
                 self.user.mobile_number,
                 f"❌ {str(e)}"

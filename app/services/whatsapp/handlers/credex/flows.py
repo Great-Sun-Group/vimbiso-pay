@@ -1,6 +1,7 @@
 """Unified credex flow implementation"""
 import logging
 import re
+from datetime import datetime
 from typing import Any, Dict, List, Union
 
 from core.messaging.flow import Flow, Step, StepType
@@ -313,7 +314,6 @@ class CredexFlow(Flow):
 
             user_state = self.credex_service._parent_service.user.state
             current_state = user_state.state
-            current_profile = current_state.get("profile", {}).copy()
 
             # Validate state before update
             validation = self.validator.validate_flow_state(current_state)
@@ -330,10 +330,18 @@ class CredexFlow(Flow):
                 last_valid = audit.get_last_valid_state(self.id)
                 if last_valid:
                     current_state = last_valid
-                    current_profile = current_state.get("profile", {}).copy()
 
-            # Update profile with new dashboard data
-            current_profile["dashboard"] = dashboard
+            # Structure profile data properly
+            profile_data = {
+                "action": {
+                    "id": current_state.get("profile", {}).get("action", {}).get("id", ""),
+                    "type": current_state.get("profile", {}).get("action", {}).get("type", self.flow_type),
+                    "timestamp": datetime.now().isoformat(),
+                    "actor": self.data.get("mobile_number", ""),
+                    "details": current_state.get("profile", {}).get("action", {}).get("details", {})
+                },
+                "dashboard": dashboard
+            }
 
             # Find personal account in new dashboard data
             accounts = dashboard.get("accounts", [])
@@ -348,7 +356,7 @@ class CredexFlow(Flow):
 
             # Update state while preserving other critical fields
             new_state = {
-                "profile": current_profile,
+                "profile": profile_data,
                 "current_account": personal_account,
                 "jwt_token": current_state.get("jwt_token"),
                 "member_id": current_state.get("member_id"),

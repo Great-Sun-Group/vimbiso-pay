@@ -40,10 +40,12 @@ class StateValidator:
         if not profile_validation.is_valid:
             return profile_validation
 
-        # Validate current_account structure
-        account_validation = cls.validate_account_structure(state.get("current_account", {}))
-        if not account_validation.is_valid:
-            return account_validation
+        # Validate current_account structure if not empty
+        current_account = state.get("current_account", {})
+        if current_account:  # Only validate if account has data
+            account_validation = cls.validate_account_structure(current_account)
+            if not account_validation.is_valid:
+                return account_validation
 
         return ValidationResult(is_valid=True)
 
@@ -57,54 +59,72 @@ class StateValidator:
             )
 
         # Validate action structure
-        action = profile.get("action")
+        action = profile.get("action", {})
         if not isinstance(action, dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="Profile action must be a dictionary"
             )
 
-        required_action_fields = {"id", "type", "timestamp", "actor", "details"}
-        missing_action = required_action_fields - set(action.keys())
-        if missing_action:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing required action fields: {', '.join(missing_action)}",
-                missing_fields=missing_action
-            )
+        # Ensure required action fields with defaults
+        required_action_fields = {
+            "id": "",
+            "type": "",
+            "timestamp": "",
+            "actor": "",
+            "details": {}
+        }
+        for field, default in required_action_fields.items():
+            if field not in action:
+                action[field] = default
 
         # Validate dashboard structure
-        dashboard = profile.get("dashboard")
+        dashboard = profile.get("dashboard", {})
         if not isinstance(dashboard, dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="Profile dashboard must be a dictionary"
             )
 
-        required_dashboard_fields = {"member", "accounts"}
-        missing_dashboard = required_dashboard_fields - set(dashboard.keys())
-        if missing_dashboard:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing required dashboard fields: {', '.join(missing_dashboard)}",
-                missing_fields=missing_dashboard
-            )
+        # Ensure required dashboard fields with defaults
+        if "member" not in dashboard:
+            dashboard["member"] = {}
+        if "accounts" not in dashboard:
+            dashboard["accounts"] = []
 
         return ValidationResult(is_valid=True)
 
     @classmethod
     def validate_account_structure(cls, account: Dict[str, Any]) -> ValidationResult:
-        """Validate account data structure"""
+        """
+        Validate account data structure
+        Allows empty account during initialization
+        """
         if not isinstance(account, dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="Account must be a dictionary"
             )
 
+        # If account is empty, it's valid (initialization state)
+        if not account:
+            return ValidationResult(is_valid=True)
+
+        # For non-empty accounts, check required fields
         required_fields = {
             "accountID", "accountName", "accountHandle",
             "accountType", "defaultDenom", "balanceData"
         }
+
+        # Check if at least accountType and accountHandle are present
+        minimal_fields = {"accountType", "accountHandle"}
+        has_minimal_fields = all(field in account for field in minimal_fields)
+
+        if has_minimal_fields:
+            # If minimal fields present, it's a valid partial account
+            return ValidationResult(is_valid=True)
+
+        # For complete accounts, check all required fields
         missing = required_fields - set(account.keys())
         if missing:
             return ValidationResult(
@@ -136,7 +156,7 @@ class StateValidator:
         result = profile.copy()
 
         # Ensure action structure
-        if "action" not in result:
+        if "action" not in result or not isinstance(result["action"], dict):
             result["action"] = {
                 "id": "",
                 "type": "",
@@ -144,25 +164,34 @@ class StateValidator:
                 "actor": "",
                 "details": {}
             }
-        elif not isinstance(result["action"], dict):
-            result["action"] = {
+        else:
+            # Ensure all action fields exist
+            action_fields = {
                 "id": "",
                 "type": "",
                 "timestamp": "",
                 "actor": "",
                 "details": {}
             }
+            for field, default in action_fields.items():
+                if field not in result["action"]:
+                    result["action"][field] = default
+                elif field == "details" and not isinstance(result["action"][field], dict):
+                    result["action"][field] = {}
 
         # Ensure dashboard structure
-        if "dashboard" not in result:
+        if "dashboard" not in result or not isinstance(result["dashboard"], dict):
             result["dashboard"] = {
                 "member": {},
                 "accounts": []
             }
-        elif not isinstance(result["dashboard"], dict):
-            result["dashboard"] = {
-                "member": {},
-                "accounts": []
-            }
+        else:
+            # Ensure required dashboard fields
+            if "member" not in result["dashboard"]:
+                result["dashboard"]["member"] = {}
+            if "accounts" not in result["dashboard"]:
+                result["dashboard"]["accounts"] = []
+            elif not isinstance(result["dashboard"]["accounts"], list):
+                result["dashboard"]["accounts"] = []
 
         return result
