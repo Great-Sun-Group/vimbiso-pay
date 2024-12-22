@@ -44,17 +44,22 @@ VimbisoPay uses a multi-layered state management system built on Redis to handle
 Core state includes:
 - JWT token (5-minute expiry)
 - User profile and accounts
-- Flow state and context
+- Flow state
 - Version tracking
-- Validation state
 - Audit trail data
 
 Flow state includes:
 - Current step and data
-- Validation context
+- Minimal validation state in flow_data.data
 - Previous state for rollback
 - Version information
-- Error recovery context
+- Smart recovery paths
+
+Key improvements:
+- Simplified validation context
+- Focused state structure
+- Efficient recovery mechanisms
+- Clear validation paths
 
 ### 3. Key Features
 
@@ -68,13 +73,13 @@ Flow state includes:
    - 5-minute session timeout
    - Aligned TTLs for related data
    - Automatic cleanup
-   - Critical field preservation
+   - Core field preservation
 
-3. **Error Recovery**
-   - Automatic state recovery
+3. **Smart Recovery**
+   - Context-aware recovery
+   - Multi-step recovery paths
    - Last valid state restoration
-   - Validation preservation
-   - Error context tracking
+   - Clear error messages
    - Recovery attempt logging
 
 4. **Audit Logging**
@@ -95,18 +100,18 @@ Uses dedicated Redis instance with:
 ## Best Practices
 
 1. **State Updates**
-   - Always use atomic operations
-   - Validate before updates
-   - Preserve critical fields
+   - Use atomic operations
+   - Validate core fields
+   - Keep validation minimal
    - Handle concurrent access
-   - Log state transitions
+   - Log key transitions
 
 2. **Flow Integration**
    - Use FlowStateManager
-   - Track validation state
-   - Handle transitions properly
-   - Implement proper rollback
-   - Maintain audit trail
+   - Keep validation in flow_data.data
+   - Handle transitions efficiently
+   - Implement smart recovery
+   - Focus audit trail
 
 3. **Error Handling**
    - Use structured errors

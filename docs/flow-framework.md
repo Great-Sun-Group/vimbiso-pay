@@ -53,10 +53,16 @@ Supports three interaction types:
 Each flow maintains:
 - Current step index
 - Collected data
-- Validation state
+- Minimal validation state in flow_data.data
 - Previous state for rollback
 - Audit trail data
-- Recovery context
+- Smart recovery paths
+
+Key improvements:
+- Simplified validation context
+- More efficient state transitions
+- Better error recovery
+- Clearer validation paths
 
 ## Implementation
 
@@ -128,11 +134,11 @@ audit.log_state_transition(
 ## Best Practices
 
 1. **State Management**
-   - Use FlowStateManager for state operations
-   - Validate state transitions
-   - Implement proper rollback
-   - Preserve validation context
-   - Maintain audit trail
+   - Keep validation context in flow_data.data
+   - Use minimal required validations
+   - Implement smart state recovery
+   - Focus on critical data integrity
+   - Maintain focused audit trail
 
 2. **Flow Implementation**
    - Keep flows focused and single-purpose
