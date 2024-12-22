@@ -14,9 +14,7 @@ class StateValidator:
         "current_account",
         "jwt_token",
         "member_id",
-        "account_id",
-        "_validation_context",  # Add validation context tracking
-        "_validation_state"     # Add validation state
+        "account_id"
     }
 
     @classmethod
@@ -76,23 +74,6 @@ class StateValidator:
             if not flow_validation.is_valid:
                 return flow_validation
 
-        # Validate validation context if present and preserving
-        if preserve_context and "_validation_context" in state:
-            context = state["_validation_context"]
-            if not isinstance(context, dict):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Validation context must be a dictionary"
-                )
-
-            # Ensure validation state is also a dictionary
-            validation_state = state.get("_validation_state", {})
-            if not isinstance(validation_state, dict):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Validation state must be a dictionary"
-                )
-
         return ValidationResult(is_valid=True)
 
     @classmethod
@@ -129,14 +110,12 @@ class StateValidator:
                 error_message="Flow data must be a dictionary"
             )
 
-        # Validate required data fields
+        # Validate core required fields
         required_data_fields = {
             "mobile_number",
             "member_id",
             "account_id",
-            "flow_type",
-            "_validation_context",
-            "_validation_state"
+            "flow_type"
         }
         missing_data = required_data_fields - set(data.keys())
         if missing_data:
@@ -145,6 +124,10 @@ class StateValidator:
                 error_message=f"Missing required flow data fields: {', '.join(missing_data)}",
                 missing_fields=missing_data
             )
+
+        # Ensure validation state exists but don't validate its structure
+        if "_validation_state" not in data:
+            data["_validation_state"] = {}
 
         return ValidationResult(is_valid=True)
 
@@ -157,168 +140,78 @@ class StateValidator:
                 error_message="Profile must be a dictionary"
             )
 
-        # Validate action structure
-        action = profile.get("action", {})
-        if not isinstance(action, dict):
+        # Only validate structure existence, not content
+        if "action" in profile and not isinstance(profile["action"], dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="Profile action must be a dictionary"
             )
 
-        # Ensure required action fields with defaults
-        required_action_fields = {
-            "id": "",
-            "type": "",
-            "timestamp": "",
-            "actor": "",
-            "details": {},
-            "message": "",
-            "status": ""
-        }
-        for field, default in required_action_fields.items():
-            if field not in action:
-                action[field] = default
-
-        # Validate dashboard structure
-        dashboard = profile.get("dashboard", {})
-        if not isinstance(dashboard, dict):
+        if "dashboard" in profile and not isinstance(profile["dashboard"], dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="Profile dashboard must be a dictionary"
             )
 
-        # Ensure required dashboard fields with defaults
-        if "member" not in dashboard:
-            dashboard["member"] = {}
-        if "accounts" not in dashboard:
-            dashboard["accounts"] = []
-
         return ValidationResult(is_valid=True)
 
     @classmethod
     def validate_account_structure(cls, account: Dict[str, Any]) -> ValidationResult:
-        """
-        Validate account data structure
-        Allows empty account during initialization
-        """
+        """Validate account data structure"""
         if not isinstance(account, dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="Account must be a dictionary"
             )
 
-        # If account is empty, it's valid (initialization state)
-        if not account:
-            return ValidationResult(is_valid=True)
-
-        # For non-empty accounts, check required fields
-        required_fields = {
-            "accountID", "accountName", "accountHandle",
-            "accountType", "defaultDenom", "balanceData"
-        }
-
-        # Check if at least accountType and accountHandle are present
-        minimal_fields = {"accountType", "accountHandle"}
-        has_minimal_fields = all(field in account for field in minimal_fields)
-
-        if has_minimal_fields:
-            # If minimal fields present, it's a valid partial account
-            return ValidationResult(is_valid=True)
-
-        # For complete accounts, check all required fields
-        missing = required_fields - set(account.keys())
-        if missing:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing required account fields: {', '.join(missing)}",
-                missing_fields=missing
-            )
+        # Only validate minimal fields if account is not empty
+        if account:
+            minimal_fields = {"accountType", "accountHandle"}
+            missing = minimal_fields - set(account.keys())
+            if missing:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Missing required account fields: {', '.join(missing)}",
+                    missing_fields=missing
+                )
 
         return ValidationResult(is_valid=True)
 
     @classmethod
     def ensure_profile_structure(cls, profile: Dict[str, Any]) -> Dict[str, Any]:
-        """Ensure profile has proper structure while preserving data"""
+        """Ensure minimal profile structure while preserving data"""
         if not isinstance(profile, dict):
             return {
-                "action": {
-                    "id": "",
-                    "type": "",
-                    "timestamp": "",
-                    "actor": "",
-                    "details": {},
-                    "message": "",
-                    "status": ""
-                },
-                "dashboard": {
-                    "member": {},
-                    "accounts": []
-                }
+                "action": {},
+                "dashboard": {"accounts": []}
             }
 
         result = profile.copy()
 
-        # Ensure action structure
+        # Ensure basic structure exists
         if "action" not in result or not isinstance(result["action"], dict):
-            result["action"] = {
-                "id": "",
-                "type": "",
-                "timestamp": "",
-                "actor": "",
-                "details": {}
-            }
-        else:
-            # Ensure all action fields exist
-            action_fields = {
-                "id": "",
-                "type": "",
-                "timestamp": "",
-                "actor": "",
-                "details": {},
-                "message": "",
-                "status": ""
-            }
-            for field, default in action_fields.items():
-                if field not in result["action"]:
-                    result["action"][field] = default
-                elif field == "details" and not isinstance(result["action"][field], dict):
-                    result["action"][field] = {}
+            result["action"] = {}
 
-        # Ensure dashboard structure
         if "dashboard" not in result or not isinstance(result["dashboard"], dict):
-            result["dashboard"] = {
-                "member": {},
-                "accounts": []
-            }
-        else:
-            # Ensure required dashboard fields
-            if "member" not in result["dashboard"]:
-                result["dashboard"]["member"] = {}
-            if "accounts" not in result["dashboard"]:
-                result["dashboard"]["accounts"] = []
-            elif not isinstance(result["dashboard"]["accounts"], list):
-                result["dashboard"]["accounts"] = []
+            result["dashboard"] = {"accounts": []}
+        elif "accounts" not in result["dashboard"]:
+            result["dashboard"]["accounts"] = []
+        elif not isinstance(result["dashboard"]["accounts"], list):
+            result["dashboard"]["accounts"] = []
 
         return result
 
     @classmethod
-    def ensure_validation_context(cls, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Ensure validation context structure while preserving data"""
-        if not isinstance(state, dict):
-            return {}
+    def ensure_validation_context(cls, flow_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure minimal validation context structure"""
+        result = flow_data if isinstance(flow_data, dict) else {}
 
-        result = state.copy()
+        # Ensure data dictionary exists
+        if "data" not in result or not isinstance(result["data"], dict):
+            result["data"] = {}
 
-        # Initialize validation context if not present
-        if "_validation_context" not in result:
-            result["_validation_context"] = {}
-        elif not isinstance(result["_validation_context"], dict):
-            result["_validation_context"] = {}
-
-        # Initialize validation state if not present
-        if "_validation_state" not in result:
-            result["_validation_state"] = {}
-        elif not isinstance(result["_validation_state"], dict):
-            result["_validation_state"] = {}
+        # Initialize validation state if needed
+        if not isinstance(result["data"].get("_validation_state"), dict):
+            result["data"]["_validation_state"] = {}
 
         return result

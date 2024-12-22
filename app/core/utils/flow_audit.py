@@ -149,19 +149,83 @@ class FlowAuditLogger:
         return history
 
     @staticmethod
-    def get_last_valid_state(flow_id: str) -> Optional[Dict[str, Any]]:
+    def get_last_valid_state(flow_id: str, current_step: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
-        Retrieve last valid state for recovery
+        Retrieve last valid state for recovery with smart fallback
 
         :param flow_id: Flow ID to retrieve state for
+        :param current_step: Current step ID for context-aware recovery
         :return: Last valid state if found
         """
         history = FlowAuditLogger.get_flow_history(flow_id)
+
+        # First try to find last valid state at current step
+        if current_step:
+            for event in reversed(history):
+                state = event.get("state", {})
+                validation_state = state.get("_validation_state", {})
+
+                if (event.get("status") == "success" and
+                        validation_state.get("step_id") == current_step and
+                        validation_state.get("success") is True):
+                    return state
+
+        # If no valid state at current step, try to find last valid state at previous step
+        current_step_found = False
         for event in reversed(history):
-            if (
-                event.get("status") == "success" and
-                event.get("state") is not None and
-                not event.get("state", {}).get("_validation_error")  # Skip states with validation errors
-            ):
-                return event["state"]
+            state = event.get("state", {})
+            validation_state = state.get("_validation_state", {})
+            step_id = validation_state.get("step_id")
+
+            # Mark when we find current step in history
+            if step_id == current_step:
+                current_step_found = True
+                continue
+
+            # Look for last valid state before current step
+            if (current_step_found and
+                    event.get("status") == "success" and
+                    validation_state.get("success") is True):
+                return state
+
+        # If no valid states found, try to find initialization state
+        for event in reversed(history):
+            if event.get("event_type") == "initialization":
+                return event.get("state")
+
         return None
+
+    @staticmethod
+    def get_recovery_path(flow_id: str, target_step: str) -> List[Dict[str, Any]]:
+        """
+        Get sequence of states needed to recover to target step
+
+        :param flow_id: Flow ID to analyze
+        :param target_step: Target step to recover to
+        :return: List of states in sequence needed for recovery
+        """
+        history = FlowAuditLogger.get_flow_history(flow_id)
+        recovery_path = []
+        seen_steps = set()
+
+        # Work backwards from target step
+        for event in reversed(history):
+            state = event.get("state", {})
+            validation_state = state.get("_validation_state", {})
+            step_id = validation_state.get("step_id")
+
+            # Skip invalid states
+            if not (event.get("status") == "success" and
+                    validation_state.get("success") is True):
+                continue
+
+            # Add state if we haven't seen this step
+            if step_id and step_id not in seen_steps:
+                recovery_path.insert(0, state)
+                seen_steps.add(step_id)
+
+            # Stop if we've found a complete path
+            if len(recovery_path) > 0 and recovery_path[0].get("_validation_state", {}).get("step_id") == target_step:
+                break
+
+        return recovery_path

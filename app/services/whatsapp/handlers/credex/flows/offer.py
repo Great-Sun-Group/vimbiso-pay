@@ -92,12 +92,11 @@ class OfferFlow(CredexFlow):
                 "_previous_data": state.get("_previous_data", {})
             }
 
-            # Ensure required flow fields are at root level
+            # Update state with required fields
             state.update({
                 "id": flow_id,
                 "step": flow_data["step"],
                 "data": data,
-                "flow_type": normalized_flow_type,
                 "flow_data": flow_data,  # Include complete flow_data structure
                 "mobile_number": mobile_number,
                 "_validation_context": validation_context["_validation_context"],
@@ -118,8 +117,8 @@ class OfferFlow(CredexFlow):
                 "step": flow_data["step"]
             })
 
-            # Validate required fields in both state and flow_data
-            required_fields = ["id", "step", "data", "flow_type"]
+            # Validate required fields in state and flow_data
+            required_fields = ["id", "step", "data"]
 
             # Check root state
             missing_state_fields = [field for field in required_fields if field not in state]
