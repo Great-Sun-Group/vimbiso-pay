@@ -1,5 +1,5 @@
 """Credex-specific message templates"""
-from typing import Dict, Any
+from typing import Any, Dict
 
 from ...types import WhatsAppMessage
 

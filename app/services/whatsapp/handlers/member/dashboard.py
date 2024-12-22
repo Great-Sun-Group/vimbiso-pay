@@ -278,18 +278,18 @@ class DashboardFlow(Flow):
                 "current_account": selected_account,
                 "profile": profile_data,
                 "jwt_token": current_state.get("jwt_token"),
-                "member_id": current_state.get("member_id"),
+                "member_id": self.data.get("member_id"),
                 "account_id": current_state.get("account_id"),
                 "authenticated": current_state.get("authenticated", False),
                 "mobile_number": self.data.get("mobile_number"),
-                "flow_data": {  # Initialize with proper structure
+                "flow_data": current_state.get("flow_data") or {  # Preserve existing flow data
                     "id": "user_state",
                     "step": 0,
                     "data": {
                         "mobile_number": self.data.get("mobile_number"),
-                        "member_id": current_state.get("member_id"),
+                        "member_id": self.data.get("member_id"),
                         "account_id": current_state.get("account_id"),
-                        "flow_type": "dashboard",
+                        "flow_type": current_state.get("flow_type", "dashboard"),  # Preserve existing flow type
                         "_validation_context": current_state.get("_validation_context", {}),
                         "_validation_state": current_state.get("_validation_state", {})
                     },

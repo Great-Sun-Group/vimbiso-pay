@@ -8,13 +8,8 @@ from core.utils.flow_audit import FlowAuditLogger
 
 # Local imports
 from ...types import WhatsAppMessage
-from ..credex.flows import (
-    AcceptFlow,
-    CancelFlow,
-    CredexFlow,
-    DeclineFlow,
-    OfferFlow
-)
+from ..credex.flows import (AcceptFlow, CancelFlow, CredexFlow, DeclineFlow,
+                            OfferFlow)
 from ..member.dashboard import DashboardFlow
 from ..member.registration import RegistrationFlow
 from ..member.upgrade import UpgradeFlow
@@ -57,26 +52,30 @@ class FlowProcessor:
         kwargs: Dict
     ) -> Flow:
         """Initialize flow with state"""
-        # Get member ID from data
+        # Get member ID from flow data
         member_id = flow_data.get("data", {}).get("member_id")
         if not member_id:
-            raise ValueError("Missing member ID in flow data")
+            raise ValueError("Missing member ID")
 
         # Prepare complete state including flow data
         state = {
             "id": f"{flow_type}_{member_id}",  # Construct proper flow ID
             "step": flow_data.get("step", 0),
+            "flow_type": flow_type,  # Set flow type only at root level
             "data": {
                 **flow_data.get("data", {}),
-                "flow_type": flow_type,
-                "member_id": member_id,
                 "_validation_context": flow_data.get("data", {}).get("_validation_context", {}),
                 "_validation_state": flow_data.get("data", {}).get("_validation_state", {})
+            },
+            "flow_data": {  # Ensure flow_data structure is present
+                "data": {}
             },
             "_previous_data": flow_data.get("_previous_data", {}),
             "_validation_context": flow_data.get("data", {}).get("_validation_context", {}),
             "_validation_state": flow_data.get("data", {}).get("_validation_state", {})
         }
+
+        # Log flow initialization
 
         # Log flow initialization
         logger.debug(f"Initializing flow {flow_type}:")
@@ -110,10 +109,10 @@ class FlowProcessor:
                     "❌ Error: Invalid flow data"
                 )
 
-            # Get flow type from flow data
-            flow_type = flow_data.get("data", {}).get("flow_type")
+            # Get flow type from state
+            flow_type = flow_data.get("flow_type")
             if not flow_type:
-                logger.error("Missing flow type in data")
+                logger.error("Missing flow type in state")
                 return WhatsAppMessage.create_text(
                     self.service.user.mobile_number,
                     "❌ Error: Missing flow type"

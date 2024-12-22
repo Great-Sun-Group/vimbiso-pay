@@ -59,10 +59,10 @@ class FlowManager:
         return state
 
     def _get_member_info(self) -> Tuple[Optional[str], Optional[str]]:
-        """Extract member and account IDs from state"""
+        """Extract member and account IDs"""
         try:
             state = self._initialize_state()
-            member_id = state.get("member_id")
+            member_id = state.get("data", {}).get("member_id")
             account_id = state.get("account_id")
             return member_id, account_id
         except Exception as e:
@@ -92,17 +92,26 @@ class FlowManager:
                 "in_progress"
             )
 
-            # Get member and account IDs
-            member_id, account_id = self._get_member_info()
-            if not member_id or not account_id:
-                logger.error(f"Missing required IDs - member_id: {member_id}, account_id: {account_id}")
+            # Get current state first
+            current_state = self._initialize_state()
+
+            # Get member ID from top level
+            member_id = kwargs.get("member_id")
+            if not member_id:
+                logger.error("Missing member ID")
+                return WhatsAppMessage.create_text(
+                    self.service.user.mobile_number,
+                    "❌ Failed to start flow: Missing member ID"
+                )
+
+            # Get account ID from state for backward compatibility
+            account_id = current_state.get("account_id")
+            if not account_id:
+                logger.error("Missing account ID")
                 return WhatsAppMessage.create_text(
                     self.service.user.mobile_number,
                     "Account not properly initialized. Please try sending 'hi' to restart."
                 )
-
-            # Get current state
-            current_state = self._initialize_state()
 
             # Log flow initialization
             logger.debug(f"Initializing flow {flow_type} with member_id {member_id}")
@@ -141,11 +150,28 @@ class FlowManager:
             logger.debug(f"- Flow ID: {initial_state['id']}")
             logger.debug(f"- Initial data: {initial_data}")
 
+            # Add parent service to initial state
+            initial_state["flow_data"] = {
+                **initial_state,
+                "_parent_service": self.service
+            }
+
             # Initialize flow with state
             flow = self._create_flow(flow_type, flow_class, initial_state, **kwargs)
             flow.credex_service = self.service.credex_service
 
-            # Get initial message
+            # Update state first
+            logger.debug("[FlowManager] Pre-update flow state:")
+            logger.debug("- Flow type: %s", flow_type)
+            logger.debug("- Flow data: %s", flow.get_state().get("flow_data"))
+            logger.debug("- Parent service: %s", self.service)
+
+            self._update_flow_state(flow, flow_type, flow_class, kwargs)
+
+            logger.debug("[FlowManager] Post-update flow state:")
+            logger.debug("- Updated state: %s", self.service.user.state.state)
+
+            # Get initial message after state is updated
             if flow.current_step:
                 result = flow.current_step.get_message(flow.data)
             else:
@@ -153,13 +179,6 @@ class FlowManager:
                     self.service.user.mobile_number,
                     "Flow not properly initialized"
                 )
-
-            # If result is a WhatsAppMessage, return it immediately
-            if isinstance(result, WhatsAppMessage):
-                return result
-
-            # Update state only for non-WhatsAppMessage responses
-            self._update_flow_state(flow, flow_type, flow_class, kwargs)
 
             audit.log_flow_event(
                 "bot_service",
@@ -221,11 +240,14 @@ class FlowManager:
             "_previous_data": flow_state.get("_previous_data", {})
         }
 
-        # Store the modified kwargs in flow data
+        # Store the modified kwargs and parent service in flow data
         flow_kwargs = kwargs.copy()
         if flow_class == CredexFlow:
             flow_kwargs['flow_type'] = flow_type
-        flow_data["kwargs"] = flow_kwargs
+        flow_data.update({
+            "kwargs": flow_kwargs,
+            "_parent_service": self.service  # Ensure parent service is preserved
+        })
 
         new_state = StateManager.prepare_state_update(
             current_state,

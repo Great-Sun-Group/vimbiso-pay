@@ -54,6 +54,10 @@ class MessageHandler:
                 "in_progress"
             )
 
+            # Get action first
+            action = self.input_handler.get_action()
+            logger.info(f"Processing action: {action}")
+
             # Handle greeting
             if (self.service.message_type == "text" and
                     self.input_handler.is_greeting(self.service.body)):
@@ -62,22 +66,7 @@ class MessageHandler:
                     return error
                 return self.service.auth_handler.handle_action_menu(login=True)
 
-            # Check for active flow
-            flow_data = self.state_handler.get_flow_data()
-            if flow_data:
-                # Handle greeting during active flow
-                if (self.service.message_type == "text" and
-                        self.input_handler.is_greeting(self.service.body)):
-                    error = self.state_handler.prepare_flow_start(is_greeting=True)
-                    if error:
-                        return error
-                    return self.service.auth_handler.handle_action_menu(login=True)
-                return self.flow_processor.process_flow(flow_data)
-
-            # Get action and check if it's a menu action
-            action = self.input_handler.get_action()
-            logger.info(f"Processing action: {action}")
-
+            # Check for menu action first
             if action in self.FLOW_TYPES:
                 # Get flow type and class
                 flow_type, flow_class = self.FLOW_TYPES[action]
@@ -93,10 +82,29 @@ class MessageHandler:
                     logger.error(f"Failed to prepare flow state: {error}")
                     return error
 
-                # Initialize flow with prepared state and flow type
-                result = self.flow_manager.initialize_flow(flow_type, flow_class)
+                # Get prepared flow data
+                flow_data = self.state_handler.get_flow_data()
+                if not flow_data:
+                    logger.error("No flow data available after preparation")
+                    return WhatsAppMessage.create_text(
+                        self.service.user.mobile_number,
+                        "❌ Error: Flow initialization failed"
+                    )
+
+                # Initialize flow with prepared flow data
+                result = self.flow_manager.initialize_flow(
+                    flow_type=flow_type,
+                    flow_class=flow_class,
+                    flow_data=flow_data,
+                    kwargs={}
+                )
                 logger.info(f"Flow {flow_type} initialized")
                 return result
+
+            # Check for active flow if not a menu action
+            flow_data = self.state_handler.get_flow_data()
+            if flow_data:
+                return self.flow_processor.process_flow(flow_data)
 
             # If no active flow and not a menu action, default to menu
             return self.service.auth_handler.handle_action_menu()

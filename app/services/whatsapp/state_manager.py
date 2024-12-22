@@ -66,6 +66,20 @@ class StateManager:
                 if preserve_validation else {}
             )
 
+            # Preserve parent service reference if exists
+            parent_service = None
+            if current_state.get("flow_data", {}).get("_parent_service"):
+                parent_service = current_state["flow_data"]["_parent_service"]
+            elif flow_data.get("_parent_service"):
+                parent_service = flow_data["_parent_service"]
+
+            # Preserve flow type from flow data
+            flow_type = None
+            if isinstance(flow_data, dict):
+                flow_type = flow_data.get("data", {}).get("flow_type")
+                if not flow_type and "_previous_data" in flow_data:
+                    flow_type = flow_data["_previous_data"].get("flow_type")
+
             # Build new state with core fields
             new_state = {
                 "flow_data": flow_data,  # Use complete flow data structure
@@ -74,8 +88,19 @@ class StateManager:
                 "jwt_token": current_state.get("jwt_token"),
                 "member_id": current_state.get("member_id"),
                 "account_id": current_state.get("account_id"),
-                "_last_updated": audit.get_current_timestamp()
+                "_last_updated": audit.get_current_timestamp(),
+                "flow_type": flow_type  # Preserve flow type at root level
             }
+
+            # Ensure parent service is preserved in flow data
+            if parent_service and isinstance(flow_data, dict):
+                flow_data["_parent_service"] = parent_service
+
+            # Ensure flow type is preserved in flow data
+            if flow_type and isinstance(flow_data, dict):
+                if "data" not in flow_data:
+                    flow_data["data"] = {}
+                flow_data["data"]["flow_type"] = flow_type
 
             # Add mobile number if provided
             if mobile_number:

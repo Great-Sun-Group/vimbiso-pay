@@ -51,8 +51,8 @@ class CredexFlow(Flow):
             steps = []
             logger.debug(f"No steps defined for flow type: {flow_type}")
 
-        # Construct flow ID from flow type and member ID
-        member_id = state.get('member_id') if state else None
+        # Get member ID from data for flow ID
+        member_id = state.get('data', {}).get('member_id') if state else None
         flow_id = f"{flow_type}_{member_id}" if member_id else flow_type
 
         # Initialize parent Flow with flow ID and steps
@@ -472,7 +472,7 @@ class CredexFlow(Flow):
                 "profile": profile_data,
                 "current_account": personal_account,
                 "jwt_token": current_state.get("jwt_token"),
-                "member_id": current_state.get("member_id"),
+                "member_id": self.data.get("member_id"),
                 "account_id": current_state.get("account_id"),
                 "authenticated": current_state.get("authenticated", True),
                 "mobile_number": current_state.get("mobile_number"),

@@ -34,10 +34,10 @@ class OfferFlow(CredexFlow):
             if not isinstance(flow_data, dict):
                 flow_data = {}
 
-            # Extract member ID for flow ID
-            member_id = state.get("member_id")
+            # Extract member ID from data for flow ID
+            member_id = state.get("data", {}).get("member_id")
             if not member_id:
-                raise ValueError("Missing member ID in state")
+                raise ValueError("Missing member ID")
 
             # Normalize flow type and create flow ID
             normalized_flow_type = flow_type or "offer"
@@ -72,7 +72,6 @@ class OfferFlow(CredexFlow):
             # Initialize data structure
             data = {
                 "mobile_number": mobile_number,
-                "member_id": member_id,
                 "account_id": account_id,
                 "flow_type": normalized_flow_type,
                 "_validation_context": validation_context["_validation_context"],
@@ -151,7 +150,7 @@ class OfferFlow(CredexFlow):
                 raise ValueError(error_msg)
 
             # Check flow_data.data structure
-            flow_data_required_fields = ["flow_type", "id", "step", "mobile_number", "member_id", "account_id"]
+            flow_data_required_fields = ["flow_type", "id", "step", "mobile_number", "account_id"]
             missing_data_fields = [field for field in flow_data_required_fields if field not in flow_data.get("data", {})]
             if missing_data_fields:
                 error_msg = f"Missing required fields in flow_data.data: {', '.join(missing_data_fields)}"
@@ -193,7 +192,7 @@ class OfferFlow(CredexFlow):
             logger.debug("- Flow ID: %s", flow_id)
             logger.debug("- Core fields: %s", {
                 "mobile_number": state.get("mobile_number"),
-                "member_id": state.get("member_id"),
+                "member_id": state.get("data", {}).get("member_id"),
                 "account_id": state.get("account_id")
             })
             logger.debug("- Validation context: %s", validation_context)
@@ -201,6 +200,28 @@ class OfferFlow(CredexFlow):
         try:
             # Initialize base CredexFlow class with flow type and state
             super().__init__(flow_type=self.flow_type, state=state)
+
+            # Initialize credex service from parent service
+            if state and "flow_data" in state:
+                flow_data = state["flow_data"]
+                logger.debug("[OfferFlow] Flow data: %s", flow_data)
+
+                if isinstance(flow_data, dict) and "_parent_service" in flow_data:
+                    parent_service = flow_data["_parent_service"]
+                    logger.debug("[OfferFlow] Parent service: %s", parent_service)
+
+                    if hasattr(parent_service, "credex_service"):
+                        self.credex_service = parent_service.credex_service
+                        logger.debug("[OfferFlow] Credex service initialized from parent")
+                    else:
+                        logger.error("[OfferFlow] Parent service missing credex_service")
+                        raise ValueError("Parent service missing credex_service")
+                else:
+                    logger.error("[OfferFlow] Flow data missing _parent_service")
+                    raise ValueError("Flow data missing _parent_service")
+            else:
+                logger.error("[OfferFlow] State missing flow_data")
+                raise ValueError("State missing flow_data")
 
             # Ensure validation context is preserved after parent initialization
             if validation_context:
@@ -399,9 +420,26 @@ class OfferFlow(CredexFlow):
                 "in_progress"
             )
 
+            # Get member ID from flow data
+            member_id = self.data.get("member_id")
+            if not member_id:
+                error_msg = "Missing member ID"
+                audit.log_flow_event(
+                    flow_id,
+                    "completion_error",
+                    None,
+                    self.data,
+                    "failure",
+                    error_msg
+                )
+                return {
+                    "success": False,
+                    "message": error_msg
+                }
+
             # Prepare offer payload
             offer_payload = {
-                "authorizer_member_id": self.data.get("member_id"),
+                "authorizer_member_id": member_id,
                 "issuerAccountID": self.data.get("account_id"),
                 "receiverAccountID": handle_data.get("account_id"),
                 "InitialAmount": amount_data.get("amount", 0),
