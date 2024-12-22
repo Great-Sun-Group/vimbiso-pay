@@ -1,51 +1,26 @@
 """Validator for credex flow states"""
 from typing import Dict, Any, Set
-from core.utils.validator_interface import FlowValidatorInterface, ValidationResult
+from core.utils.validator_interface import ValidationResult
 from core.utils.state_validator import StateValidator
+from core.utils.base_validator import BaseFlowValidator
 
 
-class CredexFlowValidator(FlowValidatorInterface):
+class CredexFlowValidator(BaseFlowValidator):
     """Validator for credex flow states"""
 
     def validate_flow_data(self, flow_data: Dict[str, Any]) -> ValidationResult:
         """Validate credex flow data structure"""
-        if not isinstance(flow_data, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Flow data must be a dictionary"
-            )
-
-        # Empty flow data is valid for initial state
-        if not flow_data:
-            return ValidationResult(is_valid=True)
-
-        required_fields = {"id", "step", "data"}
-        missing = required_fields - set(flow_data.keys())
-        if missing:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing required flow fields: {', '.join(missing)}",
-                missing_fields=missing
-            )
-
-        # Validate step
-        if not isinstance(flow_data["step"], int) or flow_data["step"] < 0:
-            return ValidationResult(
-                is_valid=False,
-                error_message="Invalid step value"
-            )
-
-        # Validate flow-specific data
-        data = flow_data["data"]
-        if not isinstance(data, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Flow data must be a dictionary"
-            )
+        # First validate using base validator
+        base_validation = super().validate_flow_data(flow_data)
+        if not base_validation.is_valid:
+            return base_validation
 
         # Extract flow type from ID
         flow_id = flow_data["id"]
         flow_type = flow_id.split("_")[0] if "_" in flow_id else flow_id
+
+        # Get data for flow-specific validation
+        data = flow_data["data"]
 
         # Validate data based on flow type
         if flow_type == "offer":

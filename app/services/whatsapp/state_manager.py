@@ -22,22 +22,18 @@ class StateManager:
         preserve_validation: bool = True
     ) -> Dict[str, Any]:
         """Prepare state update with proper context preservation"""
-        # For greeting messages or flow clearing, reset state while preserving core data
-        if clear_flow:
-            new_state = {
-                "_last_updated": audit.get_current_timestamp(),
-                "profile": current_state.get("profile", {}),
-                "current_account": current_state.get("current_account"),
-                "jwt_token": current_state.get("jwt_token"),
-                "member_id": current_state.get("member_id"),
-                "account_id": current_state.get("account_id"),
-                "authenticated": current_state.get("authenticated", False),
-                "_validation_context": {},  # Initialize empty validation context
-                "_validation_state": {}     # Initialize empty validation state
-            }
-            if mobile_number:
-                new_state["mobile_number"] = mobile_number
-            return new_state
+        # Initialize empty flow data structure if none provided
+        default_flow_data = {
+            "id": "user_state",
+            "step": 0,
+            "data": {
+                "mobile_number": mobile_number,
+                "flow_type": "auth",
+                "_validation_context": {},
+                "_validation_state": {}
+            },
+            "_previous_data": {}
+        }
 
         # Extract validation context if needed
         validation_context = {}
@@ -49,7 +45,7 @@ class StateManager:
 
         # Build new state
         new_state = {
-            "flow_data": flow_data,
+            "flow_data": flow_data if flow_data is not None else default_flow_data,
             "profile": current_state.get("profile", {}),
             "current_account": current_state.get("current_account"),
             "jwt_token": current_state.get("jwt_token"),
@@ -63,14 +59,34 @@ class StateManager:
         # Add mobile number if provided
         if mobile_number:
             new_state["mobile_number"] = mobile_number
+            if "flow_data" in new_state and isinstance(new_state["flow_data"], dict):
+                if "data" in new_state["flow_data"]:
+                    new_state["flow_data"]["data"]["mobile_number"] = mobile_number
 
         # Add validation context if preserving
         if preserve_validation:
             new_state.update(validation_context)
 
+            # Ensure flow data has validation context
+            if "flow_data" in new_state and isinstance(new_state["flow_data"], dict):
+                if "data" in new_state["flow_data"]:
+                    new_state["flow_data"]["data"].update({
+                        "_validation_context": current_state.get("_validation_context", {}),
+                        "_validation_state": current_state.get("_validation_state", {})
+                    })
+
         # Preserve authentication state
         if "authenticated" in current_state:
             new_state["authenticated"] = current_state["authenticated"]
+
+        # Log state preparation for debugging
+        logger.debug("Preparing state update:")
+        logger.debug(f"Current state keys: {list(current_state.keys())}")
+        logger.debug(f"New state keys: {list(new_state.keys())}")
+        if "flow_data" in new_state:
+            logger.debug(f"Flow data keys: {list(new_state['flow_data'].keys())}")
+            if "data" in new_state["flow_data"]:
+                logger.debug(f"Flow data.data keys: {list(new_state['flow_data']['data'].keys())}")
 
         return new_state
 

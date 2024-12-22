@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict, Union
 
 from core.utils.flow_audit import FlowAuditLogger
+
 from ...types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -79,12 +80,30 @@ class InputHandler:
                     return value
 
             # For text messages
-            value = self.service.body
+            value = str(self.service.body).strip()  # Ensure string and strip whitespace
             logger.debug(f"Text message value: {value}")
+
+            # Log input processing
+            audit.log_flow_event(
+                "bot_service",
+                "input_processing",
+                None,
+                {"input": value, "type": self.service.message_type},
+                "success"
+            )
+
             return value
 
         except Exception as e:
             logger.error(f"Error extracting input value: {str(e)}")
+            # Log error
+            audit.log_flow_event(
+                "bot_service",
+                "input_processing_error",
+                None,
+                {"error": str(e)},
+                "failure"
+            )
             return ""
 
     def is_greeting(self, text: str) -> bool:

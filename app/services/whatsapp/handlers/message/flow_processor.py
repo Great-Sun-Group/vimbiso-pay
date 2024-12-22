@@ -56,13 +56,24 @@ class FlowProcessor:
         # Prepare complete state including flow data
         state = {
             "id": f"{flow_type}_{member_id}",  # Construct proper flow ID
-            "step": flow_data["step"],
-            "data": flow_data["data"],
-            "flow_data": {
+            "step": flow_data.get("step", 0),
+            "data": {
+                **flow_data.get("data", {}),
                 "flow_type": flow_type,
-                **flow_data
-            }
+                "member_id": member_id,
+                "_validation_context": flow_data.get("data", {}).get("_validation_context", {}),
+                "_validation_state": flow_data.get("data", {}).get("_validation_state", {})
+            },
+            "_previous_data": flow_data.get("_previous_data", {}),
+            "_validation_context": flow_data.get("data", {}).get("_validation_context", {}),
+            "_validation_state": flow_data.get("data", {}).get("_validation_state", {})
         }
+
+        # Log flow initialization
+        logger.debug(f"Initializing flow {flow_type}:")
+        logger.debug(f"- Flow ID: {state['id']}")
+        logger.debug(f"- Step: {state['step']}")
+        logger.debug(f"- Data keys: {list(state['data'].keys())}")
 
         # Initialize flow with state and kwargs
         flow = flow_class(state=state, **kwargs)

@@ -184,7 +184,19 @@ class AuthFlow(BaseActionHandler):
             new_state = {
                 "authenticated": True,
                 "profile": profile_data,
-                "flow_data": None,  # No flow data needed for initial state
+                "flow_data": {  # Initialize empty flow data structure
+                    "id": "user_state",
+                    "step": 0,
+                    "data": {
+                        "mobile_number": self.service.user.mobile_number,
+                        "member_id": member_id,
+                        "account_id": account_id,
+                        "flow_type": "auth",
+                        "_validation_context": {},
+                        "_validation_state": {}
+                    },
+                    "_previous_data": {}
+                },
                 "member_id": member_id,
                 "account_id": account_id,
                 "current_account": personal_account,

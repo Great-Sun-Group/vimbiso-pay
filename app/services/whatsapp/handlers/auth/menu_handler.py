@@ -83,13 +83,33 @@ class MenuHandler(BaseActionHandler):
             "in_progress"
         )
 
-        # Clear any existing flow state
+        # Clear any existing flow state but initialize with proper structure
         current_state = self.service.user.state.state
         new_state = self.service.state_manager.prepare_state_update(
             current_state,
-            clear_flow=True,
+            flow_data={  # Initialize empty flow data structure
+                "id": "user_state",
+                "step": 0,
+                "data": {
+                    "mobile_number": self.service.user.mobile_number,
+                    "flow_type": "auth",
+                    "_validation_context": {},
+                    "_validation_state": {}
+                },
+                "_previous_data": {}
+            },
             mobile_number=self.service.user.mobile_number
         )
+
+        # Log state transition
+        audit.log_state_transition(
+            "auth_handler",
+            current_state,
+            new_state,
+            "success"
+        )
+
+        # Update state
         self.service.user.state.update_state(new_state, "greeting")
 
         return self.handle_menu(login=True)

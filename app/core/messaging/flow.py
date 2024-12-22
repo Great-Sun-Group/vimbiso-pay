@@ -104,34 +104,40 @@ class Flow:
         if not step:
             return None
 
-        # Store complete current state with validation context
-        validation_state = {
-            "_step": self.current_index,
-            "_validation_state": {
-                "step_id": step.id,
-                "input": input_data,
-                "timestamp": audit.get_current_timestamp()
-            }
-        }
-
-        # Preserve existing validation context while adding new state
-        self._previous_data = {
-            **self.data,
-            **validation_state,
-            "_previous_validation": self.data.get("_validation_state", {})
-        }
-
-        # Log flow event at start of processing
-        audit.log_flow_event(
-            self.id,
-            "step_start",
-            step.id,
-            self._previous_data,
-            "in_progress"
-        )
-
-        # Validate and transform input
         try:
+            # Initialize validation state
+            validation_state = {
+                "_step": self.current_index,
+                "_validation_state": {
+                    "step_id": step.id,
+                    "input": input_data,
+                    "timestamp": audit.get_current_timestamp()
+                }
+            }
+
+            # Preserve existing validation context while adding new state
+            self._previous_data = {
+                **self.data,
+                **validation_state,
+                "_validation_context": self.data.get("_validation_context", {}),
+                "_previous_validation": self.data.get("_validation_state", {})
+            }
+
+            # Log flow event at start of processing
+            audit.log_flow_event(
+                self.id,
+                "step_start",
+                step.id,
+                self._previous_data,
+                "in_progress"
+            )
+
+            # Log input processing
+            logger.debug(f"[Flow {self.id}] Processing input for step {step.id}")
+            logger.debug(f"[Flow {self.id}] Input data: {input_data}")
+            logger.debug(f"[Flow {self.id}] Current validation state: {validation_state}")
+
+            # Validate input
             validation_result = step.validate(input_data)
             audit.log_validation_event(
                 self.id,
@@ -171,31 +177,7 @@ class Flow:
                     "Invalid input"
                 )
 
-        except ValueError as validation_error:
-            # Handle validation errors with context
-            from services.whatsapp.types import WhatsAppMessage
-
-            # Restore previous state
-            self.data = self._previous_data.copy()
-            self.data["_validation_error"] = True
-
-            # Log validation error
-            audit.log_flow_event(
-                self.id,
-                "validation_error",
-                step.id,
-                self.data,
-                "failure",
-                str(validation_error)
-            )
-
-            return WhatsAppMessage.create_text(
-                self.data.get("mobile_number", ""),
-                str(validation_error)
-            )
-
-        try:
-            # Update flow data
+            # Transform input
             transformed_data = step.transform(input_data)
 
             # Store transformed data under step ID to preserve structure
@@ -242,6 +224,29 @@ class Flow:
 
             return next_message
 
+        except ValueError as validation_error:
+            # Handle validation errors with context
+            from services.whatsapp.types import WhatsAppMessage
+
+            # Restore previous state
+            self.data = self._previous_data.copy()
+            self.data["_validation_error"] = True
+
+            # Log validation error
+            audit.log_flow_event(
+                self.id,
+                "validation_error",
+                step.id,
+                self.data,
+                "failure",
+                str(validation_error)
+            )
+
+            return WhatsAppMessage.create_text(
+                self.data.get("mobile_number", ""),
+                str(validation_error)
+            )
+
         except Exception as e:
             error_msg = f"Process error in {step.id}: {str(e)}"
             logger.error(error_msg)
@@ -285,13 +290,37 @@ class Flow:
 
     def get_state(self) -> Dict[str, Any]:
         """Get flow state"""
+        # Ensure data has required fields
+        if not isinstance(self.data, dict):
+            self.data = {}
+
+        # Ensure validation context exists
+        if "_validation_context" not in self.data:
+            self.data["_validation_context"] = {}
+        if "_validation_state" not in self.data:
+            self.data["_validation_state"] = {}
+
+        # Ensure required fields exist
+        if "mobile_number" not in self.data:
+            self.data["mobile_number"] = None
+        if "flow_type" not in self.data:
+            self.data["flow_type"] = self.id.split("_")[0] if "_" in self.id else "unknown"
+
         state = {
             "id": self.id,
             "step": self.current_index,
             "data": self.data,
-            "_previous_data": self._previous_data  # Include previous state
+            "_previous_data": self._previous_data,  # Include previous state
+            "_validation_context": self.data.get("_validation_context", {}),
+            "_validation_state": self.data.get("_validation_state", {})
         }
-        # Log state retrieval
+
+        # Log state retrieval with details
+        logger.debug(f"[Flow {self.id}] Getting state:")
+        logger.debug(f"[Flow {self.id}] - Step: {self.current_index}")
+        logger.debug(f"[Flow {self.id}] - Data keys: {list(self.data.keys())}")
+        logger.debug(f"[Flow {self.id}] - Has validation context: {bool(self.data.get('_validation_context'))}")
+
         audit.log_flow_event(
             self.id,
             "get_state",
@@ -299,6 +328,7 @@ class Flow:
             state,
             "success"
         )
+
         return state
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -312,24 +342,37 @@ class Flow:
 
             old_state = self.get_state()
 
+            # Initialize data with validation context from state
+            validation_context = {
+                "_validation_context": state.get("_validation_context", {}),
+                "_validation_state": state.get("_validation_state", {})
+            }
+
             # Merge new data with existing data
             if "data" in state:
                 logger.debug(f"[Flow {self.id}] Merging data fields:")
                 logger.debug(f"[Flow {self.id}] - Existing data fields: {list(self.data.keys())}")
                 logger.debug(f"[Flow {self.id}] - New data fields: {list(state['data'].keys())}")
 
-                # Preserve validation context during merge
-                validation_context = {k: v for k, v in self.data.items() if k.startswith('_')}
-
+                # Merge data in correct order to preserve context
                 self.data = {
-                    **validation_context,  # Keep validation context
-                    **self.data,  # Keep existing data
-                    **state.get("data", {})  # Merge new data
+                    **validation_context,  # Base validation context from state
+                    **self.data,  # Existing data
+                    **state.get("data", {}),  # New data
+                    **{k: v for k, v in state.get("data", {}).items() if k.startswith('_')}  # Ensure validation fields from new data override
                 }
 
                 # Restore previous data if available
                 if "_previous_data" in state:
-                    self._previous_data = state["_previous_data"]
+                    self._previous_data = {
+                        **state["_previous_data"],
+                        **validation_context  # Ensure validation context in previous data
+                    }
+                else:
+                    self._previous_data = {
+                        **self.data,
+                        **validation_context
+                    }
 
                 logger.debug(f"[Flow {self.id}] - Merged data fields: {list(self.data.keys())}")
                 logger.debug(f"[Flow {self.id}] - Full merged data: {self.data}")
@@ -352,3 +395,6 @@ class Flow:
             logger.debug(f"[Flow {self.id}] - Final step: {self.current_index}")
             logger.debug(f"[Flow {self.id}] - Final data keys: {list(self.data.keys())}")
             logger.debug(f"[Flow {self.id}] - Final data values: {self.data}")
+
+            # Log validation context
+            logger.debug(f"[Flow {self.id}] - Validation context: {validation_context}")

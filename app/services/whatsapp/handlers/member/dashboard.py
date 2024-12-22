@@ -282,10 +282,28 @@ class DashboardFlow(Flow):
                 "account_id": current_state.get("account_id"),
                 "authenticated": current_state.get("authenticated", False),
                 "mobile_number": self.data.get("mobile_number"),
-                "flow_data": {},  # Initialize as empty dict
+                "flow_data": {  # Initialize with proper structure
+                    "id": "user_state",
+                    "step": 0,
+                    "data": {
+                        "mobile_number": self.data.get("mobile_number"),
+                        "member_id": current_state.get("member_id"),
+                        "account_id": current_state.get("account_id"),
+                        "flow_type": "dashboard",
+                        "_validation_context": current_state.get("_validation_context", {}),
+                        "_validation_state": current_state.get("_validation_state", {})
+                    },
+                    "_previous_data": {}
+                },
                 "_validation_context": current_state.get("_validation_context", {}),
                 "_validation_state": current_state.get("_validation_state", {})
             }
+
+            # Log state preparation
+            logger.debug(f"[Dashboard {self.id}] Preparing new state:")
+            logger.debug(f"[Dashboard {self.id}] - Current state keys: {list(current_state.keys())}")
+            logger.debug(f"[Dashboard {self.id}] - New state keys: {list(new_state.keys())}")
+            logger.debug(f"[Dashboard {self.id}] - Flow data: {new_state['flow_data']}")
 
             # Validate new state
             validation = StateValidator.validate_state(new_state)

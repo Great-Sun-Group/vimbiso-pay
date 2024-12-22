@@ -18,7 +18,7 @@ class StateHandler:
     def __init__(self, service: Any):
         self.service = service
 
-    def prepare_flow_start(self, clear_menu: bool = True, is_greeting: bool = False) -> Optional[WhatsAppMessage]:
+    def prepare_flow_start(self, clear_menu: bool = True, is_greeting: bool = False, flow_type: Optional[str] = None) -> Optional[WhatsAppMessage]:
         """Prepare state for starting a new flow"""
         current_state = self.service.user.state.state or {}
 
@@ -29,12 +29,34 @@ class StateHandler:
                 "_last_updated": audit.get_current_timestamp()
             }
         else:
+            # Initialize flow data structure
+            flow_data = {
+                "id": "user_state",
+                "step": 0,
+                "data": {
+                    "mobile_number": self.service.user.mobile_number,
+                    "member_id": current_state.get("member_id"),
+                    "account_id": current_state.get("account_id"),
+                    "flow_type": flow_type or "auth",
+                    "_validation_context": {},
+                    "_validation_state": {}
+                },
+                "_previous_data": {}
+            }
+
             new_state = StateManager.prepare_state_update(
                 current_state,
-                clear_flow=True,
+                flow_data=flow_data,
                 mobile_number=self.service.user.mobile_number,
                 preserve_validation=False  # Don't preserve validation when starting new flow
             )
+
+        # Log state preparation
+        logger.debug("Preparing flow start state:")
+        logger.debug(f"- Current state keys: {list(current_state.keys())}")
+        logger.debug(f"- New state keys: {list(new_state.keys())}")
+        if "flow_data" in new_state:
+            logger.debug(f"- Flow data: {new_state['flow_data']}")
 
         error = StateManager.validate_and_update(
             self.service.user.state,

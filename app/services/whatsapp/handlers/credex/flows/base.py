@@ -198,7 +198,9 @@ class CredexFlow(Flow):
 
     def _transform_amount(self, amount_str: str) -> Dict[str, Any]:
         """Transform amount string to structured data"""
-        match = self.AMOUNT_PATTERN.match(amount_str.strip().upper())
+        match = self.AMOUNT_PATTERN.match(str(amount_str).strip().upper())
+        if not match:
+            raise ValueError("Invalid amount format")
 
         try:
             # Extract amount and denomination
@@ -212,10 +214,24 @@ class CredexFlow(Flow):
             # Log transformation at INFO level
             logger.info(f"Transforming amount: {amount} {denom or 'USD'}")
 
+            # Validate amount is a positive number
+            amount_float = float(amount)
+            if amount_float <= 0:
+                raise ValueError("Amount must be greater than 0")
+
             result = {
-                "amount": float(amount),
+                "amount": amount_float,
                 "denomination": denom or "USD"
             }
+
+            # Log successful transformation
+            audit.log_validation_event(
+                self.id,
+                "amount",
+                amount_str,
+                True,
+                None
+            )
 
             # Log details at DEBUG level
             if logger.isEnabledFor(logging.DEBUG):

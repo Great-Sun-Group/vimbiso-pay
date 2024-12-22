@@ -79,12 +79,19 @@ class MessageHandler:
             logger.info(f"Processing action: {action}")
 
             if action in self.FLOW_TYPES:
-                error = self.state_handler.prepare_flow_start()
+                # Get flow type before preparing state
+                flow_type, flow_class_name = self.FLOW_TYPES[action]
+
+                # Prepare state with flow type
+                error = self.state_handler.prepare_flow_start(flow_type=flow_type)
                 if error:
                     return error
 
+                # Log flow initialization
+                logger.debug(f"Initializing flow: {flow_type}")
+                logger.debug(f"Flow class: {flow_class_name.__name__}")
+
                 # Start new flow
-                flow_type, flow_class_name = self.FLOW_TYPES[action]
                 return self.flow_manager.initialize_flow(flow_type, flow_class_name)
 
             # If no active flow and not a menu action, default to menu

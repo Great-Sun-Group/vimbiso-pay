@@ -70,6 +70,12 @@ class StateValidator:
             if not account_validation.is_valid:
                 return account_validation
 
+        # Validate flow data if present
+        if "flow_data" in state:
+            flow_validation = cls.validate_flow_data_structure(state["flow_data"])
+            if not flow_validation.is_valid:
+                return flow_validation
+
         # Validate validation context if present and preserving
         if preserve_context and "_validation_context" in state:
             context = state["_validation_context"]
@@ -78,6 +84,67 @@ class StateValidator:
                     is_valid=False,
                     error_message="Validation context must be a dictionary"
                 )
+
+            # Ensure validation state is also a dictionary
+            validation_state = state.get("_validation_state", {})
+            if not isinstance(validation_state, dict):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Validation state must be a dictionary"
+                )
+
+        return ValidationResult(is_valid=True)
+
+    @classmethod
+    def validate_flow_data_structure(cls, flow_data: Dict[str, Any]) -> ValidationResult:
+        """Validate flow data structure"""
+        if not isinstance(flow_data, dict):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Flow data must be a dictionary"
+            )
+
+        # Check required flow fields
+        required_fields = {"id", "step", "data"}
+        missing = required_fields - set(flow_data.keys())
+        if missing:
+            return ValidationResult(
+                is_valid=False,
+                error_message=f"Missing required flow fields: {', '.join(missing)}",
+                missing_fields=missing
+            )
+
+        # Validate step is a non-negative integer
+        if not isinstance(flow_data["step"], int) or flow_data["step"] < 0:
+            return ValidationResult(
+                is_valid=False,
+                error_message="Step must be a non-negative integer"
+            )
+
+        # Validate flow data
+        data = flow_data.get("data", {})
+        if not isinstance(data, dict):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Flow data must be a dictionary"
+            )
+
+        # Validate required data fields
+        required_data_fields = {
+            "mobile_number",
+            "member_id",
+            "account_id",
+            "flow_type",
+            "_validation_context",
+            "_validation_state"
+        }
+        missing_data = required_data_fields - set(data.keys())
+        if missing_data:
+            return ValidationResult(
+                is_valid=False,
+                error_message=f"Missing required flow data fields: {', '.join(missing_data)}",
+                missing_fields=missing_data
+            )
 
         return ValidationResult(is_valid=True)
 

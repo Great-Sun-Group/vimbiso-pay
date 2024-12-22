@@ -100,25 +100,33 @@ class FlowManager:
                     "Account not properly initialized. Please try sending 'hi' to restart."
                 )
 
-            # Prepare initial state
-            initial_state = {
-                "id": f"{flow_type}_{member_id}",
-                "step": 0,
-                "data": {
-                    "phone": self.service.user.mobile_number,
-                    "member_id": member_id,
-                    "account_id": account_id,
-                    "mobile_number": self.service.user.mobile_number,
-                    "_validation_context": {},  # Initialize validation context
-                    "_validation_state": {}     # Initialize validation state
-                }
+            # Get current state
+            current_state = self._initialize_state()
+
+            # Initialize state with required fields
+            initial_data = {
+                "phone": self.service.user.mobile_number,
+                "member_id": member_id,
+                "account_id": account_id,
+                "mobile_number": self.service.user.mobile_number,
+                "flow_type": flow_type,  # Always include flow type
+                "_validation_context": current_state.get("_validation_context", {}),  # Preserve validation context
+                "_validation_state": current_state.get("_validation_state", {})      # Preserve validation state
             }
 
             # Add current account data for action flows
             if flow_type in ["cancel", "accept", "decline"]:
-                current_state = self._initialize_state()
-                initial_state["data"]["flow_type"] = flow_type
-                initial_state["data"]["current_account"] = current_state.get("current_account", {})
+                initial_data["current_account"] = current_state.get("current_account", {})
+
+            # Create complete initial state
+            initial_state = {
+                "id": f"{flow_type}_{member_id}",
+                "step": 0,
+                "data": initial_data,
+                "_previous_data": initial_data.copy(),  # Ensure previous data is initialized
+                "_validation_context": current_state.get("_validation_context", {}),  # Preserve at top level
+                "_validation_state": current_state.get("_validation_state", {})      # Preserve at top level
+            }
 
             # Initialize flow with state
             flow = self._create_flow(flow_type, flow_class, initial_state, **kwargs)
