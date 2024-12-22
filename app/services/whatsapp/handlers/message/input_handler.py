@@ -19,14 +19,6 @@ class InputHandler:
     def __init__(self, service: Any):
         self.service = service
 
-    # Map incoming actions to flow types
-    ACTION_MAP = {
-        "offer_credex": "offer",
-        "accept_credex": "accept",
-        "decline_credex": "decline",
-        "cancel_credex": "cancel"
-    }
-
     def get_action(self) -> str:
         """Extract action from message"""
         try:
@@ -51,10 +43,8 @@ class InputHandler:
                 action = self.service.body.strip().lower()
                 logger.debug(f"Text message action: {action}")
 
-            # Map action to flow type if it exists
-            mapped_action = self.ACTION_MAP.get(action, action)
-            logger.info(f"Final mapped action: {mapped_action}")
-            return mapped_action
+            logger.info(f"Extracted action: {action}")
+            return action
 
         except Exception as e:
             logger.error(f"Error extracting action: {str(e)}")

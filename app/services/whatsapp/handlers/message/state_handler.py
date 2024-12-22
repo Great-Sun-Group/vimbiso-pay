@@ -29,26 +29,36 @@ class StateHandler:
                 "_last_updated": audit.get_current_timestamp()
             }
         else:
+            if not flow_type:
+                return WhatsAppMessage.create_text(
+                    self.service.user.mobile_number,
+                    "❌ Error: Missing flow type"
+                )
+
             # Initialize flow data structure
             flow_data = {
-                "id": "user_state",
+                "id": f"{flow_type}_{current_state.get('member_id', 'user')}",
                 "step": 0,
                 "data": {
                     "mobile_number": self.service.user.mobile_number,
                     "member_id": current_state.get("member_id"),
                     "account_id": current_state.get("account_id"),
-                    "flow_type": flow_type or "auth",
+                    "flow_type": flow_type,
                     "_validation_context": {},
                     "_validation_state": {}
                 },
                 "_previous_data": {}
             }
 
+            # Log flow data for debugging
+            logger.debug(f"Creating flow data with type: {flow_type}")
+            logger.debug(f"Flow data structure: {flow_data}")
+
             new_state = StateManager.prepare_state_update(
                 current_state,
                 flow_data=flow_data,
                 mobile_number=self.service.user.mobile_number,
-                preserve_validation=False  # Don't preserve validation when starting new flow
+                preserve_validation=True  # Preserve validation to maintain flow data
             )
 
         # Log state preparation

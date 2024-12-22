@@ -32,21 +32,37 @@ class CredexFlow(Flow):
         # Extract flow type from state if not provided directly
         if flow_type is None and state is not None:
             flow_data = state.get('flow_data', {})
-            flow_type = flow_data.get('flow_type')
+            flow_type = flow_data.get('data', {}).get('flow_type') or flow_data.get('flow_type')
 
         if flow_type is None:
             raise ValueError("flow_type must be provided either directly or through state")
 
+        # Store flow type and initialize services
         self.flow_type = flow_type
         self.kwargs = kwargs
         self.validator = CredexFlowValidator()
         self.credex_service = None
 
-        # Create steps before parent initialization
-        steps = self._create_steps()
+        try:
+            # Create steps before parent initialization
+            steps = self._create_steps()
+        except NotImplementedError:
+            # If steps not implemented, initialize with empty list
+            steps = []
+            logger.debug(f"No steps defined for flow type: {flow_type}")
 
-        # Initialize parent with flow ID and steps
-        super().__init__(flow_type, steps)
+        # Construct flow ID from flow type and member ID
+        member_id = state.get('member_id') if state else None
+        flow_id = f"{flow_type}_{member_id}" if member_id else flow_type
+
+        # Initialize parent Flow with flow ID and steps
+        super().__init__(flow_id, steps)
+
+        # Log initialization
+        logger.debug(f"Initialized {self.__class__.__name__}:")
+        logger.debug(f"- Flow type: {flow_type}")
+        logger.debug(f"- Flow ID: {flow_id}")
+        logger.debug(f"- Steps: {[step.id for step in steps]}")
 
         # Restore state if provided
         if state is not None:

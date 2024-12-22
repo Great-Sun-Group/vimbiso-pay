@@ -8,8 +8,9 @@ from core.utils.flow_audit import FlowAuditLogger
 
 from ...state_manager import StateManager
 from ...types import WhatsAppMessage
-from ..credex import CredexFlow
-from ..member import RegistrationFlow, UpgradeFlow
+from ..credex.flows import CredexFlow
+from ..member.registration import RegistrationFlow
+from ..member.upgrade import UpgradeFlow
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -103,6 +104,9 @@ class FlowManager:
             # Get current state
             current_state = self._initialize_state()
 
+            # Log flow initialization
+            logger.debug(f"Initializing flow {flow_type} with member_id {member_id}")
+
             # Initialize state with required fields
             initial_data = {
                 "phone": self.service.user.mobile_number,
@@ -110,9 +114,12 @@ class FlowManager:
                 "account_id": account_id,
                 "mobile_number": self.service.user.mobile_number,
                 "flow_type": flow_type,  # Always include flow type
-                "_validation_context": current_state.get("_validation_context", {}),  # Preserve validation context
-                "_validation_state": current_state.get("_validation_state", {})      # Preserve validation state
+                "_validation_context": current_state.get("_validation_context", {}),
+                "_validation_state": current_state.get("_validation_state", {})
             }
+
+            # Log initial data
+            logger.debug(f"Initial data prepared: {initial_data}")
 
             # Add current account data for action flows
             if flow_type in ["cancel", "accept", "decline"]:
@@ -123,10 +130,16 @@ class FlowManager:
                 "id": f"{flow_type}_{member_id}",
                 "step": 0,
                 "data": initial_data,
-                "_previous_data": initial_data.copy(),  # Ensure previous data is initialized
-                "_validation_context": current_state.get("_validation_context", {}),  # Preserve at top level
-                "_validation_state": current_state.get("_validation_state", {})      # Preserve at top level
+                "_previous_data": initial_data.copy(),
+                "_validation_context": current_state.get("_validation_context", {}),
+                "_validation_state": current_state.get("_validation_state", {})
             }
+
+            # Log flow initialization details
+            logger.debug("Flow initialization details:")
+            logger.debug(f"- Flow type: {flow_type}")
+            logger.debug(f"- Flow ID: {initial_state['id']}")
+            logger.debug(f"- Initial data: {initial_data}")
 
             # Initialize flow with state
             flow = self._create_flow(flow_type, flow_class, initial_state, **kwargs)
@@ -195,18 +208,28 @@ class FlowManager:
         """Update state with flow data"""
         current_state = self._initialize_state()
 
-        # Store the modified kwargs in state
+        # Get flow state and ensure it has required structure
+        flow_state = flow.get_state()
+        flow_data = {
+            "id": flow_state.get("id") or f"{flow_type}_{self.service.user.mobile_number}",
+            "step": flow_state.get("step", 0),
+            "data": {
+                **(flow_state.get("data", {})),
+                "mobile_number": self.service.user.mobile_number,
+                "flow_type": flow_type
+            },
+            "_previous_data": flow_state.get("_previous_data", {})
+        }
+
+        # Store the modified kwargs in flow data
         flow_kwargs = kwargs.copy()
         if flow_class == CredexFlow:
             flow_kwargs['flow_type'] = flow_type
+        flow_data["kwargs"] = flow_kwargs
 
         new_state = StateManager.prepare_state_update(
             current_state,
-            flow_data={
-                **flow.get_state(),
-                "flow_type": flow_type,
-                "kwargs": flow_kwargs
-            },
+            flow_data=flow_data,
             mobile_number=self.service.user.mobile_number
         )
 

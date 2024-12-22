@@ -2,8 +2,11 @@
 import logging
 from typing import Any, Dict, Optional
 
-from core.utils.state_validator import StateValidator
+# Core imports
 from core.utils.flow_audit import FlowAuditLogger
+from core.utils.state_validator import StateValidator
+
+# Local imports
 from .types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -36,9 +39,23 @@ class StateManager:
     ) -> Dict[str, Any]:
         """Prepare state update with proper context preservation"""
         try:
-            # Initialize flow data structure
+            # Initialize or validate flow data structure
             if flow_data is None:
                 flow_data = StateManager.DEFAULT_FLOW_DATA.copy()
+                if mobile_number:
+                    flow_data["data"]["mobile_number"] = mobile_number
+            else:
+                # Ensure flow data has required structure
+                if "id" not in flow_data:
+                    flow_data["id"] = "user_state"
+                if "step" not in flow_data:
+                    flow_data["step"] = 0
+                if "data" not in flow_data:
+                    flow_data["data"] = {}
+                if "_previous_data" not in flow_data:
+                    flow_data["_previous_data"] = {}
+
+                # Ensure data has required fields
                 if mobile_number:
                     flow_data["data"]["mobile_number"] = mobile_number
 
@@ -51,7 +68,7 @@ class StateManager:
 
             # Build new state with core fields
             new_state = {
-                "flow_data": flow_data,
+                "flow_data": flow_data,  # Use complete flow data structure
                 "profile": current_state.get("profile", {}),
                 "current_account": current_state.get("current_account"),
                 "jwt_token": current_state.get("jwt_token"),

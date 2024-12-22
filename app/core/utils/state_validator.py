@@ -112,10 +112,7 @@ class StateValidator:
 
         # Validate core required fields
         required_data_fields = {
-            "mobile_number",
-            "member_id",
-            "account_id",
-            "flow_type"
+            "mobile_number"  # Only mobile_number is truly required
         }
         missing_data = required_data_fields - set(data.keys())
         if missing_data:

@@ -2,13 +2,22 @@
 import logging
 from typing import Any, Dict, Type
 
+# Core imports
 from core.messaging.flow import Flow
 from core.utils.flow_audit import FlowAuditLogger
 
+# Local imports
 from ...types import WhatsAppMessage
-from ..credex.flows import (AcceptFlow, CancelFlow, CredexFlow, DeclineFlow,
-                            OfferFlow)
-from ..member import DashboardFlow, RegistrationFlow, UpgradeFlow
+from ..credex.flows import (
+    AcceptFlow,
+    CancelFlow,
+    CredexFlow,
+    DeclineFlow,
+    OfferFlow
+)
+from ..member.dashboard import DashboardFlow
+from ..member.registration import RegistrationFlow
+from ..member.upgrade import UpgradeFlow
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -75,8 +84,8 @@ class FlowProcessor:
         logger.debug(f"- Step: {state['step']}")
         logger.debug(f"- Data keys: {list(state['data'].keys())}")
 
-        # Initialize flow with state and kwargs
-        flow = flow_class(state=state, **kwargs)
+        # Initialize flow with flow_type and state
+        flow = flow_class(flow_type=flow_type, state=state, **kwargs)
 
         # Set service for Credex flows
         if isinstance(flow, CredexFlow):
@@ -93,11 +102,30 @@ class FlowProcessor:
         input_value = None
 
         try:
-            # Get flow info
-            flow_type = flow_data.get("flow_type")
-            kwargs = flow_data.get("kwargs", {})
+            # Get flow info and validate structure
+            if not isinstance(flow_data, dict):
+                logger.error("Flow data must be a dictionary")
+                return WhatsAppMessage.create_text(
+                    self.service.user.mobile_number,
+                    "❌ Error: Invalid flow data"
+                )
+
+            # Get flow type from flow data
+            flow_type = flow_data.get("data", {}).get("flow_type")
             if not flow_type:
-                raise ValueError("Missing flow type")
+                logger.error("Missing flow type in data")
+                return WhatsAppMessage.create_text(
+                    self.service.user.mobile_number,
+                    "❌ Error: Missing flow type"
+                )
+
+            kwargs = flow_data.get("kwargs", {})
+
+            # Log flow data for debugging
+            logger.debug("Processing flow data:")
+            logger.debug(f"- Flow type: {flow_type}")
+            logger.debug(f"- Flow data structure: {flow_data.keys()}")
+            logger.debug(f"- Data fields: {flow_data.get('data', {}).keys()}")
 
             # Initialize flow
             flow_id = flow_data.get("id", "")

@@ -2,14 +2,14 @@
 import logging
 from typing import Any
 
-from services.whatsapp.handlers.credex.flows import (
+from core.utils.flow_audit import FlowAuditLogger
+
+from ...types import WhatsAppMessage
+from ..credex.flows import (
     OfferFlow, AcceptFlow, DeclineFlow, CancelFlow
 )
-from services.whatsapp.handlers.member.registration import RegistrationFlow
-from services.whatsapp.handlers.member.upgrade import UpgradeFlow
-
-from core.utils.flow_audit import FlowAuditLogger
-from services.whatsapp.types import WhatsAppMessage
+from ..member.registration import RegistrationFlow
+from ..member.upgrade import UpgradeFlow
 from .flow_manager import FlowManager
 from .flow_processor import FlowProcessor
 from .input_handler import InputHandler
@@ -79,20 +79,24 @@ class MessageHandler:
             logger.info(f"Processing action: {action}")
 
             if action in self.FLOW_TYPES:
-                # Get flow type before preparing state
-                flow_type, flow_class_name = self.FLOW_TYPES[action]
+                # Get flow type and class
+                flow_type, flow_class = self.FLOW_TYPES[action]
+
+                # Log flow initialization
+                logger.info(f"Starting {flow_type} flow")
+                logger.debug(f"Flow type: {flow_type}")
+                logger.debug(f"Flow class: {flow_class.__name__}")
 
                 # Prepare state with flow type
                 error = self.state_handler.prepare_flow_start(flow_type=flow_type)
                 if error:
+                    logger.error(f"Failed to prepare flow state: {error}")
                     return error
 
-                # Log flow initialization
-                logger.debug(f"Initializing flow: {flow_type}")
-                logger.debug(f"Flow class: {flow_class_name.__name__}")
-
-                # Start new flow
-                return self.flow_manager.initialize_flow(flow_type, flow_class_name)
+                # Initialize flow with prepared state and flow type
+                result = self.flow_manager.initialize_flow(flow_type, flow_class)
+                logger.info(f"Flow {flow_type} initialized")
+                return result
 
             # If no active flow and not a menu action, default to menu
             return self.service.auth_handler.handle_action_menu()

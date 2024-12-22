@@ -199,20 +199,8 @@ class OfferFlow(CredexFlow):
             logger.debug("- Validation context: %s", validation_context)
 
         try:
-            # Create steps before parent initialization
-            steps = self._create_steps()
-
-            # Ensure we have a valid flow ID for parent initialization
-            flow_id = state.get("id")
-            if not flow_id:
-                member_id = state.get("member_id")
-                flow_id = f"{self.flow_type}_{member_id}" if member_id else self.flow_type
-
-            # Initialize base Flow class with id and steps
-            super().__init__(id=flow_id, steps=steps)
-
-            # Set validated state
-            self.set_state(state)
+            # Initialize base CredexFlow class with flow type and state
+            super().__init__(flow_type=self.flow_type, state=state)
 
             # Ensure validation context is preserved after parent initialization
             if validation_context:
