@@ -2,10 +2,11 @@
 
 ## Overview
 
-The Flow Framework provides a progressive interaction system for handling complex, multi-step conversations in WhatsApp. It enables:
+The Flow Framework provides a progressive interaction system for handling complex, multi-step conversations in WhatsApp, extendable to other channels. It enables:
+- Member-centric state management
+- Multi-channel support
 - Structured data collection
 - Input validation
-- State management
 - Error recovery
 - Comprehensive audit logging
 
@@ -16,6 +17,8 @@ The Flow Framework provides a progressive interaction system for handling comple
 The framework consists of four main components:
 
 - **Flow Base Class**
+  - Manages member-centric state
+  - Handles channel abstraction
   - Manages step progression
   - Handles data collection
   - Integrates with state management
@@ -23,19 +26,20 @@ The framework consists of four main components:
   - Maintains audit trail
 
 - **FlowStateManager**
-  - Validates flow state
+  - Validates member and channel state
   - Manages state transitions
   - Handles rollbacks
   - Preserves validation context
+  - Manages channel information
 
 - **Step Definition**
   - Defines interaction type
   - Provides validation rules
   - Handles data transformation
-  - Generates messages
+  - Generates channel-aware messages
 
 - **FlowAuditLogger**
-  - Logs flow events
+  - Logs flow events with member context
   - Tracks state transitions
   - Records validation results
   - Enables state recovery
@@ -51,6 +55,8 @@ Supports three interaction types:
 ### 3. State Integration
 
 Each flow maintains:
+- Member ID as primary identifier
+- Channel information
 - Current step index
 - Collected data
 - Minimal validation state in flow_data.data
@@ -58,21 +64,19 @@ Each flow maintains:
 - Audit trail data
 - Smart recovery paths
 
-Key improvements:
-- Simplified validation context
-- More efficient state transitions
-- Better error recovery
-- Clearer validation paths
-
 ## Implementation
 
 ### Flow Creation
 
 ```python
 class CredexFlow(Flow):
-    def __init__(self, flow_type: str):
+    def __init__(self, flow_type: str, state: Dict = None):
+        # Get member ID and channel info
+        member_id = state.get("member_id")
+        channel_id = self._get_channel_identifier(state)
+
         steps = self._create_steps()
-        super().__init__(f"credex_{flow_type}", steps)
+        super().__init__(f"{flow_type}_{member_id}", steps)
 ```
 
 ### Step Definition
@@ -87,29 +91,68 @@ Step(
 )
 ```
 
+### State Structure
+
+```python
+new_state = {
+    # Core identity - SINGLE SOURCE OF TRUTH
+    "member_id": member_id,  # Primary identifier, ONLY AND ALWAYS at top level
+
+    # Channel information
+    "channel": {
+        "type": "whatsapp",
+        "identifier": channel_id
+    },
+
+    # Flow and state info
+    "flow_data": {
+        "id": flow_id,
+        "step": current_step,
+        "data": {
+            "flow_type": flow_type,
+            "channel": {
+                "type": "whatsapp",
+                "identifier": channel_id
+            }
+        }
+    }
+}
+```
+
 ### Audit Logging
 
 ```python
-# Log flow event
+# Log flow event with member context
 audit.log_flow_event(
-    flow_id="credex_offer",
+    flow_id=f"credex_offer_{member_id}",
     event_type="step_start",
     step_id="amount",
-    state=current_state,
+    state={
+        "member_id": member_id,
+        "channel": {
+            "type": "whatsapp",
+            "identifier": channel_id
+        },
+        **current_state
+    },
     status="in_progress"
 )
 
-# Log validation
+# Log validation with member context
 audit.log_validation_event(
-    flow_id="credex_offer",
+    flow_id=f"credex_offer_{member_id}",
     step_id="amount",
-    input_data=input_data,
+    input_data={
+        "member_id": member_id,
+        "channel": channel_info,
+        "data": input_data
+    },
     validation_result=result
 )
 
-# Log state transition
+# Log state transition with member context
 audit.log_state_transition(
-    flow_id="credex_offer",
+    flow_id=f"credex_offer_{member_id}",
     from_state=old_state,
     to_state=new_state,
     status="success"
@@ -126,7 +169,8 @@ audit.log_state_transition(
 - Template messages
 
 ### 2. Template Organization
-- Domain-specific templates
+- Member-centric templates
+- Channel-aware components
 - Reusable components
 - Type-safe creation
 - Consistent formatting
@@ -134,6 +178,8 @@ audit.log_state_transition(
 ## Best Practices
 
 1. **State Management**
+   - Use member_id as primary identifier
+   - Maintain proper channel abstraction
    - Keep validation context in flow_data.data
    - Use minimal required validations
    - Implement smart state recovery
@@ -142,26 +188,30 @@ audit.log_state_transition(
 
 2. **Flow Implementation**
    - Keep flows focused and single-purpose
+   - Validate member and channel info
+   - Handle channel-specific requirements
    - Validate input properly
    - Handle errors gracefully
    - Log state transitions
    - Enable automatic recovery
 
 3. **Template Usage**
-   - Use domain-specific templates
+   - Use member-centric templates
+   - Handle channel-specific formatting
    - Keep templates reusable
-   - Follow WhatsApp limits
+   - Follow channel limits
    - Handle errors properly
 
 4. **Error Recovery**
-   - Validate state before updates
+   - Validate member and channel state
    - Preserve context during errors
    - Implement proper rollback
    - Provide clear error messages
    - Log recovery attempts
 
 5. **Audit Logging**
-   - Log all flow events
+   - Include member context in logs
+   - Log channel information
    - Track state transitions
    - Record validation results
    - Document error scenarios

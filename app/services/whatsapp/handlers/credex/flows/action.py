@@ -3,10 +3,12 @@ import logging
 from typing import Any, Dict, List
 
 from core.messaging.flow import Step, StepType
+from core.utils.flow_audit import FlowAuditLogger
 
 from .base import CredexFlow
 
 logger = logging.getLogger(__name__)
+audit = FlowAuditLogger()
 
 
 class ActionFlow(CredexFlow):
@@ -21,8 +23,28 @@ class ActionFlow(CredexFlow):
         if flow_type is None:
             raise ValueError("flow_type must be provided either directly or through state")
 
+        # Get member ID from top level state - SINGLE SOURCE OF TRUTH
+        member_id = state.get("member_id") if state else None
+        if not member_id:
+            raise ValueError("Missing member ID in state")
+
         # Set action prefix before parent initialization
         self.action_prefix = flow_type  # e.g. "cancel_", "accept_", "decline_"
+
+        # Log initialization with member context
+        audit.log_flow_event(
+            f"{flow_type}_{member_id}",
+            "initialization",
+            None,
+            {
+                "flow_type": flow_type,
+                "member_id": member_id,
+                "channel": state.get("channel") if state else None,
+                **kwargs
+            },
+            "success"
+        )
+
         super().__init__(flow_type=flow_type, state=state, **kwargs)
 
     def _create_steps(self) -> List[Step]:
@@ -75,6 +97,24 @@ class ActionFlow(CredexFlow):
         # Update flow data with the transformed selection
         self.data.update(result)
 
+        # Get member ID and channel info from top level state - SINGLE SOURCE OF TRUTH
+        current_state = self.credex_service._parent_service.user.state.state
+        member_id = current_state.get("member_id")
+        channel = current_state.get("channel")
+
+        # Log selection with member context
+        audit.log_flow_event(
+            self.id,
+            "selection_transform",
+            None,
+            {
+                "member_id": member_id,  # Get from top level state
+                "channel": channel,  # Get from top level state
+                "selection": result
+            },
+            "success"
+        )
+
         return result
 
     def complete(self) -> Dict[str, Any]:
@@ -92,22 +132,86 @@ class ActionFlow(CredexFlow):
                 "message": "Missing credex ID"
             }
 
+        # Get member ID and channel info from top level state - SINGLE SOURCE OF TRUTH
+        current_state = self.credex_service._parent_service.user.state.state
+        member_id = current_state.get("member_id")
+        if not member_id:
+            return {
+                "success": False,
+                "message": "Missing member ID in state"
+            }
+
+        channel_id = self._get_channel_identifier()
+        if not channel_id:
+            return {
+                "success": False,
+                "message": "Missing channel identifier"
+            }
+
+        # Log action attempt with member context
+        audit_context = {
+            "member_id": member_id,
+            "channel": {
+                "type": "whatsapp",
+                "identifier": channel_id
+            },
+            "credex_id": credex_id
+        }
+        audit.log_flow_event(
+            self.id,
+            f"{self.flow_type}_attempt",
+            None,
+            audit_context,
+            "in_progress"
+        )
+
         actions = {
             "cancel": self.credex_service.cancel_credex,
             "accept": self.credex_service.accept_credex,
             "decline": self.credex_service.decline_credex
         }
 
-        success, response = actions[self.flow_type](credex_id)
+        # Add member context to API call
+        success, response = actions[self.flow_type]({
+            "credex_id": credex_id,
+            "member_id": member_id,
+            "channel": {
+                "type": "whatsapp",
+                "identifier": channel_id
+            }
+        })
+
         if not success:
             action_name = self.flow_type.replace("_credex", "")
+            error_msg = response.get("message", f"Failed to {action_name} offer")
+
+            # Log error with member context
+            audit.log_flow_event(
+                self.id,
+                f"{self.flow_type}_error",
+                None,
+                {**audit_context, "error": error_msg},
+                "failure"
+            )
+
             return {
                 "success": False,
-                "message": response.get("message", f"Failed to {action_name} offer"),
+                "message": error_msg,
                 "response": response
             }
 
+        # Update dashboard with member-centric state
         self._update_dashboard(response)
+
+        # Log success with member context
+        audit.log_flow_event(
+            self.id,
+            f"{self.flow_type}_success",
+            None,
+            {**audit_context, "response": response},
+            "success"
+        )
+
         return {
             "success": True,
             "message": f"Successfully {self.flow_type.replace('_credex', '')}ed credex offer",

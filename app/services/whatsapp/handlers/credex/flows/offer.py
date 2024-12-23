@@ -1,6 +1,6 @@
 """Offer flow implementation"""
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
 from core.messaging.flow import Step, StepType
 from core.utils.flow_audit import FlowAuditLogger
@@ -24,6 +24,15 @@ class OfferFlow(CredexFlow):
         if state is None:
             state = {}
 
+        # Get member ID and channel info from top level - SINGLE SOURCE OF TRUTH
+        member_id = state.get("member_id")
+        if not member_id:
+            raise ValueError("Missing member ID")
+
+        channel_id = self._get_channel_identifier_from_state(state)
+        if not channel_id:
+            raise ValueError("Missing channel identifier")
+
         # Initialize state structure
         if state and isinstance(state, dict):
             # Ensure state has required flow fields
@@ -33,11 +42,6 @@ class OfferFlow(CredexFlow):
             flow_data = state["flow_data"]
             if not isinstance(flow_data, dict):
                 flow_data = {}
-
-            # Extract member ID from data for flow ID
-            member_id = state.get("data", {}).get("member_id")
-            if not member_id:
-                raise ValueError("Missing member ID")
 
             # Normalize flow type and create flow ID
             normalized_flow_type = flow_type or "offer"
@@ -63,15 +67,12 @@ class OfferFlow(CredexFlow):
                 validation_context["_validation_state"].update(flow_data_state)
 
             # Get required fields from state
-            mobile_number = state.get("mobile_number")
             account_id = state.get("account_id")
+            if not account_id:
+                raise ValueError("Missing account ID")
 
-            if not mobile_number or not account_id:
-                raise ValueError("Missing required fields: mobile_number and account_id")
-
-            # Initialize data structure
+            # Initialize data structure with proper state management
             data = {
-                "mobile_number": mobile_number,
                 "account_id": account_id,
                 "flow_type": normalized_flow_type,
                 "_validation_context": validation_context["_validation_context"],
@@ -91,157 +92,75 @@ class OfferFlow(CredexFlow):
                 "_previous_data": state.get("_previous_data", {})
             }
 
-            # Update state with required fields
-            state.update({
+            # Update state with member-centric structure
+            new_state = {
+                # Core identity at top level - SINGLE SOURCE OF TRUTH
+                "member_id": member_id,  # Primary identifier
+
+                # Channel info at top level - SINGLE SOURCE OF TRUTH
+                "channel": {
+                    "type": "whatsapp",
+                    "identifier": channel_id
+                },
+
+                # Flow and state info
                 "id": flow_id,
                 "step": flow_data["step"],
                 "data": data,
-                "flow_data": flow_data,  # Include complete flow_data structure
-                "mobile_number": mobile_number,
+                "flow_data": flow_data,
+                "authenticated": state.get("authenticated", False),
+                "account_id": account_id,
+
+                # Validation context
                 "_validation_context": validation_context["_validation_context"],
                 "_validation_state": validation_context["_validation_state"],
                 "_last_updated": audit.get_current_timestamp(),
-                # Ensure these fields are always present
-                "authenticated": state.get("authenticated", False),
+
+                # Preserve additional state fields
                 "_version": state.get("_version", 1),
                 "_stage": state.get("_stage"),
                 "_option": state.get("_option"),
                 "_direction": state.get("_direction")
+            }
+
+            # Log state preparation
+            logger.debug("[OfferFlow] Preparing new state:")
+            logger.debug("- State keys: %s", list(new_state.keys()))
+            logger.debug("- Flow data: %s", flow_data)
+            logger.debug("- Flow ID: %s", flow_id)
+            logger.debug("- Core fields: %s", {
+                "member_id": member_id,
+                "channel": new_state["channel"],
+                "account_id": account_id
             })
-
-            # Ensure flow_data.data has required fields
-            flow_data["data"].update({
-                "flow_type": normalized_flow_type,
-                "id": flow_id,
-                "step": flow_data["step"]
-            })
-
-            # Validate required fields in state and flow_data
-            required_fields = ["id", "step", "data"]
-
-            # Check root state
-            missing_state_fields = [field for field in required_fields if field not in state]
-            if missing_state_fields:
-                error_msg = f"Missing required flow fields in state: {', '.join(missing_state_fields)}"
-                logger.error(error_msg)
-                audit.log_flow_event(
-                    flow_id,
-                    "initialization_error",
-                    None,
-                    state,
-                    "failure",
-                    error_msg
-                )
-                raise ValueError(error_msg)
-
-            # Check flow_data structure
-            missing_flow_data_fields = [field for field in required_fields if field not in flow_data]
-            if missing_flow_data_fields:
-                error_msg = f"Missing required flow fields in flow_data: {', '.join(missing_flow_data_fields)}"
-                logger.error(error_msg)
-                audit.log_flow_event(
-                    flow_id,
-                    "initialization_error",
-                    None,
-                    state,
-                    "failure",
-                    error_msg
-                )
-                raise ValueError(error_msg)
-
-            # Check flow_data.data structure
-            flow_data_required_fields = ["flow_type", "id", "step", "mobile_number", "account_id"]
-            missing_data_fields = [field for field in flow_data_required_fields if field not in flow_data.get("data", {})]
-            if missing_data_fields:
-                error_msg = f"Missing required fields in flow_data.data: {', '.join(missing_data_fields)}"
-                logger.error(error_msg)
-                audit.log_flow_event(
-                    flow_id,
-                    "initialization_error",
-                    None,
-                    state,
-                    "failure",
-                    error_msg
-                )
-                raise ValueError(error_msg)
-
-            # Store old state for transition logging
-            old_state = state.copy()
 
             # Log state transition
             audit.log_state_transition(
                 flow_id,
-                old_state,
                 state,
+                new_state,
                 "success"
             )
 
-            # Log flow initialization event
-            audit.log_flow_event(
-                flow_id,
-                "initialization",
-                None,
-                state,
-                "success"
-            )
-
-            # Log detailed debug information
-            logger.debug("[OfferFlow] Initializing with state")
-            logger.debug("- State keys: %s", list(state.keys()))
-            logger.debug("- Flow data: %s", flow_data)
-            logger.debug("- Flow ID: %s", flow_id)
-            logger.debug("- Core fields: %s", {
-                "mobile_number": state.get("mobile_number"),
-                "member_id": state.get("data", {}).get("member_id"),
-                "account_id": state.get("account_id")
-            })
-            logger.debug("- Validation context: %s", validation_context)
+            # Update state with new structure
+            state = new_state
 
         try:
-            # Initialize base CredexFlow class with flow type and state
+            # Initialize base CredexFlow class
             super().__init__(flow_type=self.flow_type, state=state)
 
-            # Initialize credex service from parent service
-            if state and "flow_data" in state:
-                flow_data = state["flow_data"]
-                logger.debug("[OfferFlow] Flow data: %s", flow_data)
-
-                if isinstance(flow_data, dict) and "_parent_service" in flow_data:
-                    parent_service = flow_data["_parent_service"]
-                    logger.debug("[OfferFlow] Parent service: %s", parent_service)
-
-                    if hasattr(parent_service, "credex_service"):
-                        self.credex_service = parent_service.credex_service
-                        logger.debug("[OfferFlow] Credex service initialized from parent")
-                    else:
-                        logger.error("[OfferFlow] Parent service missing credex_service")
-                        raise ValueError("Parent service missing credex_service")
-                else:
-                    logger.error("[OfferFlow] Flow data missing _parent_service")
-                    raise ValueError("Flow data missing _parent_service")
-            else:
-                logger.error("[OfferFlow] State missing flow_data")
-                raise ValueError("State missing flow_data")
-
-            # Ensure validation context is preserved after parent initialization
-            if validation_context:
-                self.data.update({
-                    "_validation_context": validation_context["_validation_context"],
-                    "_validation_state": validation_context["_validation_state"]
-                })
-
-                # Log validation context preservation
-                audit.log_validation_event(
-                    flow_id,
-                    "initialization",
-                    validation_context,
-                    True,
-                    "Validation context preserved after initialization"
-                )
-
             # Log successful initialization
-            logger.debug("[OfferFlow] Post-init data keys: %s", list(self.data.keys()))
-            logger.debug("[OfferFlow] Post-init flow state: %s", self.get_state())
+            audit.log_flow_event(
+                self.id,
+                "initialization",
+                None,
+                {
+                    "member_id": member_id,
+                    "channel": state.get("channel"),
+                    "flow_type": self.flow_type
+                },
+                "success"
+            )
 
         except Exception as e:
             # Log initialization error
@@ -251,11 +170,29 @@ class OfferFlow(CredexFlow):
                 flow_id if 'flow_id' in locals() else 'unknown',
                 "initialization_error",
                 None,
-                state or {},
-                "failure",
-                error_msg
+                {
+                    "member_id": member_id,
+                    "channel": state.get("channel") if state else None,
+                    "error": error_msg
+                },
+                "failure"
             )
             raise
+
+    def _get_channel_identifier_from_state(self, state: Dict) -> str:
+        """Get channel identifier from state
+
+        Args:
+            state: The state dictionary
+
+        Returns:
+            str: The channel identifier from top level state.channel
+
+        Note:
+            Channel info is only stored at top level state.channel
+            as the single source of truth
+        """
+        return state.get("channel", {}).get("identifier")
 
     def _create_steps(self) -> List[Step]:
         """Create steps for offer flow"""
@@ -271,7 +208,7 @@ class OfferFlow(CredexFlow):
                 id="handle",
                 type=StepType.TEXT,
                 message=lambda s: CredexTemplates.create_handle_prompt(
-                    self.data.get("mobile_number")
+                    self._get_channel_identifier()
                 ),
                 validator=self._validate_handle,
                 transformer=self._transform_handle
@@ -284,122 +221,17 @@ class OfferFlow(CredexFlow):
             )
         ]
 
-    def _transform_handle(self, handle: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """Transform handle and validate with API"""
-        flow_id = self.data.get("_flow_id", "unknown")
-
-        try:
-            # First validate format using parent method
-            if not super()._validate_handle(handle):
-                audit.log_validation_event(
-                    flow_id,
-                    "handle_validation",
-                    handle,
-                    False,
-                    "Invalid handle format"
-                )
-                raise ValueError("Invalid handle format")
-
-            # Extract handle text
-            if isinstance(handle, dict):
-                interactive = handle.get("interactive", {})
-                if interactive.get("type") == "text":
-                    handle = interactive.get("text", {}).get("body", "")
-                else:
-                    audit.log_validation_event(
-                        flow_id,
-                        "handle_validation",
-                        handle,
-                        False,
-                        "Invalid interactive format"
-                    )
-                    raise ValueError("Invalid handle format")
-
-            handle = handle.strip()
-
-            # Log API validation attempt
-            audit.log_flow_event(
-                flow_id,
-                "handle_api_validation",
-                "handle",
-                {"handle": handle},
-                "in_progress"
-            )
-
-            # Make API call to validate handle
-            success, response = self.credex_service._member.validate_handle(handle)
-            if not success:
-                error_msg = response.get("message", "Invalid handle")
-                audit.log_validation_event(
-                    flow_id,
-                    "handle_api_validation",
-                    handle,
-                    False,
-                    error_msg
-                )
-                raise ValueError(error_msg)
-
-            # Get account data
-            data = response.get("data", {})
-            if not data or not data.get("accountID"):
-                error_msg = "Invalid account data received from API"
-                audit.log_validation_event(
-                    flow_id,
-                    "handle_api_validation",
-                    handle,
-                    False,
-                    error_msg
-                )
-                raise ValueError(error_msg)
-
-            # Create validated result
-            result = {
-                "handle": handle,
-                "account_id": data.get("accountID"),
-                "name": data.get("accountName", handle),
-                "_validation_success": True
-            }
-
-            # Log successful validation
-            audit.log_validation_event(
-                flow_id,
-                "handle_validation",
-                result,
-                True,
-                "Handle validated successfully"
-            )
-
-            return result
-
-        except Exception as e:
-            error_msg = f"Handle validation error: {str(e)}"
-            logger.error(error_msg)
-
-            # Log validation error if not already logged
-            if not str(e).startswith("Invalid"):
-                audit.log_validation_event(
-                    flow_id,
-                    "handle_validation",
-                    handle,
-                    False,
-                    error_msg
-                )
-
-            raise ValueError(error_msg)
-
     def complete(self) -> Dict[str, Any]:
         """Complete the offer flow by making the offer API call"""
-        flow_id = self.data.get("_flow_id", "unknown")
-
         try:
-            # Prepare offer data
+            # Get required data
             amount_data = self.data.get("amount_denom", {})
             handle_data = self.data.get("handle", {})
 
             if not amount_data or not handle_data:
                 error_msg = "Missing required offer data"
                 audit.log_flow_event(
-                    flow_id,
+                    self.id,
                     "completion_error",
                     None,
                     self.data,
@@ -411,33 +243,35 @@ class OfferFlow(CredexFlow):
                     "message": error_msg
                 }
 
-            # Log completion attempt
+            # Get member ID and channel info from top level state - SINGLE SOURCE OF TRUTH
+            current_state = self.credex_service._parent_service.user.state.state
+            member_id = current_state.get("member_id")
+            if not member_id:
+                raise ValueError("Missing member ID in state")
+
+            channel_id = self._get_channel_identifier()
+            if not channel_id:
+                raise ValueError("Missing channel identifier")
+
+            # Log completion attempt with member context
+            audit_context = {
+                "member_id": member_id,
+                "channel": {
+                    "type": "whatsapp",
+                    "identifier": channel_id
+                },
+                "amount": amount_data,
+                "handle": handle_data
+            }
             audit.log_flow_event(
-                flow_id,
+                self.id,
                 "completion_start",
                 None,
-                self.data,
+                audit_context,
                 "in_progress"
             )
 
-            # Get member ID from flow data
-            member_id = self.data.get("member_id")
-            if not member_id:
-                error_msg = "Missing member ID"
-                audit.log_flow_event(
-                    flow_id,
-                    "completion_error",
-                    None,
-                    self.data,
-                    "failure",
-                    error_msg
-                )
-                return {
-                    "success": False,
-                    "message": error_msg
-                }
-
-            # Prepare offer payload
+            # Prepare offer payload with member context
             offer_payload = {
                 "authorizer_member_id": member_id,
                 "issuerAccountID": self.data.get("account_id"),
@@ -448,17 +282,14 @@ class OfferFlow(CredexFlow):
                 "OFFERSorREQUESTS": "OFFERS",
                 "securedCredex": True,
                 "handle": handle_data.get("handle"),
-                "metadata": {"name": handle_data.get("name")}
+                "metadata": {
+                    "name": handle_data.get("name"),
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": channel_id
+                    }
+                }
             }
-
-            # Log offer attempt
-            audit.log_validation_event(
-                flow_id,
-                "offer_creation",
-                offer_payload,
-                True,
-                "Attempting to create offer"
-            )
 
             # Make API call to create offer
             success, response = self.credex_service.offer_credex(offer_payload)
@@ -466,12 +297,11 @@ class OfferFlow(CredexFlow):
             if not success:
                 error_msg = response.get("message", "Offer failed")
                 audit.log_flow_event(
-                    flow_id,
+                    self.id,
                     "offer_creation_error",
                     None,
-                    self.data,
-                    "failure",
-                    error_msg
+                    {**audit_context, "error": error_msg},
+                    "failure"
                 )
                 return {
                     "success": False,
@@ -479,7 +309,7 @@ class OfferFlow(CredexFlow):
                     "response": response
                 }
 
-            # Update dashboard with successful response
+            # Update dashboard with member-centric state
             self._update_dashboard(response)
 
             # Get success message from response
@@ -492,10 +322,10 @@ class OfferFlow(CredexFlow):
 
             # Log successful completion
             audit.log_flow_event(
-                flow_id,
+                self.id,
                 "completion_success",
                 None,
-                self.data,
+                {**audit_context, "response": response},
                 "success",
                 message
             )
@@ -512,7 +342,7 @@ class OfferFlow(CredexFlow):
 
             # Log error with full context
             audit.log_flow_event(
-                flow_id,
+                self.id,
                 "completion_error",
                 None,
                 self.data,

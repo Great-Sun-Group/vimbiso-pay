@@ -17,9 +17,9 @@ BALANCE = """*💰 SECURED BALANCES*
 # Registration templates
 REGISTER = """Welcome to VimbisoPay 💰
 
-We're your portal 🚪🌐 to the credex ecosystem 🌱
+We're your portal 🚪to the credex ecosystem 🌱
 
-Open a free credex account 💳 to get started 📈"""
+Become a member 🌐 and open a free account 💳 to get started 📈"""
 
 # Error templates
 INVALID_ACTION = """❌ Invalid option selected.

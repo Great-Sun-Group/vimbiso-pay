@@ -16,12 +16,11 @@ audit = FlowAuditLogger()
 class StateManager:
     """Helper class for managing state transitions"""
 
-    # Default flow data structure
+    # Class-level constants
     DEFAULT_FLOW_DATA = {
         "id": "user_state",
         "step": 0,
         "data": {
-            "mobile_number": None,
             "flow_type": "auth",
             "_validation_context": {},
             "_validation_state": {}
@@ -29,13 +28,44 @@ class StateManager:
         "_previous_data": {}
     }
 
+    DEFAULT_CHANNEL_DATA = {
+        "type": "whatsapp",  # Default to WhatsApp for backward compatibility
+        "identifier": None,  # Channel-specific identifier (e.g. phone number)
+        "metadata": {}
+    }
+
+    @staticmethod
+    def get_member_id(state: Dict[str, Any]) -> Optional[str]:
+        """Get member ID from state"""
+        return state.get("member_id")
+
+    @staticmethod
+    def get_channel_identifier(state: Dict[str, Any]) -> Optional[str]:
+        """Get channel identifier from state"""
+        return state.get("channel", {}).get("identifier")
+
+    @staticmethod
+    def get_channel_type(state: Dict[str, Any]) -> str:
+        """Get channel type from state"""
+        return state.get("channel", {}).get("type", "whatsapp")
+
+    @staticmethod
+    def create_channel_data(identifier: Optional[str] = None, channel_type: str = "whatsapp") -> Dict[str, Any]:
+        """Create channel data structure"""
+        return {
+            "type": channel_type,
+            "identifier": identifier,
+            "metadata": {}
+        }
+
     @staticmethod
     def prepare_state_update(
         current_state: Dict[str, Any],
         flow_data: Optional[Dict[str, Any]] = None,
         clear_flow: bool = False,
         mobile_number: Optional[str] = None,
-        preserve_validation: bool = True
+        preserve_validation: bool = True,
+        **kwargs  # Allow additional fields like member_id to be passed
     ) -> Dict[str, Any]:
         """Prepare state update with proper context preservation"""
         try:
@@ -80,33 +110,48 @@ class StateManager:
                 if not flow_type and "_previous_data" in flow_data:
                     flow_type = flow_data["_previous_data"].get("flow_type")
 
-            # Build new state with core fields
+            # Build new state with member-centric structure
             new_state = {
-                "flow_data": flow_data,  # Use complete flow data structure
-                "profile": current_state.get("profile", {}),
-                "current_account": current_state.get("current_account"),
-                "jwt_token": current_state.get("jwt_token"),
-                "member_id": current_state.get("member_id"),
+                # Core identity - SINGLE SOURCE OF TRUTH
+                "member_id": kwargs.get("member_id") or current_state.get("member_id"),  # Primary identifier
+
+                # Channel information
+                "channel": StateManager.create_channel_data(
+                    identifier=mobile_number if mobile_number else StateManager.get_channel_identifier(current_state),
+                    channel_type=StateManager.get_channel_type(current_state)
+                ),
+
+                # Authentication and account
                 "account_id": current_state.get("account_id"),
-                "_last_updated": audit.get_current_timestamp(),
-                "flow_type": flow_type  # Preserve flow type at root level
+                "jwt_token": current_state.get("jwt_token"),
+                "authenticated": current_state.get("authenticated", False),
+
+                # Flow and profile data
+                "flow_data": flow_data,
+                "profile": current_state.get("profile", {}),
+                "flow_type": flow_type,  # Preserve flow type at root level
+
+                # Metadata
+                "_last_updated": audit.get_current_timestamp()
             }
 
             # Ensure parent service is preserved in flow data
             if parent_service and isinstance(flow_data, dict):
                 flow_data["_parent_service"] = parent_service
 
-            # Ensure flow type is preserved in flow data
+            # Ensure flow type is preserved in flow data (but not member_id)
             if flow_type and isinstance(flow_data, dict):
                 if "data" not in flow_data:
                     flow_data["data"] = {}
                 flow_data["data"]["flow_type"] = flow_type
 
-            # Add mobile number if provided
-            if mobile_number:
-                new_state["mobile_number"] = mobile_number
-                if isinstance(flow_data.get("data"), dict):
-                    flow_data["data"]["mobile_number"] = mobile_number
+            # Ensure member_id is not duplicated in flow_data.data
+            if isinstance(flow_data, dict) and isinstance(flow_data.get("data"), dict):
+                flow_data["data"].pop("member_id", None)  # Remove if present
+
+            # Update channel metadata if needed
+            if mobile_number and isinstance(new_state["channel"], dict):
+                new_state["channel"]["identifier"] = mobile_number
 
             # Store validation context only in flow_data.data
             if preserve_validation and isinstance(flow_data.get("data"), dict):

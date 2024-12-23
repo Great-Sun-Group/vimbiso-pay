@@ -10,11 +10,17 @@ class StateValidator:
     """Centralized state validation for core state structure"""
 
     CRITICAL_FIELDS = {
-        "profile",
-        "current_account",
-        "jwt_token",
-        "member_id",
-        "account_id"
+        "member_id",    # Primary identifier
+        "channel",      # Channel information
+        "profile",      # User profile
+        "account_id",   # Account reference
+        "flow_data"     # Flow state
+    }
+
+    CHANNEL_FIELDS = {
+        "type",         # Channel type (e.g. whatsapp)
+        "identifier",   # Channel-specific identifier
+        "metadata"      # Channel-specific metadata
     }
 
     @classmethod
@@ -41,8 +47,12 @@ class StateValidator:
                 if not f.startswith('_')
             }
 
-        # Allow minimal state with just mobile_number and _last_updated during greeting
-        if len(state) == 2 and "mobile_number" in state and "_last_updated" in state:
+        # Allow minimal state with just channel info during greeting
+        if len(state) == 2 and "channel" in state and "_last_updated" in state:
+            # Validate channel structure even for minimal state
+            channel_validation = cls.validate_channel_structure(state["channel"])
+            if not channel_validation.is_valid:
+                return channel_validation
             return ValidationResult(is_valid=True)
 
         # For non-greeting states, check for required fields
@@ -67,6 +77,13 @@ class StateValidator:
             account_validation = cls.validate_account_structure(current_account)
             if not account_validation.is_valid:
                 return account_validation
+
+        # Validate member_id is at top level - SINGLE SOURCE OF TRUTH
+        if "member_id" not in state:
+            return ValidationResult(
+                is_valid=False,
+                error_message="member_id must be present at top level as the SINGLE SOURCE OF TRUTH"
+            )
 
         # Validate flow data if present
         if "flow_data" in state:
@@ -102,24 +119,12 @@ class StateValidator:
                 error_message="Step must be a non-negative integer"
             )
 
-        # Validate flow data
+        # Validate flow data structure
         data = flow_data.get("data", {})
         if not isinstance(data, dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="Flow data must be a dictionary"
-            )
-
-        # Validate core required fields
-        required_data_fields = {
-            "mobile_number"  # Only mobile_number is truly required
-        }
-        missing_data = required_data_fields - set(data.keys())
-        if missing_data:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing required flow data fields: {', '.join(missing_data)}",
-                missing_fields=missing_data
             )
 
         # Ensure validation state exists but don't validate its structure
@@ -148,6 +153,40 @@ class StateValidator:
             return ValidationResult(
                 is_valid=False,
                 error_message="Profile dashboard must be a dictionary"
+            )
+
+        return ValidationResult(is_valid=True)
+
+    @classmethod
+    def validate_channel_structure(cls, channel: Dict[str, Any]) -> ValidationResult:
+        """Validate channel information structure"""
+        if not isinstance(channel, dict):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Channel must be a dictionary"
+            )
+
+        # Check required channel fields
+        missing = cls.CHANNEL_FIELDS - set(channel.keys())
+        if missing:
+            return ValidationResult(
+                is_valid=False,
+                error_message=f"Missing required channel fields: {', '.join(missing)}",
+                missing_fields=missing
+            )
+
+        # Validate channel type
+        if not isinstance(channel["type"], str):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Channel type must be a string"
+            )
+
+        # Validate metadata is a dictionary
+        if not isinstance(channel["metadata"], dict):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Channel metadata must be a dictionary"
             )
 
         return ValidationResult(is_valid=True)

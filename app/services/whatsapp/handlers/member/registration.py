@@ -5,6 +5,7 @@ from typing import Dict, List, Any
 from core.messaging.flow import Flow, Step, StepType
 from core.messaging.types import Message
 from core.utils.flow_audit import FlowAuditLogger
+from ...state_manager import StateManager
 from .templates import MemberTemplates
 from .validator import MemberFlowValidator
 
@@ -55,16 +56,31 @@ class RegistrationFlow(Flow):
             )
         ]
 
+    def _get_channel_identifier(self) -> str:
+        """Get channel identifier from state
+
+        Returns:
+            str: The channel identifier from top level state.channel
+
+        Note:
+            Channel info is only stored at top level state.channel
+            as the single source of truth
+        """
+        if hasattr(self.credex_service, '_parent_service'):
+            current_state = self.credex_service._parent_service.user.state.state or {}
+            return StateManager.get_channel_identifier(current_state)
+        return None
+
     def _get_first_name_prompt(self, _) -> Message:
         """Get first name prompt"""
         return MemberTemplates.create_first_name_prompt(
-            self.data.get("mobile_number")
+            self._get_channel_identifier()
         )
 
     def _get_last_name_prompt(self, _) -> Message:
         """Get last name prompt"""
         return MemberTemplates.create_last_name_prompt(
-            self.data.get("mobile_number")
+            self._get_channel_identifier()
         )
 
     def _validate_name(self, name: str) -> bool:
@@ -131,7 +147,7 @@ class RegistrationFlow(Flow):
         last_name = state["last_name"]["last_name"]
 
         return MemberTemplates.create_registration_confirmation(
-            recipient=self.data.get("mobile_number"),
+            recipient=self._get_channel_identifier(),
             first_name=first_name,
             last_name=last_name
         )
@@ -142,30 +158,38 @@ class RegistrationFlow(Flow):
             # Get registration data
             first_name = self.data["first_name"]["first_name"]
             last_name = self.data["last_name"]["last_name"]
-            phone = self.data.get("phone")
+            channel_id = self._get_channel_identifier()
 
-            if not phone:
-                raise ValueError("Missing phone number")
+            if not channel_id:
+                raise ValueError("Missing channel identifier")
 
-            # Log registration attempt
+            # Log registration attempt with channel info
+            audit_context = {
+                "first_name": first_name,
+                "last_name": last_name,
+                "channel": {
+                    "type": "whatsapp",
+                    "identifier": channel_id
+                }
+            }
             audit.log_flow_event(
                 self.id,
                 "registration_attempt",
                 None,
-                {
-                    "first_name": first_name,
-                    "last_name": last_name,
-                    "phone": phone
-                },
+                audit_context,
                 "in_progress"
             )
 
-            # Register member
+            # Register member using channel identifier
             success, response = self.credex_service._auth.register_member({
-                "phone": phone,
+                "phone": channel_id,  # Use channel identifier as phone
                 "firstname": first_name,
                 "lastname": last_name,
-                "defaultDenom": "USD"
+                "defaultDenom": "USD",
+                "channel": {  # Include channel info
+                    "type": "whatsapp",
+                    "identifier": channel_id
+                }
             })
 
             if not success:
@@ -187,9 +211,31 @@ class RegistrationFlow(Flow):
                 .get("token")
             ):
                 if hasattr(self.credex_service, '_parent_service'):
+                    # Get member ID from response
+                    member_id = (
+                        response.get("data", {})
+                        .get("action", {})
+                        .get("details", {})
+                        .get("memberID")
+                    )
+
+                    # Prepare member-centric state
                     new_state = {
+                        # Core identity
+                        "member_id": member_id,  # Primary identifier
+
+                        # Channel information
+                        "channel": StateManager.create_channel_data(
+                            identifier=channel_id,
+                            channel_type="whatsapp"
+                        ),
+
+                        # Authentication
                         "jwt_token": token,
-                        "authenticated": True
+                        "authenticated": True,
+
+                        # Metadata
+                        "_last_updated": audit.get_current_timestamp()
                     }
 
                     # Validate auth state
@@ -209,7 +255,7 @@ class RegistrationFlow(Flow):
             )
 
             return MemberTemplates.create_registration_success(
-                self.data.get("mobile_number"),
+                channel_id,  # Use channel identifier
                 first_name
             )
 

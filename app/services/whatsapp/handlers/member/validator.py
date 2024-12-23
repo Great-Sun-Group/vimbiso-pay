@@ -65,14 +65,19 @@ class MemberFlowValidator(FlowValidatorInterface):
         if not core_validation.is_valid:
             return core_validation
 
-        # Check required fields for member flows
+        # Check required fields at top level - SINGLE SOURCE OF TRUTH
         missing = self.get_required_fields() - set(state.keys())
         if missing:
             return ValidationResult(
                 is_valid=False,
-                error_message=f"Missing member flow fields: {', '.join(missing)}",
+                error_message=f"Missing required fields at top level: {', '.join(missing)}",
                 missing_fields=missing
             )
+
+        # Validate channel info at top level - SINGLE SOURCE OF TRUTH
+        channel_validation = self._validate_channel_data(state.get("channel", {}))
+        if not channel_validation.is_valid:
+            return channel_validation
 
         # Validate flow data if present
         if "flow_data" in state:
@@ -81,20 +86,56 @@ class MemberFlowValidator(FlowValidatorInterface):
         return ValidationResult(is_valid=True)
 
     def get_required_fields(self) -> Set[str]:
-        """Get required fields for member flows"""
-        return {"mobile_number"}
+        """Get required fields at top level"""
+        return {"member_id", "channel"}  # Primary identifier and channel info at top level
 
-    def _validate_registration_data(self, data: Dict[str, Any]) -> ValidationResult:
-        """Validate registration-specific data"""
-        required_fields = {"mobile_number", "phone"}
-        missing = required_fields - set(data.keys())
+    def _validate_channel_data(self, channel: Dict[str, Any]) -> ValidationResult:
+        """Validate channel information structure"""
+        if not isinstance(channel, dict):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Channel must be a dictionary"
+            )
+
+        required_fields = {"type", "identifier"}
+        missing = required_fields - set(channel.keys())
         if missing:
             return ValidationResult(
                 is_valid=False,
-                error_message=f"Missing registration data fields: {', '.join(missing)}",
+                error_message=f"Missing channel fields: {', '.join(missing)}",
                 missing_fields=missing
             )
 
+        # Validate channel type
+        if not isinstance(channel["type"], str):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Channel type must be a string"
+            )
+
+        if channel["type"] != "whatsapp":
+            return ValidationResult(
+                is_valid=False,
+                error_message="Invalid channel type"
+            )
+
+        # Validate channel identifier
+        if not isinstance(channel["identifier"], str):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Channel identifier must be a string"
+            )
+
+        if not channel["identifier"]:
+            return ValidationResult(
+                is_valid=False,
+                error_message="Channel identifier cannot be empty"
+            )
+
+        return ValidationResult(is_valid=True)
+
+    def _validate_registration_data(self, data: Dict[str, Any]) -> ValidationResult:
+        """Validate registration-specific data"""
         # Validate name data if present
         if "first_name" in data:
             first_name = data["first_name"]
@@ -116,7 +157,8 @@ class MemberFlowValidator(FlowValidatorInterface):
 
     def _validate_upgrade_data(self, data: Dict[str, Any]) -> ValidationResult:
         """Validate upgrade-specific data"""
-        required_fields = {"mobile_number", "account_id"}
+        # Only account_id required in flow data
+        required_fields = {"account_id"}
         missing = required_fields - set(data.keys())
         if missing:
             return ValidationResult(

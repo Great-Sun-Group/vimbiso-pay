@@ -24,21 +24,55 @@ class InteractiveType(Enum):
     PRODUCT_LIST = "product_list"
 
 
+class ChannelType(Enum):
+    """Supported messaging channels"""
+    WHATSAPP = "whatsapp"
+    # Future channels can be added here
+    # SMS = "sms"
+    # TELEGRAM = "telegram"
+    # etc.
+
+
+@dataclass
+class ChannelIdentifier:
+    """Channel-specific identifier information"""
+    channel: ChannelType
+    value: str  # The channel-specific ID (phone number for WhatsApp, etc)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization"""
+        return {
+            "channel": self.channel.value,
+            "value": self.value,
+            "metadata": self.metadata
+        }
+
+
 @dataclass
 class MessageRecipient:
     """Message recipient information"""
-    phone_number: str
+    member_id: str  # Primary system identifier
+    channel_id: ChannelIdentifier  # Channel-specific identifier
     name: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
-        result = {"phone_number": self.phone_number}
+        result = {
+            "member_id": self.member_id,
+            "channel": self.channel_id.to_dict()
+        }
         if self.name:
             result["name"] = self.name
         if self.metadata:
             result["metadata"] = self.metadata
         return result
+
+    @property
+    def channel_value(self) -> str:
+        """Get the channel-specific identifier value"""
+        return self.channel_id.value
 
 
 @dataclass
@@ -260,11 +294,14 @@ class Message:
         result = {
             "messaging_product": self.messaging_product,
             "recipient_type": self.recipient_type,
-            "to": self.recipient.phone_number,
+            "to": self.recipient.channel_value,  # Use channel-specific identifier
             **self.content.to_dict()
         }
-        if self.metadata:
-            result["metadata"] = self.metadata
+        # Include member_id in metadata for tracking
+        if not self.metadata:
+            self.metadata = {}
+        self.metadata["member_id"] = self.recipient.member_id
+        result["metadata"] = self.metadata
         return result
 
     def __str__(self) -> str:

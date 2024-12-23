@@ -22,42 +22,50 @@ class StateHandler:
         """Prepare state for starting a new flow"""
         current_state = self.service.user.state.state or {}
 
-        # For greetings, only keep mobile number
+        # For greetings, initialize with channel info at top level
         if is_greeting:
             new_state = {
-                "mobile_number": self.service.user.mobile_number,
+                # Channel info at top level - SINGLE SOURCE OF TRUTH
+                "channel": StateManager.create_channel_data(
+                    identifier=self.service.user.mobile_number,
+                    channel_type="whatsapp"
+                ),
                 "_last_updated": audit.get_current_timestamp()
             }
         else:
+            # Get channel identifier from top level state
+            channel_id = StateManager.get_channel_identifier(current_state)
+            if not channel_id:
+                # Only use mobile_number for initial state creation
+                channel_id = self.service.user.mobile_number
+
             if not flow_type:
                 return WhatsAppMessage.create_text(
-                    self.service.user.mobile_number,
+                    channel_id,
                     "❌ Error: Missing flow type"
                 )
 
-            # Get member ID from kwargs
-            member_id = kwargs.get("member_id")
+            # Get member ID from current state - SINGLE SOURCE OF TRUTH
+            member_id = current_state.get("member_id")
             if not member_id:
                 return WhatsAppMessage.create_text(
-                    self.service.user.mobile_number,
-                    "❌ Error: Missing member ID"
+                    channel_id,
+                    "❌ Error: Member ID not found in state"
                 )
 
             # Get account ID from state for backward compatibility
             account_id = current_state.get("account_id")
             if not account_id:
                 return WhatsAppMessage.create_text(
-                    self.service.user.mobile_number,
+                    channel_id,
                     "❌ Error: Account not properly initialized"
                 )
 
-            # Initialize flow data structure
+            # Initialize flow data structure without duplicating channel info
             flow_data = {
                 "id": f"{flow_type}_{member_id}",
                 "step": 0,
                 "data": {
-                    "mobile_number": self.service.user.mobile_number,
-                    "member_id": member_id,
                     "account_id": account_id,
                     "flow_type": flow_type,
                     "_validation_context": {},
@@ -70,27 +78,34 @@ class StateHandler:
             logger.debug(f"Creating flow data with type: {flow_type}")
             logger.debug(f"Flow data structure: {flow_data}")
 
-            # Create new state with flow type
+            # Create new state with member-centric structure
             base_state = {
+                # Core identity at top level - SINGLE SOURCE OF TRUTH
+                "member_id": member_id,  # Primary identifier
+
+                # Channel info at top level - SINGLE SOURCE OF TRUTH
+                "channel": StateManager.create_channel_data(
+                    identifier=channel_id,
+                    channel_type="whatsapp"
+                ),
+
+                # Flow and state info
                 "flow_type": flow_type,  # Set flow type at root level
-                "mobile_number": self.service.user.mobile_number,
-                "member_id": kwargs.get("member_id"),
                 "account_id": current_state.get("account_id"),
                 "authenticated": current_state.get("authenticated", False),
                 "jwt_token": current_state.get("jwt_token"),
                 "_last_updated": audit.get_current_timestamp()
             }
 
-            # Prepare complete state update
+            # Prepare complete state update preserving member_id from current state
             new_state = StateManager.prepare_state_update(
                 current_state,
                 flow_data=flow_data,
-                mobile_number=self.service.user.mobile_number,
                 preserve_validation=True  # Preserve validation to maintain flow data
             )
 
-            # Ensure flow type is set at all levels
-            new_state.update(base_state)
+            # Update with other fields, member_id comes from current state
+            new_state.update({k: v for k, v in base_state.items() if k != "member_id"})
             if isinstance(new_state.get("flow_data"), dict):
                 new_state["flow_data"]["flow_type"] = flow_type
                 if isinstance(new_state["flow_data"].get("data"), dict):
@@ -103,12 +118,18 @@ class StateHandler:
         if "flow_data" in new_state:
             logger.debug(f"- Flow data: {new_state['flow_data']}")
 
+        # Get channel identifier from top level state
+        channel_id = StateManager.get_channel_identifier(new_state)
+        if not channel_id:
+            # Only use mobile_number for initial state creation
+            channel_id = self.service.user.mobile_number
+
         error = StateManager.validate_and_update(
             self.service.user.state,
             new_state,
             current_state,
             "greeting" if is_greeting else ("clear_flow_menu_action" if clear_menu else "flow_start"),
-            self.service.user.mobile_number
+            channel_id
         )
         return error
 
@@ -120,6 +141,12 @@ class StateHandler:
         logger.error(f"Flow error state: {error_message}")
         logger.debug(f"Current state: {current_state}")
 
+        # Get channel identifier from top level state
+        channel_id = StateManager.get_channel_identifier(current_state)
+        if not channel_id:
+            # Only use mobile_number for initial state creation
+            channel_id = self.service.user.mobile_number
+
         # Preserve validation context
         validation_context = {
             k: v for k, v in current_state.get("flow_data", {}).items()
@@ -127,12 +154,18 @@ class StateHandler:
         }
         logger.debug(f"Preserved validation context: {validation_context}")
 
+        # Prepare error state with proper structure
         error_state = StateManager.prepare_state_update(
             current_state,
             flow_data=validation_context if validation_context else None,
             clear_flow=True,
-            mobile_number=self.service.user.mobile_number,
             preserve_validation=True  # Explicitly preserve validation context
+        )
+
+        # Ensure channel info is at top level
+        error_state["channel"] = StateManager.create_channel_data(
+            identifier=channel_id,
+            channel_type="whatsapp"
         )
 
         StateManager.validate_and_update(
@@ -140,12 +173,12 @@ class StateHandler:
             error_state,
             current_state,
             "flow_error",
-            self.service.user.mobile_number
+            channel_id
         )
 
-        # Return detailed error message
+        # Return error message
         return WhatsAppMessage.create_text(
-            self.service.user.mobile_number,
+            channel_id,
             f"❌ Error: {error_message}"
         )
 
@@ -165,16 +198,24 @@ class StateHandler:
             if k.startswith("_")
         }
 
-        # Get member ID from flow data
-        member_id = flow.data.get("member_id")
+        # Get member ID from current state - SINGLE SOURCE OF TRUTH
+        member_id = current_state.get("member_id")
         if not member_id:
-            raise ValueError("Missing member ID")
+            raise ValueError("Member ID not found in state")
 
-        # Construct proper flow ID
+        # Get channel info from top level state
+        channel_id = StateManager.get_channel_identifier(current_state)
+        if not channel_id:
+            raise ValueError("Missing channel identifier")
+
+        # Construct flow data without duplicating channel info
         flow_data = {
             **flow_state,
             "id": f"{flow_type}_{member_id}",  # Ensure consistent ID format
             "flow_type": flow_type,
+            "data": {
+                **(flow_state.get("data", {}))
+            },
             "kwargs": kwargs,
             "_validation_error": True,
             **validation_context  # Restore validation context
@@ -183,7 +224,6 @@ class StateHandler:
         error_state = StateManager.prepare_state_update(
             current_state,
             flow_data=flow_data,
-            mobile_number=self.service.user.mobile_number,
             preserve_validation=True  # Explicitly preserve validation context
         )
 
@@ -192,17 +232,29 @@ class StateHandler:
             error_state,
             current_state,
             "flow_validation_error",
-            self.service.user.mobile_number
+            channel_id
         )
 
     def handle_flow_completion(self, clear_flow: bool = True) -> Optional[WhatsAppMessage]:
         """Handle flow completion state update"""
         current_state = self.service.user.state.state or {}
+
+        # Get channel identifier from top level state
+        channel_id = StateManager.get_channel_identifier(current_state)
+        if not channel_id:
+            raise ValueError("Missing channel identifier")
+
+        # Prepare state update preserving channel info at top level
         new_state = StateManager.prepare_state_update(
             current_state,
             clear_flow=clear_flow,
-            mobile_number=self.service.user.mobile_number,
             preserve_validation=True  # Explicitly preserve validation context
+        )
+
+        # Ensure channel info is at top level
+        new_state["channel"] = StateManager.create_channel_data(
+            identifier=channel_id,
+            channel_type="whatsapp"
         )
 
         return StateManager.validate_and_update(
@@ -210,7 +262,7 @@ class StateHandler:
             new_state,
             current_state,
             "flow_complete",
-            self.service.user.mobile_number
+            channel_id
         )
 
     def handle_flow_continuation(
@@ -223,24 +275,37 @@ class StateHandler:
         current_state = self.service.user.state.state or {}
         flow_state = flow.get_state()
 
-        # Get member ID from flow data
-        member_id = flow.data.get("member_id")
+        # Get member ID from current state - SINGLE SOURCE OF TRUTH
+        member_id = current_state.get("member_id")
         if not member_id:
-            raise ValueError("Missing member ID")
+            raise ValueError("Member ID not found in state")
 
-        # Construct proper flow ID
+        # Get channel info from top level state
+        channel_id = StateManager.get_channel_identifier(current_state)
+        if not channel_id:
+            raise ValueError("Missing channel identifier")
+
+        # Construct flow data without duplicating channel info
         flow_data = {
             **flow_state,
             "id": f"{flow_type}_{member_id}",  # Ensure consistent ID format
             "flow_type": flow_type,
+            "data": {
+                **(flow_state.get("data", {}))
+            },
             "kwargs": kwargs
         }
 
-        # Create base state with flow type
+        # Create base state with member-centric structure
         base_state = {
+            # Channel info at top level - SINGLE SOURCE OF TRUTH
+            "channel": StateManager.create_channel_data(
+                identifier=channel_id,
+                channel_type="whatsapp"
+            ),
+
+            # Flow and state info
             "flow_type": flow_type,  # Set flow type at root level
-            "mobile_number": self.service.user.mobile_number,
-            "member_id": flow.data.get("member_id"),
             "account_id": current_state.get("account_id"),
             "authenticated": current_state.get("authenticated", False),
             "jwt_token": current_state.get("jwt_token"),
@@ -251,7 +316,6 @@ class StateHandler:
         new_state = StateManager.prepare_state_update(
             current_state,
             flow_data=flow_data,
-            mobile_number=self.service.user.mobile_number,
             preserve_validation=True  # Explicitly preserve validation context
         )
 
@@ -274,7 +338,7 @@ class StateHandler:
             new_state,
             current_state,
             "flow_continue",
-            self.service.user.mobile_number
+            channel_id
         )
 
     def get_flow_data(self) -> Optional[Dict]:

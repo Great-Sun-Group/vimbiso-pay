@@ -51,11 +51,28 @@ class AuthFlowValidator(FlowValidatorInterface):
                 error_message="Flow data must be a dictionary"
             )
 
-        # Validate mobile_number is present in data
-        if "mobile_number" not in data:
+        # Validate channel info is present in data
+        if "channel" not in data:
             return ValidationResult(
                 is_valid=False,
-                error_message="Flow data must contain mobile_number"
+                error_message="Flow data must contain channel information"
+            )
+
+        # Validate channel structure
+        channel = data.get("channel", {})
+        if not isinstance(channel, dict):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Channel must be a dictionary"
+            )
+
+        required_channel = {"type", "identifier"}
+        missing_channel = required_channel - set(channel.keys())
+        if missing_channel:
+            return ValidationResult(
+                is_valid=False,
+                error_message=f"Missing channel fields: {', '.join(missing_channel)}",
+                missing_fields=missing_channel
             )
 
         return ValidationResult(is_valid=True)
@@ -101,7 +118,7 @@ class AuthFlowValidator(FlowValidatorInterface):
 
     def get_required_fields(self) -> Set[str]:
         """Get required fields for auth flows"""
-        return {"mobile_number"}
+        return {"channel"}  # Channel info is required instead of mobile_number
 
     def validate_login_state(self, state: Dict[str, Any]) -> ValidationResult:
         """Validate login state specifically"""
@@ -116,9 +133,10 @@ class AuthFlowValidator(FlowValidatorInterface):
         # Additional login state validation
         if state.get("authenticated"):
             required_fields = {
-                "jwt_token",
-                "member_id",
-                "account_id",
+                "member_id",    # Primary identifier
+                "channel",      # Channel information
+                "jwt_token",    # Authentication
+                "account_id",   # Account reference
                 "current_account",
                 "profile"
             }
@@ -128,6 +146,23 @@ class AuthFlowValidator(FlowValidatorInterface):
                     is_valid=False,
                     error_message=f"Missing login state fields: {', '.join(missing)}",
                     missing_fields=missing
+                )
+
+            # Validate channel structure
+            channel = state.get("channel", {})
+            if not isinstance(channel, dict):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Channel must be a dictionary"
+                )
+
+            required_channel = {"type", "identifier"}
+            missing_channel = required_channel - set(channel.keys())
+            if missing_channel:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Missing channel fields: {', '.join(missing_channel)}",
+                    missing_fields=missing_channel
                 )
 
             # Validate profile structure for login

@@ -8,6 +8,7 @@ from core.utils.flow_audit import FlowAuditLogger
 
 # Local imports
 from ...types import WhatsAppMessage
+from ...state_manager import StateManager
 from ..credex.flows import (AcceptFlow, CancelFlow, CredexFlow, DeclineFlow,
                             OfferFlow)
 from ..member.dashboard import DashboardFlow
@@ -52,27 +53,32 @@ class FlowProcessor:
         kwargs: Dict
     ) -> Flow:
         """Initialize flow with state"""
-        # Get member ID from flow data
-        member_id = flow_data.get("data", {}).get("member_id")
+        # Get member ID and channel info from state
+        state_data = self.service.user.state.state
+        member_id = StateManager.get_member_id(state_data)
         if not member_id:
             raise ValueError("Missing member ID")
+
+        channel_id = StateManager.get_channel_identifier(state_data)
+        channel_type = StateManager.get_channel_type(state_data)
 
         # Prepare complete state including flow data
         state = {
             "id": f"{flow_type}_{member_id}",  # Construct proper flow ID
             "step": flow_data.get("step", 0),
-            "flow_type": flow_type,  # Set flow type only at root level
+            "flow_type": flow_type,  # Set flow type at root level
             "data": {
                 **flow_data.get("data", {}),
+                "member_id": member_id,  # Include member_id in data
+                "channel": {  # Include channel info in flow data
+                    "type": channel_type,
+                    "identifier": channel_id,
+                    "metadata": state_data.get("channel", {}).get("metadata", {})
+                },
                 "_validation_context": flow_data.get("data", {}).get("_validation_context", {}),
                 "_validation_state": flow_data.get("data", {}).get("_validation_state", {})
             },
-            "flow_data": {  # Ensure flow_data structure is present
-                "data": {}
-            },
             "_previous_data": flow_data.get("_previous_data", {}),
-            "_validation_context": flow_data.get("data", {}).get("_validation_context", {}),
-            "_validation_state": flow_data.get("data", {}).get("_validation_state", {})
         }
 
         # Log flow initialization
@@ -265,8 +271,17 @@ class FlowProcessor:
             success_message=success_message
         )
         dashboard.credex_service = self.service.credex_service
+        # Get member ID and channel info from state
+        state_data = self.service.user.state.state
+        member_id = StateManager.get_member_id(state_data)
+        if not member_id:
+            raise ValueError("Missing member ID")
+
+        channel_id = StateManager.get_channel_identifier(state_data)
+
         dashboard.data = {
-            "mobile_number": self.service.user.mobile_number,
-            "success_message": success_message  # Also store in data for state preservation
+            "member_id": member_id,  # Primary identifier
+            "channel_identifier": channel_id,  # Channel-specific identifier
+            "success_message": success_message  # Store success message for state preservation
         }
         return dashboard.complete()

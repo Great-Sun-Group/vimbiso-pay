@@ -4,10 +4,9 @@ from typing import Any
 
 from core.utils.flow_audit import FlowAuditLogger
 
+from ...state_manager import StateManager
 from ...types import WhatsAppMessage
-from ..credex.flows import (
-    OfferFlow, AcceptFlow, DeclineFlow, CancelFlow
-)
+from ..credex.flows import AcceptFlow, CancelFlow, DeclineFlow, OfferFlow
 from ..member.registration import RegistrationFlow
 from ..member.upgrade import UpgradeFlow
 from .flow_manager import FlowManager
@@ -76,27 +75,29 @@ class MessageHandler:
                 logger.debug(f"Flow type: {flow_type}")
                 logger.debug(f"Flow class: {flow_class.__name__}")
 
-                # Prepare state with flow type
-                error = self.state_handler.prepare_flow_start(flow_type=flow_type)
+                # Get channel info from state
+                state_data = self.service.user.state.state
+                channel_id = StateManager.get_channel_identifier(state_data)
+
+                # Prepare flow start with channel info only
+                error = self.state_handler.prepare_flow_start(
+                    flow_type=flow_type,
+                    channel_identifier=channel_id
+                )
                 if error:
                     logger.error(f"Failed to prepare flow state: {error}")
                     return error
 
-                # Get prepared flow data
-                flow_data = self.state_handler.get_flow_data()
-                if not flow_data:
-                    logger.error("No flow data available after preparation")
-                    return WhatsAppMessage.create_text(
-                        self.service.user.mobile_number,
-                        "❌ Error: Flow initialization failed"
-                    )
-
-                # Initialize flow with prepared flow data
+                # Initialize flow with channel info only
                 result = self.flow_manager.initialize_flow(
                     flow_type=flow_type,
                     flow_class=flow_class,
-                    flow_data=flow_data,
-                    kwargs={}
+                    kwargs={
+                        "channel": {
+                            "type": StateManager.get_channel_type(state_data),
+                            "identifier": channel_id
+                        }
+                    }
                 )
                 logger.info(f"Flow {flow_type} initialized")
                 return result

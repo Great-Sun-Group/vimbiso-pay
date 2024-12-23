@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from core.messaging.flow import Flow
+from ...state_manager import StateManager
 from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
@@ -44,9 +45,10 @@ class DashboardFlow(Flow):
     def _get_selected_account(
         self,
         accounts: List[Dict[str, Any]],
-        mobile_number: str
+        member_id: str,
+        channel_id: str
     ) -> Optional[Dict[str, Any]]:
-        """Get selected account from dashboard data"""
+        """Get selected account from dashboard data using member-centric approach"""
         try:
             if not accounts:
                 audit.log_flow_event(
@@ -62,7 +64,8 @@ class DashboardFlow(Flow):
             # Try to find personal account first
             personal_account = next(
                 (account for account in accounts
-                 if account.get("accountType") == "PERSONAL"),
+                 if account.get("accountType") == "PERSONAL" and
+                 account.get("memberID") == member_id),
                 None
             )
             if personal_account:
@@ -70,15 +73,22 @@ class DashboardFlow(Flow):
                     self.id,
                     "account_selection",
                     None,
-                    {"selected": personal_account},
+                    {
+                        "selected": personal_account,
+                        "member_id": member_id,
+                        "channel": {
+                            "type": "whatsapp",
+                            "identifier": channel_id
+                        }
+                    },
                     "success"
                 )
                 return personal_account
 
-            # Fallback to mobile number match
-            mobile_account = next(
+            # Fallback to channel identifier match
+            channel_account = next(
                 (account for account in accounts
-                 if account.get("accountHandle") == mobile_number),
+                 if account.get("accountHandle") == channel_id),
                 None
             )
 
@@ -86,10 +96,17 @@ class DashboardFlow(Flow):
                 self.id,
                 "account_selection",
                 None,
-                {"selected": mobile_account},
-                "success" if mobile_account else "failure"
+                {
+                    "selected": channel_account,
+                    "member_id": member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": channel_id
+                    }
+                },
+                "success" if channel_account else "failure"
             )
-            return mobile_account
+            return channel_account
 
         except Exception as e:
             logger.error(f"Account selection error: {str(e)}")
@@ -265,38 +282,59 @@ class DashboardFlow(Flow):
             if not accounts:
                 raise ValueError("No accounts found")
 
+            # Get member ID and channel info from top level state - SINGLE SOURCE OF TRUTH
+            member_id = current_state.get("member_id")
+            if not member_id:
+                raise ValueError("Missing member ID in state")
+
+            channel_id = StateManager.get_channel_identifier(current_state)
+            if not channel_id:
+                raise ValueError("Missing channel identifier")
+
             # Get selected account
             selected_account = self._get_selected_account(
                 accounts,
-                self.data.get("mobile_number")
+                member_id,
+                channel_id
             )
             if not selected_account:
                 raise ValueError("Personal account not found")
 
-            # Prepare new state with validation context
+            # Prepare new state with member-centric structure
             new_state = {
-                "current_account": selected_account,
-                "profile": profile_data,
-                "jwt_token": current_state.get("jwt_token"),
-                "member_id": self.data.get("member_id"),
-                "account_id": current_state.get("account_id"),
+                # Core identity at top level - SINGLE SOURCE OF TRUTH
+                "member_id": member_id,  # Primary identifier
+
+                # Channel info at top level - SINGLE SOURCE OF TRUTH
+                "channel": StateManager.create_channel_data(
+                    identifier=channel_id,
+                    channel_type="whatsapp"
+                ),
+
+                # Authentication and account
                 "authenticated": current_state.get("authenticated", False),
-                "mobile_number": self.data.get("mobile_number"),
-                "flow_data": current_state.get("flow_data") or {  # Preserve existing flow data
+                "jwt_token": current_state.get("jwt_token"),
+                "account_id": current_state.get("account_id"),
+                "current_account": selected_account,
+
+                # Profile and flow data
+                "profile": profile_data,
+                "flow_data": current_state.get("flow_data") or {
                     "id": "user_state",
                     "step": 0,
                     "data": {
-                        "mobile_number": self.data.get("mobile_number"),
-                        "member_id": self.data.get("member_id"),
                         "account_id": current_state.get("account_id"),
-                        "flow_type": current_state.get("flow_type", "dashboard"),  # Preserve existing flow type
+                        "flow_type": current_state.get("flow_type", "dashboard"),
                         "_validation_context": current_state.get("_validation_context", {}),
                         "_validation_state": current_state.get("_validation_state", {})
                     },
                     "_previous_data": {}
                 },
+
+                # Validation context
                 "_validation_context": current_state.get("_validation_context", {}),
-                "_validation_state": current_state.get("_validation_state", {})
+                "_validation_state": current_state.get("_validation_state", {}),
+                "_last_updated": audit.get_current_timestamp()
             }
 
             # Log state preparation
@@ -317,7 +355,7 @@ class DashboardFlow(Flow):
                     validation.error_message
                 )
                 return WhatsAppMessage.create_text(
-                    self.data.get("mobile_number"),
+                    channel_id,  # Use channel identifier from top level state
                     f"Failed to update state: {validation.error_message}"
                 )
 
@@ -349,9 +387,9 @@ class DashboardFlow(Flow):
             if self.success_message:
                 dashboard_text = f"✅ {self.success_message}\n\n{dashboard_text}"
 
-            # Return formatted message
+            # Return formatted message using channel identifier from top level state
             return WhatsAppMessage.create_list(
-                to=self.data.get("mobile_number"),
+                to=channel_id,  # Use channel identifier from top level state
                 text=dashboard_text,
                 button="🕹️ Options",
                 sections=[{
@@ -375,7 +413,14 @@ class DashboardFlow(Flow):
                 "failure",
                 str(e)
             )
+
+            # Get channel identifier from top level state
+            current_state = self.credex_service._parent_service.user.state.state or {}
+            channel_id = StateManager.get_channel_identifier(current_state)
+            if not channel_id:
+                raise ValueError("Missing channel identifier")
+
             return WhatsAppMessage.create_text(
-                self.data.get("mobile_number"),
+                channel_id,  # Use channel identifier from top level state
                 f"Failed to load dashboard: {str(e)}"
             )

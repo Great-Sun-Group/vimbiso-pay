@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Union
 
 from core.messaging.flow import Flow, Step
 from core.utils.flow_audit import FlowAuditLogger
+from services.whatsapp.state_manager import StateManager
 
 from ..templates import CredexTemplates
 from ..validator import CredexFlowValidator
@@ -51,9 +52,12 @@ class CredexFlow(Flow):
             steps = []
             logger.debug(f"No steps defined for flow type: {flow_type}")
 
-        # Get member ID from data for flow ID
+        # Get member ID from state for flow ID
         member_id = state.get('data', {}).get('member_id') if state else None
-        flow_id = f"{flow_type}_{member_id}" if member_id else flow_type
+        if not member_id:
+            raise ValueError("Missing member ID")
+
+        flow_id = f"{flow_type}_{member_id}"
 
         # Initialize parent Flow with flow ID and steps
         super().__init__(flow_id, steps)
@@ -68,6 +72,21 @@ class CredexFlow(Flow):
         if state is not None:
             self.set_state(state)
 
+    def _get_channel_identifier(self) -> str:
+        """Get channel identifier from state
+
+        Returns:
+            str: The channel identifier from top level state.channel
+
+        Note:
+            Channel info is only stored at top level state.channel
+            as the single source of truth
+        """
+        if hasattr(self.credex_service, '_parent_service'):
+            current_state = self.credex_service._parent_service.user.state.state or {}
+            return StateManager.get_channel_identifier(current_state)
+        return None
+
     def _create_steps(self) -> List[Step]:
         """Create flow steps based on type - to be implemented by subclasses"""
         raise NotImplementedError
@@ -75,13 +94,13 @@ class CredexFlow(Flow):
     def _get_amount_prompt(self, _) -> Dict[str, Any]:
         """Get amount prompt message"""
         return CredexTemplates.create_amount_prompt(
-            self.data.get("mobile_number")
+            self._get_channel_identifier()
         )
 
     def _create_list_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Create list selection message"""
         return CredexTemplates.create_pending_offers_list(
-            self.data.get("mobile_number"),
+            self._get_channel_identifier(),
             self.data
         )
 
@@ -107,7 +126,7 @@ class CredexFlow(Flow):
         name = state["handle"]["name"]
 
         return CredexTemplates.create_offer_confirmation(
-            self.data.get("mobile_number"),
+            self._get_channel_identifier(),
             amount,
             handle,
             name
@@ -119,7 +138,7 @@ class CredexFlow(Flow):
         counterparty = state.get("counterparty", "Unknown")
 
         return CredexTemplates.create_cancel_confirmation(
-            self.data.get("mobile_number"),
+            self._get_channel_identifier(),
             amount,
             counterparty
         )
@@ -133,7 +152,7 @@ class CredexFlow(Flow):
         counterparty = state.get("counterparty", "Unknown")
 
         return CredexTemplates.create_action_confirmation(
-            self.data.get("mobile_number"),
+            self._get_channel_identifier(),
             amount,
             counterparty,
             action
@@ -436,6 +455,15 @@ class CredexFlow(Flow):
                 if last_valid:
                     current_state = last_valid
 
+            # Get member ID and channel info from top level state - SINGLE SOURCE OF TRUTH
+            member_id = current_state.get("member_id")
+            if not member_id:
+                raise ValueError("Missing member ID in state")
+
+            channel_id = StateManager.get_channel_identifier(current_state)
+            if not channel_id:
+                raise ValueError("Missing channel identifier")
+
             # Structure profile data properly
             action = response.get("data", {}).get("action", {})
             profile_data = {
@@ -443,7 +471,7 @@ class CredexFlow(Flow):
                     "id": action.get("id", ""),
                     "type": action.get("type", self.flow_type),
                     "timestamp": datetime.now().isoformat(),
-                    "actor": self.data.get("mobile_number", ""),
+                    "actor": channel_id,  # Use channel identifier
                     "details": action.get("details", {}),
                     "message": (
                         action.get("message") or  # Try direct message
@@ -457,38 +485,49 @@ class CredexFlow(Flow):
 
             # Find personal account in new dashboard data
             accounts = dashboard.get("accounts", [])
-            mobile_number = self.data.get("mobile_number")
             personal_account = next(
                 (account for account in accounts if account.get("accountType") == "PERSONAL"),
                 next(
-                    (account for account in accounts if account.get("accountHandle") == mobile_number),
+                    (account for account in accounts if account.get("accountHandle") == channel_id),
                     current_state.get("current_account")
                 )
             )
 
-            # Build complete state with all required components
+            # Build complete state with member-centric structure
             new_state = {
-                # Core state fields
-                "profile": profile_data,
-                "current_account": personal_account,
-                "jwt_token": current_state.get("jwt_token"),
-                "member_id": self.data.get("member_id"),
-                "account_id": current_state.get("account_id"),
-                "authenticated": current_state.get("authenticated", True),
-                "mobile_number": current_state.get("mobile_number"),
+                # Core identity at top level - SINGLE SOURCE OF TRUTH
+                "member_id": member_id,  # Primary identifier
 
-                # Flow data
+                # Channel info at top level - SINGLE SOURCE OF TRUTH
+                "channel": StateManager.create_channel_data(
+                    identifier=channel_id,
+                    channel_type="whatsapp"
+                ),
+
+                # Authentication and account
+                "authenticated": current_state.get("authenticated", True),
+                "jwt_token": current_state.get("jwt_token"),
+                "account_id": current_state.get("account_id"),
+                "current_account": personal_account,
+
+                # Profile and flow data
+                "profile": profile_data,
                 "flow_data": {
                     "id": self.id,
                     "step": self.current_index,
-                    "data": self.data,
+                    "data": {
+                        "account_id": current_state.get("account_id"),
+                        "flow_type": self.flow_type,
+                        **self.data
+                    },
                     "flow_type": self.flow_type,
                     "_previous_data": self._previous_data
                 },
 
                 # Validation context
+                "_validation_context": current_state.get("_validation_context", {}),
                 "_validation_state": current_state.get("_validation_state", {}),
-                "_validation_context": current_state.get("_validation_context", {})
+                "_last_updated": audit.get_current_timestamp()
             }
 
             # Preserve any additional validation or context fields

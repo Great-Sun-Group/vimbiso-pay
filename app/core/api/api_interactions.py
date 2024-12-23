@@ -660,6 +660,12 @@ class APIInteractions:
             logger.error("Missing required dashboard data")
             return self._handle_failed_refresh(current_state, "Missing dashboard data")
 
+        # Extract member_id from details - SINGLE SOURCE OF TRUTH
+        member_id = member_details.get("memberId")
+        if not member_id:
+            logger.error("Missing member ID in dashboard response")
+            return self._handle_failed_refresh(current_state, "Missing member ID in response")
+
         # Format member info consistently
         member_info = {
             "member": member_details,
@@ -671,8 +677,9 @@ class APIInteractions:
         if jwt_token:
             member_info["jwt_token"] = jwt_token
 
-        # Update state with new member info
+        # Update state with new member info and member_id at top level
         current_state["profile"] = member_info
+        current_state["member_id"] = member_id  # Set at top level - SINGLE SOURCE OF TRUTH
 
         # Handle current account setup with proper validation
         if not current_state.get("current_account", {}):

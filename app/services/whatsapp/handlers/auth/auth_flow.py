@@ -6,6 +6,7 @@ from core.utils.flow_audit import FlowAuditLogger
 from ...base_handler import BaseActionHandler
 from ...types import WhatsAppMessage
 from ...screens import REGISTER
+from ...state_manager import StateManager
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -20,22 +21,36 @@ class AuthFlow(BaseActionHandler):
     def handle_registration(self, register: bool = False) -> WhatsAppMessage:
         """Handle registration flow"""
         try:
-            # Log registration attempt
+            # Get channel identifier from top level state
+            current_state = self.service.user.state.state or {}
+            channel_id = StateManager.get_channel_identifier(current_state)
+            if not channel_id:
+                # Only use mobile_number for initial state creation
+                channel_id = self.service.user.mobile_number
+
+            # Log registration attempt with channel info
+            audit_context = {
+                "channel": {
+                    "type": "whatsapp",
+                    "identifier": channel_id
+                }
+            }
+
             audit.log_flow_event(
                 "auth_handler",
                 "registration_start",
                 None,
-                {"mobile_number": self.service.user.mobile_number},
+                audit_context,
                 "in_progress"
             )
 
             if register:
                 return WhatsAppMessage.create_button(
-                    to=self.service.user.mobile_number,
+                    to=channel_id,
                     text=REGISTER,
                     buttons=[{
                         "id": "start_registration",
-                        "title": "Register"
+                        "title": "Become a Member"
                     }]
                 )
 
@@ -43,28 +58,55 @@ class AuthFlow(BaseActionHandler):
 
         except Exception as e:
             logger.error(f"Registration error: {str(e)}")
+
+            # Get channel identifier from top level state
+            current_state = self.service.user.state.state or {}
+            channel_id = StateManager.get_channel_identifier(current_state)
+            if not channel_id:
+                # Only use mobile_number for initial state creation
+                channel_id = self.service.user.mobile_number
+
             audit.log_flow_event(
                 "auth_handler",
                 "registration_error",
                 None,
-                {"mobile_number": self.service.user.mobile_number},
-                "failure",
-                str(e)
+                {
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": channel_id
+                    },
+                    "error": str(e)
+                },
+                "failure"
             )
+
             return WhatsAppMessage.create_text(
-                self.service.user.mobile_number,
+                channel_id,
                 "Registration failed. Please try again."
             )
 
     def attempt_login(self) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """Attempt login and store JWT token"""
         try:
-            # Log login attempt
+            # Get channel identifier from top level state
+            current_state = self.service.user.state.state or {}
+            channel_id = StateManager.get_channel_identifier(current_state)
+            if not channel_id:
+                # Only use mobile_number for initial state creation
+                channel_id = self.service.user.mobile_number
+
+            # Log login attempt with channel info
+            audit_context = {
+                "channel": {
+                    "type": "whatsapp",
+                    "identifier": channel_id
+                }
+            }
             audit.log_flow_event(
                 "auth_handler",
                 "login_attempt",
                 None,
-                {"mobile_number": self.service.user.mobile_number},
+                audit_context,
                 "in_progress"
             )
 
@@ -83,7 +125,7 @@ class AuthFlow(BaseActionHandler):
                         "auth_handler",
                         "login_new_user",
                         None,
-                        {"mobile_number": self.service.user.mobile_number},
+                        audit_context,
                         "success"
                     )
                     return False, None
@@ -97,9 +139,11 @@ class AuthFlow(BaseActionHandler):
                         "auth_handler",
                         "server_error",
                         None,
-                        {"mobile_number": self.service.user.mobile_number},
-                        "failure",
-                        error_msg
+                        {
+                            **audit_context,
+                            "error": error_msg
+                        },
+                        "failure"
                     )
                     return False, {
                         "message": "😔 We're having some technical difficulties connecting to our services. "
@@ -112,9 +156,11 @@ class AuthFlow(BaseActionHandler):
                     "auth_handler",
                     "login_error",
                     None,
-                    {"mobile_number": self.service.user.mobile_number},
-                    "failure",
-                    error_msg
+                    {
+                        **audit_context,
+                        "error": error_msg
+                    },
+                    "failure"
                 )
                 return False, None
 
@@ -125,9 +171,11 @@ class AuthFlow(BaseActionHandler):
                     "auth_handler",
                     "login_error",
                     None,
-                    {"mobile_number": self.service.user.mobile_number},
-                    "failure",
-                    "No JWT token received"
+                    {
+                        **audit_context,
+                        "error": "No JWT token received"
+                    },
+                    "failure"
                 )
                 return False, None
 
@@ -135,7 +183,12 @@ class AuthFlow(BaseActionHandler):
             logger.info(f"Dashboard data from login: {dashboard_data}")
 
             # Extract member ID
-            member_id = dashboard_data.get("action", {}).get("details", {}).get("memberID")
+            member_id = (
+                response.get("data", {})
+                .get("action", {})
+                .get("details", {})
+                .get("memberID")
+            )
 
             # Find account with accountType=PERSONAL
             accounts = dashboard_data.get("dashboard", {}).get("accounts", [])
@@ -151,9 +204,11 @@ class AuthFlow(BaseActionHandler):
                     "auth_handler",
                     "login_error",
                     None,
-                    {"mobile_number": self.service.user.mobile_number},
-                    "failure",
-                    "Personal account not found"
+                    {
+                        **audit_context,
+                        "error": "Personal account not found"
+                    },
+                    "failure"
                 )
                 return False, None
 
@@ -180,16 +235,29 @@ class AuthFlow(BaseActionHandler):
                 }
             }
 
-            # Prepare new state with validation context
+            # Prepare new state with member-centric structure
             new_state = {
+                # Core identity at top level - SINGLE SOURCE OF TRUTH
+                "member_id": member_id,  # Primary identifier
+
+                # Channel info at top level - SINGLE SOURCE OF TRUTH
+                "channel": StateManager.create_channel_data(
+                    identifier=channel_id,
+                    channel_type="whatsapp"
+                ),
+
+                # Authentication and account
                 "authenticated": True,
+                "account_id": account_id,
+                "current_account": personal_account,
+                "jwt_token": jwt_token,
+
+                # Profile and flow data
                 "profile": profile_data,
                 "flow_data": {  # Initialize empty flow data structure
                     "id": "user_state",
                     "step": 0,
                     "data": {
-                        "mobile_number": self.service.user.mobile_number,
-                        "member_id": member_id,
                         "account_id": account_id,
                         "flow_type": "auth",
                         "_validation_context": {},
@@ -197,13 +265,11 @@ class AuthFlow(BaseActionHandler):
                     },
                     "_previous_data": {}
                 },
-                "member_id": member_id,
-                "account_id": account_id,
-                "current_account": personal_account,
-                "jwt_token": jwt_token,
-                "mobile_number": self.service.user.mobile_number,
+
+                # Validation context
                 "_validation_context": {},
-                "_validation_state": {}
+                "_validation_state": {},
+                "_last_updated": audit.get_current_timestamp()
             }
 
             # Validate login state specifically
@@ -233,11 +299,13 @@ class AuthFlow(BaseActionHandler):
             # Ensure token is propagated to credex service
             self.service.credex_service = self.service.user.state.get_or_create_credex_service()
 
+            # Update audit context with member info after successful login
+            audit_context["member_id"] = member_id
             audit.log_flow_event(
                 "auth_handler",
                 "login_success",
                 None,
-                {"mobile_number": self.service.user.mobile_number},
+                audit_context,
                 "success"
             )
 
@@ -249,8 +317,10 @@ class AuthFlow(BaseActionHandler):
                 "auth_handler",
                 "login_error",
                 None,
-                {"mobile_number": self.service.user.mobile_number},
-                "failure",
-                str(e)
+                {
+                    **audit_context,
+                    "error": str(e)
+                },
+                "failure"
             )
             return False, None

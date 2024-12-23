@@ -23,7 +23,15 @@ class MenuHandler(BaseActionHandler):
             # Initialize dashboard flow
             flow = DashboardFlow(flow_type=flow_type, success_message=message)
             flow.credex_service = self.service.credex_service
-            flow.data = {"mobile_number": self.service.user.mobile_number}
+            # Get member ID from state
+            member_id = self.service.user.state.state.get("member_id")
+            if not member_id:
+                raise ValueError("Missing member ID")
+
+            flow.data = {
+                "mobile_number": self.service.user.mobile_number,
+                "member_id": member_id
+            }
 
             # Complete flow directly - this will handle state management
             return flow.complete()
