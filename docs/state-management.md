@@ -2,10 +2,13 @@
 
 ## Overview
 
-VimbisoPay uses a member-centric state management system built on Redis to handle multi-channel conversations and user sessions. The system provides:
+VimbisoPay uses a state management system built on Redis that strictly enforces SINGLE SOURCE OF TRUTH:
+- Member ID exists ONLY at top level state
+- Channel info exists ONLY at top level state
+- No duplication of data in flow_data
+- All components access data from single source
 
-- Member-centric state operations
-- Channel abstraction
+Core features:
 - Atomic state operations
 - Stateful conversations
 - Multi-step form handling
@@ -30,9 +33,9 @@ VimbisoPay uses a member-centric state management system built on Redis to handl
   - Provides validation results
 
 - **FlowStateManager** (flow_state.py)
-  - Manages member-centric state
-  - Handles channel information
   - Manages flow state transitions
+  - Accesses member_id from top level state
+  - Accesses channel info from top level state
   - Handles validation state
   - Provides rollback mechanisms
   - Preserves context during transitions
@@ -72,10 +75,6 @@ Core state includes:
         "step": current_step,
         "data": {
             "flow_type": "flow_type",
-            "channel": {
-                "type": "whatsapp",
-                "identifier": "channel_specific_id"
-            },
             "_validation_context": {},
             "_validation_state": {}
         }
@@ -88,29 +87,30 @@ Core state includes:
 ```
 
 Flow state includes:
-- Member ID as primary identifier
-- Channel information
 - Current step and data
+- Flow type information
 - Minimal validation state in flow_data.data
 - Previous state for rollback
 - Version information
 - Smart recovery paths
 
+Note: Member ID and channel info are ONLY stored at top level as SINGLE SOURCE OF TRUTH
+
 ### 3. Key Features
 
 1. **Member Management**
-   - Member ID as primary identifier
-   - Channel abstraction
-   - Cross-channel state sharing
-   - Member-specific validation
-   - Member context preservation
+   - Member ID as SINGLE SOURCE OF TRUTH at top level
+   - No duplication of member info in flow_data
+   - Access member_id only from top level state
+   - Member-specific validation at top level
+   - Cross-channel state through top level identifiers
 
 2. **Channel Handling**
-   - Channel type abstraction
-   - Channel-specific identifiers
-   - Channel validation rules
-   - Channel state preservation
-   - Cross-channel compatibility
+   - Channel info as SINGLE SOURCE OF TRUTH at top level
+   - No duplication of channel info in flow_data
+   - Access channel info only from top level state
+   - Channel validation at top level
+   - Cross-channel support through top level abstraction
 
 3. **Version Management**
    - Incremental version tracking
@@ -151,18 +151,18 @@ Uses dedicated Redis instance with:
 ## Best Practices
 
 1. **Member-Centric Design**
-   - Use member_id as primary key
-   - Maintain proper channel abstraction
-   - Handle cross-channel state
-   - Validate member context
-   - Preserve member identity
+   - Keep member_id ONLY at top level state
+   - Never duplicate member info in flow_data
+   - Always access member_id from top level
+   - Validate member info at top level only
+   - Maintain SINGLE SOURCE OF TRUTH
 
 2. **Channel Management**
-   - Abstract channel types
-   - Handle channel-specific IDs
-   - Validate channel state
-   - Preserve channel context
-   - Enable cross-channel support
+   - Keep channel info ONLY at top level state
+   - Never duplicate channel info in flow_data
+   - Always access channel info from top level
+   - Validate channel info at top level only
+   - Maintain SINGLE SOURCE OF TRUTH
 
 3. **State Updates**
    - Use atomic operations
@@ -173,8 +173,8 @@ Uses dedicated Redis instance with:
 
 4. **Flow Integration**
    - Use FlowStateManager
-   - Maintain member context
-   - Handle channel state
+   - Access member_id from top level state
+   - Access channel info from top level state
    - Keep validation in flow_data.data
    - Handle transitions efficiently
    - Implement smart recovery
@@ -199,31 +199,29 @@ Uses dedicated Redis instance with:
 
 ## Migration Considerations
 
-When migrating to member-centric architecture:
-
 1. **State Structure**
-   - Update state to use member_id
-   - Add channel abstraction
-   - Preserve backward compatibility
-   - Handle legacy mobile_number
+   - Move member_id to SINGLE SOURCE OF TRUTH at top level
+   - Move channel info to SINGLE SOURCE OF TRUTH at top level
+   - Remove any duplicated data from flow_data
+   - Convert mobile_number to channel identifier at top level
 
 2. **Flow Updates**
-   - Update flow initialization
-   - Add channel handling
-   - Update message templates
-   - Modify validation rules
+   - Update flows to access member_id from top level only
+   - Update flows to access channel info from top level only
+   - Remove any duplicated data access
+   - Enforce SINGLE SOURCE OF TRUTH in all flows
 
 3. **Data Migration**
-   - Map mobile numbers to members
-   - Add channel information
-   - Update existing states
-   - Preserve user context
+   - Consolidate member info to top level
+   - Consolidate channel info to top level
+   - Clean up duplicated data in flow_data
+   - Maintain SINGLE SOURCE OF TRUTH during migration
 
 4. **Validation**
-   - Add member validation
-   - Update channel validation
-   - Handle legacy validation
-   - Update error messages
+   - Validate member_id at top level only
+   - Validate channel info at top level only
+   - Remove duplicate validation checks
+   - Enforce SINGLE SOURCE OF TRUTH in validators
 
 For more details on:
 - Flow Framework: [Flow Framework](flow-framework.md)

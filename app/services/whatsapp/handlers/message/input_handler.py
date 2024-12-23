@@ -4,7 +4,13 @@ from typing import Any, Dict, Union
 
 from core.utils.flow_audit import FlowAuditLogger
 
-from ...types import WhatsAppMessage
+from core.messaging.types import (
+    Message,
+    MessageRecipient,
+    TextContent,
+    ChannelIdentifier,
+    ChannelType
+)
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -48,6 +54,26 @@ class InputHandler:
 
         except Exception as e:
             logger.error(f"Error extracting action: {str(e)}")
+            # Get member ID and channel identifier
+            current_state = self.service.user.state.state or {}
+            member_id = current_state.get("member_id", "pending")
+            channel_id = self.service.user.channel_identifier
+
+            # Log error with member and channel context
+            audit.log_flow_event(
+                "bot_service",
+                "action_extraction_error",
+                None,
+                {
+                    "error": str(e),
+                    "member_id": member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": channel_id
+                    }
+                },
+                "failure"
+            )
             return ""
 
     def extract_input_value(self) -> Union[str, Dict[str, Any]]:
@@ -73,12 +99,25 @@ class InputHandler:
             value = str(self.service.body).strip()  # Ensure string and strip whitespace
             logger.debug(f"Text message value: {value}")
 
-            # Log input processing
+            # Get member ID and channel identifier
+            current_state = self.service.user.state.state or {}
+            member_id = current_state.get("member_id", "pending")
+            channel_id = self.service.user.channel_identifier
+
+            # Log input processing with member and channel context
             audit.log_flow_event(
                 "bot_service",
                 "input_processing",
                 None,
-                {"input": value, "type": self.service.message_type},
+                {
+                    "input": value,
+                    "type": self.service.message_type,
+                    "member_id": member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": channel_id
+                    }
+                },
                 "success"
             )
 
@@ -86,12 +125,24 @@ class InputHandler:
 
         except Exception as e:
             logger.error(f"Error extracting input value: {str(e)}")
-            # Log error
+            # Get member ID and channel identifier
+            current_state = self.service.user.state.state or {}
+            member_id = current_state.get("member_id", "pending")
+            channel_id = self.service.user.channel_identifier
+
+            # Log error with member and channel context
             audit.log_flow_event(
                 "bot_service",
                 "input_processing_error",
                 None,
-                {"error": str(e)},
+                {
+                    "error": str(e),
+                    "member_id": member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": channel_id
+                    }
+                },
                 "failure"
             )
             return ""
@@ -100,19 +151,57 @@ class InputHandler:
         """Check if message is a greeting"""
         return text.lower() in self.GREETING_KEYWORDS
 
-    def handle_invalid_input(self, flow_step_id: str = None) -> WhatsAppMessage:
+    def handle_invalid_input(self, flow_step_id: str = None) -> Message:
         """Handle invalid input with appropriate error message"""
+        # Get member ID and channel identifier
+        current_state = self.service.user.state.state or {}
+        member_id = current_state.get("member_id", "pending")
+        channel_id = self.service.user.channel_identifier
+
+        # Log error with channel context
+        audit.log_flow_event(
+            "bot_service",
+            "invalid_input",
+            flow_step_id,
+            {
+                "member_id": member_id,
+                "channel": {
+                    "type": "whatsapp",
+                    "identifier": channel_id
+                }
+            },
+            "failure"
+        )
+
+        # Create error message with proper recipient info
         if flow_step_id == "amount":
-            return WhatsAppMessage.create_text(
-                self.service.user.mobile_number,
-                "Invalid amount format. Examples:\n"
-                "100     (USD)\n"
-                "USD 100\n"
-                "ZWG 100\n"
-                "XAU 1\n\n"
-                "Please ensure you enter a valid number with an optional currency code."
+            return Message(
+                recipient=MessageRecipient(
+                    member_id=member_id,
+                    channel_id=ChannelIdentifier(
+                        channel=ChannelType.WHATSAPP,
+                        value=channel_id
+                    )
+                ),
+                content=TextContent(
+                    body="Invalid amount format. Examples:\n"
+                    "100     (USD)\n"
+                    "USD 100\n"
+                    "ZWG 100\n"
+                    "XAU 1\n\n"
+                    "Please ensure you enter a valid number with an optional currency code."
+                )
             )
-        return WhatsAppMessage.create_text(
-            self.service.user.mobile_number,
-            "Invalid input. Please try again with a valid option."
+
+        return Message(
+            recipient=MessageRecipient(
+                member_id=member_id,
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
+            content=TextContent(
+                body="Invalid input. Please try again with a valid option."
+            )
         )

@@ -129,11 +129,11 @@ class WhatsAppMessage(Dict[str, Any]):
                 content_type = message.content.type.value
                 if content_type == "text":
                     return cls.create_text(
-                        message.recipient.phone_number,
+                        message.recipient.channel_identifier,
                         message.content.body
                     )
                 return cls.create_message(
-                    message.recipient.phone_number,
+                    message.recipient.channel_identifier,
                     content_type,
                     **{content_type: message.content.to_dict()}
                 )
@@ -167,6 +167,11 @@ class BotServiceInterface:
                 .get("changes", [{}])[0]
                 .get("value", {})
             )
+
+            # Extract channel identifier from metadata
+            metadata = message_data.get("metadata", {})
+            if "display_phone_number" in metadata:
+                self.user.channel_identifier = metadata["display_phone_number"].lstrip("+")
             messages = message_data.get("messages", [{}])
             if not messages:
                 raise ValueError("No messages found in payload")
@@ -221,13 +226,13 @@ class BotServiceInterface:
             button_id = button[1:button.index("]")].strip()
             button_label = button[button.index("]")+1:].strip()
             return WhatsAppMessage.create_button(
-                self.user.mobile_number,
+                self.user.channel_identifier,
                 text,
                 [{"id": button_id, "title": button_label}]
             )
 
         # Default text message
-        return WhatsAppMessage.create_text(self.user.mobile_number, message_text)
+        return WhatsAppMessage.create_text(self.user.channel_identifier, message_text)
 
     def handle(self) -> Dict[str, Any]:
         """Process message and generate response"""

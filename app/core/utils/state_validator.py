@@ -26,12 +26,20 @@ class StateValidator:
     @classmethod
     def validate_state(cls, state: Dict[str, Any], preserve_context: bool = True) -> ValidationResult:
         """
-        Validate core state structure
+        Validate core state structure and enforce SINGLE SOURCE OF TRUTH
 
         Args:
             state: State dictionary to validate
             preserve_context: Whether to preserve validation context in validation
         """
+        # First convert legacy mobile_number to channel identifier
+        if "mobile_number" in state and "channel" not in state:
+            state["channel"] = {
+                "type": "whatsapp",
+                "identifier": state["mobile_number"],
+                "metadata": {}
+            }
+            del state["mobile_number"]
         if not isinstance(state, dict):
             return ValidationResult(
                 is_valid=False,
@@ -47,12 +55,23 @@ class StateValidator:
                 if not f.startswith('_')
             }
 
-        # Allow minimal state with just channel info during greeting
-        if len(state) == 2 and "channel" in state and "_last_updated" in state:
-            # Validate channel structure even for minimal state
+        # Validate and enforce channel structure, even during greeting
+        if "channel" in state:
             channel_validation = cls.validate_channel_structure(state["channel"])
             if not channel_validation.is_valid:
                 return channel_validation
+
+            # Ensure no duplicate channel info in flow_data
+            if "flow_data" in state and isinstance(state["flow_data"], dict):
+                flow_data = state["flow_data"]
+                if "data" in flow_data and isinstance(flow_data["data"], dict):
+                    if "channel" in flow_data["data"]:
+                        del flow_data["data"]["channel"]
+                    if "mobile_number" in flow_data["data"]:
+                        del flow_data["data"]["mobile_number"]
+
+        # Allow minimal state during greeting but ensure proper structure
+        if not state.get("authenticated", False):
             return ValidationResult(is_valid=True)
 
         # For non-greeting states, check for required fields
@@ -84,6 +103,13 @@ class StateValidator:
                 is_valid=False,
                 error_message="member_id must be present at top level as the SINGLE SOURCE OF TRUTH"
             )
+
+        # Ensure no duplicate member_id in flow_data
+        if "flow_data" in state and isinstance(state["flow_data"], dict):
+            flow_data = state["flow_data"]
+            if "data" in flow_data and isinstance(flow_data["data"], dict):
+                if "member_id" in flow_data["data"]:
+                    del flow_data["data"]["member_id"]
 
         # Validate flow data if present
         if "flow_data" in state:

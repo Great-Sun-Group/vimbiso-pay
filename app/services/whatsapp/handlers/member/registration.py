@@ -181,16 +181,16 @@ class RegistrationFlow(Flow):
             )
 
             # Register member using channel identifier
-            success, response = self.credex_service._auth.register_member({
-                "phone": channel_id,  # Use channel identifier as phone
+            # Register member with channel identifier
+            member_data = {
                 "firstname": first_name,
                 "lastname": last_name,
-                "defaultDenom": "USD",
-                "channel": {  # Include channel info
-                    "type": "whatsapp",
-                    "identifier": channel_id
-                }
-            })
+                "defaultDenom": "USD"
+            }
+            success, response = self.credex_service._auth.register_member(
+                member_data,
+                channel_id  # Pass channel identifier separately
+            )
 
             if not success:
                 audit.log_flow_event(

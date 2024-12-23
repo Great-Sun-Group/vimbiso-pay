@@ -63,17 +63,14 @@ class StateManager:
         current_state: Dict[str, Any],
         flow_data: Optional[Dict[str, Any]] = None,
         clear_flow: bool = False,
-        mobile_number: Optional[str] = None,
-        preserve_validation: bool = True,
-        **kwargs  # Allow additional fields like member_id to be passed
+        channel_identifier: Optional[str] = None,
+        preserve_validation: bool = True
     ) -> Dict[str, Any]:
         """Prepare state update with proper context preservation"""
         try:
             # Initialize or validate flow data structure
             if flow_data is None:
                 flow_data = StateManager.DEFAULT_FLOW_DATA.copy()
-                if mobile_number:
-                    flow_data["data"]["mobile_number"] = mobile_number
             else:
                 # Ensure flow data has required structure
                 if "id" not in flow_data:
@@ -84,10 +81,6 @@ class StateManager:
                     flow_data["data"] = {}
                 if "_previous_data" not in flow_data:
                     flow_data["_previous_data"] = {}
-
-                # Ensure data has required fields
-                if mobile_number:
-                    flow_data["data"]["mobile_number"] = mobile_number
 
             # Extract validation context from current state if preserving
             validation_context = (
@@ -113,11 +106,11 @@ class StateManager:
             # Build new state with member-centric structure
             new_state = {
                 # Core identity - SINGLE SOURCE OF TRUTH
-                "member_id": kwargs.get("member_id") or current_state.get("member_id"),  # Primary identifier
+                "member_id": current_state.get("member_id"),  # Primary identifier
 
-                # Channel information
+                # Channel information - maintain existing channel info unless explicitly updated
                 "channel": StateManager.create_channel_data(
-                    identifier=mobile_number if mobile_number else StateManager.get_channel_identifier(current_state),
+                    identifier=channel_identifier if channel_identifier is not None else StateManager.get_channel_identifier(current_state),
                     channel_type=StateManager.get_channel_type(current_state)
                 ),
 
@@ -128,7 +121,7 @@ class StateManager:
 
                 # Flow and profile data
                 "flow_data": flow_data,
-                "profile": current_state.get("profile", {}),
+                "profile": StateValidator.ensure_profile_structure(current_state.get("profile", {})),
                 "flow_type": flow_type,  # Preserve flow type at root level
 
                 # Metadata
@@ -150,8 +143,8 @@ class StateManager:
                 flow_data["data"].pop("member_id", None)  # Remove if present
 
             # Update channel metadata if needed
-            if mobile_number and isinstance(new_state["channel"], dict):
-                new_state["channel"]["identifier"] = mobile_number
+            if channel_identifier is not None and isinstance(new_state["channel"], dict):
+                new_state["channel"]["identifier"] = channel_identifier
 
             # Store validation context only in flow_data.data
             if preserve_validation and isinstance(flow_data.get("data"), dict):
@@ -184,7 +177,7 @@ class StateManager:
         new_state: Dict[str, Any],
         current_state: Dict[str, Any],
         operation: str,
-        mobile_number: str
+        channel_identifier: str
     ) -> Optional[WhatsAppMessage]:
         """Validate and update state with proper error handling"""
         try:
@@ -209,7 +202,7 @@ class StateManager:
                     validation.error_message
                 )
                 return WhatsAppMessage.create_text(
-                    mobile_number,
+                    channel_identifier,
                     f"Failed to update state: {validation.error_message}"
                 )
 
@@ -250,6 +243,6 @@ class StateManager:
         except Exception as e:
             logger.error(f"State update error: {str(e)}")
             return WhatsAppMessage.create_text(
-                mobile_number,
+                channel_identifier,
                 f"❌ Failed to update state: {str(e)}"
             )

@@ -151,12 +151,13 @@ class FlowAuditLogger:
     @staticmethod
     def get_last_valid_state(flow_id: str, current_step: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
-        Retrieve last valid state for recovery with smart fallback
+        Retrieve last valid state for recovery with smart fallback and SINGLE SOURCE OF TRUTH enforcement
 
         :param flow_id: Flow ID to retrieve state for
         :param current_step: Current step ID for context-aware recovery
         :return: Last valid state if found
         """
+        from .state_validator import StateValidator
         history = FlowAuditLogger.get_flow_history(flow_id)
 
         # First try to find last valid state at current step
@@ -168,7 +169,10 @@ class FlowAuditLogger:
                 if (event.get("status") == "success" and
                         validation_state.get("step_id") == current_step and
                         validation_state.get("success") is True):
-                    return state
+                    # Validate and enforce SINGLE SOURCE OF TRUTH
+                    validation_result = StateValidator.validate_state(state)
+                    if validation_result.is_valid:
+                        return state
 
         # If no valid state at current step, try to find last valid state at previous step
         current_step_found = False
@@ -191,7 +195,12 @@ class FlowAuditLogger:
         # If no valid states found, try to find initialization state
         for event in reversed(history):
             if event.get("event_type") == "initialization":
-                return event.get("state")
+                state = event.get("state")
+                if state:
+                    # Validate and enforce SINGLE SOURCE OF TRUTH
+                    validation_result = StateValidator.validate_state(state)
+                    if validation_result.is_valid:
+                        return state
 
         return None
 

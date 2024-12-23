@@ -471,7 +471,7 @@ class CredexFlow(Flow):
                     "id": action.get("id", ""),
                     "type": action.get("type", self.flow_type),
                     "timestamp": datetime.now().isoformat(),
-                    "actor": channel_id,  # Use channel identifier
+                    "actor": member_id,  # Use member_id as primary identifier
                     "details": action.get("details", {}),
                     "message": (
                         action.get("message") or  # Try direct message

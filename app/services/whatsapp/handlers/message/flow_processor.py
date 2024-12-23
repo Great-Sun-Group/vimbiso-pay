@@ -111,7 +111,7 @@ class FlowProcessor:
             if not isinstance(flow_data, dict):
                 logger.error("Flow data must be a dictionary")
                 return WhatsAppMessage.create_text(
-                    self.service.user.mobile_number,
+                    self.service.user.channel_identifier,
                     "❌ Error: Invalid flow data"
                 )
 
@@ -120,7 +120,7 @@ class FlowProcessor:
             if not flow_type:
                 logger.error("Missing flow type in state")
                 return WhatsAppMessage.create_text(
-                    self.service.user.mobile_number,
+                    self.service.user.channel_identifier,
                     "❌ Error: Missing flow type"
                 )
 
@@ -237,13 +237,13 @@ class FlowProcessor:
 
         if not isinstance(result, dict):
             return WhatsAppMessage.create_text(
-                self.service.user.mobile_number,
+                self.service.user.channel_identifier,
                 "Operation failed: Invalid response format"
             )
 
         if not result.get("success", False):
             return WhatsAppMessage.create_text(
-                self.service.user.mobile_number,
+                self.service.user.channel_identifier,
                 result.get("message", "Operation failed")
             )
 

@@ -1,8 +1,9 @@
 import os
-from decouple import config
 from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urljoin
+
+from decouple import config
 
 
 @dataclass

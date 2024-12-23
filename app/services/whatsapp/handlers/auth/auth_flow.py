@@ -3,10 +3,11 @@ import logging
 from typing import Any, Dict, Optional, Tuple
 
 from core.utils.flow_audit import FlowAuditLogger
+
 from ...base_handler import BaseActionHandler
-from ...types import WhatsAppMessage
 from ...screens import REGISTER
 from ...state_manager import StateManager
+from ...types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -21,12 +22,8 @@ class AuthFlow(BaseActionHandler):
     def handle_registration(self, register: bool = False) -> WhatsAppMessage:
         """Handle registration flow"""
         try:
-            # Get channel identifier from top level state
-            current_state = self.service.user.state.state or {}
-            channel_id = StateManager.get_channel_identifier(current_state)
-            if not channel_id:
-                # Only use mobile_number for initial state creation
-                channel_id = self.service.user.mobile_number
+            # Get channel identifier from user
+            channel_id = self.service.user.channel_identifier
 
             # Log registration attempt with channel info
             audit_context = {
@@ -59,12 +56,8 @@ class AuthFlow(BaseActionHandler):
         except Exception as e:
             logger.error(f"Registration error: {str(e)}")
 
-            # Get channel identifier from top level state
-            current_state = self.service.user.state.state or {}
-            channel_id = StateManager.get_channel_identifier(current_state)
-            if not channel_id:
-                # Only use mobile_number for initial state creation
-                channel_id = self.service.user.mobile_number
+            # Get channel identifier from user
+            channel_id = self.service.user.channel_identifier
 
             audit.log_flow_event(
                 "auth_handler",
@@ -88,12 +81,8 @@ class AuthFlow(BaseActionHandler):
     def attempt_login(self) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """Attempt login and store JWT token"""
         try:
-            # Get channel identifier from top level state
-            current_state = self.service.user.state.state or {}
-            channel_id = StateManager.get_channel_identifier(current_state)
-            if not channel_id:
-                # Only use mobile_number for initial state creation
-                channel_id = self.service.user.mobile_number
+            # Get channel identifier from user
+            channel_id = self.service.user.channel_identifier
 
             # Log login attempt with channel info
             audit_context = {
@@ -110,17 +99,24 @@ class AuthFlow(BaseActionHandler):
                 "in_progress"
             )
 
-            # Attempt login
+            # Attempt login using channel identifier
             success, response = self.service.credex_service._auth.login(
-                self.service.user.mobile_number
+                channel_id  # Use channel identifier from state
             )
 
             if not success:
-                # Check if response is a dict with a message indicating new user
-                if isinstance(response, dict) and any(
-                    phrase in response.get("message", "").lower()
-                    for phrase in ["new user", "new here", "member not found"]
-                ):
+                # Extract error details from response
+                error_data = response.get("data", {}).get("action", {})
+                error_type = error_data.get("type")
+                error_details = error_data.get("details", {})
+                error_code = error_details.get("code")
+                error_reason = error_details.get("reason", "")
+                error_msg = response.get("message", "")
+
+                # Handle different error types based on API spec
+                # Handle different error types based on API spec
+                if error_type == "ERROR_NOT_FOUND" and error_code == "NOT_FOUND":
+                    # This is a new user case
                     audit.log_flow_event(
                         "auth_handler",
                         "login_new_user",
@@ -130,23 +126,30 @@ class AuthFlow(BaseActionHandler):
                     )
                     return False, None
 
-                error_msg = response.get("message", "") if isinstance(response, dict) else str(response)
+                if error_type == "ERROR_VALIDATION":
+                    # Handle validation errors
+                    logger.error(f"Validation error: {error_reason}")
+                    audit.log_flow_event(
+                        "auth_handler",
+                        "validation_error",
+                        None,
+                        {**audit_context, "error": error_reason},
+                        "failure"
+                    )
+                    return False, {"message": "Invalid format. Please try again."}
 
-                # Handle server availability issues gracefully
-                if any(phrase in error_msg.lower() for phrase in ["temporarily unavailable", "technical difficulties"]):
-                    logger.error(f"Server availability issue: {error_msg}")
+                if error_type == "ERROR_INTERNAL":
+                    # Handle server errors
+                    logger.error(f"Server error: {error_reason}")
                     audit.log_flow_event(
                         "auth_handler",
                         "server_error",
                         None,
-                        {
-                            **audit_context,
-                            "error": error_msg
-                        },
+                        {**audit_context, "error": error_reason},
                         "failure"
                     )
                     return False, {
-                        "message": "😔 We're having some technical difficulties connecting to our services. "
+                        "message": "😔 We're having some technical difficulties. "
                         "Please try again in a few minutes. Thank you for your patience!"
                     }
 
@@ -226,7 +229,7 @@ class AuthFlow(BaseActionHandler):
                     "id": dashboard_data.get("action", {}).get("id", ""),
                     "type": dashboard_data.get("action", {}).get("type", "login"),
                     "timestamp": dashboard_data.get("action", {}).get("timestamp", ""),
-                    "actor": dashboard_data.get("action", {}).get("actor", self.service.user.mobile_number),
+                    "actor": dashboard_data.get("action", {}).get("actor", member_id),  # Use member_id as actor
                     "details": dashboard_data.get("action", {}).get("details", {})
                 },
                 "dashboard": {

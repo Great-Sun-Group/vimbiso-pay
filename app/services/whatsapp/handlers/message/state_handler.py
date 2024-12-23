@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 from core.messaging.flow import Flow
 from core.utils.flow_audit import FlowAuditLogger
+from core.utils.state_validator import StateValidator
 
 from ...state_manager import StateManager
 from ...types import WhatsAppMessage
@@ -22,22 +23,40 @@ class StateHandler:
         """Prepare state for starting a new flow"""
         current_state = self.service.user.state.state or {}
 
-        # For greetings, initialize with channel info at top level
+        # For greetings, initialize state with required fields
         if is_greeting:
             new_state = {
                 # Channel info at top level - SINGLE SOURCE OF TRUTH
                 "channel": StateManager.create_channel_data(
-                    identifier=self.service.user.mobile_number,
+                    identifier=self.service.user.channel_identifier,
                     channel_type="whatsapp"
                 ),
+
+                # Required fields initialized as empty/null
+                "member_id": None,
+                "account_id": None,
+                "profile": StateValidator.ensure_profile_structure({}),
+                "authenticated": False,
+
+                # Initialize empty flow data
+                "flow_data": {
+                    "id": "user_state",
+                    "step": 0,
+                    "data": {
+                        "flow_type": "auth",
+                        "_validation_context": {},
+                        "_validation_state": {}
+                    },
+                    "_previous_data": {}
+                },
                 "_last_updated": audit.get_current_timestamp()
             }
         else:
             # Get channel identifier from top level state
             channel_id = StateManager.get_channel_identifier(current_state)
             if not channel_id:
-                # Only use mobile_number for initial state creation
-                channel_id = self.service.user.mobile_number
+                # Get channel identifier from user
+                channel_id = self.service.user.channel_identifier
 
             if not flow_type:
                 return WhatsAppMessage.create_text(
@@ -121,8 +140,8 @@ class StateHandler:
         # Get channel identifier from top level state
         channel_id = StateManager.get_channel_identifier(new_state)
         if not channel_id:
-            # Only use mobile_number for initial state creation
-            channel_id = self.service.user.mobile_number
+            # Get channel identifier from user
+            channel_id = self.service.user.channel_identifier
 
         error = StateManager.validate_and_update(
             self.service.user.state,
@@ -144,8 +163,8 @@ class StateHandler:
         # Get channel identifier from top level state
         channel_id = StateManager.get_channel_identifier(current_state)
         if not channel_id:
-            # Only use mobile_number for initial state creation
-            channel_id = self.service.user.mobile_number
+            # Get channel identifier from user
+            channel_id = self.service.user.channel_identifier
 
         # Preserve validation context
         validation_context = {

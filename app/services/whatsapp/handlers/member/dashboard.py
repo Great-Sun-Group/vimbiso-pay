@@ -8,7 +8,15 @@ from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
 from ...screens import format_account
-from ...types import WhatsAppMessage
+from core.messaging.types import (
+    Message,
+    MessageRecipient,
+    TextContent,
+    InteractiveContent,
+    InteractiveType,
+    ChannelIdentifier,
+    ChannelType
+)
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -354,9 +362,17 @@ class DashboardFlow(Flow):
                     "failure",
                     validation.error_message
                 )
-                return WhatsAppMessage.create_text(
-                    channel_id,  # Use channel identifier from top level state
-                    f"Failed to update state: {validation.error_message}"
+                return Message(
+                    recipient=MessageRecipient(
+                        member_id=member_id,
+                        channel_id=ChannelIdentifier(
+                            channel=ChannelType.WHATSAPP,
+                            value=channel_id
+                        )
+                    ),
+                    content=TextContent(
+                        body=f"Failed to update state: {validation.error_message}"
+                    )
                 )
 
             # Log state transition
@@ -387,20 +403,33 @@ class DashboardFlow(Flow):
             if self.success_message:
                 dashboard_text = f"✅ {self.success_message}\n\n{dashboard_text}"
 
-            # Return formatted message using channel identifier from top level state
-            return WhatsAppMessage.create_list(
-                to=channel_id,  # Use channel identifier from top level state
-                text=dashboard_text,
-                button="🕹️ Options",
-                sections=[{
-                    "title": "Options",
-                    "rows": self._build_menu_options(
-                        display_data["is_owned"],
-                        display_data["pending_in"],
-                        display_data["pending_out"],
-                        display_data["member_tier"]
-                    )["sections"][0]["rows"]
-                }]
+            # Return formatted message using member ID and channel identifier
+            menu_options = self._build_menu_options(
+                display_data["is_owned"],
+                display_data["pending_in"],
+                display_data["pending_out"],
+                display_data["member_tier"]
+            )
+
+            return Message(
+                recipient=MessageRecipient(
+                    member_id=member_id,
+                    channel_id=ChannelIdentifier(
+                        channel=ChannelType.WHATSAPP,
+                        value=channel_id
+                    )
+                ),
+                content=InteractiveContent(
+                    interactive_type=InteractiveType.LIST,
+                    body=dashboard_text,
+                    action_items={
+                        "button": "🕹️ Options",
+                        "sections": [{
+                            "title": "Options",
+                            "rows": menu_options["sections"][0]["rows"]
+                        }]
+                    }
+                )
             )
 
         except Exception as e:
@@ -420,7 +449,18 @@ class DashboardFlow(Flow):
             if not channel_id:
                 raise ValueError("Missing channel identifier")
 
-            return WhatsAppMessage.create_text(
-                channel_id,  # Use channel identifier from top level state
-                f"Failed to load dashboard: {str(e)}"
+            # Get member ID from state
+            member_id = current_state.get("member_id", "pending")
+
+            return Message(
+                recipient=MessageRecipient(
+                    member_id=member_id,
+                    channel_id=ChannelIdentifier(
+                        channel=ChannelType.WHATSAPP,
+                        value=channel_id
+                    )
+                ),
+                content=TextContent(
+                    body=f"Failed to load dashboard: {str(e)}"
+                )
             )

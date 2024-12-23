@@ -51,30 +51,6 @@ class AuthFlowValidator(FlowValidatorInterface):
                 error_message="Flow data must be a dictionary"
             )
 
-        # Validate channel info is present in data
-        if "channel" not in data:
-            return ValidationResult(
-                is_valid=False,
-                error_message="Flow data must contain channel information"
-            )
-
-        # Validate channel structure
-        channel = data.get("channel", {})
-        if not isinstance(channel, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Channel must be a dictionary"
-            )
-
-        required_channel = {"type", "identifier"}
-        missing_channel = required_channel - set(channel.keys())
-        if missing_channel:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing channel fields: {', '.join(missing_channel)}",
-                missing_fields=missing_channel
-            )
-
         return ValidationResult(is_valid=True)
 
     def validate_flow_state(self, state: Dict[str, Any]) -> ValidationResult:

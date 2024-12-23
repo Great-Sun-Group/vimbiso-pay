@@ -25,9 +25,10 @@ class AtomicStateManager:
         max_retries: int = 3
     ) -> Tuple[bool, Optional[str]]:
         """
-        Atomically update state components
+        Atomically update state components with SINGLE SOURCE OF TRUTH validation
         Returns (success, error_message)
         """
+        from .state_validator import StateValidator
         retry_count = 0
         while retry_count < max_retries:
             try:
@@ -44,6 +45,11 @@ class AtomicStateManager:
                 pipe.watch(*keys)
 
                 try:
+                    # Validate state before update
+                    validation_result = StateValidator.validate_state(state)
+                    if not validation_result.is_valid:
+                        return False, f"Invalid state structure: {validation_result.error_message}"
+
                     # Add version and timestamp
                     state['_version'] = int(datetime.now().timestamp())
                     state['_last_updated'] = datetime.now().isoformat()
@@ -156,9 +162,10 @@ class AtomicStateManager:
         preserve_fields: Optional[set] = None
     ) -> Tuple[bool, Optional[str]]:
         """
-        Atomically cleanup state while preserving specified fields
+        Atomically cleanup state while preserving specified fields and maintaining SINGLE SOURCE OF TRUTH
         Returns (success, error_message)
         """
+        from .state_validator import StateValidator
         try:
             # Get current state first
             current_state, error = self.atomic_get(key_prefix)
@@ -169,8 +176,13 @@ class AtomicStateManager:
                 # Create new state with only preserved fields
                 preserved_state = {
                     k: v for k, v in current_state.items()
-                    if k in preserve_fields
+                    if k in preserve_fields or k in StateValidator.CRITICAL_FIELDS
                 }
+
+                # Validate preserved state
+                validation_result = StateValidator.validate_state(preserved_state)
+                if not validation_result.is_valid:
+                    return False, f"Invalid preserved state: {validation_result.error_message}"
             else:
                 preserved_state = {}
 

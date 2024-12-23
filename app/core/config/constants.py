@@ -114,7 +114,8 @@ class CachedUserState:
 
     def __init__(self, user) -> None:
         self.user = user
-        self.key_prefix = str(user.mobile_number)
+        # Use member_id as key if available, otherwise channel identifier
+        self.key_prefix = str(user.member_id) if user.member_id else f"channel:{user.channel_identifier}"
         self.credex_service = None  # Store CredExService instance
 
         try:
@@ -123,7 +124,13 @@ class CachedUserState:
                 "user_state",
                 "initialization",
                 None,
-                {"mobile_number": user.mobile_number},
+                {
+                    "member_id": user.member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": user.channel_identifier
+                    }
+                },
                 "in_progress"
             )
 
@@ -256,12 +263,22 @@ class CachedUserState:
                 "user_state",
                 "initialization",
                 None,
-                {"mobile_number": user.mobile_number},
+                {
+                    "member_id": user.member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": user.channel_identifier
+                    }
+                },
                 "success"
             )
 
             # Log final state for debugging
             logger.debug(f"Final state after initialization: {self.state}")
+
+            # Setup member_id listener if needed
+            if not user.member_id:
+                self._setup_member_id_listener()
 
         except Exception as e:
             logger.exception(f"Error initializing state: {e}")
@@ -275,6 +292,35 @@ class CachedUserState:
             # Set safe defaults while preserving any existing state
             self.state = create_initial_state()
             self.jwt_token = None
+
+    def _setup_member_id_listener(self) -> None:
+        """Setup listener for member_id changes to migrate state"""
+        def on_member_id_change(old_key: str, new_key: str) -> None:
+            """Migrate state when member_id becomes available"""
+            try:
+                # Get state from old key
+                state_data, error = atomic_state.atomic_get(old_key)
+                if error or not state_data:
+                    return
+
+                # Update key_prefix
+                self.key_prefix = new_key
+
+                # Store state under new key
+                success, error = atomic_state.atomic_update(
+                    key_prefix=new_key,
+                    state=state_data,
+                    ttl=ACTIVITY_TTL
+                )
+                if success:
+                    # Clean up old state
+                    atomic_state.atomic_cleanup(old_key)
+
+            except Exception as e:
+                logger.error(f"Error migrating state: {str(e)}")
+
+        # Store listener for later
+        self._member_id_listener = on_member_id_change
 
     def get_or_create_credex_service(self) -> CredExService:
         """Get existing CredExService or create new one"""
@@ -293,7 +339,14 @@ class CachedUserState:
                 "user_state",
                 "state_update_attempt",
                 None,
-                {"update_from": update_from},
+                {
+                    "member_id": self.user.member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": self.user.channel_identifier
+                    },
+                    "update_from": update_from
+                },
                 "in_progress"
             )
 
@@ -330,6 +383,12 @@ class CachedUserState:
                             self.jwt_token = value
                             # Update service token if needed
                             self._update_service_token(value)
+                        elif field == "member_id" and value != self.user.member_id:
+                            # Handle member_id change
+                            old_key = self.key_prefix
+                            new_key = str(value)
+                            if hasattr(self, '_member_id_listener'):
+                                self._member_id_listener(old_key, new_key)
                         break
 
             # Handle flow data state transitions
@@ -415,7 +474,14 @@ class CachedUserState:
                 "user_state",
                 "state_update_success",
                 None,
-                {"update_from": update_from},
+                {
+                    "member_id": self.user.member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": self.user.channel_identifier
+                    },
+                    "update_from": update_from
+                },
                 "success"
             )
 
@@ -437,7 +503,13 @@ class CachedUserState:
                 "user_state",
                 "state_retrieval",
                 None,
-                {"mobile_number": user.mobile_number},
+                {
+                    "member_id": user.member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": user.channel_identifier
+                    }
+                },
                 "in_progress"
             )
 
@@ -448,7 +520,8 @@ class CachedUserState:
             last_error = None
 
             while retry_count < max_retries:
-                state_data, error = atomic_state.atomic_get(str(user.mobile_number))
+                key = str(user.member_id) if user.member_id else f"channel:{user.channel_identifier}"
+                state_data, error = atomic_state.atomic_get(key)
                 if not error:
                     break
                 last_error = error
@@ -508,7 +581,13 @@ class CachedUserState:
                 "user_state",
                 "state_retrieval",
                 None,
-                {"mobile_number": user.mobile_number},
+                {
+                    "member_id": user.member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": user.channel_identifier
+                    }
+                },
                 "success"
             )
 
@@ -548,7 +627,13 @@ class CachedUserState:
                 "user_state",
                 "token_update",
                 None,
-                {"mobile_number": self.user.mobile_number},
+                {
+                    "member_id": self.user.member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": self.user.channel_identifier
+                    }
+                },
                 "in_progress"
             )
 
@@ -566,7 +651,13 @@ class CachedUserState:
                     "user_state",
                     "token_update",
                     None,
-                    {"mobile_number": self.user.mobile_number},
+                    {
+                        "member_id": self.user.member_id,
+                        "channel": {
+                            "type": "whatsapp",
+                            "identifier": self.user.channel_identifier
+                        }
+                    },
                     "success"
                 )
 
@@ -588,7 +679,14 @@ class CachedUserState:
                 "user_state",
                 "cleanup",
                 None,
-                {"preserve_fields": list(preserve_fields)},
+                {
+                    "member_id": self.user.member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": self.user.channel_identifier
+                    },
+                    "preserve_fields": list(preserve_fields)
+                },
                 "in_progress"
             )
 
@@ -679,7 +777,14 @@ class CachedUserState:
                 "user_state",
                 "cleanup",
                 None,
-                {"preserve_fields": list(preserve_fields)},
+                {
+                    "member_id": self.user.member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": self.user.channel_identifier
+                    },
+                    "preserve_fields": list(preserve_fields)
+                },
                 "success"
             )
 
@@ -704,7 +809,13 @@ class CachedUserState:
                 "user_state",
                 "reset",
                 None,
-                {"mobile_number": self.user.mobile_number},
+                {
+                    "member_id": self.user.member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": self.user.channel_identifier
+                    }
+                },
                 "in_progress"
             )
 
@@ -726,7 +837,13 @@ class CachedUserState:
                 "user_state",
                 "reset",
                 None,
-                {"mobile_number": self.user.mobile_number},
+                {
+                    "member_id": self.user.member_id,
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": self.user.channel_identifier
+                    }
+                },
                 "success"
             )
 
@@ -743,15 +860,35 @@ class CachedUserState:
 
 class CachedUser:
     """User representation with cached state"""
-    def __init__(self, mobile_number: str) -> None:
+    def __init__(self, channel_identifier: str, member_id: Optional[str] = None) -> None:
         self.first_name = "Welcome"
         self.last_name = "Visitor"
         self.role = "DEFAULT"
         self.email = "customer@credex.co.zw"
-        self.mobile_number = mobile_number
+        self._member_id = member_id
+        self._channel_identifier = channel_identifier
         self.registration_complete = False
         self.state = CachedUserState(self)
         self.jwt_token = self.state.jwt_token
+
+    @property
+    def member_id(self) -> Optional[str]:
+        """Get member ID from state if not set directly"""
+        if self._member_id:
+            return self._member_id
+        return self.state.state.get("member_id")
+
+    @member_id.setter
+    def member_id(self, value: str) -> None:
+        """Set member ID and update state"""
+        self._member_id = value
+        if self.state and self.state.state:
+            self.state.state["member_id"] = value
+
+    @property
+    def channel_identifier(self) -> str:
+        """Get channel identifier (e.g. phone number)"""
+        return self._channel_identifier
 
 
 # Message Templates
