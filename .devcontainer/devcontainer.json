@@ -8,60 +8,64 @@
                 "ms-python.python",
                 "ms-python.vscode-pylance",
                 "ms-python.black-formatter",
-                "ms-python.isort",
-                "ms-azuretools.vscode-docker",
-                "hashicorp.terraform",
-                "redhat.vscode-yaml",
-                "njpwerner.autodocstring",
-                "streetsidesoftware.code-spell-checker",
-                "eamodio.gitlens",
-                "visualstudioexptteam.vscodeintellicode",
-                "saoudrizwan.claude-dev",
-                "github.vscode-github-actions"
+                "ms-python.flake8"
+                // Commenting out additional extensions to reduce initial load
+                // "ms-python.isort",
+                // "ms-azuretools.vscode-docker",
+                // "hashicorp.terraform",
+                // "redhat.vscode-yaml",
+                // "njpwerner.autodocstring",
+                // "streetsidesoftware.code-spell-checker",
+                // "eamodio.gitlens",
+                // "visualstudioexptteam.vscodeintellicode",
+                // "saoudrizwan.claude-dev",
+                // "github.vscode-github-actions"
             ],
             "settings": {
                 "python.defaultInterpreterPath": "/usr/local/bin/python",
                 "python.linting.enabled": true,
                 "python.linting.flake8Enabled": true,
                 "python.linting.pylintEnabled": false,
-                "python.linting.flake8Path": "/usr/local/bin/flake8",
-                "editor.formatOnSave": true,
-                "editor.codeActionsOnSave": {
-                    "source.organizeImports": "explicit"
-                },
-                "files.trimTrailingWhitespace": true,
-                "python.testing.pytestEnabled": true,
-                "python.testing.unittestEnabled": false,
-                "python.testing.nosetestsEnabled": false,
-                "[python]": {
-                    "editor.defaultFormatter": "ms-python.python",
-                    "editor.formatOnSave": true,
-                    "editor.codeActionsOnSave": {
-                        "source.organizeImports": "explicit"
-                    }
-                }
+                "editor.formatOnSave": true
+                // Commenting out additional settings
+                // "editor.codeActionsOnSave": {
+                //     "source.organizeImports": "explicit"
+                // },
+                // "files.trimTrailingWhitespace": true,
+                // "python.testing.pytestEnabled": true,
+                // "python.testing.unittestEnabled": false,
+                // "python.testing.nosetestsEnabled": false,
+                // "[python]": {
+                //     "editor.defaultFormatter": "ms-python.python",
+                //     "editor.formatOnSave": true,
+                //     "editor.codeActionsOnSave": {
+                //         "source.organizeImports": "explicit"
+                //     }
+                // }
             }
         }
     },
-    "features": {
-        "ghcr.io/devcontainers/features/terraform:1": {},
-        "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-        "ghcr.io/devcontainers/features/github-cli:1": {},
-        "ghcr.io/devcontainers/features/aws-cli:1": {},
-        "ghcr.io/devcontainers/features/common-utils:2": {
-            "installZsh": true,
-            "configureZshAsDefaultShell": true,
-            "installOhMyZsh": true,
-            "upgradePackages": true
-        }
-    },
+    // Commenting out features that might cause issues
+    // "features": {
+    //     "ghcr.io/devcontainers/features/terraform:1": {},
+    //     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    //     "ghcr.io/devcontainers/features/github-cli:1": {},
+    //     "ghcr.io/devcontainers/features/aws-cli:1": {},
+    //     "ghcr.io/devcontainers/features/common-utils:2": {
+    //         "installZsh": true,
+    //         "configureZshAsDefaultShell": true,
+    //         "installOhMyZsh": true,
+    //         "upgradePackages": true
+    //     }
+    // },
     "forwardPorts": [8000, 6379],
-    "postCreateCommand": "pip install -r requirements/dev.txt",
-    "postStartCommand": "sudo apt-get update && sudo apt-get install -y chromium && sudo cp /workspaces/vimbiso-pay/scripts/fetchlogs.sh /usr/local/bin/fetchlogs && sudo chmod +x /usr/local/bin/fetchlogs",
-    "remoteUser": "vscode",
-    "remoteEnv": {
-        "AWS_REGION": "af-south-1",
-        "AWS_ACCESS_KEY_ID": "${localEnv:VIMBISOPAY_STAGING_AWS_ACCESS_KEY_ID}",
-        "AWS_SECRET_ACCESS_KEY": "${localEnv:VIMBISOPAY_STAGING_AWS_SECRET_ACCESS_KEY}"
-    }
+    "postCreateCommand": "pip install -r requirements/dev.txt"
+    // Commenting out potentially problematic commands and configurations
+    // "postStartCommand": "sudo apt-get update && sudo apt-get install -y chromium && sudo cp /workspaces/vimbiso-pay/scripts/fetchlogs.sh /usr/local/bin/fetchlogs && sudo chmod +x /usr/local/bin/fetchlogs",
+    // "remoteUser": "vscode",
+    // "remoteEnv": {
+    //     "AWS_REGION": "af-south-1",
+    //     "AWS_ACCESS_KEY_ID": "${localEnv:VIMBISOPAY_STAGING_AWS_ACCESS_KEY_ID}",
+    //     "AWS_SECRET_ACCESS_KEY": "${localEnv:VIMBISOPAY_STAGING_AWS_SECRET_ACCESS_KEY}"
+    // }
 }
