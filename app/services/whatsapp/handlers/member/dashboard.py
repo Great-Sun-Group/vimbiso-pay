@@ -136,37 +136,43 @@ class DashboardFlow(Flow):
         """Format dashboard data for display"""
         try:
             account_data = account
-            balance_data = account_data["balanceData"]
+            balance_data = account_data.get("balanceData", {})
             dashboard = profile_data.get("dashboard", {})
 
             # Get counts
             pending_in = len(account_data.get("pendingInData", []))
             pending_out = len(account_data.get("pendingOutData", []))
 
-            # Format balances
-            balances = "\n".join(
-                f"  {bal}"
-                for bal in balance_data["securedNetBalancesByDenom"]
-            )
+            # Get secured balances array (pre-formatted strings from server)
+            secured_balances = balance_data.get("securedNetBalancesByDenom", [])
+            if not isinstance(secured_balances, list):
+                secured_balances = []
+                logger.error("Invalid securedNetBalancesByDenom format")
 
-            # Get tier info
+            # Add spacing to pre-formatted balance strings
+            balances = "\n".join(f"  {bal}" for bal in secured_balances) if secured_balances else ""
+
+            # Get tier info and remaining USD (only present for tier < 3)
             member_tier = dashboard.get("member", {}).get("memberTier", 1)
-            remaining_usd = dashboard.get("remainingAvailableUSD", 0)
+            remaining_usd = dashboard.get("remainingAvailableUSD")
 
-            # Format tier display
+            # Only show tier limit if remainingAvailableUSD exists in response
             tier_limit_display = ""
-            if member_tier <= 2:
+            if remaining_usd is not None and member_tier <= 2:
                 tier_type = "OPEN" if member_tier == 1 else "VERIFIED"
                 tier_limit_display = (
                     f"\n*{tier_type} TIER DAILY LIMIT*\n"
                     f"  ${remaining_usd} USD"
                 )
 
+            # Get net assets (pre-formatted string from server)
+            net_assets = balance_data.get("netCredexAssetsInDefaultDenom", "")
+
             formatted_data = {
                 "account_name": account_data.get("accountName", "Personal Account"),
-                "handle": account_data.get("accountHandle"),
+                "handle": account_data.get("accountHandle", "Not Available"),
                 "balances": balances,
-                "net_assets": balance_data.get("netCredexAssetsInDefaultDenom"),
+                "net_assets": net_assets,
                 "tier_limit_display": tier_limit_display,
                 "is_owned": account_data.get("isOwnedAccount", False),
                 "pending_in": pending_in,
