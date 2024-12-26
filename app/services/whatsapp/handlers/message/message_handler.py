@@ -62,8 +62,8 @@ class MessageHandler:
                     self.input_handler.is_greeting(self.service.body)):
                 error = self.state_handler.prepare_flow_start(is_greeting=True)
                 if error:
-                    return error
-                return self.service.auth_handler.handle_action_menu(login=True)
+                    return WhatsAppMessage.from_core_message(error)
+                return WhatsAppMessage.from_core_message(self.service.auth_handler.handle_action_menu(login=True))
 
             # Check for menu action first
             if action in self.FLOW_TYPES:
@@ -86,7 +86,7 @@ class MessageHandler:
                 )
                 if error:
                     logger.error(f"Failed to prepare flow state: {error}")
-                    return error
+                    return WhatsAppMessage.from_core_message(error)
 
                 # Initialize flow with channel info only
                 result = self.flow_manager.initialize_flow(
@@ -100,7 +100,7 @@ class MessageHandler:
                     }
                 )
                 logger.info(f"Flow {flow_type} initialized")
-                return result
+                return WhatsAppMessage.from_core_message(result)
 
             # Check for active flow if not a menu action
             flow_data = self.state_handler.get_flow_data()
@@ -108,7 +108,7 @@ class MessageHandler:
                 return self.flow_processor.process_flow(flow_data)
 
             # If no active flow and not a menu action, default to menu
-            return self.service.auth_handler.handle_action_menu()
+            return WhatsAppMessage.from_core_message(self.service.auth_handler.handle_action_menu())
 
         except Exception as e:
             logger.error(f"Message processing error: {str(e)}")
@@ -119,4 +119,4 @@ class MessageHandler:
                 {"error": str(e)},
                 "failure"
             )
-            return self.state_handler.handle_error_state(str(e))
+            return WhatsAppMessage.from_core_message(self.state_handler.handle_error_state(str(e)))

@@ -129,11 +129,11 @@ class WhatsAppMessage(Dict[str, Any]):
                 content_type = message.content.type.value
                 if content_type == "text":
                     return cls.create_text(
-                        message.recipient.channel_identifier,
+                        message.recipient.channel_value,
                         message.content.body
                     )
                 return cls.create_message(
-                    message.recipient.channel_identifier,
+                    message.recipient.channel_value,
                     content_type,
                     **{content_type: message.content.to_dict()}
                 )
@@ -146,7 +146,14 @@ class WhatsAppMessage(Dict[str, Any]):
 
         except Exception as e:
             logger.error(f"Message conversion error: {str(e)}")
-            return cls.create_text("", f"Error converting message: {str(e)}")
+            # Get recipient from message if possible
+            recipient = ""
+            if isinstance(message, CoreMessage):
+                recipient = message.recipient.channel_value
+            elif isinstance(message, dict):
+                recipient = message.get("to", "")
+
+            return cls.create_text(recipient, f"Error converting message: {str(e)}")
 
 
 class BotServiceInterface:

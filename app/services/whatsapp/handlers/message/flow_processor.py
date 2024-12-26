@@ -159,18 +159,18 @@ class FlowProcessor:
 
             # If no result, flow is complete
             if not result:
-                return self.service.auth_handler.handle_action_menu()
+                return WhatsAppMessage.from_core_message(self.service.auth_handler.handle_action_menu())
 
             # Handle flow completion
             if flow.current_index >= len(flow.steps):
                 # Only complete the flow if we've processed the confirmation
                 if flow.current_step and flow.current_step.id == "confirm":
-                    return self._handle_confirmation_step(flow, flow_id)
+                    return WhatsAppMessage.from_core_message(self._handle_confirmation_step(flow, flow_id))
 
                 error = self.state_handler.handle_flow_completion()
                 if error:
                     return error
-                return self.service.auth_handler.handle_action_menu()
+                return WhatsAppMessage.from_core_message(self.service.auth_handler.handle_action_menu())
 
             # Continue flow
             error = self.state_handler.handle_flow_continuation(
@@ -179,7 +179,7 @@ class FlowProcessor:
             if error:
                 return error
 
-            return result
+            return WhatsAppMessage.from_core_message(result)
 
         except Exception as e:
             # Only log detailed context if we have an empty error
@@ -212,8 +212,10 @@ class FlowProcessor:
                 "failure"
             )
 
-            return self.state_handler.handle_error_state(
-                str(e) or "Flow processing failed - check logs for details"
+            return WhatsAppMessage.from_core_message(
+                self.state_handler.handle_error_state(
+                    str(e) or "Flow processing failed - check logs for details"
+                )
             )
 
     def _handle_confirmation_step(self, flow: Flow, flow_id: str) -> WhatsAppMessage:
@@ -229,7 +231,7 @@ class FlowProcessor:
         if any(flow_id.startswith(t) for t in ["offer_", "accept_", "decline_", "cancel_"]):
             return self._complete_credex_flow(flow)
 
-        return flow.complete()
+        return WhatsAppMessage.from_core_message(flow.complete())
 
     def _complete_credex_flow(self, flow: Flow) -> WhatsAppMessage:
         """Complete credex flow and handle result"""
@@ -284,4 +286,4 @@ class FlowProcessor:
             "channel_identifier": channel_id,  # Channel-specific identifier
             "success_message": success_message  # Store success message for state preservation
         }
-        return dashboard.complete()
+        return WhatsAppMessage.from_core_message(dashboard.complete())
