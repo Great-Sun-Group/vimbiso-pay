@@ -231,7 +231,7 @@ class StateManager:
 
             try:
                 # Attempt state update
-                state_manager.update_state(new_state, operation)
+                state_manager.update_state(new_state)
 
                 # Log state after update
                 logger.debug("State after update:")

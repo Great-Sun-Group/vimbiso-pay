@@ -6,7 +6,7 @@ from core.messaging.flow import Flow
 from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
-from ...state_manager import StateManager
+from ...state_manager import StateManager as WhatsAppStateManager
 from ...types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ class StateHandler:
             # Prepare new state preserving existing data
             new_state = {
                 # Channel info at top level - SINGLE SOURCE OF TRUTH
-                "channel": StateManager.create_channel_data(
+                "channel": WhatsAppStateManager.create_channel_data(
                     identifier=channel_id,
                     channel_type="whatsapp"
                 ),
@@ -96,7 +96,7 @@ class StateHandler:
             logger.debug(f"- Preserved JWT: {new_state.get('jwt_token') == existing_jwt}")
         else:
             # Get channel identifier from top level state
-            channel_id = StateManager.get_channel_identifier(current_state)
+            channel_id = WhatsAppStateManager.get_channel_identifier(current_state)
             if not channel_id:
                 # Get channel identifier from user
                 channel_id = self.service.user.channel_identifier
@@ -146,7 +146,7 @@ class StateHandler:
                 "member_id": member_id,  # Primary identifier
 
                 # Channel info at top level - SINGLE SOURCE OF TRUTH
-                "channel": StateManager.create_channel_data(
+                "channel": WhatsAppStateManager.create_channel_data(
                     identifier=channel_id,
                     channel_type="whatsapp"
                 ),
@@ -160,7 +160,7 @@ class StateHandler:
             }
 
             # Prepare complete state update preserving member_id from current state
-            new_state = StateManager.prepare_state_update(
+            new_state = WhatsAppStateManager.prepare_state_update(
                 current_state,
                 flow_data=flow_data,
                 preserve_validation=True  # Preserve validation to maintain flow data
@@ -181,19 +181,21 @@ class StateHandler:
             logger.debug(f"- Flow data: {new_state['flow_data']}")
 
         # Get channel identifier from top level state
-        channel_id = StateManager.get_channel_identifier(new_state)
+        channel_id = WhatsAppStateManager.get_channel_identifier(new_state)
         if not channel_id:
             # Get channel identifier from user
             channel_id = self.service.user.channel_identifier
 
-        error = StateManager.validate_and_update(
-            self.service.user.state,
-            new_state,
-            current_state,
-            "greeting" if is_greeting else ("clear_flow_menu_action" if clear_menu else "flow_start"),
-            channel_id
-        )
-        return error
+        try:
+            # Update state directly
+            self.service.user.state.update_state(new_state)
+            return None
+        except Exception as e:
+            logger.error(f"State update error: {str(e)}")
+            return WhatsAppMessage.create_text(
+                channel_id,
+                f"❌ Error: {str(e)}"
+            )
 
     def handle_error_state(self, error_message: str) -> WhatsAppMessage:
         """Handle error state and return error message"""
@@ -204,7 +206,7 @@ class StateHandler:
         logger.debug(f"Current state: {current_state}")
 
         # Get channel identifier from top level state
-        channel_id = StateManager.get_channel_identifier(current_state)
+        channel_id = WhatsAppStateManager.get_channel_identifier(current_state)
         if not channel_id:
             # Get channel identifier from user
             channel_id = self.service.user.channel_identifier
@@ -217,7 +219,7 @@ class StateHandler:
         logger.debug(f"Preserved validation context: {validation_context}")
 
         # Prepare error state with proper structure
-        error_state = StateManager.prepare_state_update(
+        error_state = WhatsAppStateManager.prepare_state_update(
             current_state,
             flow_data=validation_context if validation_context else None,
             clear_flow=True,
@@ -225,18 +227,16 @@ class StateHandler:
         )
 
         # Ensure channel info is at top level
-        error_state["channel"] = StateManager.create_channel_data(
+        error_state["channel"] = WhatsAppStateManager.create_channel_data(
             identifier=channel_id,
             channel_type="whatsapp"
         )
 
-        StateManager.validate_and_update(
-            self.service.user.state,
-            error_state,
-            current_state,
-            "flow_error",
-            channel_id
-        )
+        try:
+            # Update state directly
+            self.service.user.state.update_state(error_state)
+        except Exception as e:
+            logger.error(f"Error updating error state: {str(e)}")
 
         # Return error message
         return WhatsAppMessage.create_text(
@@ -266,7 +266,7 @@ class StateHandler:
             raise ValueError("Member ID not found in state")
 
         # Get channel info from top level state
-        channel_id = StateManager.get_channel_identifier(current_state)
+        channel_id = WhatsAppStateManager.get_channel_identifier(current_state)
         if not channel_id:
             raise ValueError("Missing channel identifier")
 
@@ -283,49 +283,55 @@ class StateHandler:
             **validation_context  # Restore validation context
         }
 
-        error_state = StateManager.prepare_state_update(
+        error_state = WhatsAppStateManager.prepare_state_update(
             current_state,
             flow_data=flow_data,
             preserve_validation=True  # Explicitly preserve validation context
         )
 
-        return StateManager.validate_and_update(
-            self.service.user.state,
-            error_state,
-            current_state,
-            "flow_validation_error",
-            channel_id
-        )
+        try:
+            # Update state directly
+            self.service.user.state.update_state(error_state)
+            return None
+        except Exception as e:
+            logger.error(f"Error updating invalid input state: {str(e)}")
+            return WhatsAppMessage.create_text(
+                channel_id,
+                f"❌ Error: {str(e)}"
+            )
 
     def handle_flow_completion(self, clear_flow: bool = True) -> Optional[WhatsAppMessage]:
         """Handle flow completion state update"""
         current_state = self.service.user.state.state or {}
 
         # Get channel identifier from top level state
-        channel_id = StateManager.get_channel_identifier(current_state)
+        channel_id = WhatsAppStateManager.get_channel_identifier(current_state)
         if not channel_id:
             raise ValueError("Missing channel identifier")
 
         # Prepare state update preserving channel info at top level
-        new_state = StateManager.prepare_state_update(
+        new_state = WhatsAppStateManager.prepare_state_update(
             current_state,
             clear_flow=clear_flow,
             preserve_validation=True  # Explicitly preserve validation context
         )
 
         # Ensure channel info is at top level
-        new_state["channel"] = StateManager.create_channel_data(
+        new_state["channel"] = WhatsAppStateManager.create_channel_data(
             identifier=channel_id,
             channel_type="whatsapp"
         )
 
-        return StateManager.validate_and_update(
-            self.service.user.state,
-            new_state,
-            current_state,
-            "flow_complete",
-            channel_id
-        )
+        try:
+            # Update state directly
+            self.service.user.state.update_state(new_state)
+            return None
+        except Exception as e:
+            logger.error(f"Error updating completion state: {str(e)}")
+            return WhatsAppMessage.create_text(
+                channel_id,
+                f"❌ Error: {str(e)}"
+            )
 
     def handle_flow_continuation(
         self,
@@ -343,7 +349,7 @@ class StateHandler:
             raise ValueError("Member ID not found in state")
 
         # Get channel info from top level state
-        channel_id = StateManager.get_channel_identifier(current_state)
+        channel_id = WhatsAppStateManager.get_channel_identifier(current_state)
         if not channel_id:
             raise ValueError("Missing channel identifier")
 
@@ -361,7 +367,7 @@ class StateHandler:
         # Create base state with member-centric structure
         base_state = {
             # Channel info at top level - SINGLE SOURCE OF TRUTH
-            "channel": StateManager.create_channel_data(
+            "channel": WhatsAppStateManager.create_channel_data(
                 identifier=channel_id,
                 channel_type="whatsapp"
             ),
@@ -375,7 +381,7 @@ class StateHandler:
         }
 
         # Prepare complete state update
-        new_state = StateManager.prepare_state_update(
+        new_state = WhatsAppStateManager.prepare_state_update(
             current_state,
             flow_data=flow_data,
             preserve_validation=True  # Explicitly preserve validation context
@@ -395,13 +401,16 @@ class StateHandler:
         if isinstance(new_state['flow_data'].get('data'), dict):
             logger.debug(f"- Flow data.data type: {new_state['flow_data']['data'].get('flow_type')}")
 
-        return StateManager.validate_and_update(
-            self.service.user.state,
-            new_state,
-            current_state,
-            "flow_continue",
-            channel_id
-        )
+        try:
+            # Update state directly
+            self.service.user.state.update_state(new_state)
+            return None
+        except Exception as e:
+            logger.error(f"Error updating continuation state: {str(e)}")
+            return WhatsAppMessage.create_text(
+                channel_id,
+                f"❌ Error: {str(e)}"
+            )
 
     def get_flow_data(self) -> Optional[Dict]:
         """Get current flow data from state"""

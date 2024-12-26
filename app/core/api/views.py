@@ -126,7 +126,7 @@ class CredexCloudApiWebhook(APIView):
             user = CachedUser(wa_id)
             state = user.state
 
-            logger.info(f"Using CachedUser with state: {state.__dict__}")
+            logger.info(f"Using CachedUser with state: {state.state}")
 
             # Check message age
             timestamp = message.get("timestamp")

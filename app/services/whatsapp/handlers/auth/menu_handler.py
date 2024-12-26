@@ -102,6 +102,16 @@ class MenuHandler(BaseActionHandler):
     def handle_menu(self, message: Optional[str] = None, login: bool = False) -> Message:
         """Display main menu"""
         try:
+            # Get current state
+            current_state = self.service.user.state.state or {}
+
+            # Check if user is already authenticated
+            if current_state.get("authenticated"):
+                return self.show_dashboard(
+                    flow_type="view",
+                    message=message
+                )
+
             # Handle login if needed
             if login:
                 success, dashboard_data = self.service.auth_handler.auth_flow.attempt_login()
@@ -113,14 +123,8 @@ class MenuHandler(BaseActionHandler):
                     message=message
                 )
 
-            # Only show dashboard for non-login menu if we have a member_id
-            if not self.service.user.state.state.get("member_id"):
-                return self.service.auth_handler.auth_flow.handle_registration(register=True)
-
-            return self.show_dashboard(
-                flow_type="view",
-                message=message
-            )
+            # Show registration for unauthenticated users
+            return self.service.auth_handler.auth_flow.handle_registration(register=True)
 
         except Exception as e:
             logger.error(f"Menu error: {str(e)}")
@@ -213,13 +217,32 @@ class MenuHandler(BaseActionHandler):
             "success"
         )
 
-        # Update state
-        self.service.user.state.update_state(new_state, "greeting")
+        try:
+            # Update state
+            self.service.user.state.update_state(new_state, "greeting")
 
-        # Log state after update
-        logger.debug(f"State after update in handle_hi: {self.service.user.state.state}")
+            # Log state after update
+            logger.debug(f"State after update in handle_hi: {self.service.user.state.state}")
 
-        return self.handle_menu(login=True)
+            # Check if already authenticated
+            if new_state.get("authenticated"):
+                return self.handle_menu()
+            else:
+                return self.handle_menu(login=True)
+        except Exception as e:
+            logger.error(f"Error in handle_hi: {str(e)}")
+            return Message(
+                recipient=MessageRecipient(
+                    member_id="pending",
+                    channel_id=ChannelIdentifier(
+                        channel=ChannelType.WHATSAPP,
+                        value=self.service.user.channel_identifier
+                    )
+                ),
+                content=TextContent(
+                    body="❌ Error: Failed to process greeting"
+                )
+            )
 
     def handle_refresh(self) -> Message:
         """Handle dashboard refresh"""

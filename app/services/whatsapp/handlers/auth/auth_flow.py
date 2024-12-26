@@ -6,7 +6,7 @@ from core.utils.flow_audit import FlowAuditLogger
 
 from ...base_handler import BaseActionHandler
 from ...screens import REGISTER
-from ...state_manager import StateManager
+from ...state_manager import StateManager as WhatsAppStateManager
 from ...types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -244,7 +244,7 @@ class AuthFlow(BaseActionHandler):
                 "member_id": member_id,  # Primary identifier
 
                 # Channel info at top level - SINGLE SOURCE OF TRUTH
-                "channel": StateManager.create_channel_data(
+                "channel": WhatsAppStateManager.create_channel_data(
                     identifier=channel_id,
                     channel_type="whatsapp"
                 ),

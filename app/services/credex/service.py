@@ -19,7 +19,7 @@ class CredExService(CredExServiceInterface):
 
         Args:
             config: Service configuration. If not provided, loads from environment.
-            user: CachedUser instance from parent service
+            user: Dictionary containing state data
         """
         self.config = config or CredExConfig.from_env()
         self._jwt_token = None
@@ -29,9 +29,12 @@ class CredExService(CredExServiceInterface):
         # Log initialization
         logger.debug("Initializing CredEx service:")
         logger.debug(f"- Has user: {bool(user)}")
-        if user:
-            logger.debug(f"- User has state: {bool(hasattr(user, 'state'))}")
-            logger.debug(f"- User state: {user.state.state if hasattr(user, 'state') else None}")
+        if user and isinstance(user, dict) and 'state' in user:
+            logger.debug("- User has state: True")
+            logger.debug(f"- User state: {user['state']}")
+        else:
+            logger.debug("- User has state: False")
+            logger.debug("- User state: None")
 
         # Initialize sub-services with parent reference
         self._auth = CredExAuthService(config=self.config)
@@ -51,11 +54,13 @@ class CredExService(CredExServiceInterface):
         self._recurring._jwt_token = self._jwt_token
 
         # Get token from user state if available
-        if user and hasattr(user, 'state'):
-            token = user.state.jwt_token
-            if token:
-                logger.debug("Setting token from user state")
-                self.jwt_token = token
+        if user and isinstance(user, dict) and 'state' in user:
+            state_data = user['state']
+            if isinstance(state_data, dict) and 'jwt_token' in state_data:
+                token = state_data['jwt_token']
+                if token:
+                    logger.debug("Setting token from user state")
+                    self.jwt_token = token
 
     def login(self, phone: str) -> Tuple[bool, str]:
         """Authenticate user with the CredEx API"""
@@ -64,8 +69,9 @@ class CredExService(CredExServiceInterface):
             # Get token from auth service
             token = self._auth.jwt_token
             # Update token in state and propagate to services
-            if self.user and token:
-                self.user.state.set_jwt_token(token)
+            if self.user and isinstance(self.user, dict) and 'state' in self.user and token:
+                self.user['state']['jwt_token'] = token
+                self.jwt_token = token
         return success, msg
 
     def register_member(self, member_data: Dict[str, Any]) -> Tuple[bool, str]:
@@ -75,8 +81,9 @@ class CredExService(CredExServiceInterface):
             # Get token from auth service
             token = self._auth.jwt_token
             # Update token in state and propagate to services
-            if self.user and token:
-                self.user.state.set_jwt_token(token)
+            if self.user and isinstance(self.user, dict) and 'state' in self.user and token:
+                self.user['state']['jwt_token'] = token
+                self.jwt_token = token
         return success, msg
 
     def get_dashboard(self, phone: str) -> Tuple[bool, Dict[str, Any]]:

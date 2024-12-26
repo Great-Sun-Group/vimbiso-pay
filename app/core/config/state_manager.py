@@ -1,6 +1,6 @@
 """Core state management functionality"""
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
@@ -89,7 +89,7 @@ class StateManager:
         else:
             logger.debug("State successfully updated in Redis")
 
-    def update_state(self, updates: Dict[str, Any]) -> None:
+    def update_state(self, updates: Dict[str, Any], operation: Optional[str] = None) -> None:
         """Update state with new values"""
         try:
             new_state = update_critical_fields(self.state.copy(), updates)
@@ -100,19 +100,21 @@ class StateManager:
                 self.jwt_token = new_state.get("jwt_token")
                 if self._credex_service:
                     self._update_service_token(self.jwt_token)
+                if operation:
+                    logger.debug(f"State updated for operation: {operation}")
         except Exception:
             logger.exception("State update error")
 
     def get_or_create_credex_service(self) -> CredExService:
         """Get or create CredEx service instance"""
         if not self._credex_service:
-            # Create service with proper relationships
-            self._credex_service = CredExService(user=self)
+            # Create service with state dictionary
+            self._credex_service = CredExService(user={"state": self.state})
 
             # Log service creation
             logger.debug("Creating new CredEx service:")
             logger.debug(f"- Has user: {bool(self._credex_service.user)}")
-            logger.debug(f"- User state: {bool(self._credex_service.user.state)}")
+            logger.debug(f"- User state: {bool(self._credex_service.user['state'])}")
 
             # Set token if available
             if self.jwt_token:
@@ -120,6 +122,12 @@ class StateManager:
                 logger.debug(f"- Token set: {bool(self._credex_service._jwt_token)}")
 
         return self._credex_service
+
+    def set_jwt_token(self, jwt_token: str) -> None:
+        """Set JWT token and update state"""
+        self.jwt_token = jwt_token
+        if self.state:
+            self.update_state({"jwt_token": jwt_token})
 
     def _update_service_token(self, jwt_token: str) -> None:
         """Update service token"""
