@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urljoin
@@ -56,7 +55,6 @@ class CredExEndpoints:
     REGISTER = "onboardMember"
 
     # Member endpoints
-    DASHBOARD = "getMemberDashboardByPhone"
     VALIDATE_HANDLE = "getAccountByHandle"
 
     # CredEx transaction endpoints

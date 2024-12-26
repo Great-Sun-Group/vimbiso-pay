@@ -32,6 +32,7 @@ class WhatsAppMessage(Dict[str, Any]):
         if message_type == "text":
             message["text"] = {"body": str(content.get("text", ""))}
         elif message_type == "interactive":
+            # For interactive messages, get the content from the interactive parameter
             message["interactive"] = content.get("interactive", {})
         else:
             message[message_type] = content.get(message_type, {})
@@ -99,7 +100,7 @@ class WhatsAppMessage(Dict[str, Any]):
         return cls.create_message(
             to=to,
             message_type="interactive",
-            interactive=interactive
+            interactive=interactive  # Keep interactive content nested under 'interactive' key
         )
 
     @classmethod
@@ -118,11 +119,19 @@ class WhatsAppMessage(Dict[str, Any]):
                         message.get("to", ""),
                         str(message.get("body", message.get("text", {}).get("body", "")))
                     )
-                return cls.create_message(
-                    message.get("to", ""),
-                    msg_type,
-                    **{msg_type: message.get(msg_type, {})}
-                )
+                if msg_type == "interactive":
+                    # For interactive messages, pass the content directly
+                    return cls.create_message(
+                        message.get("to", ""),
+                        msg_type,
+                        interactive=message.get("interactive", {})
+                    )
+                else:
+                    return cls.create_message(
+                        message.get("to", ""),
+                        msg_type,
+                        **{msg_type: message.get(msg_type, {})}
+                    )
 
             # Core message
             if isinstance(message, CoreMessage):
@@ -132,11 +141,20 @@ class WhatsAppMessage(Dict[str, Any]):
                         message.recipient.channel_value,
                         message.content.body
                     )
-                return cls.create_message(
-                    message.recipient.channel_value,
-                    content_type,
-                    **{content_type: message.content.to_dict()}
-                )
+                if content_type == "interactive":
+                    # For interactive messages, extract just the interactive content
+                    content_dict = message.content.to_dict()
+                    return cls.create_message(
+                        message.recipient.channel_value,
+                        content_type,
+                        interactive=content_dict.get("interactive", {})
+                    )
+                else:
+                    return cls.create_message(
+                        message.recipient.channel_value,
+                        content_type,
+                        **{content_type: message.content.to_dict()}
+                    )
 
             # WhatsAppMessage instance
             if isinstance(message, WhatsAppMessage):

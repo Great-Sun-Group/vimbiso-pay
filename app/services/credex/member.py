@@ -3,10 +3,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from .base import BaseCredExService
 from .config import CredExEndpoints
-from .exceptions import (
-    MemberNotFoundError,
-    ValidationError,
-)
+from .exceptions import MemberNotFoundError, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -15,31 +12,22 @@ class CredExMemberService(BaseCredExService):
     """Service for CredEx member operations"""
 
     def get_dashboard(self, phone: str) -> Tuple[bool, Dict[str, Any]]:
-        """Fetch member's dashboard information"""
+        """Get dashboard information from login response"""
         if not phone:
             raise ValidationError("Phone number is required")
 
         try:
-            response = self._make_request(
-                CredExEndpoints.DASHBOARD,
-                payload={"phone": phone}
-            )
-
-            data = self._validate_response(response, {
-                400: "Invalid request",
-                401: "Unauthorized access",
-                404: "Member not found"
-            })
-
-            if response.status_code == 200:
-                logger.info("Dashboard fetched successfully")
-                return True, data
-            else:
-                error_msg = data.get("message", "Failed to fetch dashboard")
+            # Get dashboard data from login response
+            success, response = self._auth.login(phone)
+            if not success:
+                error_msg = response.get("message", "Failed to fetch dashboard")
                 logger.error(f"Dashboard fetch failed: {error_msg}")
                 if "Member not found" in error_msg:
                     raise MemberNotFoundError(error_msg)
                 return False, {"message": error_msg}
+
+            logger.info("Dashboard fetched successfully")
+            return True, response
 
         except MemberNotFoundError as e:
             logger.warning(f"Member not found: {str(e)}")
@@ -106,14 +94,15 @@ class CredExMemberService(BaseCredExService):
     def refresh_member_info(
         self, phone: str, reset: bool = True, silent: bool = True, init: bool = False
     ) -> Optional[str]:
-        """Refresh member information"""
+        """Refresh member information by re-authenticating"""
         if not phone:
             raise ValidationError("Phone number is required")
 
         try:
-            success, data = self.get_dashboard(phone)
+            # Re-authenticate to get fresh data
+            success, response = self._auth.login(phone)
             if not success:
-                error_msg = data.get("message", "Failed to refresh member info")
+                error_msg = response.get("message", "Failed to refresh member info")
                 logger.error(f"Member info refresh failed: {error_msg}")
                 return error_msg
 
@@ -137,27 +126,12 @@ class CredExMemberService(BaseCredExService):
             raise ValidationError("Member ID is required")
 
         try:
-            # Get member's phone number from the member ID
-            # For now, we'll use the dashboard endpoint which contains account information
-            # This assumes the phone number is available in the current context
-            # TODO: Add proper member ID to phone mapping or update API to support member ID lookup
-
-            # Return a simplified account structure for now
-            # This matches what the transaction service expects
-            return True, {
-                "data": {
-                    "accounts": [
-                        {
-                            "accountID": member_id,  # Using member ID as account ID for now
-                            "accountName": "Default Account",  # Placeholder name
-                            "accountType": "PERSONAL",  # Default type
-                            "defaultDenom": "USD",  # Default denomination
-                            "isDefault": True,
-                            "metadata": {}  # Optional metadata
-                        }
-                    ]
-                }
-            }
+            # Return account data from login response
+            # Get accounts from last login response
+            accounts = (self._auth._last_response.get("data", {})
+                        .get("dashboard", {})
+                        .get("accounts", []))
+            return True, {"data": {"accounts": accounts}}
 
         except Exception as e:
             logger.exception(f"Failed to get member accounts: {str(e)}")

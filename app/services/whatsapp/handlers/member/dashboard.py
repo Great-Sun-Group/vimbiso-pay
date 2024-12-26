@@ -3,20 +3,14 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from core.messaging.flow import Flow
-from ...state_manager import StateManager
+from core.messaging.types import (ChannelIdentifier, ChannelType,
+                                  InteractiveContent, InteractiveType, Message,
+                                  MessageRecipient, TextContent)
 from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
 from ...screens import format_account
-from core.messaging.types import (
-    Message,
-    MessageRecipient,
-    TextContent,
-    InteractiveContent,
-    InteractiveType,
-    ChannelIdentifier,
-    ChannelType
-)
+from ...state_manager import StateManager
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -209,38 +203,52 @@ class DashboardFlow(Flow):
         member_tier: int
     ) -> Dict[str, Any]:
         """Build menu options"""
-        options = [
+        # Build menu rows with proper WhatsApp format
+        rows = [
             {
                 "id": "offer",
                 "title": "💸 Offer Secured Credex",
+                "description": "Create secured credex offer"
             },
             {
                 "id": "accept",
                 "title": f"✅ Accept Offers ({pending_in})",
+                "description": "Accept incoming offers"
             },
             {
                 "id": "decline",
                 "title": f"❌ Decline Offers ({pending_in})",
+                "description": "Decline incoming offers"
             },
             {
                 "id": "cancel",
-                "title": f"📤 Cancel Outgoing ({pending_out})",
+                "title": f"📤 Cancel Outgoing Offers ({pending_out})",
+                "description": "Cancel your outgoing offers"
             },
             {
-                "id": "view_transactions",
-                "title": "📒 Review Transactions",
+                "id": "view",
+                "title": "📒 View Transactions",
+                "description": "View transaction history"
             }
         ]
 
+        # Add upgrade option for lower tiers
         if member_tier <= 2:
-            options.append({
-                "id": "upgrade_tier",
+            rows.append({
+                "id": "upgrade",
                 "title": "⭐️ Upgrade Member Tier",
+                "description": "Increase transaction limits"
             })
 
+        # Create menu with WhatsApp list format
         menu = {
-            "button": "🕹️ Options",
-            "sections": [{"title": "Options", "rows": options}]
+            "button": "Options",
+            "sections": [
+                {
+                    "title": "Account Options",
+                    "rows": rows
+                }
+            ]
         }
 
         audit.log_flow_event(
@@ -428,13 +436,7 @@ class DashboardFlow(Flow):
                 content=InteractiveContent(
                     interactive_type=InteractiveType.LIST,
                     body=dashboard_text,
-                    action_items={
-                        "button": "🕹️ Options",
-                        "sections": [{
-                            "title": "Options",
-                            "rows": menu_options["sections"][0]["rows"]
-                        }]
-                    }
+                    action_items=menu_options  # Use menu options directly
                 )
             )
 

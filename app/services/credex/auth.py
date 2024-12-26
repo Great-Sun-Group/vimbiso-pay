@@ -17,9 +17,10 @@ class CredExAuthService(BaseCredExService):
             raise ValidationError("Channel identifier is required")
 
         try:
+            # Map channel identifier to phone field for API compatibility
             response = self._make_request(
                 CredExEndpoints.LOGIN,
-                payload={"channel_identifier": channel_identifier},
+                payload={"phone": channel_identifier},
                 require_auth=False
             )
 
@@ -123,8 +124,8 @@ class CredExAuthService(BaseCredExService):
         if not (3 <= len(lastname) <= 50):
             raise ValidationError("Last name must be between 3 and 50 characters")
 
-        # Add channel identifier
-        member_data["channel_identifier"] = channel_identifier
+        # TODO: Add channel identifier once API supports it
+        # member_data["channel_identifier"] = channel_identifier
 
         # Validate defaultDenom is valid
         valid_denoms = {"CXX", "CAD", "USD", "XAU", "ZWG"}
@@ -207,7 +208,7 @@ class CredExAuthService(BaseCredExService):
         try:
             response = self._make_request(
                 CredExEndpoints.LOGIN,
-                payload={"channel_identifier": channel_identifier},
+                payload={"phone": channel_identifier},  # Use phone field for API compatibility
                 require_auth=False
             )
 
