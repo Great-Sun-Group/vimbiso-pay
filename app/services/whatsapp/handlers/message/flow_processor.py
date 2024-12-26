@@ -9,8 +9,9 @@ from core.utils.flow_audit import FlowAuditLogger
 # Local imports
 from ...types import WhatsAppMessage
 from ...state_manager import StateManager
-from ..credex.flows import (AcceptFlow, CancelFlow, CredexFlow, DeclineFlow,
-                            OfferFlow)
+from ..credex.flows.action import AcceptFlow, CancelFlow, DeclineFlow
+from ..credex.flows.base import CredexFlow
+from ..credex.flows.offer import OfferFlow
 from ..member.dashboard import DashboardFlow
 from ..member.registration import RegistrationFlow
 from ..member.upgrade import UpgradeFlow

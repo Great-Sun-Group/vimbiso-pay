@@ -100,7 +100,7 @@ class AuthFlow(BaseActionHandler):
             )
 
             # Attempt login using channel identifier
-            success, response = self.service.credex_service._auth.login(
+            success, response = self.service.credex_service.services['auth'].login(
                 channel_id  # Use channel identifier from state
             )
 
@@ -168,7 +168,7 @@ class AuthFlow(BaseActionHandler):
                 return False, None
 
             # Extract JWT token and dashboard data
-            jwt_token = self.service.credex_service._auth._jwt_token
+            jwt_token = self.service.credex_service.services['auth']._jwt_token
             if not jwt_token:
                 audit.log_flow_event(
                     "auth_handler",
@@ -220,10 +220,8 @@ class AuthFlow(BaseActionHandler):
             # Get current state for transition logging
             current_state = self.service.user.state.state or {}
 
-            # First set the JWT token to ensure proper propagation
-            self.service.user.state.set_jwt_token(jwt_token)
-
             # Structure profile data properly
+            logger.debug(f"Preparing state update with JWT token: {jwt_token[:10]}...")
             profile_data = {
                 "action": {
                     "id": dashboard_data.get("action", {}).get("id", ""),
@@ -244,10 +242,10 @@ class AuthFlow(BaseActionHandler):
                 "member_id": member_id,  # Primary identifier
 
                 # Channel info at top level - SINGLE SOURCE OF TRUTH
-                "channel": WhatsAppStateManager.create_channel_data(
-                    identifier=channel_id,
-                    channel_type="whatsapp"
-                ),
+                "channel": WhatsAppStateManager.prepare_state_update(
+                    current_state={},
+                    channel_identifier=channel_id
+                )["channel"],
 
                 # Authentication and account
                 "authenticated": True,
@@ -297,7 +295,7 @@ class AuthFlow(BaseActionHandler):
             )
 
             # Update state
-            self.service.user.state.update_state(new_state, "login_success")
+            self.service.user.state.update_state(new_state)
 
             # Get or create credex service and set up relationships
             self.service.credex_service = self.service.user.state.get_or_create_credex_service()

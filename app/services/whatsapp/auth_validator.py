@@ -13,10 +13,6 @@ class AuthFlowValidator(FlowValidatorInterface):
         if flow_data is None:
             return ValidationResult(is_valid=True)
 
-        # Ensure validation context if flow_data is a dict
-        if isinstance(flow_data, dict):
-            flow_data = StateValidator.ensure_validation_context(flow_data)
-
         if not isinstance(flow_data, dict):
             return ValidationResult(
                 is_valid=False,
@@ -55,9 +51,6 @@ class AuthFlowValidator(FlowValidatorInterface):
 
     def validate_flow_state(self, state: Dict[str, Any]) -> ValidationResult:
         """Validate complete flow state"""
-        # Ensure validation context is present
-        state = StateValidator.ensure_validation_context(state)
-
         # First validate core state structure
         core_validation = StateValidator.validate_state(state)
         if not core_validation.is_valid:
@@ -98,9 +91,6 @@ class AuthFlowValidator(FlowValidatorInterface):
 
     def validate_login_state(self, state: Dict[str, Any]) -> ValidationResult:
         """Validate login state specifically"""
-        # Ensure validation context is present
-        state = StateValidator.ensure_validation_context(state)
-
         # First validate basic state
         basic_validation = self.validate_flow_state(state)
         if not basic_validation.is_valid:

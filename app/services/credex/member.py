@@ -2,8 +2,7 @@ import logging
 from typing import Any, Dict, Optional, Tuple
 
 from .base import BaseCredExService
-from .config import CredExEndpoints
-from .exceptions import MemberNotFoundError, ValidationError
+from .exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -12,144 +11,104 @@ class CredExMemberService(BaseCredExService):
     """Service for CredEx member operations"""
 
     def get_dashboard(self, phone: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get dashboard information with fresh data"""
+        """Get dashboard information"""
         if not phone:
             raise ValidationError("Phone number is required")
 
         try:
-            # Make direct request to dashboard endpoint
             response = self._make_request(
-                CredExEndpoints.DASHBOARD,
+                'member', 'get_dashboard',
                 payload={"phone": phone}
             )
-
-            # Handle non-200 responses
-            if response.status_code != 200:
-                error_msg = response.json().get("message", "Failed to fetch dashboard")
-                logger.error(f"Dashboard fetch failed: {error_msg}")
-                if response.status_code == 404:
-                    raise MemberNotFoundError(error_msg)
-                return False, {"message": error_msg}
-
             data = response.json()
 
-            # Update state with fresh data
-            if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
-                current_state = self._parent_service.user.state.state or {}
-                current_state.update({
-                    "profile": {
-                        "dashboard": data.get("data", {}).get("dashboard", {})
-                    }
-                })
-                self._parent_service.user.state.update_state(current_state)
+            # Extract dashboard data
+            if dashboard := data.get("data", {}).get("dashboard"):
+                # Update state if available
+                self._update_state({"profile": {"dashboard": dashboard}})
+                return True, data
+            return False, {"message": "No dashboard data received"}
 
-            logger.info("Dashboard fetched successfully")
-            return True, data
-
-        except MemberNotFoundError as e:
-            logger.warning(f"Member not found: {str(e)}")
-            return False, {"message": str(e)}
         except Exception as e:
-            logger.exception(f"Dashboard fetch failed: {str(e)}")
-            return False, {"message": f"Failed to fetch dashboard: {str(e)}"}
+            logger.error(f"Dashboard fetch failed: {str(e)}")
+            return False, {"message": str(e)}
 
     def validate_handle(self, handle: str) -> Tuple[bool, Dict[str, Any]]:
-        """Validate a CredEx handle and get account details"""
+        """Validate CredEx handle"""
         if not handle:
             raise ValidationError("Handle is required")
 
         try:
-            # Log the request details
-            logger.info(f"Validating handle: {handle}")
-
             response = self._make_request(
-                CredExEndpoints.VALIDATE_HANDLE,
+                'member', 'validate_handle',
                 payload={"accountHandle": handle.lower()}
             )
-
-            # Log the raw response
-            logger.debug(f"Raw API response: {response.text}")
-
-            # Handle non-200 responses
-            if response.status_code != 200:
-                logger.error(f"Handle validation failed with status {response.status_code}")
-                return False, {"message": "Invalid handle or account not found"}
-
-            # Parse response
             data = response.json()
-            logger.debug(f"Parsed response data: {data}")
 
-            # Check for error in response
-            if data.get("error"):
-                logger.error(f"API returned error: {data['error']}")
-                return False, {"message": data["error"]}
-
-            # Extract account details from action.details
-            account_details = data.get("data", {}).get("action", {}).get("details", {})
-            if not account_details:
-                logger.error("No account details in response")
-                return False, {"message": "Account not found"}
-
-            account_id = account_details.get("accountID")
-            if not account_id:
-                logger.error(f"No account ID found in details: {account_details}")
-                return False, {"message": "Could not find account ID"}
-
-            # Return success with account details
-            return True, {
-                "data": {
-                    "accountID": account_id,
-                    "accountName": account_details.get("accountName", ""),
-                    "accountHandle": handle
-                }
-            }
+            # Extract account details
+            if details := data.get("data", {}).get("action", {}).get("details"):
+                if account_id := details.get("accountID"):
+                    return True, {
+                        "data": {
+                            "accountID": account_id,
+                            "accountName": details.get("accountName", ""),
+                            "accountHandle": handle
+                        }
+                    }
+            return False, {"message": "Account not found"}
 
         except Exception as e:
-            logger.exception(f"Handle validation failed: {str(e)}")
-            return False, {"message": f"Failed to validate handle: {str(e)}"}
+            logger.error(f"Handle validation failed: {str(e)}")
+            return False, {"message": str(e)}
 
     def refresh_member_info(
         self, phone: str, reset: bool = True, silent: bool = True, init: bool = False
     ) -> Optional[str]:
-        """Refresh member information by re-authenticating"""
+        """Refresh member information"""
         if not phone:
             raise ValidationError("Phone number is required")
 
         try:
             # Re-authenticate to get fresh data
-            success, response = self._auth.login(phone)
-            if not success:
-                error_msg = response.get("message", "Failed to refresh member info")
-                logger.error(f"Member info refresh failed: {error_msg}")
-                return error_msg
+            response = self._make_request(
+                'auth', 'login',
+                payload={"phone": phone}
+            )
+            data = response.json()
 
-            logger.info("Member info refreshed successfully")
-            return None
+            if token := (data.get("data", {})
+                         .get("action", {})
+                         .get("details", {})
+                         .get("token")):
+                self._update_token(token)
+                return None
+            return "Failed to refresh member info"
 
         except Exception as e:
-            logger.exception("Unexpected error refreshing member info")
-            return f"Failed to refresh member info: {str(e)}"
+            logger.error(f"Member info refresh failed: {str(e)}")
+            return str(e)
 
     def get_member_accounts(self, member_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get available accounts for a member
-
-        Args:
-            member_id: ID of the member to get accounts for
-
-        Returns:
-            Tuple[bool, Dict[str, Any]]: (success, accounts_data)
-        """
+        """Get member accounts"""
         if not member_id:
             raise ValidationError("Member ID is required")
 
         try:
-            # Return account data from login response
-            # Get accounts from last login response
-            accounts = (self._auth._last_response.get("data", {})
-                        .get("dashboard", {})
-                        .get("accounts", []))
-            return True, {"data": {"accounts": accounts}}
+            response = self._make_request(
+                'member', 'get_accounts',
+                payload={"memberID": member_id}
+            )
+            data = response.json()
+
+            if accounts := data.get("data", {}).get("accounts"):
+                return True, {"data": {"accounts": accounts}}
+            return False, {"message": "No accounts found"}
 
         except Exception as e:
-            logger.exception(f"Failed to get member accounts: {str(e)}")
-            return False, {"message": f"Failed to get member accounts: {str(e)}"}
+            logger.error(f"Failed to get member accounts: {str(e)}")
+            return False, {"message": str(e)}
+
+    def _update_state(self, updates: Dict[str, Any]) -> None:
+        """Update state if parent service available"""
+        if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
+            self._parent_service.user.state.update_state(updates)

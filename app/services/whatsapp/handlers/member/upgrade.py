@@ -161,7 +161,7 @@ class UpgradeFlow(Flow):
             )
 
             # Create recurring payment with member context
-            success, response = self.credex_service._recurring.create_recurring({
+            success, response = self.credex_service.services['recurring'].create_recurring({
                 "sourceAccountID": account_id,
                 "memberID": member_id,  # Include member ID
                 "templateType": "MEMBERTIER_SUBSCRIPTION",

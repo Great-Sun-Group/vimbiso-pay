@@ -310,7 +310,7 @@ class CredexFlow(Flow):
             }
 
             # Validate handle through API
-            success, response = self.credex_service._member.validate_handle(handle)
+            success, response = self.credex_service.services['member'].validate_handle(handle)
             if not success:
                 audit.log_validation_event(
                     self.id,
@@ -419,10 +419,10 @@ class CredexFlow(Flow):
             # Build new state
             new_state = {
                 "member_id": member_id,
-                "channel": StateManager.create_channel_data(
-                    identifier=channel_id,
-                    channel_type="whatsapp"
-                ),
+                "channel": StateManager.prepare_state_update(
+                    current_state={},
+                    channel_identifier=channel_id
+                )["channel"],
                 "authenticated": current_state.get("authenticated", True),
                 "jwt_token": current_state.get("jwt_token"),
                 "account_id": current_state.get("account_id"),
@@ -450,7 +450,7 @@ class CredexFlow(Flow):
                     new_state[key] = current_state[key]
 
             # Update state
-            self.credex_service._parent_service.user.state.update_state(new_state, "dashboard_update")
+            self.credex_service._parent_service.user.state.update_state(new_state)
 
             # Log success
             audit.log_state_transition(

@@ -1,10 +1,8 @@
 import logging
 from typing import Any, Dict, List, Tuple
 
-from core.transactions.exceptions import TransactionError
-
 from .base import BaseCredExService
-from .config import CredExEndpoints
+from .exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -12,276 +10,192 @@ logger = logging.getLogger(__name__)
 class CredExOffersService(BaseCredExService):
     """Service for CredEx offer operations"""
 
-    def offer_credex(self, offer_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
-        """Create a new CredEx offer"""
-        logger.info("Starting credex offer creation")
-        logger.debug(f"Initial offer data: {offer_data}")
+    def _process_offer_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Process offer data for API compatibility"""
+        offer = data.copy()
+        offer.pop("full_name", None)
 
+        # Convert field names
+        if "denomination" in offer:
+            offer["Denomination"] = offer.pop("denomination")
+        if "amount" in offer:
+            offer["InitialAmount"] = offer.pop("amount")
+
+        # Add required fields
+        offer.update({
+            "credexType": "PURCHASE",
+            "OFFERSorREQUESTS": "OFFERS",
+            "securedCredex": offer.get("securedCredex", True)
+        })
+
+        return offer
+
+    def _check_success(self, data: Dict[str, Any], action_type: str) -> bool:
+        """Check if response indicates success"""
+        return (
+            data.get("data", {}).get("action", {}).get("type") == action_type or
+            data.get("message", "").lower().startswith(f"credex {action_type.split('_')[1].lower()} successfully")
+        )
+
+    def offer_credex(self, offer_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+        """Create new CredEx offer"""
         if not offer_data:
-            logger.error("No offer data provided")
-            return False, {"message": "Offer data is required"}
+            raise ValidationError("Offer data is required")
 
         try:
-            # Remove any full_name field if present as it's not needed
-            offer_data.pop("full_name", None)
+            processed_data = self._process_offer_data(offer_data)
+            response = self._make_request('credex', 'create', payload=processed_data)
+            data = response.json()
 
-            # Convert field names to match API expectations
-            if "denomination" in offer_data:
-                offer_data["Denomination"] = offer_data.pop("denomination")
-            if "amount" in offer_data:
-                offer_data["InitialAmount"] = offer_data.pop("amount")
+            if self._check_success(data, "CREDEX_CREATED"):
+                if credex_id := data.get("data", {}).get("action", {}).get("id"):
+                    data.setdefault("data", {}).setdefault("action", {}).update({
+                        "credexID": credex_id,
+                        "message": f"CredEx offer {credex_id} created successfully"
+                    })
+                    return True, data
+            return False, {"message": "Failed to create offer"}
 
-            logger.debug(f"Processed offer data before field conversion: {offer_data}")
-
-            # Add required fields
-            offer_data["credexType"] = "PURCHASE"
-            offer_data["OFFERSorREQUESTS"] = "OFFERS"
-
-            # Ensure securedCredex is present
-            if "securedCredex" not in offer_data:
-                offer_data["securedCredex"] = True
-
-            logger.debug(f"Final offer data before API call: {offer_data}")
-            logger.info(f"Making API request to {CredExEndpoints.CREATE_CREDEX}")
-
-            response = self._make_request(
-                CredExEndpoints.CREATE_CREDEX,
-                payload=offer_data
-            )
-
-            logger.debug(f"API response status code: {response.status_code}")
-            logger.debug(f"API response content: {response.text}")
-
-            data = self._validate_response(response)
-            logger.debug(f"Validated response data: {data}")
-
-            if data.get("data", {}).get("action", {}).get("type") == "CREDEX_CREATED":
-                # Get the credexID from the response
-                credex_id = data["data"]["action"]["id"]
-                data["data"]["credexID"] = credex_id
-
-                # Add success message to action
-                if "data" not in data:
-                    data["data"] = {}
-                if "action" not in data["data"]:
-                    data["data"]["action"] = {}
-
-                data["data"]["action"]["message"] = f"CredEx offer {credex_id} created successfully"
-
-                logger.info(f"CredEx offer created successfully with ID: {credex_id}")
-                return True, data
-            else:
-                # Extract error message from response
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer creation failed with error: {error_msg}")
-                return False, {"message": error_msg}
-
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error creating offer: {error_msg}")
-            return False, {"message": error_msg}
         except Exception as e:
-            logger.exception(f"CredEx offer creation failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+            logger.error(f"Offer creation failed: {str(e)}")
+            return False, {"message": str(e)}
 
     def confirm_credex(self, credex_id: str, issuer_account_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Confirm a CredEx offer"""
-        if not credex_id:
-            return False, {"message": "CredEx ID is required"}
-        if not issuer_account_id:
-            return False, {"message": "Account ID is required"}
+        """Confirm CredEx offer"""
+        if not credex_id or not issuer_account_id:
+            raise ValidationError("CredEx ID and Account ID are required")
 
         try:
             response = self._make_request(
-                CredExEndpoints.ACCEPT_CREDEX,
-                payload={
-                    "credexID": credex_id,
-                    "issuerAccountID": issuer_account_id
-                }
+                'credex', 'confirm',
+                payload={"credexID": credex_id, "issuerAccountID": issuer_account_id}
             )
+            data = response.json()
 
-            data = self._validate_response(response)
-            if data.get("data", {}).get("action", {}).get("type") == "CREDEX_ACCEPTED":
-                logger.info("CredEx offer confirmed successfully")
+            if self._check_success(data, "CREDEX_ACCEPTED"):
                 return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer confirmation failed: {error_msg}")
-                return False, {"message": error_msg}
+            return False, {"message": "Failed to confirm offer"}
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error confirming offer: {error_msg}")
-            return False, {"message": error_msg}
         except Exception as e:
-            logger.exception(f"CredEx offer confirmation failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+            logger.error(f"Offer confirmation failed: {str(e)}")
+            return False, {"message": str(e)}
 
     def accept_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Accept a CredEx offer"""
+        """Accept CredEx offer"""
         if not credex_id:
-            return False, {"message": "CredEx ID is required"}
+            raise ValidationError("CredEx ID is required")
 
         try:
             response = self._make_request(
-                CredExEndpoints.ACCEPT_CREDEX,
+                'credex', 'accept',
                 payload={"credexID": credex_id}
             )
+            data = response.json()
 
-            data = self._validate_response(response)
-            if data.get("data", {}).get("action", {}).get("type") == "CREDEX_ACCEPTED":
-                logger.info("CredEx offer accepted successfully")
+            if self._check_success(data, "CREDEX_ACCEPTED"):
                 return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer acceptance failed: {error_msg}")
-                return False, {"message": error_msg}
+            return False, {"message": "Failed to accept offer"}
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error accepting offer: {error_msg}")
-            return False, {"message": error_msg}
         except Exception as e:
-            logger.exception(f"CredEx offer acceptance failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+            logger.error(f"Offer acceptance failed: {str(e)}")
+            return False, {"message": str(e)}
 
     def accept_bulk_credex(self, credex_ids: List[str]) -> Tuple[bool, Dict[str, Any]]:
         """Accept multiple CredEx offers"""
         if not credex_ids:
-            return False, {"message": "CredEx IDs are required"}
+            raise ValidationError("CredEx IDs are required")
 
         try:
             response = self._make_request(
-                CredExEndpoints.ACCEPT_BULK_CREDEX,
+                'credex', 'accept_bulk',
                 payload={"credexIDs": credex_ids}
             )
+            data = response.json()
 
-            data = self._validate_response(response)
             if data.get("summary", {}).get("accepted"):
-                logger.info("Bulk CredEx offers accepted successfully")
                 return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"Bulk CredEx offer acceptance failed: {error_msg}")
-                return False, {"message": error_msg}
+            return False, {"message": "Failed to accept offers"}
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error accepting bulk offers: {error_msg}")
-            return False, {"message": error_msg}
         except Exception as e:
-            logger.exception(f"Bulk CredEx offer acceptance failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+            logger.error(f"Bulk acceptance failed: {str(e)}")
+            return False, {"message": str(e)}
 
     def decline_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Decline a CredEx offer"""
+        """Decline CredEx offer"""
         if not credex_id:
-            return False, {"message": "CredEx ID is required"}
+            raise ValidationError("CredEx ID is required")
 
         try:
             response = self._make_request(
-                CredExEndpoints.DECLINE_CREDEX,
+                'credex', 'decline',
                 payload={"credexID": credex_id}
             )
+            data = response.json()
 
-            data = self._validate_response(response)
-            if (data.get("message") == "Credex declined successfully" or
-                    data.get("data", {}).get("action", {}).get("type") == "CREDEX_DECLINED"):
-                logger.info("CredEx offer declined successfully")
+            if self._check_success(data, "CREDEX_DECLINED"):
                 return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer decline failed: {error_msg}")
-                return False, {"message": error_msg}
+            return False, {"message": "Failed to decline offer"}
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error declining offer: {error_msg}")
-            return False, {"message": error_msg}
         except Exception as e:
-            logger.exception(f"CredEx offer decline failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+            logger.error(f"Offer decline failed: {str(e)}")
+            return False, {"message": str(e)}
 
     def cancel_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Cancel a CredEx offer"""
+        """Cancel CredEx offer"""
         if not credex_id:
-            return False, {"message": "CredEx ID is required"}
+            raise ValidationError("CredEx ID is required")
 
         try:
             response = self._make_request(
-                CredExEndpoints.CANCEL_CREDEX,
+                'credex', 'cancel',
                 payload={"credexID": credex_id}
             )
+            data = response.json()
 
-            data = self._validate_response(response)
-            if data.get("message") == "Credex cancelled successfully":
-                logger.info("CredEx offer cancelled successfully")
+            if self._check_success(data, "CREDEX_CANCELLED"):
                 return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer cancellation failed: {error_msg}")
-                return False, {"message": error_msg}
+            return False, {"message": "Failed to cancel offer"}
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error cancelling offer: {error_msg}")
-            return False, {"message": error_msg}
         except Exception as e:
-            logger.exception(f"CredEx offer cancellation failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+            logger.error(f"Offer cancellation failed: {str(e)}")
+            return False, {"message": str(e)}
 
     def get_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get details of a specific CredEx offer"""
+        """Get CredEx offer details"""
         if not credex_id:
-            return False, {"message": "CredEx ID is required"}
+            raise ValidationError("CredEx ID is required")
 
         try:
             response = self._make_request(
-                CredExEndpoints.GET_CREDEX,
+                'credex', 'get',
                 payload={"credexID": credex_id}
             )
+            data = response.json()
 
-            data = self._validate_response(response)
-            if response.status_code == 200:
-                logger.info("CredEx offer details fetched successfully")
+            if data.get("data"):
                 return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer details fetch failed: {error_msg}")
-                return False, {"message": error_msg}
+            return False, {"message": "Failed to get offer details"}
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error fetching offer: {error_msg}")
-            return False, {"message": error_msg}
         except Exception as e:
-            logger.exception(f"CredEx offer details fetch failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+            logger.error(f"Offer details fetch failed: {str(e)}")
+            return False, {"message": str(e)}
 
     def get_ledger(self, member_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get member's ledger information"""
+        """Get member ledger"""
         if not member_id:
-            return False, {"message": "Member ID is required"}
+            raise ValidationError("Member ID is required")
 
         try:
             response = self._make_request(
-                CredExEndpoints.GET_LEDGER,
+                'credex', 'get_ledger',
                 payload={"memberId": member_id}
             )
+            data = response.json()
 
-            data = self._validate_response(response)
-            if response.status_code == 200:
-                logger.info("Ledger fetched successfully")
+            if data.get("data"):
                 return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"Ledger fetch failed: {error_msg}")
-                return False, {"message": error_msg}
+            return False, {"message": "Failed to get ledger"}
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error fetching ledger: {error_msg}")
-            return False, {"message": error_msg}
         except Exception as e:
-            logger.exception(f"Ledger fetch failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+            logger.error(f"Ledger fetch failed: {str(e)}")
+            return False, {"message": str(e)}

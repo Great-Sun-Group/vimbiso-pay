@@ -10,7 +10,6 @@ from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
 from ...screens import format_account
-from ...state_manager import StateManager
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -19,30 +18,11 @@ audit = FlowAuditLogger()
 class DashboardFlow(Flow):
     """Flow for handling dashboard display"""
 
-    def __init__(
-        self,
-        flow_type: str = "view",
-        success_message: Optional[str] = None,
-        **kwargs
-    ):
+    def __init__(self, success_message: Optional[str] = None):
         """Initialize dashboard flow"""
-        self.flow_type = flow_type
         self.success_message = success_message
-        self.kwargs = kwargs
-        super().__init__(f"dashboard_{flow_type}", [])
+        super().__init__("dashboard", [])
         self.credex_service = None
-
-    def process_input(self, input_data: Any) -> Optional[str]:
-        """Override to skip input processing for dashboard display"""
-        # Log flow event
-        audit.log_flow_event(
-            self.id,
-            "process_input",
-            None,
-            self.data,
-            "in_progress"
-        )
-        return self.complete()
 
     def _get_selected_account(
         self,
@@ -195,6 +175,25 @@ class DashboardFlow(Flow):
             )
             return {}
 
+    def _create_error_message(self, error: str) -> Message:
+        """Create error message with current state info"""
+        current_state = self.credex_service._parent_service.user.state.state or {}
+        channel_id = current_state.get("channel", {}).get("identifier", "unknown")
+        member_id = current_state.get("member_id", "pending")
+
+        return Message(
+            recipient=MessageRecipient(
+                member_id=member_id,
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
+            content=TextContent(
+                body=f"Failed to load dashboard: {error}"
+            )
+        )
+
     def _build_menu_options(
         self,
         is_owned: bool,
@@ -274,9 +273,6 @@ class DashboardFlow(Flow):
             user_state = self.credex_service._parent_service.user.state
             current_state = user_state.state or {}
 
-            # Ensure validation context is present before validation
-            current_state = StateValidator.ensure_validation_context(current_state)
-
             # Validate current state
             validation = StateValidator.validate_state(current_state)
             if not validation.is_valid:
@@ -309,7 +305,7 @@ class DashboardFlow(Flow):
             if not member_id:
                 raise ValueError("Missing member ID in state")
 
-            channel_id = StateManager.get_channel_identifier(current_state)
+            channel_id = current_state.get("channel", {}).get("identifier")
             if not channel_id:
                 raise ValueError("Missing channel identifier")
 
@@ -328,10 +324,10 @@ class DashboardFlow(Flow):
                 "member_id": member_id,  # Primary identifier
 
                 # Channel info at top level - SINGLE SOURCE OF TRUTH
-                "channel": StateManager.create_channel_data(
-                    identifier=channel_id,
-                    channel_type="whatsapp"
-                ),
+                "channel": {
+                    "type": "whatsapp",
+                    "identifier": channel_id,
+                },
 
                 # Authentication and account
                 "authenticated": current_state.get("authenticated", False),
@@ -341,21 +337,10 @@ class DashboardFlow(Flow):
 
                 # Profile and flow data
                 "profile": profile_data,
-                "flow_data": current_state.get("flow_data") or {
-                    "id": "user_state",
-                    "step": 0,
-                    "data": {
-                        "account_id": current_state.get("account_id"),
-                        "flow_type": current_state.get("flow_type", "dashboard"),
-                        "_validation_context": current_state.get("_validation_context", {}),
-                        "_validation_state": current_state.get("_validation_state", {})
-                    },
-                    "_previous_data": {}
+                "flow_data": {
+                    "type": "dashboard",
+                    "account_id": current_state.get("account_id")
                 },
-
-                # Validation context
-                "_validation_context": current_state.get("_validation_context", {}),
-                "_validation_state": current_state.get("_validation_state", {}),
                 "_last_updated": audit.get_current_timestamp()
             }
 
@@ -376,18 +361,7 @@ class DashboardFlow(Flow):
                     "failure",
                     validation.error_message
                 )
-                return Message(
-                    recipient=MessageRecipient(
-                        member_id=member_id,
-                        channel_id=ChannelIdentifier(
-                            channel=ChannelType.WHATSAPP,
-                            value=channel_id
-                        )
-                    ),
-                    content=TextContent(
-                        body=f"Failed to update state: {validation.error_message}"
-                    )
-                )
+                return self._create_error_message(f"Failed to update state: {validation.error_message}")
 
             # Log state transition
             audit.log_state_transition(
@@ -398,7 +372,7 @@ class DashboardFlow(Flow):
             )
 
             # Update state
-            user_state.update_state(new_state, "account_select")
+            user_state.update_state(new_state)
 
             # Format dashboard data
             display_data = self._format_dashboard_data(selected_account, profile_data)
@@ -451,24 +425,4 @@ class DashboardFlow(Flow):
                 str(e)
             )
 
-            # Get channel identifier from top level state
-            current_state = self.credex_service._parent_service.user.state.state or {}
-            channel_id = StateManager.get_channel_identifier(current_state)
-            if not channel_id:
-                raise ValueError("Missing channel identifier")
-
-            # Get member ID from state
-            member_id = current_state.get("member_id", "pending")
-
-            return Message(
-                recipient=MessageRecipient(
-                    member_id=member_id,
-                    channel_id=ChannelIdentifier(
-                        channel=ChannelType.WHATSAPP,
-                        value=channel_id
-                    )
-                ),
-                content=TextContent(
-                    body=f"Failed to load dashboard: {str(e)}"
-                )
-            )
+            return self._create_error_message(str(e))

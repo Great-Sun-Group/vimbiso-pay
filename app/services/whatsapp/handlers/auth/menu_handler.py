@@ -19,7 +19,7 @@ class MenuHandler(BaseActionHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def show_dashboard(self, flow_type: str = "view", message: Optional[str] = None) -> Message:
+    def show_dashboard(self, message: Optional[str] = None) -> Message:
         """Display dashboard without flow processing"""
         try:
             # Get current state
@@ -31,7 +31,7 @@ class MenuHandler(BaseActionHandler):
             logger.debug(f"Current state before dashboard: {current_state}")
 
             # Initialize dashboard flow
-            flow = DashboardFlow(flow_type=flow_type, success_message=message)
+            flow = DashboardFlow(success_message=message)
 
             # Set services
             flow.credex_service = self.service.credex_service
@@ -46,9 +46,8 @@ class MenuHandler(BaseActionHandler):
             if not channel_id:
                 channel_id = self.service.user.channel_identifier
 
-            # Set flow data with proper structure
+            # Set flow data with proper structure - NO member_id duplication
             flow.data = {
-                "member_id": member_id,
                 "channel": {
                     "type": "whatsapp",
                     "identifier": channel_id
@@ -105,23 +104,13 @@ class MenuHandler(BaseActionHandler):
             # Get current state
             current_state = self.service.user.state.state or {}
 
+            # If we're coming from a successful login, show dashboard
+            if login:
+                return self.show_dashboard(message="✅ Login successful" if not message else message)
+
             # Check if user is already authenticated
             if current_state.get("authenticated"):
-                return self.show_dashboard(
-                    flow_type="view",
-                    message=message
-                )
-
-            # Handle login if needed
-            if login:
-                success, dashboard_data = self.service.auth_handler.auth_flow.attempt_login()
-                if not success:
-                    return self.service.auth_handler.auth_flow.handle_registration(register=True)
-                # Only show dashboard if login was successful
-                return self.show_dashboard(
-                    flow_type="login",
-                    message=message
-                )
+                return self.show_dashboard(message=message)
 
             # Show registration for unauthenticated users
             return self.service.auth_handler.auth_flow.handle_registration(register=True)
@@ -188,7 +177,7 @@ class MenuHandler(BaseActionHandler):
             if success:
                 # State is already updated by attempt_login
                 # Show menu with fresh data
-                return self.handle_menu()
+                return self.handle_menu(login=True)
             else:
                 # Show registration for new users
                 return self.service.auth_handler.auth_flow.handle_registration(register=True)

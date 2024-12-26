@@ -162,7 +162,7 @@ class CredexTransactionService(BaseTransactionService):
         try:
             # First validate the handle if not already validated
             if not offer.receiver_account_id and offer.handle:
-                success, handle_data = self.api_client._member.validate_handle(offer.handle)
+                success, handle_data = self.api_client.services['member'].validate_handle(offer.handle)
                 if not success:
                     return TransactionResult(
                         success=False,

@@ -187,7 +187,7 @@ class RegistrationFlow(Flow):
                 "lastname": last_name,
                 "defaultDenom": "USD"
             }
-            success, response = self.credex_service._auth.register_member(
+            success, response = self.credex_service.services['auth'].register_member(
                 member_data,
                 channel_id  # Pass channel identifier separately
             )
@@ -224,11 +224,11 @@ class RegistrationFlow(Flow):
                         # Core identity
                         "member_id": member_id,  # Primary identifier
 
-                        # Channel information
-                        "channel": StateManager.create_channel_data(
-                            identifier=channel_id,
-                            channel_type="whatsapp"
-                        ),
+                        # Channel information - use prepare_state_update to get channel data
+                        "channel": StateManager.prepare_state_update(
+                            current_state={},
+                            channel_identifier=channel_id
+                        )["channel"],
 
                         # Authentication
                         "jwt_token": token,
@@ -242,8 +242,7 @@ class RegistrationFlow(Flow):
                     validation = self.validator.validate_flow_state(new_state)
                     if validation.is_valid:
                         self.credex_service._parent_service.user.state.update_state(
-                            new_state,
-                            "registration_auth"
+                            new_state
                         )
 
             audit.log_flow_event(

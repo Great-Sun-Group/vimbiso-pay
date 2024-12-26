@@ -5,7 +5,7 @@ from typing import Dict, Any
 from .base_handler import BaseActionHandler
 from .types import BotServiceInterface, WhatsAppMessage
 from .auth_handlers import AuthActionHandler
-from .message_handler import MessageHandler
+from .handlers.message.message_handler import MessageHandler
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +25,11 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
 
         # Initialize services and handlers
         self.credex_service = user.state.get_or_create_credex_service()
-        self.credex_service._parent_service = self
 
         # Log service initialization
         logger.debug("Service initialization:")
         logger.debug(f"- Has credex_service: {bool(self.credex_service)}")
-        logger.debug(f"- Parent service set: {bool(self.credex_service._parent_service == self)}")
-        logger.debug(f"- Has jwt_token: {bool(self.credex_service._jwt_token)}")
+        logger.debug(f"- Has jwt_token: {bool(self.credex_service.jwt_token)}")
 
         # Initialize handlers
         self.auth_handler = AuthActionHandler(self)

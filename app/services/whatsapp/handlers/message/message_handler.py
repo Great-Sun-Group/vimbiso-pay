@@ -6,7 +6,8 @@ from core.utils.flow_audit import FlowAuditLogger
 
 from ...state_manager import StateManager as WhatsAppStateManager
 from ...types import WhatsAppMessage
-from ..credex.flows import AcceptFlow, CancelFlow, DeclineFlow, OfferFlow
+from ..credex.flows.action import AcceptFlow, CancelFlow, DeclineFlow
+from ..credex.flows.offer import OfferFlow
 from ..member.registration import RegistrationFlow
 from ..member.upgrade import UpgradeFlow
 from .flow_manager import FlowManager
@@ -90,6 +91,16 @@ class MessageHandler:
 
             # Check for menu action first
             if action in self.FLOW_TYPES:
+                # Get current state
+                state = self.service.user.state.state or {}
+
+                # Check authentication first
+                if not state.get("authenticated"):
+                    logger.info("User not authenticated, redirecting to login")
+                    return WhatsAppMessage.from_core_message(
+                        self.service.auth_handler.handle_menu(login=True)
+                    )
+
                 # Get flow type and class
                 flow_type, flow_class = self.FLOW_TYPES[action]
 
@@ -98,11 +109,9 @@ class MessageHandler:
                 logger.debug(f"Flow type: {flow_type}")
                 logger.debug(f"Flow class: {flow_class.__name__}")
 
-                # Get channel info from state
-                state_data = self.service.user.state.state
-                channel_id = WhatsAppStateManager.get_channel_identifier(state_data)
+                channel_id = WhatsAppStateManager.get_channel_identifier(state)
 
-                # Prepare flow start with channel info only
+                # Prepare flow start
                 error = self.state_handler.prepare_flow_start(
                     flow_type=flow_type,
                     channel_identifier=channel_id
@@ -117,7 +126,7 @@ class MessageHandler:
                     flow_class=flow_class,
                     kwargs={
                         "channel": {
-                            "type": WhatsAppStateManager.get_channel_type(state_data),
+                            "type": WhatsAppStateManager.get_channel_type(state),
                             "identifier": channel_id
                         }
                     }

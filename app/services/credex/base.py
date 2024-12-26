@@ -86,93 +86,67 @@ class BaseCredExService:
 
     def _make_request(
         self,
-        endpoint: str,
+        group: str,
+        action: str,
         method: str = "POST",
         payload: Optional[Dict[str, Any]] = None,
-        require_auth: bool = True,
     ) -> requests.Response:
-        """Make an HTTP request to the CredEx API"""
-        url = self.config.get_url(endpoint)
-        headers = self.config.get_headers(self._jwt_token if require_auth else None)
+        """Make an HTTP request to the CredEx API using endpoint groups"""
+        from .config import CredExEndpoints
 
-        logger.info(f"Making {method} request to {endpoint}")
-        logger.debug(f"Full URL: {url}")
-        logger.debug(f"Headers: {headers}")
+        # Get endpoint path and auth requirement
+        path = CredExEndpoints.get_path(group, action)
+        requires_auth = CredExEndpoints.requires_auth(group, action)
+
+        # Build request
+        url = self.config.get_url(path)
+        headers = self.config.get_headers(self._jwt_token if requires_auth else None)
+
+        logger.info(f"Making {method} request to {group}/{action}")
+        logger.debug(f"URL: {url}")
         logger.debug(f"Payload: {payload}")
 
         try:
+            # Make request
             response = requests.request(method, url, headers=headers, json=payload)
-
             logger.debug(f"Response status: {response.status_code}")
-            logger.debug(f"Response headers: {dict(response.headers)}")
-            logger.debug(f"Response content: {response.text}")
 
-            # Check for new token in response headers for token refresh
-            new_token = response.headers.get('Authorization')
-            if new_token:
-                self._jwt_token = new_token
-                # Update parent service's user state if available
-                if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
-                    self._parent_service.user.state.set_jwt_token(new_token)
-                    logger.debug("Updated parent service user state with refreshed token")
+            # Handle token refresh
+            if new_token := response.headers.get('Authorization'):
+                self._update_token(new_token)
 
-            # Update state with dashboard data from response if available
-            try:
-                response_data = response.json()
-                if isinstance(response_data, dict):
-                    dashboard_data = response_data.get("data", {}).get("dashboard")
-                    if dashboard_data and hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
-                        current_state = self._parent_service.user.state.state or {}
-                        current_state.update({
-                            "profile": {
-                                "dashboard": dashboard_data
-                            }
-                        })
-                        self._parent_service.user.state.update_state(current_state)
-                        logger.debug("Updated state with dashboard data from response")
-            except Exception as e:
-                logger.error(f"Error updating state with dashboard data: {str(e)}")
+            # Handle 401 for auth-required endpoints
+            if response.status_code == 401 and requires_auth and payload and "phone" in payload:
+                logger.warning("Auth failed, attempting refresh")
+                if refreshed_token := self._refresh_token(payload["phone"]):
+                    headers = self.config.get_headers(refreshed_token)
+                    response = requests.request(method, url, headers=headers, json=payload)
 
-            if response.status_code == 401 and require_auth:
-                logger.warning("Authentication failed, attempting to refresh token")
-                if payload and "phone" in payload:
-                    # Store phone for future token refreshes
-                    self._phone = payload["phone"]
-                    # This will be implemented in auth.py
-                    from .auth import CredExAuthService
-                    auth_service = CredExAuthService(config=self.config)
-                    logger.debug(f"Attempting to refresh token for phone: {payload['phone']}")
-                    success, msg = auth_service.login(payload["phone"])
-                    logger.debug(f"Token refresh result: success={success}, msg={msg}")
-                    if success:
-                        # Update token and propagate to parent service if available
-                        self._jwt_token = auth_service._jwt_token
-                        if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
-                            self._parent_service.user.state.set_jwt_token(self._jwt_token)
-                            logger.debug("Updated parent service user state with refreshed token")
-                        headers = self.config.get_headers(self._jwt_token)
-                        logger.debug("Making request with refreshed token")
-                        response = requests.request(method, url, headers=headers, json=payload)
-                        logger.debug(f"Refresh response status: {response.status_code}")
-                        logger.debug(f"Refresh response content: {response.text}")
-                    else:
-                        raise TransactionError("Authentication failed. Please try again.")
-
-            # Check for error responses
-            if response.status_code >= 400:
-                error_msg = self._extract_error_message(response)
-                logger.error(error_msg)  # Log the actual error message without prefix
-
-                # Don't raise error for login attempts (when require_auth is False)
-                # This allows auth.py to handle the response
-                if require_auth:
-                    raise TransactionError(error_msg)
+            # Handle errors
+            if response.status_code >= 400 and requires_auth:
+                raise TransactionError(self._extract_error_message(response))
 
             return response
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during API request: {str(e)}")
-            raise TransactionError("Network error. Please check your connection and try again.")
+            raise TransactionError(f"Network error: {str(e)}")
+
+    def _refresh_token(self, phone: str) -> Optional[str]:
+        """Refresh authentication token"""
+        from .auth import CredExAuthService
+        auth_service = CredExAuthService(config=self.config)
+        success, _ = auth_service.login(phone)
+        if success:
+            token = auth_service._jwt_token
+            self._update_token(token)
+            return token
+        return None
+
+    def _update_token(self, token: str) -> None:
+        """Update token in service and state"""
+        self._jwt_token = token
+        if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
+            self._parent_service.user.state.update_state({"jwt_token": token})
 
     def _validate_response(
         self, response: requests.Response, error_mapping: Optional[Dict[int, str]] = None
@@ -225,34 +199,4 @@ class BaseCredExService:
     @jwt_token.setter
     def jwt_token(self, value: str):
         """Set the JWT token"""
-        logger.debug("Setting new JWT token")
-        self._jwt_token = value
-
-        # Log current service state
-        logger.debug("Current service state:")
-        logger.debug(f"- Service type: {type(self).__name__}")
-        logger.debug(f"- Has parent: {bool(hasattr(self, '_parent_service'))}")
-        if hasattr(self, '_parent_service'):
-            logger.debug(f"- Parent type: {type(self._parent_service).__name__}")
-            logger.debug(f"- Parent has user: {bool(hasattr(self._parent_service, 'user'))}")
-            if hasattr(self._parent_service, 'user'):
-                logger.debug(f"- User has state: {bool(hasattr(self._parent_service.user, 'state'))}")
-
-        # Update parent service's user state if available
-        if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
-            # Get current state
-            current_state = self._parent_service.user.state.state or {}
-            logger.debug(f"Current state before update: {current_state}")
-
-            # Set token in state
-            self._parent_service.user.state.set_jwt_token(value)
-
-            # Force state update to ensure token is saved
-            self._parent_service.user.state.update_state({
-                **current_state,
-                "jwt_token": value
-            })
-
-            # Log state after update
-            logger.debug(f"State after update: {self._parent_service.user.state.state}")
-            logger.debug("Updated parent service user state with new token")
+        self._update_token(value)
