@@ -10,6 +10,7 @@ from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
 from ...screens import format_account
+from ...state_manager import StateManager
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -18,11 +19,41 @@ audit = FlowAuditLogger()
 class DashboardFlow(Flow):
     """Flow for handling dashboard display"""
 
-    def __init__(self, success_message: Optional[str] = None):
-        """Initialize dashboard flow"""
+    def __init__(self, flow_type: str = "dashboard", state: Dict = None, success_message: Optional[str] = None, **kwargs):
+        """Initialize dashboard flow with proper state management"""
         self.success_message = success_message
-        super().__init__("dashboard", [])
         self.credex_service = None
+
+        # Initialize base state if none provided
+        if state is None:
+            state = {}
+
+        # Get member ID and channel info from top level - SINGLE SOURCE OF TRUTH
+        member_id = StateManager.get_member_id(state)
+        channel_id = StateManager.get_channel_identifier(state)
+
+        # Create flow ID from type and member ID
+        flow_id = f"{flow_type}_{member_id}" if member_id else "dashboard"
+
+        # Initialize base Flow class with required arguments
+        super().__init__(id=flow_id, steps=[])  # Dashboard has no steps, just displays info
+
+        # Log initialization with member context
+        audit.log_flow_event(
+            self.id,
+            "initialization",
+            None,
+            {
+                "flow_type": flow_type,
+                "member_id": member_id,
+                "channel": {
+                    "type": "whatsapp",
+                    "identifier": channel_id
+                } if channel_id else None,
+                **kwargs
+            },
+            "success"
+        )
 
     def _get_selected_account(
         self,
@@ -178,8 +209,8 @@ class DashboardFlow(Flow):
     def _create_error_message(self, error: str) -> Message:
         """Create error message with current state info"""
         current_state = self.credex_service._parent_service.user.state.state or {}
-        channel_id = current_state.get("channel", {}).get("identifier", "unknown")
-        member_id = current_state.get("member_id", "pending")
+        channel_id = StateManager.get_channel_identifier(current_state) or "unknown"
+        member_id = StateManager.get_member_id(current_state) or "pending"
 
         return Message(
             recipient=MessageRecipient(
@@ -301,11 +332,11 @@ class DashboardFlow(Flow):
                 raise ValueError("No accounts found")
 
             # Get member ID and channel info from top level state - SINGLE SOURCE OF TRUTH
-            member_id = current_state.get("member_id")
+            member_id = StateManager.get_member_id(current_state)
             if not member_id:
                 raise ValueError("Missing member ID in state")
 
-            channel_id = current_state.get("channel", {}).get("identifier")
+            channel_id = StateManager.get_channel_identifier(current_state)
             if not channel_id:
                 raise ValueError("Missing channel identifier")
 

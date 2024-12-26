@@ -3,6 +3,7 @@ from typing import Dict, Any, Set
 from core.utils.validator_interface import ValidationResult
 from core.utils.state_validator import StateValidator
 from core.utils.base_validator import BaseFlowValidator
+from ...state_manager import StateManager
 
 
 class CredexFlowValidator(BaseFlowValidator):
@@ -74,13 +75,34 @@ class CredexFlowValidator(BaseFlowValidator):
                 missing_fields=missing
             )
 
-        if channel.get("type") != "whatsapp":
+        # Validate channel type using StateManager
+        channel_type = StateManager.get_channel_type({"channel": channel})
+        if not channel_type:
+            return ValidationResult(
+                is_valid=False,
+                error_message="Missing channel type"
+            )
+
+        if not isinstance(channel_type, str):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Channel type must be a string"
+            )
+
+        if channel_type != "whatsapp":
             return ValidationResult(
                 is_valid=False,
                 error_message="Invalid channel type"
             )
 
-        if not channel.get("identifier"):
+        # Validate channel identifier
+        if not isinstance(channel["identifier"], str):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Channel identifier must be a string"
+            )
+
+        if not channel["identifier"]:
             return ValidationResult(
                 is_valid=False,
                 error_message="Missing channel identifier"

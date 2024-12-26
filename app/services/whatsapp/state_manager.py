@@ -14,6 +14,29 @@ class StateManager:
     """Helper class for managing state transitions"""
 
     @staticmethod
+    def get_channel_identifier(state: Dict[str, Any]) -> Optional[str]:
+        """Get channel identifier from state following SINGLE SOURCE OF TRUTH"""
+        try:
+            return state.get("channel", {}).get("identifier")
+        except Exception as e:
+            logger.error(f"Error getting channel identifier: {str(e)}")
+            return None
+
+    @staticmethod
+    def get_channel_type(state: Dict[str, Any]) -> Optional[str]:
+        """Get channel type from state following SINGLE SOURCE OF TRUTH"""
+        try:
+            return state.get("channel", {}).get("type")
+        except Exception as e:
+            logger.error(f"Error getting channel type: {str(e)}")
+            return None
+
+    @staticmethod
+    def get_member_id(state: Dict) -> Optional[str]:
+        """Get member ID from state following single source of truth"""
+        return state.get("member_id") if state else None
+
+    @staticmethod
     def prepare_state_update(
         current_state: Dict[str, Any],
         flow_data: Optional[Dict[str, Any]] = None,

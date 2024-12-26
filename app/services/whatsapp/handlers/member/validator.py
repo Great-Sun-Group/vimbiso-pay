@@ -2,6 +2,7 @@
 from typing import Dict, Any, Set
 from core.utils.validator_interface import FlowValidatorInterface, ValidationResult
 from core.utils.state_validator import StateValidator
+from ...state_manager import StateManager
 
 
 class MemberFlowValidator(FlowValidatorInterface):
@@ -106,14 +107,21 @@ class MemberFlowValidator(FlowValidatorInterface):
                 missing_fields=missing
             )
 
-        # Validate channel type
-        if not isinstance(channel["type"], str):
+        # Validate channel type using StateManager
+        channel_type = StateManager.get_channel_type({"channel": channel})
+        if not channel_type:
+            return ValidationResult(
+                is_valid=False,
+                error_message="Missing channel type"
+            )
+
+        if not isinstance(channel_type, str):
             return ValidationResult(
                 is_valid=False,
                 error_message="Channel type must be a string"
             )
 
-        if channel["type"] != "whatsapp":
+        if channel_type != "whatsapp":
             return ValidationResult(
                 is_valid=False,
                 error_message="Invalid channel type"

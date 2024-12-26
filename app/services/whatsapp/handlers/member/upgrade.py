@@ -17,59 +17,49 @@ audit = FlowAuditLogger()
 class UpgradeFlow(Flow):
     """Flow for member tier upgrade"""
 
-    def __init__(self, **kwargs):
-        """Initialize upgrade flow with proper state management
-
-        Args:
-            **kwargs: Additional keyword arguments passed to flow initialization
-
-        Note:
-            Flow initialization audit logging happens in log_initialization()
-            which is called after credex_service is set by flow_manager.
-            This ensures proper access to state for member_id and audit context.
-        """
+    def __init__(self, flow_type: str = "upgrade", state: Dict = None, **kwargs):
+        """Initialize upgrade flow with proper state management"""
         self.validator = MemberFlowValidator()
-        steps = self._create_steps()
-        super().__init__("member_upgrade", steps)
         self.credex_service = None
 
-    def log_initialization(self):
-        """Log flow initialization with proper member context
+        # Initialize base state if none provided
+        if state is None:
+            state = {}
 
-        This method is called by flow_manager after setting credex_service,
-        ensuring we have access to state for member_id and audit context.
-        """
-        try:
-            # Get member_id from top level state - SINGLE SOURCE OF TRUTH
-            current_state = self.credex_service._parent_service.user.state.state
-            member_id = current_state.get("member_id")
-            if not member_id:
-                logger.error("Missing member ID in state during initialization")
-                return
+        # Get member ID and channel info from top level - SINGLE SOURCE OF TRUTH
+        member_id = state.get("member_id")
+        if not member_id:
+            raise ValueError("Missing member ID")
 
-            # Get channel identifier
-            channel_id = self._get_channel_identifier()
-            if not channel_id:
-                logger.error("Missing channel identifier during initialization")
-                return
+        channel_id = StateManager.get_channel_identifier(state)
+        if not channel_id:
+            raise ValueError("Missing channel identifier")
 
-            # Log initialization with member context
-            audit.log_flow_event(
-                self.id,
-                "flow_init",
-                None,
-                {
-                    "member_id": member_id,
-                    "channel": {
-                        "type": "whatsapp",
-                        "identifier": channel_id
-                    }
+        # Create flow ID from type and member ID
+        flow_id = f"{flow_type}_{member_id}"
+
+        # Create steps before initializing base class
+        steps = self._create_steps()
+
+        # Initialize base Flow class with required arguments
+        super().__init__(id=flow_id, steps=steps)
+
+        # Log initialization with member context
+        audit.log_flow_event(
+            self.id,
+            "initialization",
+            None,
+            {
+                "flow_type": flow_type,
+                "member_id": member_id,
+                "channel": {
+                    "type": "whatsapp",
+                    "identifier": channel_id
                 },
-                "success"
-            )
-
-        except Exception as e:
-            logger.error(f"Error logging flow initialization: {str(e)}")
+                **kwargs
+            },
+            "success"
+        )
 
     def _create_steps(self) -> List[Step]:
         """Create upgrade flow steps"""
@@ -83,13 +73,11 @@ class UpgradeFlow(Flow):
         ]
 
     def _get_channel_identifier(self) -> str:
-        """Get channel identifier from state"""
-        if hasattr(self.credex_service, '_parent_service'):
-            current_state = self.credex_service._parent_service.user.state.state or {}
-            return StateManager.get_channel_identifier(current_state)
-
-        # Fallback to data channel info
-        return self.data.get("channel", {}).get("identifier")
+        """Get channel identifier from state using StateManager"""
+        if not hasattr(self.credex_service, '_parent_service'):
+            raise ValueError("Service not properly initialized")
+        current_state = self.credex_service._parent_service.user.state.state or {}
+        return StateManager.get_channel_identifier(current_state)
 
     def _validate_button_response(self, response: Dict[str, Any]) -> bool:
         """Validate button response"""

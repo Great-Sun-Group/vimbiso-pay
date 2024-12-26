@@ -1,8 +1,8 @@
 """Action flows implementation for accept, decline and cancel"""
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from core.messaging.flow import Step, StepType
+from core.messaging.flow import Step, StepType, FlowState
 from core.utils.flow_audit import FlowAuditLogger
 
 from .base import CredexFlow
@@ -14,38 +14,58 @@ audit = FlowAuditLogger()
 class ActionFlow(CredexFlow):
     """Base class for credex action flows (accept/decline/cancel)"""
 
-    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
-        # Extract flow type from state if not provided directly
-        if flow_type is None and state is not None:
-            flow_data = state.get('flow_data', {})
-            flow_type = flow_data.get('flow_type')
+    def __init__(self, id: str, steps: List[Step] = None, flow_type: str = None, state: Optional[FlowState] = None, **kwargs):
+        """Initialize action flow with proper state management"""
+        try:
+            # Set action prefix before parent initialization
+            self.action_prefix = flow_type  # e.g. "cancel_", "accept_", "decline_"
 
-        if flow_type is None:
-            raise ValueError("flow_type must be provided either directly or through state")
+            # Create steps if not provided
+            if steps is None:
+                steps = self._create_steps()
 
-        # Get member ID from top level state - SINGLE SOURCE OF TRUTH
-        member_id = state.get("member_id") if state else None
-        if not member_id:
-            raise ValueError("Missing member ID in state")
-
-        # Set action prefix before parent initialization
-        self.action_prefix = flow_type  # e.g. "cancel_", "accept_", "decline_"
-
-        # Log initialization with member context
-        audit.log_flow_event(
-            f"{flow_type}_{member_id}",
-            "initialization",
-            None,
-            {
-                "flow_type": flow_type,
-                "member_id": member_id,
-                "channel": state.get("channel") if state else None,
+            # Initialize base CredexFlow class
+            super().__init__(
+                id=id,
+                steps=steps,
+                flow_type=flow_type,
+                state=state,
                 **kwargs
-            },
-            "success"
-        )
+            )
 
-        super().__init__(flow_type=flow_type, state=state, **kwargs)
+            # Get member ID from state if available
+            member_id = state.member_id if state else None
+            channel = {"type": "whatsapp", "identifier": self._get_channel_identifier()} if self.credex_service else None
+
+            # Log initialization with member context
+            audit.log_flow_event(
+                self.id,
+                "initialization",
+                None,
+                {
+                    "flow_type": flow_type,
+                    "member_id": member_id,
+                    "channel": channel,
+                    **kwargs
+                },
+                "success"
+            )
+
+        except Exception as e:
+            # Log initialization error
+            error_msg = f"Flow initialization error: {str(e)}"
+            logger.error(error_msg)
+            audit.log_flow_event(
+                id,  # Use provided ID instead of flow_id
+                "initialization_error",
+                None,
+                {
+                    "error": error_msg,
+                    "flow_type": flow_type
+                },
+                "failure"
+            )
+            raise
 
     def _create_steps(self) -> List[Step]:
         """Create steps for action flow"""
@@ -222,28 +242,19 @@ class ActionFlow(CredexFlow):
 class CancelFlow(ActionFlow):
     """Flow for canceling a credex offer"""
 
-    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
-        # Default to cancel if not provided
-        if flow_type is None and (state is None or "flow_type" not in state.get("flow_data", {})):
-            flow_type = "cancel"
-        super().__init__(flow_type=flow_type, state=state, **kwargs)
+    def __init__(self, id: str, steps: List[Step] = None, state: Optional[FlowState] = None, **kwargs):
+        super().__init__(id=id, steps=steps, flow_type="cancel", state=state, **kwargs)
 
 
 class AcceptFlow(ActionFlow):
     """Flow for accepting a credex offer"""
 
-    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
-        # Default to accept if not provided
-        if flow_type is None and (state is None or "flow_type" not in state.get("flow_data", {})):
-            flow_type = "accept"
-        super().__init__(flow_type=flow_type, state=state, **kwargs)
+    def __init__(self, id: str, steps: List[Step] = None, state: Optional[FlowState] = None, **kwargs):
+        super().__init__(id=id, steps=steps, flow_type="accept", state=state, **kwargs)
 
 
 class DeclineFlow(ActionFlow):
     """Flow for declining a credex offer"""
 
-    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
-        # Default to decline if not provided
-        if flow_type is None and (state is None or "flow_type" not in state.get("flow_data", {})):
-            flow_type = "decline"
-        super().__init__(flow_type=flow_type, state=state, **kwargs)
+    def __init__(self, id: str, steps: List[Step] = None, state: Optional[FlowState] = None, **kwargs):
+        super().__init__(id=id, steps=steps, flow_type="decline", state=state, **kwargs)

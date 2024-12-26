@@ -65,13 +65,14 @@ class FlowManager:
             # Get member_id from top level state ONLY - SINGLE SOURCE OF TRUTH
             state = self.service.user.state.state
             member_id = state.get("member_id") if state else None
-            channel_id = kwargs.get("channel", {}).get("identifier")
+            # Get channel info from state - SINGLE SOURCE OF TRUTH
+            channel_id = state.get("channel", {}).get("identifier") if state else None
 
             # Log full state for debugging
             logger.debug("=== Flow Start State Debug ===")
             logger.debug(f"Full state: {state}")
             logger.debug(f"Member ID from top level: {member_id}")
-            logger.debug(f"Channel ID from kwargs: {channel_id}")
+            logger.debug(f"Channel ID from state: {channel_id}")
             logger.debug(f"Authenticated: {state.get('authenticated') if state else False}")
             logger.debug("============================")
 
@@ -92,9 +93,26 @@ class FlowManager:
                 )
                 return WhatsAppMessage.create_text(channel_id, f"❌ Failed to start flow: {error_msg}")
 
-            # Create flow with minimal state
+            # Create flow ID from type and member ID
             flow_id = f"{flow_type}_{member_id}"
-            flow = flow_class(id=flow_id, steps=[])
+
+            # Create proper FlowState object from the start
+            from core.messaging.flow import FlowState
+
+            # Initialize flow state with member_id from top level (SINGLE SOURCE OF TRUTH)
+            flow_state = FlowState.create(
+                flow_id=flow_id,
+                member_id=member_id,  # From top level - SINGLE SOURCE OF TRUTH
+                flow_type=flow_type
+            )
+
+            # Create flow with FlowState
+            flow = flow_class(
+                id=flow_id,
+                steps=[],  # Let flow create its own steps through _create_steps()
+                flow_type=flow_type,
+                state=flow_state
+            )
             flow.credex_service = self.service.credex_service
 
             # Get flow state and update through state manager
@@ -109,7 +127,7 @@ class FlowManager:
                 "bot_service",
                 "flow_start_success",
                 None,
-                {"flow_id": flow_id},
+                {"flow_id": flow.id},
                 "success"
             )
             return result
@@ -124,7 +142,7 @@ class FlowManager:
                 "failure"
             )
             return WhatsAppMessage.create_text(
-                kwargs.get("channel", {}).get("identifier"),
+                channel_id,
                 f"❌ Failed to start flow: {str(e)}"
             )
 

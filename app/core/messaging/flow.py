@@ -200,47 +200,64 @@ class Flow:
         self.current_index = 0
         self.data: Dict[str, Any] = {}
         self._previous_data: Dict[str, Any] = {}  # Store previous state for rollback
+        self.state: Optional[FlowState] = None  # Current flow state
 
         # Initialize state if provided
         if state:
-            self.set_state(state.to_dict())
+            self.set_state(state)
 
     @property
     def current_step(self) -> Optional[Step]:
         """Get current step"""
         return self.steps[self.current_index] if 0 <= self.current_index < len(self.steps) else None
 
+    @property
+    def member_id(self) -> Optional[str]:
+        """Get member ID from current state"""
+        return self.state.member_id if self.state else None
+
     def process_input(self, input_data: Any) -> Optional[Dict[str, Any]]:
         """Process input and return next message or None if complete"""
+        if not self.state:
+            raise ValueError("Flow state not initialized")
+
         step = self.current_step
         if not step:
             return None
 
         try:
-            # Initialize validation state in data
-            self.data["_validation_state"] = {
+            # Create new validation state
+            validation_state = {
                 "step_id": step.id,
                 "step_index": self.current_index,
                 "input": input_data,
                 "timestamp": audit.get_current_timestamp()
             }
 
-            # Store previous state
-            self._previous_data = self.data.copy()
+            # Create new state with validation info
+            new_state = FlowState(
+                id=self.id,
+                member_id=self.state.member_id,
+                step=self.current_index,
+                data={
+                    **self.state.data,
+                    "_validation_state": validation_state
+                }
+            )
 
             # Log flow event at start of processing
             audit.log_flow_event(
                 self.id,
                 "step_start",
                 step.id,
-                self._previous_data,
+                new_state.to_dict(),
                 "in_progress"
             )
 
             # Log input processing
             logger.debug(f"[Flow {self.id}] Processing input for step {step.id}")
             logger.debug(f"[Flow {self.id}] Input data: {input_data}")
-            logger.debug(f"[Flow {self.id}] Current validation state: {self.data['_validation_state']}")
+            logger.debug(f"[Flow {self.id}] Current validation state: {validation_state}")
 
             # Validate input
             validation_result = step.validate(input_data)
@@ -253,9 +270,9 @@ class Flow:
 
             if not validation_result:
                 from services.whatsapp.types import WhatsAppMessage
-                # Restore previous state and mark validation error
-                self.data = self._previous_data.copy()
-                self.data["_validation_state"].update({
+
+                # Update validation state with error
+                new_state.data["_validation_state"].update({
                     "success": False,
                     "error": "Invalid input"
                 })
@@ -265,12 +282,15 @@ class Flow:
                     self.id,
                     "validation_error",
                     step.id,
-                    self.data,
+                    new_state.to_dict(),
                     "failure",
                     "Invalid input"
                 )
 
-                channel_identifier = self.data.get("channel", {}).get("identifier")
+                # Store error state
+                self.set_state(new_state)
+
+                channel_identifier = new_state.data.get("channel", {}).get("identifier")
                 if step.id == "amount":
                     return WhatsAppMessage.create_text(
                         channel_identifier,
@@ -289,38 +309,38 @@ class Flow:
             # Transform input
             transformed_data = step.transform(input_data)
 
-            # Store transformed data under step ID to preserve structure
-            if step.id == "amount":
-                # Store amount data under amount_denom key to better reflect its structure
-                self.data["amount_denom"] = transformed_data
-            else:
-                self.data[step.id] = transformed_data
-
-            # Move to next step only after successful transformation
-            self.current_index += 1
-
-            # Update validation state with success and transformed data
-            self.data["_validation_state"].update({
-                "success": True,
-                "transformed": transformed_data
-            })
-
-            # Store in previous data
-            self._previous_data = self.data.copy()
+            # Create success state
+            success_state = FlowState(
+                id=self.id,
+                member_id=self.state.member_id,
+                step=self.current_index + 1,  # Move to next step
+                data={
+                    **new_state.data,
+                    step.id if step.id != "amount" else "amount_denom": transformed_data,
+                    "_validation_state": {
+                        **validation_state,
+                        "success": True,
+                        "transformed": transformed_data
+                    }
+                }
+            )
 
             # Log successful state transition
             audit.log_state_transition(
                 self.id,
-                self._previous_data,
-                self.data,
+                new_state.to_dict(),
+                success_state.to_dict(),
                 "success"
             )
+
+            # Update flow state
+            self.set_state(success_state)
 
             # Complete or get next message
             next_message = (
                 self.complete()
                 if self.current_index >= len(self.steps)
-                else self.current_step.get_message(self.data)
+                else self.current_step.get_message(self.state.data)
                 if self.current_step
                 else None
             )
@@ -331,24 +351,35 @@ class Flow:
             # Handle validation errors with context
             from services.whatsapp.types import WhatsAppMessage
 
-            # Restore previous state and mark validation error
-            self.data = self._previous_data.copy()
-            self.data["_validation_state"].update({
-                "success": False,
-                "error": str(validation_error)
-            })
+            # Create error state
+            error_state = FlowState(
+                id=self.id,
+                member_id=self.state.member_id,
+                step=self.current_index,
+                data={
+                    **self.state.data,
+                    "_validation_state": {
+                        **validation_state,
+                        "success": False,
+                        "error": str(validation_error)
+                    }
+                }
+            )
 
             # Log validation error
             audit.log_flow_event(
                 self.id,
                 "validation_error",
                 step.id,
-                self.data,
+                error_state.to_dict(),
                 "failure",
                 str(validation_error)
             )
 
-            channel_identifier = self.data.get("channel", {}).get("identifier")
+            # Store error state
+            self.set_state(error_state)
+
+            channel_identifier = error_state.data.get("channel", {}).get("identifier")
             return WhatsAppMessage.create_text(
                 channel_identifier,
                 str(validation_error)
@@ -363,7 +394,7 @@ class Flow:
                 self.id,
                 "process_error",
                 step.id,
-                self._previous_data,
+                self.state.to_dict(),
                 "failure",
                 error_msg
             )
@@ -374,9 +405,10 @@ class Flow:
             # First try to recover to current step
             last_valid_state = audit.get_last_valid_state(self.id, current_step)
             if last_valid_state:
-                self.data = last_valid_state
+                recovery_state = FlowState.from_dict(last_valid_state, self.state.member_id)
+                self.set_state(recovery_state)
                 logger.info(f"Recovered to valid state at step {current_step}")
-                channel_identifier = self.data.get("channel", {}).get("identifier")
+                channel_identifier = recovery_state.data.get("channel", {}).get("identifier")
                 return WhatsAppMessage.create_text(
                     channel_identifier,
                     "Recovered from error. Please try your last action again."
@@ -387,23 +419,21 @@ class Flow:
                 recovery_path = audit.get_recovery_path(self.id, current_step)
                 if recovery_path:
                     # Find the last successful state in the path
-                    for state in reversed(recovery_path):
-                        if state.get("_validation_state", {}).get("success"):
-                            self.data = state
-                            recovered_step = state.get("_validation_state", {}).get("step_id", "previous")
+                    for state_dict in reversed(recovery_path):
+                        if state_dict.get("_validation_state", {}).get("success"):
+                            recovery_state = FlowState.from_dict(state_dict, self.state.member_id)
+                            self.set_state(recovery_state)
+                            recovered_step = state_dict.get("_validation_state", {}).get("step_id", "previous")
                             logger.info(f"Recovered to earlier valid state at step {recovered_step}")
-                            channel_identifier = self.data.get("channel", {}).get("identifier")
+                            channel_identifier = recovery_state.data.get("channel", {}).get("identifier")
                             return WhatsAppMessage.create_text(
                                 channel_identifier,
                                 "Recovered to a previous step. Please continue from there."
                             )
 
-            # If all recovery attempts fail, fallback to previous state
-            logger.warning("Recovery failed, falling back to previous state")
-            self.data = self._previous_data
-
+            # If all recovery attempts fail, return error
             from services.whatsapp.types import WhatsAppMessage
-            channel_identifier = self.data.get("channel", {}).get("identifier")
+            channel_identifier = self.state.data.get("channel", {}).get("identifier")
             return WhatsAppMessage.create_text(
                 channel_identifier,
                 f"Error: {str(e)}"
@@ -421,113 +451,55 @@ class Flow:
         )
         return None
 
-    def get_state(self) -> Dict[str, Any]:
-        """Get flow state"""
+    def get_state(self) -> FlowState:
+        """Get current flow state"""
+        if not self.state:
+            raise ValueError("Flow state not initialized")
+        return self.state
+
+    def set_state(self, state: Union[FlowState, Dict[str, Any]]) -> None:
+        """Set flow state
+
+        Args:
+            state: Either a FlowState object or a dictionary to convert to FlowState
+        """
         try:
-            # Ensure data is a dictionary
-            if not isinstance(self.data, dict):
-                self.data = {}
+            # Convert dict to FlowState if needed
+            if isinstance(state, dict):
+                if not self.member_id:
+                    raise ValueError("Cannot convert dict to FlowState without member_id")
+                state = FlowState.from_dict(state, self.member_id)
+            elif not isinstance(state, FlowState):
+                raise ValueError("State must be either FlowState or dict")
 
-            # Ensure required fields exist
-            if "flow_type" not in self.data:
-                self.data["flow_type"] = self.id.split("_")[0] if "_" in self.id else "unknown"
-
-            # Ensure validation context exists in data
-            if "_validation_context" not in self.data:
-                self.data["_validation_context"] = {}
-            if "_validation_state" not in self.data:
-                self.data["_validation_state"] = {}
-
-            # Build state with validation context only in data
-            state = {
-                "id": self.id,
-                "step": self.current_index,
-                "data": self.data,
-                "_previous_data": self._previous_data
-            }
-
-            # Log state retrieval
-            logger.debug(f"[Flow {self.id}] Getting state:")
-            logger.debug(f"[Flow {self.id}] - Step: {self.current_index}")
-            logger.debug(f"[Flow {self.id}] - Data keys: {list(self.data.keys())}")
-            logger.debug(f"[Flow {self.id}] - Validation context: {self.data.get('_validation_context', {})}")
-
-            audit.log_flow_event(
-                self.id,
-                "get_state",
-                None,
-                state,
-                "success"
-            )
-
-            return state
-
-        except Exception as e:
-            error_msg = f"Error getting flow state: {str(e)}"
-            logger.error(error_msg)
-            audit.log_flow_event(
-                self.id,
-                "get_state_error",
-                None,
-                self.data,
-                "failure",
-                error_msg
-            )
-            raise ValueError(error_msg)
-
-    def set_state(self, state: Dict[str, Any]) -> None:
-        """Set flow state while preserving existing data"""
-        try:
-            if not isinstance(state, dict):
-                raise ValueError("State must be a dictionary")
-
-            # Log current state before changes
+            # Log state change
             logger.debug(f"[Flow {self.id}] Setting flow state")
-            logger.debug(f"[Flow {self.id}] Current data: {self.data}")
             logger.debug(f"[Flow {self.id}] Current step: {self.current_index}")
-            logger.debug(f"[Flow {self.id}] New state to merge: {state}")
+            logger.debug(f"[Flow {self.id}] New state: {state.to_dict()}")
 
-            old_state = self.get_state()
+            # Store old state for logging
+            old_state = self.state.to_dict() if self.state else None
 
-            # Merge data preserving validation context
-            if "data" in state:
-                new_data = state["data"]
-                if not isinstance(new_data, dict):
-                    raise ValueError("State data must be a dictionary")
-
-                # Preserve validation context from new data
-                validation_context = {
-                    k: v for k, v in new_data.items()
-                    if k in ("_validation_context", "_validation_state")
-                }
-
-                # Merge data with validation context preserved
-                self.data = {
-                    **self.data,  # Base data
-                    **new_data,   # New data
-                    **validation_context  # Ensure validation context from new data
-                }
-
-                # Update previous data
-                self._previous_data = state.get("_previous_data", self.data.copy())
-
-            # Update step index
-            old_step = self.current_index
-            self.current_index = state.get("step", 0)
+            # Update internal state
+            self.state = state
+            self.current_index = state.step
+            self.data = state.data
+            self._previous_data = self.data.copy()
 
             # Log state transition
-            audit.log_state_transition(
-                self.id,
-                old_state,
-                self.get_state(),
-                "success"
-            )
+            if old_state:
+                audit.log_state_transition(
+                    self.id,
+                    old_state,
+                    state.to_dict(),
+                    "success"
+                )
 
             # Log final state
             logger.debug(f"[Flow {self.id}] State update complete")
-            logger.debug(f"[Flow {self.id}] - Step transition: {old_step} -> {self.current_index}")
-            logger.debug(f"[Flow {self.id}] - Final data keys: {list(self.data.keys())}")
-            logger.debug(f"[Flow {self.id}] - Validation context: {validation_context}")
+            logger.debug(f"[Flow {self.id}] - Member ID: {state.member_id}")
+            logger.debug(f"[Flow {self.id}] - Step: {state.step}")
+            logger.debug(f"[Flow {self.id}] - Data keys: {list(state.data.keys())}")
 
         except Exception as e:
             error_msg = f"Error setting flow state: {str(e)}"

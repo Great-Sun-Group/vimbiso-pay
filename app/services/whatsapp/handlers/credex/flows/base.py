@@ -2,9 +2,9 @@
 import logging
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Optional
 
-from core.messaging.flow import Flow, Step
+from core.messaging.flow import Flow, Step, FlowState
 from core.utils.flow_audit import FlowAuditLogger
 from services.whatsapp.state_manager import StateManager
 
@@ -22,25 +22,25 @@ class CredexFlow(Flow):
     AMOUNT_PATTERN = re.compile(r'^(?:([A-Z]{3})\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:\(?([A-Z]{3})\)?)|(\d+(?:\.\d+)?))$')
     HANDLE_PATTERN = re.compile(r'^[a-zA-Z0-9_]+$')
 
-    def __init__(self, id: str, steps: List[Step], **kwargs):
+    def __init__(self, id: str, steps: List[Step], flow_type: str = None, state: Optional['FlowState'] = None, **kwargs):
         """Initialize flow with proper state management
 
         Args:
             id: Flow identifier
             steps: List of flow steps
+            flow_type: Type of flow (e.g. 'offer', 'accept')
+            state: Optional FlowState object
             **kwargs: Additional keyword arguments
         """
         # Initialize services
         self.validator = CredexFlowValidator()
         self.credex_service = None
 
-        # Get flow type from ID
-        self.flow_type = id.split('_')[0] if '_' in id else None
-        if not self.flow_type:
-            raise ValueError("Flow type must be provided in flow ID")
+        # Store flow type
+        self.flow_type = flow_type
 
-        # Initialize parent Flow
-        super().__init__(id=id, steps=steps)
+        # Initialize parent Flow with FlowState
+        super().__init__(id=id, steps=steps, state=state)
 
         # Log initialization
         logger.debug(f"Initialized {self.__class__.__name__}:")
@@ -60,11 +60,8 @@ class CredexFlow(Flow):
         return state
 
     def _get_channel_identifier(self) -> str:
-        """Get channel identifier from service state"""
-        try:
-            return StateManager.get_channel_identifier(self._get_service_state())
-        except ValueError:
-            return None
+        """Get channel identifier from service state using StateManager"""
+        return StateManager.get_channel_identifier(self._get_service_state())
 
     def _get_amount_prompt(self, _) -> Dict[str, Any]:
         """Get amount prompt message"""

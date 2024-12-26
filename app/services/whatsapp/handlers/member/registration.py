@@ -16,18 +16,42 @@ audit = FlowAuditLogger()
 class RegistrationFlow(Flow):
     """Flow for member registration"""
 
-    def __init__(self, **kwargs):
+    def __init__(self, flow_type: str = "registration", state: Dict = None, **kwargs):
+        """Initialize registration flow with proper state management"""
         self.validator = MemberFlowValidator()
-        steps = self._create_steps()
-        super().__init__("member_registration", steps)
         self.credex_service = None
 
-        # Log flow initialization
+        # Initialize base state if none provided
+        if state is None:
+            state = {}
+
+        # Get member ID and channel info from top level - SINGLE SOURCE OF TRUTH
+        member_id = state.get("member_id")
+        channel_id = StateManager.get_channel_identifier(state)
+
+        # Create flow ID from type and member ID
+        flow_id = f"{flow_type}_{member_id}" if member_id else "registration"
+
+        # Create steps before initializing base class
+        steps = self._create_steps()
+
+        # Initialize base Flow class with required arguments
+        super().__init__(id=flow_id, steps=steps)
+
+        # Log initialization with member context
         audit.log_flow_event(
             self.id,
             "initialization",
             None,
-            {"flow_type": "registration", **kwargs},
+            {
+                "flow_type": flow_type,
+                "member_id": member_id,
+                "channel": {
+                    "type": "whatsapp",
+                    "identifier": channel_id
+                },
+                **kwargs
+            },
             "success"
         )
 
@@ -57,19 +81,11 @@ class RegistrationFlow(Flow):
         ]
 
     def _get_channel_identifier(self) -> str:
-        """Get channel identifier from state
-
-        Returns:
-            str: The channel identifier from top level state.channel
-
-        Note:
-            Channel info is only stored at top level state.channel
-            as the single source of truth
-        """
-        if hasattr(self.credex_service, '_parent_service'):
-            current_state = self.credex_service._parent_service.user.state.state or {}
-            return StateManager.get_channel_identifier(current_state)
-        return None
+        """Get channel identifier from state using StateManager"""
+        if not hasattr(self.credex_service, '_parent_service'):
+            raise ValueError("Service not properly initialized")
+        current_state = self.credex_service._parent_service.user.state.state or {}
+        return StateManager.get_channel_identifier(current_state)
 
     def _get_first_name_prompt(self, _) -> Message:
         """Get first name prompt"""
