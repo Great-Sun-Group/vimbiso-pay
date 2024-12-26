@@ -26,9 +26,10 @@ def handle_failed_refresh(current_state, state, error_message, bot_service):
     """Handle failed member refresh"""
     logger.error(f"Refresh failed: {error_message}")
     state.update_state(current_state, "refresh_failed")
+    channel_identifier = bot_service.user.state.state.get("channel", {}).get("identifier")
     return wrap_text(
         REGISTER.format(message=error_message),
-        bot_service.user.mobile_number,
+        channel_identifier,
         extra_rows=[{"id": "1", "title": "Become a member"}],
         include_menu=False,
     )

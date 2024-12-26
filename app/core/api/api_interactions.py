@@ -75,7 +75,7 @@ class APIInteractions:
     def get_dashboard(self) -> Tuple[bool, Dict[str, Any]]:
         """Fetches the member's dashboard from the CredEx API"""
         return self.dashboard_client.get_dashboard(
-            self.bot_service.user.mobile_number,
+            self.bot_service.user.state.state.get("channel", {}).get("identifier"),
             self.bot_service.user.state.jwt_token
         )
 
@@ -121,19 +121,19 @@ class APIInteractions:
         """Sends a delay message to the user"""
         if (
             self.bot_service.state.stage != "handle_action_register"
-            and not cache.get(f"{self.bot_service.user.mobile_number}_interracted")
+            and not cache.get(f"{self.bot_service.user.state.state.get('channel', {}).get('identifier')}_interracted")
         ):
             CredexWhatsappService(
                 payload={
                     "messaging_product": "whatsapp",
                     "preview_url": False,
                     "recipient_type": "individual",
-                    "to": self.bot_service.user.mobile_number,
+                    "to": self.bot_service.user.state.state.get("channel", {}).get("identifier"),
                     "type": "text",
                     "text": {"body": "Please wait while we process your request..."},
                 }
             ).send_message()
-            cache.set(f"{self.bot_service.user.mobile_number}_interracted", True, 60 * 15)
+            cache.set(f"{self.bot_service.user.state.state.get('channel', {}).get('identifier')}_interracted", True, 60 * 15)
 
     def _send_first_message(self) -> None:
         """Sends the first message to the user"""
@@ -143,7 +143,7 @@ class APIInteractions:
                 "messaging_product": "whatsapp",
                 "preview_url": False,
                 "recipient_type": "individual",
-                "to": self.bot_service.user.mobile_number,
+                "to": self.bot_service.user.state.state.get("channel", {}).get("identifier"),
                 "type": "text",
                 "text": {"body": first_message},
             }

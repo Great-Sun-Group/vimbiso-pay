@@ -29,18 +29,35 @@ def format_synopsis(synopsis, style=None, max_line_length=35):
 
 def wrap_text(
     message,
-    user_mobile_number,
+    channel_identifier,  # Channel identifier from state as SINGLE SOURCE OF TRUTH
     proceed_option=False,
     x_is_menu=False,
     navigate_is="Respond",
     extra_rows=[],
-    number=None,
     use_buttons=False,
     yes_or_no=False,
     custom=dict,
     plain=False,
     include_menu=True,
 ):
+    """Wrap text message with WhatsApp formatting
+
+    Args:
+        message: Text message to wrap
+        channel_identifier: Channel identifier from state (e.g. WhatsApp number)
+        proceed_option: Whether to include proceed option
+        x_is_menu: Whether X button is menu
+        navigate_is: Navigation button text
+        extra_rows: Additional row options
+        use_buttons: Whether to use button format
+        yes_or_no: Whether to show yes/no buttons
+        custom: Custom button configuration
+        plain: Whether to use plain text format
+        include_menu: Whether to include menu option
+
+    Returns:
+        Dict: Formatted WhatsApp message
+    """
     logger.debug(f"Wrapping text message: {message}")
     if use_buttons:
         rows = [
@@ -50,7 +67,7 @@ def wrap_text(
         return {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
-            "to": number or user_mobile_number,
+            "to": channel_identifier,
             "type": "interactive",
             "interactive": {
                 "type": "button",
@@ -83,7 +100,7 @@ def wrap_text(
         return {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
-            "to": number or user_mobile_number,
+            "to": channel_identifier,
             "type": "text",
             "text": {"body": message},
         }
@@ -106,7 +123,7 @@ def wrap_text(
     return {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
-        "to": number or user_mobile_number,
+        "to": channel_identifier,
         "type": "interactive",
         "interactive": {
             "type": "list",
@@ -175,12 +192,21 @@ def format_denomination(amount, denomination):
         return f"{amount:.2f} {denomination}"
 
 
-def validate_phone_number(phone_number):
-    # Basic validation, can be improved based on specific requirements
+def validate_channel_identifier(identifier):
+    """Validate channel identifier format
+
+    Args:
+        identifier: Channel identifier to validate
+
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    # Basic validation for WhatsApp numbers
+    # Can be extended for other channel types
     return (
-        phone_number.startswith("+")
-        and len(phone_number) >= 10
-        and phone_number[1:].isdigit()
+        identifier.startswith("+")
+        and len(identifier) >= 10
+        and identifier[1:].isdigit()
     )
 
 

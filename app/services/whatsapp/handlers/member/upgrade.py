@@ -83,18 +83,13 @@ class UpgradeFlow(Flow):
         ]
 
     def _get_channel_identifier(self) -> str:
-        """Get channel identifier from state or data"""
+        """Get channel identifier from state"""
         if hasattr(self.credex_service, '_parent_service'):
             current_state = self.credex_service._parent_service.user.state.state or {}
-            channel_id = StateManager.get_channel_identifier(current_state)
-            if channel_id:
-                return channel_id
+            return StateManager.get_channel_identifier(current_state)
 
-        # Fallback to data or mobile number
-        return (
-            self.data.get("channel", {}).get("identifier") or
-            self.data.get("mobile_number")  # Backward compatibility
-        )
+        # Fallback to data channel info
+        return self.data.get("channel", {}).get("identifier")
 
     def _validate_button_response(self, response: Dict[str, Any]) -> bool:
         """Validate button response"""

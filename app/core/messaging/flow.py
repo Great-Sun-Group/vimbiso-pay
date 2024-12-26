@@ -1,12 +1,110 @@
 """Clean flow management implementation"""
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Union
+
 from core.utils.flow_audit import FlowAuditLogger
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
+
+
+@dataclass
+class FlowState:
+    """Flow state with member-centric design
+
+    Attributes:
+        id: Unique flow identifier
+        member_id: Member ID (from top level state - SINGLE SOURCE OF TRUTH)
+        step: Current step index
+        data: Flow data dictionary containing:
+            - flow_type: Type of flow
+            - _validation_context: Validation context
+            - _validation_state: Validation state
+
+    Note:
+        - member_id comes from top level state as SINGLE SOURCE OF TRUTH
+        - channel info comes from top level state
+        - No duplication of member_id or channel info in flow_data
+    """
+    id: str
+    member_id: str  # From top level state - SINGLE SOURCE OF TRUTH
+    step: int = 0
+    data: Dict[str, Any] = field(default_factory=lambda: {
+        "flow_type": None,
+        "_validation_context": {},
+        "_validation_state": {}
+    })
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization
+
+        Returns:
+            Dict containing:
+            - id: Flow ID
+            - step: Current step
+            - data: Flow data with validation context
+
+        Note:
+            Explicitly excludes member_id to maintain SINGLE SOURCE OF TRUTH
+        """
+        return {
+            "id": self.id,
+            "step": self.step,
+            "data": self.data
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], member_id: str) -> 'FlowState':
+        """Create FlowState from dict and member_id
+
+        Args:
+            data: Dictionary containing flow state data
+            member_id: Member ID from top level state
+
+        Returns:
+            FlowState instance
+
+        Note:
+            member_id must come from top level state to maintain SINGLE SOURCE OF TRUTH
+        """
+        return cls(
+            id=data.get("id", ""),
+            member_id=member_id,  # From top level - SINGLE SOURCE OF TRUTH
+            step=data.get("step", 0),
+            data=data.get("data", {
+                "flow_type": None,
+                "_validation_context": {},
+                "_validation_state": {}
+            })
+        )
+
+    @classmethod
+    def create(cls, flow_id: str, member_id: str, flow_type: str) -> 'FlowState':
+        """Create new FlowState with proper initialization
+
+        Args:
+            flow_id: Unique flow identifier
+            member_id: Member ID from top level state
+            flow_type: Type of flow
+
+        Returns:
+            FlowState instance
+
+        Note:
+            member_id must come from top level state to maintain SINGLE SOURCE OF TRUTH
+        """
+        return cls(
+            id=flow_id,
+            member_id=member_id,  # From top level - SINGLE SOURCE OF TRUTH
+            step=0,
+            data={
+                "flow_type": flow_type,
+                "_validation_context": {},
+                "_validation_state": {}
+            }
+        )
 
 
 class StepType(Enum):
@@ -86,12 +184,26 @@ class Step:
 class Flow:
     """Base class for all flows"""
 
-    def __init__(self, id: str, steps: List[Step]):
+    def __init__(self, id: str, steps: List[Step], state: Optional[FlowState] = None):
+        """Initialize flow with proper state management
+
+        Args:
+            id: Flow identifier
+            steps: List of flow steps
+            state: Optional FlowState for initialization
+
+        Note:
+            If state is provided, it must contain member_id from top level state
+        """
         self.id = id
         self.steps = steps
         self.current_index = 0
         self.data: Dict[str, Any] = {}
         self._previous_data: Dict[str, Any] = {}  # Store previous state for rollback
+
+        # Initialize state if provided
+        if state:
+            self.set_state(state.to_dict())
 
     @property
     def current_step(self) -> Optional[Step]:
@@ -158,9 +270,10 @@ class Flow:
                     "Invalid input"
                 )
 
+                channel_identifier = self.data.get("channel", {}).get("identifier")
                 if step.id == "amount":
                     return WhatsAppMessage.create_text(
-                        self.data.get("mobile_number", ""),
+                        channel_identifier,
                         "Invalid amount format. Examples:\n"
                         "100     (USD)\n"
                         "USD 100\n"
@@ -169,7 +282,7 @@ class Flow:
                         "Please ensure you enter a valid number with an optional currency code."
                     )
                 return WhatsAppMessage.create_text(
-                    self.data.get("mobile_number", ""),
+                    channel_identifier,
                     "Invalid input"
                 )
 
@@ -235,8 +348,9 @@ class Flow:
                 str(validation_error)
             )
 
+            channel_identifier = self.data.get("channel", {}).get("identifier")
             return WhatsAppMessage.create_text(
-                self.data.get("mobile_number", ""),
+                channel_identifier,
                 str(validation_error)
             )
 
@@ -262,8 +376,9 @@ class Flow:
             if last_valid_state:
                 self.data = last_valid_state
                 logger.info(f"Recovered to valid state at step {current_step}")
+                channel_identifier = self.data.get("channel", {}).get("identifier")
                 return WhatsAppMessage.create_text(
-                    self.data.get("mobile_number", ""),
+                    channel_identifier,
                     "Recovered from error. Please try your last action again."
                 )
 
@@ -277,8 +392,9 @@ class Flow:
                             self.data = state
                             recovered_step = state.get("_validation_state", {}).get("step_id", "previous")
                             logger.info(f"Recovered to earlier valid state at step {recovered_step}")
+                            channel_identifier = self.data.get("channel", {}).get("identifier")
                             return WhatsAppMessage.create_text(
-                                self.data.get("mobile_number", ""),
+                                channel_identifier,
                                 "Recovered to a previous step. Please continue from there."
                             )
 
@@ -287,8 +403,9 @@ class Flow:
             self.data = self._previous_data
 
             from services.whatsapp.types import WhatsAppMessage
+            channel_identifier = self.data.get("channel", {}).get("identifier")
             return WhatsAppMessage.create_text(
-                self.data.get("mobile_number", ""),
+                channel_identifier,
                 f"Error: {str(e)}"
             )
 
@@ -312,8 +429,6 @@ class Flow:
                 self.data = {}
 
             # Ensure required fields exist
-            if "mobile_number" not in self.data:
-                self.data["mobile_number"] = None
             if "flow_type" not in self.data:
                 self.data["flow_type"] = self.id.split("_")[0] if "_" in self.id else "unknown"
 

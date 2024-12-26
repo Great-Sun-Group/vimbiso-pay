@@ -2,15 +2,9 @@
 import logging
 from typing import Any, Dict, Union
 
+from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
+                                  MessageRecipient, TextContent)
 from core.utils.flow_audit import FlowAuditLogger
-
-from core.messaging.types import (
-    Message,
-    MessageRecipient,
-    TextContent,
-    ChannelIdentifier,
-    ChannelType
-)
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()

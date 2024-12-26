@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict, Type
 
 # Core imports
-from core.messaging.flow import Flow
+from core.messaging.flow import Flow, FlowState
 from core.utils.flow_audit import FlowAuditLogger
 
 # Local imports
@@ -52,51 +52,71 @@ class FlowProcessor:
         flow_data: Dict,
         kwargs: Dict
     ) -> Flow:
-        """Initialize flow with state"""
-        # Get member ID and channel info from state
-        state_data = self.service.user.state.state
-        member_id = StateManager.get_member_id(state_data)
-        if not member_id:
-            raise ValueError("Missing member ID")
+        """Initialize flow with proper state management
 
-        channel_id = StateManager.get_channel_identifier(state_data)
-        channel_type = StateManager.get_channel_type(state_data)
+        Args:
+            flow_class: The class of the flow to create
+            flow_type: The type of flow to initialize
+            flow_data: Existing flow data if any
+            kwargs: Additional keyword arguments
 
-        # Prepare complete state including flow data
-        state = {
-            "id": f"{flow_type}_{member_id}",  # Construct proper flow ID
-            "step": flow_data.get("step", 0),
-            "flow_type": flow_type,  # Set flow type at root level
-            "data": {
-                **flow_data.get("data", {}),
-                "member_id": member_id,  # Include member_id in data
-                "channel": {  # Include channel info in flow data
-                    "type": channel_type,
-                    "identifier": channel_id,
-                    "metadata": state_data.get("channel", {}).get("metadata", {})
-                },
-                "_validation_context": flow_data.get("data", {}).get("_validation_context", {}),
-                "_validation_state": flow_data.get("data", {}).get("_validation_state", {})
-            },
-            "_previous_data": flow_data.get("_previous_data", {}),
-        }
+        Returns:
+            Flow: Initialized flow instance
 
-        # Log flow initialization
+        Note:
+            Uses FlowState to maintain SINGLE SOURCE OF TRUTH with member_id
+            and channel info at top level state only.
+        """
+        try:
+            # Get member ID from top level state - SINGLE SOURCE OF TRUTH
+            state_data = self.service.user.state.state
+            member_id = StateManager.get_member_id(state_data)
+            if not member_id:
+                raise ValueError("Missing member ID in state")
 
-        # Log flow initialization
-        logger.debug(f"Initializing flow {flow_type}:")
-        logger.debug(f"- Flow ID: {state['id']}")
-        logger.debug(f"- Step: {state['step']}")
-        logger.debug(f"- Data keys: {list(state['data'].keys())}")
+            # Create flow ID
+            flow_id = f"{flow_type}_{member_id}"
 
-        # Initialize flow with flow_type and state
-        flow = flow_class(flow_type=flow_type, state=state, **kwargs)
+            # Log flow initialization
+            logger.debug(f"Initializing flow {flow_type}:")
+            logger.debug(f"- Flow ID: {flow_id}")
+            logger.debug(f"- Member ID: {member_id}")
+            logger.debug(f"- Flow data keys: {list(flow_data.keys())}")
 
-        # Set service for Credex flows
-        if isinstance(flow, CredexFlow):
-            flow.credex_service = self.service.credex_service
+            # Create flow state with proper initialization
+            flow_state = FlowState.create(
+                flow_id=flow_id,
+                member_id=member_id,  # From top level state - SINGLE SOURCE OF TRUTH
+                flow_type=flow_type
+            )
 
-        return flow
+            # Preserve validation context if exists
+            if isinstance(flow_data.get("data"), dict):
+                validation_context = {
+                    k: v for k, v in flow_data["data"].items()
+                    if k in ("_validation_context", "_validation_state")
+                }
+                flow_state.data.update(validation_context)
+
+            # Initialize flow with state
+            flow = flow_class(state=flow_state, **kwargs)
+
+            # Set service for Credex flows
+            if isinstance(flow, CredexFlow):
+                flow.credex_service = self.service.credex_service
+
+            return flow
+
+        except Exception as e:
+            logger.error(f"Flow initialization error: {str(e)}")
+            audit.log_flow_event(
+                "bot_service",
+                "flow_init_error",
+                None,
+                {"error": str(e)},
+                "failure"
+            )
+            raise
 
     def process_flow(self, flow_data: Dict) -> WhatsAppMessage:
         """Process flow continuation"""
@@ -273,17 +293,22 @@ class FlowProcessor:
             success_message=success_message
         )
         dashboard.credex_service = self.service.credex_service
-        # Get member ID and channel info from state
+
+        # Get member ID from top level state - SINGLE SOURCE OF TRUTH
         state_data = self.service.user.state.state
         member_id = StateManager.get_member_id(state_data)
         if not member_id:
             raise ValueError("Missing member ID")
 
-        channel_id = StateManager.get_channel_identifier(state_data)
+        # Create dashboard state with proper initialization
+        dashboard_state = FlowState.create(
+            flow_id="dashboard_view",
+            member_id=member_id,  # From top level state
+            flow_type="view"
+        )
+        dashboard_state.data["success_message"] = success_message
 
-        dashboard.data = {
-            "member_id": member_id,  # Primary identifier
-            "channel_identifier": channel_id,  # Channel-specific identifier
-            "success_message": success_message  # Store success message for state preservation
-        }
+        # Initialize dashboard with state
+        dashboard.set_state(dashboard_state.to_dict())
+
         return WhatsAppMessage.from_core_message(dashboard.complete())

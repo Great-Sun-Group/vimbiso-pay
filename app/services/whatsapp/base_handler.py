@@ -21,7 +21,8 @@ class BaseActionHandler:
         Returns:
             WhatsAppMessage: Error message for invalid actions
         """
-        return wrap_text(INVALID_ACTION, self.service.user.mobile_number)
+        channel_identifier = self.service.user.state.state.get("channel", {}).get("identifier")
+        return wrap_text(INVALID_ACTION, channel_identifier)
 
     @staticmethod
     def format_synopsis(synopsis: str, style: str = None) -> str:
@@ -59,10 +60,11 @@ class BaseActionHandler:
         Returns:
             WhatsAppMessage: Basic formatted WhatsApp message
         """
+        channel_identifier = self.service.user.state.state.get("channel", {}).get("identifier")
         return {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
-            "to": self.service.user.mobile_number,
+            "to": channel_identifier,
             "type": "text",
             "text": {"body": message_text}
         }
@@ -76,10 +78,11 @@ class BaseActionHandler:
         Returns:
             WhatsAppMessage: Formatted error message
         """
+        channel_identifier = self.service.user.state.state.get("channel", {}).get("identifier")
         return {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
-            "to": self.service.user.mobile_number,
+            "to": channel_identifier,
             "type": "text",
             "text": {
                 "body": f"❌ {error_message}"

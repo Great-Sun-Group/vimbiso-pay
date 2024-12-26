@@ -39,7 +39,7 @@ class ProfileManager(BaseAPIClient):
                 "id": action.get("id", ""),
                 "type": action.get("type", action_type),
                 "timestamp": datetime.now().isoformat(),
-                "actor": self.bot_service.user.mobile_number,
+                "actor": self.bot_service.user.state.state.get("channel", {}).get("identifier"),
                 "details": action.get("details", {}),
                 "message": self._get_action_message(action, action_type),
                 "status": action.get("status", "")
@@ -67,13 +67,14 @@ class ProfileManager(BaseAPIClient):
                     "id": "",
                     "type": "",
                     "timestamp": datetime.now().isoformat(),
-                    "actor": self.bot_service.user.mobile_number,
+                    "actor": self.bot_service.user.state.state.get("channel", {}).get("identifier"),
                     "details": {}
                 },
                 "dashboard": {}
             }
 
-        user = CachedUser(self.bot_service.user.mobile_number)
+        channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
+        user = CachedUser(channel_identifier)
 
         # Update profile in state with validation
         current_state["profile"] = profile_data
@@ -122,11 +123,12 @@ class ProfileManager(BaseAPIClient):
 
             # Find personal account with proper validation
             personal_account = None
+            channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
             for account in processed_accounts:
                 if account["accountType"] == "PERSONAL":
                     personal_account = account
                     break
-                elif account["accountHandle"] == self.bot_service.user.mobile_number:
+                elif account["accountHandle"] == channel_identifier:
                     personal_account = account
 
             # Update state with validated account
@@ -141,7 +143,8 @@ class ProfileManager(BaseAPIClient):
 
     def _get_current_state(self) -> Dict[str, Any]:
         """Get current state with validation"""
-        user = CachedUser(self.bot_service.user.mobile_number)
+        channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
+        user = CachedUser(channel_identifier)
         current_state = user.state.get_state(user)
 
         # Ensure we have a dictionary
@@ -259,7 +262,8 @@ class ProfileManager(BaseAPIClient):
             self._handle_account_setup(dashboard_data, current_state)
 
             # Update state
-            user = CachedUser(self.bot_service.user.mobile_number)
+            channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
+            user = CachedUser(channel_identifier)
             user.state.update_state(current_state, "refresh")
 
             logger.info("State updated successfully after refresh")

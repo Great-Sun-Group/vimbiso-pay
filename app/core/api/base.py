@@ -42,7 +42,8 @@ class BaseAPIClient:
         }
 
         if include_auth:
-            user = CachedUser(self.bot_service.user.mobile_number)
+            channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
+            user = CachedUser(channel_identifier)
             if user.jwt_token:
                 headers["Authorization"] = f"Bearer {user.jwt_token}"
             else:
@@ -232,12 +233,12 @@ class BaseAPIClient:
         return False, error_msg
 
     @staticmethod
-    def _get_basic_auth_header(phone_number: str) -> str:
-        """Generate basic auth header"""
-        if not phone_number:
-            raise ValueError("Phone number cannot be empty")
+    def _get_basic_auth_header(channel_identifier: str) -> str:
+        """Generate basic auth header using channel identifier"""
+        if not channel_identifier:
+            raise ValueError("Channel identifier cannot be empty")
 
-        credentials = f"{phone_number}:{phone_number}"
+        credentials = f"{channel_identifier}:{channel_identifier}"
         encoded_credentials = base64.b64encode(
             credentials.encode("utf-8")
         ).decode("utf-8")
@@ -245,9 +246,10 @@ class BaseAPIClient:
 
     def _send_delay_message(self) -> None:
         """Send delay message to user"""
+        channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
         if (
             self.bot_service.state.stage != "handle_action_register"
-            and not cache.get(f"{self.bot_service.user.mobile_number}_interracted")
+            and not cache.get(f"{channel_identifier}_interracted")
         ):
             try:
                 CredexWhatsappService(
@@ -255,14 +257,14 @@ class BaseAPIClient:
                         "messaging_product": "whatsapp",
                         "preview_url": False,
                         "recipient_type": "individual",
-                        "to": self.bot_service.user.mobile_number,
+                        "to": channel_identifier,
                         "type": "text",
                         "text": {"body": "Please wait while we process your request..."},
                     }
                 ).send_message()
 
                 cache.set(
-                    f"{self.bot_service.user.mobile_number}_interracted",
+                    f"{channel_identifier}_interracted",
                     True,
                     60 * 15
                 )
@@ -272,13 +274,14 @@ class BaseAPIClient:
     def _send_first_message(self) -> None:
         """Send welcome message to user"""
         try:
+            channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
             first_message = "Welcome to CredEx! How can I assist you today?"
             CredexWhatsappService(
                 payload={
                     "messaging_product": "whatsapp",
                     "preview_url": False,
                     "recipient_type": "individual",
-                    "to": self.bot_service.user.mobile_number,
+                    "to": channel_identifier,
                     "type": "text",
                     "text": {"body": first_message},
                 }

@@ -21,7 +21,8 @@ class DashboardManager(BaseAPIClient):
         url = f"{self.base_url}/getMemberDashboardByPhone"
         logger.info(f"Dashboard URL: {url}")
 
-        payload = {"phone": self.bot_service.user.mobile_number}
+        channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
+        payload = {"phone": channel_identifier}
         headers = self._get_headers()
 
         try:
@@ -133,7 +134,8 @@ class DashboardManager(BaseAPIClient):
 
         try:
             url = f"{self.base_url}/getMemberDashboardByPhone"
-            payload = {"phone": self.bot_service.message["from"]}
+            channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
+            payload = {"phone": channel_identifier}
             headers = self._get_headers()
 
             response = self._make_api_request(url, headers, payload)

@@ -33,14 +33,6 @@ class StateValidator:
             state: State dictionary to validate
             preserve_context: Whether to preserve validation context in validation
         """
-        # First convert legacy mobile_number to channel identifier
-        if "mobile_number" in state and "channel" not in state:
-            state["channel"] = {
-                "type": "whatsapp",
-                "identifier": state["mobile_number"],
-                "metadata": {}
-            }
-            del state["mobile_number"]
         if not isinstance(state, dict):
             return ValidationResult(
                 is_valid=False,
@@ -68,8 +60,6 @@ class StateValidator:
                 if "data" in flow_data and isinstance(flow_data["data"], dict):
                     if "channel" in flow_data["data"]:
                         del flow_data["data"]["channel"]
-                    if "mobile_number" in flow_data["data"]:
-                        del flow_data["data"]["mobile_number"]
 
         # Allow minimal state during greeting but ensure proper structure
         if not state.get("authenticated", False):

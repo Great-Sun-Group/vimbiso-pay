@@ -22,74 +22,49 @@ class CredexFlow(Flow):
     AMOUNT_PATTERN = re.compile(r'^(?:([A-Z]{3})\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:\(?([A-Z]{3})\)?)|(\d+(?:\.\d+)?))$')
     HANDLE_PATTERN = re.compile(r'^[a-zA-Z0-9_]+$')
 
-    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
-        """Initialize flow
+    def __init__(self, id: str, steps: List[Step], **kwargs):
+        """Initialize flow with proper state management
 
         Args:
-            flow_type: The type of flow (e.g. 'offer', 'accept', etc.)
-            state: Optional state dictionary for flow restoration
+            id: Flow identifier
+            steps: List of flow steps
             **kwargs: Additional keyword arguments
         """
-        # Extract flow type from state if not provided directly
-        if flow_type is None and state is not None:
-            flow_data = state.get('flow_data', {})
-            flow_type = flow_data.get('data', {}).get('flow_type') or flow_data.get('flow_type')
-
-        if flow_type is None:
-            raise ValueError("flow_type must be provided either directly or through state")
-
-        # Store flow type and initialize services
-        self.flow_type = flow_type
-        self.kwargs = kwargs
+        # Initialize services
         self.validator = CredexFlowValidator()
         self.credex_service = None
 
-        try:
-            # Create steps before parent initialization
-            steps = self._create_steps()
-        except NotImplementedError:
-            # If steps not implemented, initialize with empty list
-            steps = []
-            logger.debug(f"No steps defined for flow type: {flow_type}")
+        # Get flow type from ID
+        self.flow_type = id.split('_')[0] if '_' in id else None
+        if not self.flow_type:
+            raise ValueError("Flow type must be provided in flow ID")
 
-        # Get member ID from state for flow ID
-        member_id = state.get('data', {}).get('member_id') if state else None
-        if not member_id:
-            raise ValueError("Missing member ID")
-
-        flow_id = f"{flow_type}_{member_id}"
-
-        # Initialize parent Flow with flow ID and steps
-        super().__init__(flow_id, steps)
+        # Initialize parent Flow
+        super().__init__(id=id, steps=steps)
 
         # Log initialization
         logger.debug(f"Initialized {self.__class__.__name__}:")
-        logger.debug(f"- Flow type: {flow_type}")
-        logger.debug(f"- Flow ID: {flow_id}")
+        logger.debug(f"- Flow type: {self.flow_type}")
+        logger.debug(f"- Flow ID: {self.id}")
         logger.debug(f"- Steps: {[step.id for step in steps]}")
 
-        # Restore state if provided
-        if state is not None:
-            self.set_state(state)
+    def _get_service_state(self) -> Dict[str, Any]:
+        """Get current state from service"""
+        if not self.credex_service or not hasattr(self.credex_service, '_parent_service'):
+            raise ValueError("Service not properly initialized")
+
+        state = self.credex_service._parent_service.user.state.state
+        if not state:
+            raise ValueError("State not initialized")
+
+        return state
 
     def _get_channel_identifier(self) -> str:
-        """Get channel identifier from state
-
-        Returns:
-            str: The channel identifier from top level state.channel
-
-        Note:
-            Channel info is only stored at top level state.channel
-            as the single source of truth
-        """
-        if hasattr(self.credex_service, '_parent_service'):
-            current_state = self.credex_service._parent_service.user.state.state or {}
-            return StateManager.get_channel_identifier(current_state)
-        return None
-
-    def _create_steps(self) -> List[Step]:
-        """Create flow steps based on type - to be implemented by subclasses"""
-        raise NotImplementedError
+        """Get channel identifier from service state"""
+        try:
+            return StateManager.get_channel_identifier(self._get_service_state())
+        except ValueError:
+            return None
 
     def _get_amount_prompt(self, _) -> Dict[str, Any]:
         """Get amount prompt message"""
@@ -308,9 +283,6 @@ class CredexFlow(Flow):
 
     def _transform_handle(self, handle: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
         """Transform and validate handle"""
-        if not self.credex_service:
-            raise ValueError("Service not initialized")
-
         # Extract handle from interactive or text
         if isinstance(handle, dict):
             interactive = handle.get("interactive", {})
@@ -321,20 +293,13 @@ class CredexFlow(Flow):
 
         handle = handle.strip()
 
-        # Ensure we have profile data
-        if not hasattr(self.credex_service, '_parent_service'):
-            raise ValueError("Service not properly initialized")
-
-        user_state = self.credex_service._parent_service.user.state
-        if not user_state or not user_state.state:
-            raise ValueError("State not initialized")
-
-        current_state = user_state.state
+        # Get current state and validate profile
+        current_state = self._get_service_state()
         if not current_state.get("profile"):
             raise ValueError("Profile data not found")
 
         try:
-            # Store validation context and current state
+            # Store validation context
             validation_context = {
                 "_validation_state": {
                     "step_id": "handle",
@@ -344,19 +309,9 @@ class CredexFlow(Flow):
                 "_validation_context": self.data.get("_validation_context", {})
             }
 
-            # Log validation attempt
-            audit.log_validation_event(
-                self.id,
-                "handle",
-                handle,
-                True,
-                "Attempting API validation"
-            )
-
             # Validate handle through API
             success, response = self.credex_service._member.validate_handle(handle)
             if not success:
-                # Log validation failure
                 audit.log_validation_event(
                     self.id,
                     "handle",
@@ -392,7 +347,6 @@ class CredexFlow(Flow):
             return result
 
         except Exception as e:
-            # Log validation error
             audit.log_flow_event(
                 self.id,
                 "handle_validation_error",
@@ -413,17 +367,8 @@ class CredexFlow(Flow):
     def _update_dashboard(self, response: Dict[str, Any]) -> None:
         """Update dashboard state"""
         try:
-            if not hasattr(self.credex_service, '_parent_service'):
-                audit.log_flow_event(
-                    self.id,
-                    "dashboard_update_error",
-                    None,
-                    self.data,
-                    "failure",
-                    "Service not properly initialized"
-                )
-                return
-
+            # Get current state and validate dashboard data
+            current_state = self._get_service_state()
             dashboard = response.get("data", {}).get("dashboard")
             if not dashboard:
                 audit.log_flow_event(
@@ -436,54 +381,32 @@ class CredexFlow(Flow):
                 )
                 return
 
-            user_state = self.credex_service._parent_service.user.state
-            current_state = user_state.state
-
-            # Validate state before update
-            validation = self.validator.validate_flow_state(current_state)
-            if not validation.is_valid:
-                audit.log_flow_event(
-                    self.id,
-                    "state_validation_error",
-                    None,
-                    current_state,
-                    "failure",
-                    validation.error_message
-                )
-                # Attempt recovery from last valid state
-                last_valid = audit.get_last_valid_state(self.id)
-                if last_valid:
-                    current_state = last_valid
-
-            # Get member ID and channel info from top level state - SINGLE SOURCE OF TRUTH
+            # Get member ID and channel ID from state
             member_id = current_state.get("member_id")
-            if not member_id:
-                raise ValueError("Missing member ID in state")
-
             channel_id = StateManager.get_channel_identifier(current_state)
-            if not channel_id:
-                raise ValueError("Missing channel identifier")
+            if not member_id or not channel_id:
+                raise ValueError("Missing required state fields")
 
-            # Structure profile data properly
+            # Structure profile data
             action = response.get("data", {}).get("action", {})
             profile_data = {
                 "action": {
                     "id": action.get("id", ""),
                     "type": action.get("type", self.flow_type),
                     "timestamp": datetime.now().isoformat(),
-                    "actor": member_id,  # Use member_id as primary identifier
+                    "actor": member_id,
                     "details": action.get("details", {}),
                     "message": (
-                        action.get("message") or  # Try direct message
-                        action.get("details", {}).get("message") or  # Try details.message
-                        ("CredEx offer created successfully" if action.get("type") == "CREDEX_CREATED" else "")  # Default
+                        action.get("message") or
+                        action.get("details", {}).get("message") or
+                        ("CredEx offer created successfully" if action.get("type") == "CREDEX_CREATED" else "")
                     ),
                     "status": "success" if action.get("type") == "CREDEX_CREATED" else action.get("status", "")
                 },
                 "dashboard": dashboard
             }
 
-            # Find personal account in new dashboard data
+            # Find personal account
             accounts = dashboard.get("accounts", [])
             personal_account = next(
                 (account for account in accounts if account.get("accountType") == "PERSONAL"),
@@ -493,24 +416,17 @@ class CredexFlow(Flow):
                 )
             )
 
-            # Build complete state with member-centric structure
+            # Build new state
             new_state = {
-                # Core identity at top level - SINGLE SOURCE OF TRUTH
-                "member_id": member_id,  # Primary identifier
-
-                # Channel info at top level - SINGLE SOURCE OF TRUTH
+                "member_id": member_id,
                 "channel": StateManager.create_channel_data(
                     identifier=channel_id,
                     channel_type="whatsapp"
                 ),
-
-                # Authentication and account
                 "authenticated": current_state.get("authenticated", True),
                 "jwt_token": current_state.get("jwt_token"),
                 "account_id": current_state.get("account_id"),
                 "current_account": personal_account,
-
-                # Profile and flow data
                 "profile": profile_data,
                 "flow_data": {
                     "id": self.id,
@@ -523,40 +439,26 @@ class CredexFlow(Flow):
                     "flow_type": self.flow_type,
                     "_previous_data": self._previous_data
                 },
-
-                # Validation context
                 "_validation_context": current_state.get("_validation_context", {}),
                 "_validation_state": current_state.get("_validation_state", {}),
                 "_last_updated": audit.get_current_timestamp()
             }
 
-            # Preserve any additional validation or context fields
+            # Preserve additional fields
             for key in current_state:
                 if key.startswith('_') and key not in new_state:
                     new_state[key] = current_state[key]
 
-            # Validate new state before update
-            validation = self.validator.validate_flow_state(new_state)
-            if not validation.is_valid:
-                audit.log_flow_event(
-                    self.id,
-                    "state_validation_error",
-                    None,
-                    new_state,
-                    "failure",
-                    validation.error_message
-                )
-                return
+            # Update state
+            self.credex_service._parent_service.user.state.update_state(new_state, "dashboard_update")
 
-            # Log state transition
+            # Log success
             audit.log_state_transition(
                 self.id,
                 current_state,
                 new_state,
                 "success"
             )
-
-            user_state.update_state(new_state, "dashboard_update")
 
         except Exception as e:
             logger.error(f"Dashboard update error: {str(e)}")

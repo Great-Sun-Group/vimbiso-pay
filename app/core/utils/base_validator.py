@@ -41,7 +41,7 @@ class BaseFlowValidator(FlowValidatorInterface):
 
         # Validate required data fields
         required_data_fields = {
-            "mobile_number",
+            "channel",  # Channel info required instead of mobile_number
             "member_id",
             "account_id",
             "flow_type",
@@ -54,6 +54,14 @@ class BaseFlowValidator(FlowValidatorInterface):
                 is_valid=False,
                 error_message=f"Missing required flow data fields: {', '.join(missing_data)}",
                 missing_fields=missing_data
+            )
+
+        # Validate channel structure
+        channel = data.get("channel", {})
+        if not isinstance(channel, dict) or not all(k in channel for k in ["type", "identifier"]):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Channel must be a dictionary with 'type' and 'identifier' fields"
             )
 
         # Validate validation context is a dictionary
@@ -101,7 +109,7 @@ class BaseFlowValidator(FlowValidatorInterface):
     def get_required_fields(self) -> Set[str]:
         """Get base required fields"""
         return {
-            "mobile_number",
+            "channel",  # Channel info required instead of mobile_number
             "member_id",
             "account_id",
             "_validation_context",

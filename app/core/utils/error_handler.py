@@ -44,12 +44,12 @@ def handle_error(e: Exception, bot_service: Any) -> Dict[str, Any]:
         extra={
             "error_type": type(e).__name__,
             "error_message": str(e),
-            "mobile_number": bot_service.user.mobile_number,
+            "channel": getattr(bot_service.user.state, "state", {}).get("channel", {}),
             "state": getattr(bot_service.user.state, "state", {})
         }
     )
 
-    return wrap_text(message, bot_service.user.mobile_number)
+    return wrap_text(message, bot_service.user.state.state.get("channel", {}).get("identifier"))
 
 
 def handle_api_error(e: Exception) -> Dict[str, Any]:
