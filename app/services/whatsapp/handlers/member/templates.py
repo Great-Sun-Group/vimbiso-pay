@@ -1,12 +1,16 @@
 """Member-specific message templates"""
 
+from typing import Optional
+
 from core.messaging.types import (
     Message,
     MessageRecipient,
     TextContent,
     InteractiveContent,
     InteractiveType,
-    Button
+    Button,
+    ChannelIdentifier,
+    ChannelType
 )
 
 
@@ -14,30 +18,49 @@ class MemberTemplates:
     """Templates for member-related messages"""
 
     @staticmethod
-    def create_first_name_prompt(recipient: str) -> Message:
+    def create_first_name_prompt(channel_id: str, member_id: Optional[str] = None) -> Message:
         """Create first name prompt message"""
         return Message(
-            recipient=MessageRecipient(phone_number=recipient),
+            recipient=MessageRecipient(
+                member_id=member_id or "pending",
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
             content=TextContent(body="What's your first name?")
         )
 
     @staticmethod
-    def create_last_name_prompt(recipient: str) -> Message:
+    def create_last_name_prompt(channel_id: str, member_id: Optional[str] = None) -> Message:
         """Create last name prompt message"""
         return Message(
-            recipient=MessageRecipient(phone_number=recipient),
+            recipient=MessageRecipient(
+                member_id=member_id or "pending",
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
             content=TextContent(body="And what's your last name?")
         )
 
     @staticmethod
     def create_registration_confirmation(
-        recipient: str,
+        channel_id: str,
         first_name: str,
-        last_name: str
+        last_name: str,
+        member_id: Optional[str] = None
     ) -> Message:
         """Create registration confirmation message"""
         return Message(
-            recipient=MessageRecipient(phone_number=recipient),
+            recipient=MessageRecipient(
+                member_id=member_id or "pending",
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
             content=InteractiveContent(
                 interactive_type=InteractiveType.BUTTON,
                 body=(
@@ -53,10 +76,16 @@ class MemberTemplates:
         )
 
     @staticmethod
-    def create_upgrade_confirmation(recipient: str) -> Message:
+    def create_upgrade_confirmation(channel_id: str, member_id: str) -> Message:
         """Create tier upgrade confirmation message"""
         return Message(
-            recipient=MessageRecipient(phone_number=recipient),
+            recipient=MessageRecipient(
+                member_id=member_id,
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
             content=InteractiveContent(
                 interactive_type=InteractiveType.BUTTON,
                 body=(
@@ -74,30 +103,48 @@ class MemberTemplates:
         )
 
     @staticmethod
-    def create_registration_success(recipient: str, first_name: str) -> Message:
+    def create_registration_success(channel_id: str, first_name: str, member_id: str) -> Message:
         """Create registration success message"""
         return Message(
-            recipient=MessageRecipient(phone_number=recipient),
+            recipient=MessageRecipient(
+                member_id=member_id,
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
             content=TextContent(
                 body=f"Welcome {first_name}! Your account has been created successfully! 🎉"
             )
         )
 
     @staticmethod
-    def create_upgrade_success(recipient: str) -> Message:
+    def create_upgrade_success(channel_id: str, member_id: str) -> Message:
         """Create upgrade success message"""
         return Message(
-            recipient=MessageRecipient(phone_number=recipient),
+            recipient=MessageRecipient(
+                member_id=member_id,
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
             content=TextContent(
                 body="🎉 Successfully upgraded to Hustler tier!"
             )
         )
 
     @staticmethod
-    def create_error_message(recipient: str, error: str) -> Message:
+    def create_error_message(channel_id: str, error: str, member_id: Optional[str] = None) -> Message:
         """Create error message"""
         return Message(
-            recipient=MessageRecipient(phone_number=recipient),
+            recipient=MessageRecipient(
+                member_id=member_id or "pending",
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
             content=TextContent(
                 body=f"❌ {error}"
             )

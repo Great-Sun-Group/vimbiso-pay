@@ -123,7 +123,7 @@ Access at http://localhost:8001
 ./mock/cli.py --type button "confirm_action"
 ```
 
-## Error Testing
+## Error and Recovery Testing
 
 ### Common Scenarios
 ```bash
@@ -141,14 +141,26 @@ Access at http://localhost:8001
 
 # Flow validation errors
 ./mock/cli.py "not_a_name"  # During name input step
+
+# Recovery scenarios
+./mock/cli.py --type interactive "flow:MAKE_SECURE_OFFER"  # After error
+./mock/cli.py --type interactive "form:amount=0.5"  # Resume from last valid state
 ```
 
-### Error Format
+### Error and Recovery Format
 ```python
 {
     "error": "Error description",
     "details": {
         "field": "Error details"
+    },
+    "recovery": {
+        "type": "step_recovery",  # or "path_recovery"
+        "message": "Recovered to previous valid step",
+        "context": {
+            "step_id": "amount",
+            "valid_data": {...}
+        }
     }
 }
 ```
@@ -157,17 +169,17 @@ Access at http://localhost:8001
 
 1. **Flow Testing**
    - Test complete flows end-to-end
-   - Verify state transitions
-   - Test validation at each step
-   - Check error handling
+   - Verify core state transitions
+   - Test essential validations
+   - Check smart recovery
    - Test timeouts
    - Verify data transformation
 
 2. **Progressive Input Testing**
-   - Test all input validations
+   - Test critical validations
    - Verify error messages
    - Test data transformations
-   - Check state preservation
+   - Check flow_data.data state
    - Test input examples
 
 3. **Message Testing**
@@ -183,12 +195,12 @@ Access at http://localhost:8001
    - Reset state between tests
    - Verify Redis instances
 
-5. **Error Testing**
-   - Test validation errors
-   - Check timeout handling
-   - Verify error formats
-   - Test recovery flows
-   - Check error logging
+5. **Recovery Testing**
+   - Test context-aware recovery
+   - Check multi-step recovery
+   - Verify error messages
+   - Test recovery paths
+   - Check recovery logging
 
 For more details on:
 - WhatsApp integration: [WhatsApp Integration](whatsapp.md)

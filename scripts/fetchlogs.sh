@@ -6,11 +6,11 @@ show_help() {
     echo "Fetch CloudWatch logs from staging environment"
     echo ""
     echo "Options:"
-    echo "  -h, --help       Show this help message"
+    echo "  -h --help       Show this help message"
     echo ""
     echo "Arguments:"
     echo "  SECONDS          Number of seconds of historical logs to fetch"
-    echo "                   If not provided, streams logs in real-time"
+    echo "                   If not provided streams logs in real-time"
     echo ""
     echo "Examples:"
     echo "  fetchlogs        # Stream logs in real-time"
@@ -91,46 +91,45 @@ get_start_time() {
     echo $(($(date +%s) - seconds))000
 }
 
-# Function to safely format timestamp
-format_timestamp() {
-    local timestamp=$1
-    # Remove last 3 digits (milliseconds) safely using parameter expansion
-    local seconds=${timestamp%???}
-    # Only try to format if we have a valid number
-    if [[ "$seconds" =~ ^[0-9]+$ ]]; then
-        date -d "@$seconds" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "Invalid timestamp"
-    else
-        echo "Invalid timestamp"
-    fi
-}
-
-# If no seconds specified, stream logs in real-time
+# If no seconds specified stream logs in real-time
 if [ -z "$SECONDS_TO_FETCH" ]; then
     echo "Streaming logs in real-time from $LOG_GROUP in ${AWS_REGION} (Ctrl+C to stop)..."
     aws logs tail $LOG_GROUP --follow --region $AWS_REGION
 else
-    # Get the latest log stream
-    LOG_STREAM=$(get_latest_stream)
+    # Get the latest log stream silently
+    LOG_STREAM=$(get_latest_stream 2>/dev/null)
     if [ -z "$LOG_STREAM" ]; then
-        echo "Error: No log streams found in log group $LOG_GROUP"
-        exit 1
+        exit 1 2>/dev/null
     fi
 
-    # Fetch historical logs
-    START_TIME=$(get_start_time $SECONDS_TO_FETCH)
-    echo "Fetching logs from the last $SECONDS_TO_FETCH seconds from $LOG_GROUP/$LOG_STREAM in ${AWS_REGION}..."
+    # Create logs directory and prepare output file
+    mkdir -p ./logs 2>/dev/null
+    output_file="./logs/cloudwatch_logs_$(date +%Y%m%d_%H%M%S).log"
 
+    echo "Fetching logs from the last $SECONDS_TO_FETCH seconds..."
+
+    # Fetch and process logs silently to file
     aws logs get-log-events \
-        --log-group-name $LOG_GROUP \
+        --log-group-name "$LOG_GROUP" \
         --log-stream-name "$LOG_STREAM" \
-        --start-time $START_TIME \
+        --start-time $(get_start_time $SECONDS_TO_FETCH) \
         --limit 10000 \
         --query 'events[*].[timestamp,message]' \
         --output text \
-        --region $AWS_REGION | \
+        --region "$AWS_REGION" 2>/dev/null | \
     while read -r timestamp message; do
-        # Format timestamp safely
-        formatted_date=$(format_timestamp "$timestamp")
-        echo "[$formatted_date] $message"
-    done
+        if [[ "$message" =~ \[([0-9]{2}/[A-Za-z]{3}/[0-9]{4}:[0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4})\] ]]; then
+            echo "$message" >> "$output_file"
+        else
+            if [[ ${#timestamp} -eq 13 ]]; then
+                timestamp=${timestamp%???}
+            fi
+            if [[ "$timestamp" =~ ^[0-9]+$ ]]; then
+                formatted_date=$(TZ=UTC date -d "@$timestamp" "+[%d/%b/%Y:%H:%M:%S %z]" 2>/dev/null)
+                echo "$formatted_date $message" >> "$output_file"
+            fi
+        fi
+    done 2>/dev/null
+
+    echo "Logs saved to $output_file"
 fi

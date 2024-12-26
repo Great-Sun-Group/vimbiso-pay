@@ -126,13 +126,13 @@ WhatsApp Cloud API
 
 ### 2. State Management
 ```
-Flow Framework
+Flow Framework (member_id ONLY at top level)
     ↓
-Redis State Service
+Redis State Service (preserves single source of truth)
     ↓
-State Validation
+State Validation (enforces member_id at top level)
     ↓
-Profile Preservation
+Profile Preservation (maintains member context)
 ```
 
 ### 3. Error Handling

@@ -14,7 +14,11 @@ class CredExOffersService(BaseCredExService):
 
     def offer_credex(self, offer_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """Create a new CredEx offer"""
+        logger.info("Starting credex offer creation")
+        logger.debug(f"Initial offer data: {offer_data}")
+
         if not offer_data:
+            logger.error("No offer data provided")
             return False, {"message": "Offer data is required"}
 
         try:
@@ -27,6 +31,8 @@ class CredExOffersService(BaseCredExService):
             if "amount" in offer_data:
                 offer_data["InitialAmount"] = offer_data.pop("amount")
 
+            logger.debug(f"Processed offer data before field conversion: {offer_data}")
+
             # Add required fields
             offer_data["credexType"] = "PURCHASE"
             offer_data["OFFERSorREQUESTS"] = "OFFERS"
@@ -35,22 +41,39 @@ class CredExOffersService(BaseCredExService):
             if "securedCredex" not in offer_data:
                 offer_data["securedCredex"] = True
 
+            logger.debug(f"Final offer data before API call: {offer_data}")
+            logger.info(f"Making API request to {CredExEndpoints.CREATE_CREDEX}")
+
             response = self._make_request(
                 CredExEndpoints.CREATE_CREDEX,
                 payload=offer_data
             )
 
+            logger.debug(f"API response status code: {response.status_code}")
+            logger.debug(f"API response content: {response.text}")
+
             data = self._validate_response(response)
+            logger.debug(f"Validated response data: {data}")
+
             if data.get("data", {}).get("action", {}).get("type") == "CREDEX_CREATED":
                 # Get the credexID from the response
                 credex_id = data["data"]["action"]["id"]
                 data["data"]["credexID"] = credex_id
-                logger.info("CredEx offer created successfully")
+
+                # Add success message to action
+                if "data" not in data:
+                    data["data"] = {}
+                if "action" not in data["data"]:
+                    data["data"]["action"] = {}
+
+                data["data"]["action"]["message"] = f"CredEx offer {credex_id} created successfully"
+
+                logger.info(f"CredEx offer created successfully with ID: {credex_id}")
                 return True, data
             else:
                 # Extract error message from response
                 error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer creation failed: {error_msg}")
+                logger.error(f"CredEx offer creation failed with error: {error_msg}")
                 return False, {"message": error_msg}
 
         except TransactionError as e:

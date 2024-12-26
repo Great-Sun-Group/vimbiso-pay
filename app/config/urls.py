@@ -11,10 +11,14 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 from rest_framework.permissions import AllowAny
 from rest_framework import routers
 from core.utils.throttling import HealthCheckRateThrottle
-from services.state.config import RedisConfig
+from core.utils.redis_atomic import AtomicStateManager
+import redis
 
 from api import views
 
+# Initialize Redis clients
+state_redis_client = redis.from_url(settings.REDIS_STATE_URL)
+state_redis = AtomicStateManager(state_redis_client).redis
 
 # Create a router and register our viewsets with it
 router = routers.DefaultRouter()
@@ -48,9 +52,8 @@ def health_check(request):
         logger.warning(f"Cache Redis check failed: {str(e)}")
         status_info["components"]["cache_redis"] = "error"
 
-    # Check state Redis
+    # Check state Redis using AtomicStateManager's client
     try:
-        state_redis = RedisConfig().get_client()
         state_redis.set("health_check", "ok", 10)
         result = state_redis.get("health_check")
         status_info["components"]["state_redis"] = "connected" if result == "ok" else "error"

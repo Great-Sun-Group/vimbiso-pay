@@ -25,9 +25,10 @@ class AtomicStateManager:
         max_retries: int = 3
     ) -> Tuple[bool, Optional[str]]:
         """
-        Atomically update multiple state components
+        Atomically update state components with SINGLE SOURCE OF TRUTH validation
         Returns (success, error_message)
         """
+        from .state_validator import StateValidator
         retry_count = 0
         while retry_count < max_retries:
             try:
@@ -44,6 +45,11 @@ class AtomicStateManager:
                 pipe.watch(*keys)
 
                 try:
+                    # Validate state before update
+                    validation_result = StateValidator.validate_state(state)
+                    if not validation_result.is_valid:
+                        return False, f"Invalid state structure: {validation_result.error_message}"
+
                     # Add version and timestamp
                     state['_version'] = int(datetime.now().timestamp())
                     state['_last_updated'] = datetime.now().isoformat()
@@ -51,7 +57,7 @@ class AtomicStateManager:
                     # Start transaction
                     pipe.multi()
 
-                    # Set main state with TTL
+                    # Store state with TTL
                     pipe.setex(
                         key_prefix,
                         ttl,
@@ -156,9 +162,10 @@ class AtomicStateManager:
         preserve_fields: Optional[set] = None
     ) -> Tuple[bool, Optional[str]]:
         """
-        Atomically cleanup state while preserving specified fields
+        Atomically cleanup state while preserving specified fields and maintaining SINGLE SOURCE OF TRUTH
         Returns (success, error_message)
         """
+        from .state_validator import StateValidator
         try:
             # Get current state first
             current_state, error = self.atomic_get(key_prefix)
@@ -169,30 +176,48 @@ class AtomicStateManager:
                 # Create new state with only preserved fields
                 preserved_state = {
                     k: v for k, v in current_state.items()
-                    if k in preserve_fields
+                    if k in preserve_fields or k in StateValidator.CRITICAL_FIELDS
                 }
+
+                # Validate preserved state
+                validation_result = StateValidator.validate_state(preserved_state)
+                if not validation_result.is_valid:
+                    return False, f"Invalid preserved state: {validation_result.error_message}"
             else:
                 preserved_state = {}
 
-            # Delete all keys atomically
+            # Start pipeline with optimistic locking
             pipe = self.redis.pipeline()
+            pipe.watch(key_prefix)
+
             try:
-                # Delete all related keys
+                # Start transaction
+                pipe.multi()
+
+                # Delete metadata keys
                 pipe.delete(
-                    key_prefix,
                     f"{key_prefix}_stage",
                     f"{key_prefix}_option",
                     f"{key_prefix}_direction"
                 )
 
-                # If we have preserved fields, set new minimal state
+                # If we have preserved fields, update main state
                 if preserved_state:
+                    # Add version and timestamp
+                    preserved_state['_version'] = int(datetime.now().timestamp())
+                    preserved_state['_last_updated'] = datetime.now().isoformat()
+
+                    # Set with same TTL as atomic_update (300 - 5 minutes)
                     pipe.setex(
                         key_prefix,
-                        300,  # 5 minute TTL for preserved data
+                        300,  # Match ACTIVITY_TTL from constants.py
                         json.dumps(preserved_state)
                     )
+                else:
+                    # If no fields to preserve, delete main state
+                    pipe.delete(key_prefix)
 
+                # Execute transaction
                 pipe.execute()
                 return True, None
 

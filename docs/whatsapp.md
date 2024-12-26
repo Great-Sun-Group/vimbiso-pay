@@ -101,13 +101,15 @@ The service uses standardized message types from `core.messaging.types`:
    ```python
    class MemberFlow(Flow):
        def _get_first_name_prompt(self, _) -> Message:
+           # Note: member_id is accessed from top level state, not flow data
            return MemberTemplates.create_first_name_prompt(
-               self.data.get("mobile_number")
+               self.state.get("mobile_number")
            )
 
        def _create_registration_confirmation(self, state: Dict[str, Any]) -> Message:
+           # Note: member_id is accessed from top level state, not flow data
            return MemberTemplates.create_registration_confirmation(
-               recipient=self.data.get("mobile_number"),
+               recipient=self.state.get("mobile_number"),
                first_name=state["first_name"]["first_name"],
                last_name=state["last_name"]["last_name"]
            )
@@ -176,15 +178,19 @@ class WhatsAppMessagingService:
    - Use template methods directly
    - Keep flow logic separate from templates
    - Handle state updates consistently
+   - Access member_id ONLY from top level state
    - Provide clear error messages
 
 4. **Error Handling**
    ```python
    def complete(self) -> Message:
        try:
+           # Note: mobile_number accessed from top level state
+           mobile_number = self.state.get("mobile_number")
+
            if not self.validate_state():
                return Templates.create_error_message(
-                   self.data.get("mobile_number"),
+                   mobile_number,
                    "Invalid state"
                )
 
@@ -192,13 +198,13 @@ class WhatsAppMessagingService:
            self._update_state(result)
 
            return Templates.create_success_message(
-               self.data.get("mobile_number"),
+               mobile_number,
                "Operation completed successfully"
            )
        except Exception as e:
            logger.error(f"Flow completion error: {str(e)}")
            return Templates.create_error_message(
-               self.data.get("mobile_number"),
+               self.state.get("mobile_number"),
                str(e)
            )
    ```

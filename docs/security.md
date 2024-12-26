@@ -55,18 +55,19 @@ def validate_webhook(request):
 - Health checks
 
 ### Flow Framework Security
-- Input validation per step
-- State isolation
-- Secure transitions
-- Data transformation
-- Error handling
-- Timeout management
+- Focused input validation
+- State isolation in flow_data.data
+- Minimal validation context
+- Smart state recovery
+- Clear error boundaries
+- Efficient timeout handling
 
 ### State Management
 - User state isolation
 - 5-minute session timeout
-- Secure transitions
-- Automatic cleanup
+- Core field validation
+- Smart state recovery
+- Efficient cleanup
 - Dedicated Redis instance
 
 ### Sensitive Data

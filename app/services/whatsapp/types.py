@@ -83,18 +83,24 @@ class WhatsAppMessage(Dict[str, Any]):
         header: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Create a list message"""
+        action_items = {
+            "button": button[:20],  # WhatsApp limit
+            "sections": sections
+        }
+
         interactive = {
             "type": "list",
             "body": {"text": text},
-            "action": {
-                "button": button[:20],  # WhatsApp limit
-                "sections": sections
-            }
+            "action": action_items
         }
         if header:
             interactive["header"] = header
 
-        return cls.create_message(to, "interactive", interactive=interactive)
+        return cls.create_message(
+            to=to,
+            message_type="interactive",
+            interactive=interactive
+        )
 
     @classmethod
     def from_core_message(cls, message: Union[CoreMessage, Dict[str, Any], 'WhatsAppMessage']) -> Dict[str, Any]:
@@ -123,11 +129,11 @@ class WhatsAppMessage(Dict[str, Any]):
                 content_type = message.content.type.value
                 if content_type == "text":
                     return cls.create_text(
-                        message.recipient.phone_number,
+                        message.recipient.channel_identifier,
                         message.content.body
                     )
                 return cls.create_message(
-                    message.recipient.phone_number,
+                    message.recipient.channel_identifier,
                     content_type,
                     **{content_type: message.content.to_dict()}
                 )
@@ -161,6 +167,11 @@ class BotServiceInterface:
                 .get("changes", [{}])[0]
                 .get("value", {})
             )
+
+            # Extract channel identifier from metadata
+            metadata = message_data.get("metadata", {})
+            if "display_phone_number" in metadata:
+                self.user.channel_identifier = metadata["display_phone_number"].lstrip("+")
             messages = message_data.get("messages", [{}])
             if not messages:
                 raise ValueError("No messages found in payload")
@@ -174,7 +185,17 @@ class BotServiceInterface:
             elif self.message_type == "button":
                 self.body = message.get("button", {}).get("payload", "")
             elif self.message_type == "interactive":
-                self._parse_interactive(message.get("interactive", {}))
+                interactive = message.get("interactive", {})
+                if "button_reply" in interactive:
+                    self.message_type = "button"  # Treat as button press
+                    self.body = interactive["button_reply"].get("id", "")
+                elif "list_reply" in interactive:
+                    self.message_type = "list"  # Treat as list selection
+                    self.body = interactive["list_reply"].get("id", "")
+                else:
+                    logger.warning("Unknown interactive type")
+                    self.message_type = "text"
+                    self.body = ""
             else:
                 logger.warning(f"Unsupported message type: {self.message_type}")
                 self.body = ""
@@ -205,13 +226,13 @@ class BotServiceInterface:
             button_id = button[1:button.index("]")].strip()
             button_label = button[button.index("]")+1:].strip()
             return WhatsAppMessage.create_button(
-                self.user.mobile_number,
+                self.user.channel_identifier,
                 text,
                 [{"id": button_id, "title": button_label}]
             )
 
         # Default text message
-        return WhatsAppMessage.create_text(self.user.mobile_number, message_text)
+        return WhatsAppMessage.create_text(self.user.channel_identifier, message_text)
 
     def handle(self) -> Dict[str, Any]:
         """Process message and generate response"""

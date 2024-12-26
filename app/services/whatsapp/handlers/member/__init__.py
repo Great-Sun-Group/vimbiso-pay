@@ -1,6 +1,6 @@
-"""
-Member flows package
-"""
-from .flows import MemberFlow
+"""Member handlers package"""
+from .registration import RegistrationFlow
+from .upgrade import UpgradeFlow
+from .dashboard import DashboardFlow
 
-__all__ = ['MemberFlow']
+__all__ = ['RegistrationFlow', 'UpgradeFlow', 'DashboardFlow']

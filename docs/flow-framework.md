@@ -2,164 +2,84 @@
 
 ## Overview
 
-The Flow Framework provides a progressive interaction system for handling complex, multi-step conversations in WhatsApp. It enables structured data collection, validation, and state management through a series of defined steps.
+The Flow Framework provides a progressive interaction system for handling complex, multi-step conversations in WhatsApp, extendable to other channels. It enables:
+- Member-centric state management
+- Multi-channel support
+- Structured data collection
+- Input validation
+- Error recovery
+- Comprehensive audit logging
 
 ## Core Components
 
-### Flow Base Class
+### 1. Flow Management
 
-The framework is built around the `Flow` base class which manages:
-- Step progression
-- Data collection
-- State management
-- Input validation
-- Data transformation
+The framework consists of four main components:
 
-```python
-class Flow:
-    def __init__(self, id: str, steps: List[Step]):
-        self.id = id
-        self.steps = steps
-        self.current_index = 0
-        self.data: Dict[str, Any] = {}
-```
+- **Flow Base Class**
+  - Manages member-centric state
+  - Handles channel abstraction
+  - Manages step progression
+  - Handles data collection
+  - Integrates with state management
+  - Provides error recovery
+  - Maintains audit trail
 
-### Step Definition
+- **FlowStateManager**
+  - Validates member and channel state
+  - Manages state transitions
+  - Handles rollbacks
+  - Preserves validation context
+  - Manages channel information
 
-Each step in a flow represents a single interaction:
+- **Step Definition**
+  - Defines interaction type
+  - Provides validation rules
+  - Handles data transformation
+  - Generates channel-aware messages
 
-```python
-@dataclass
-class Step:
-    id: str                     # Unique step identifier
-    type: StepType             # Interaction type (TEXT/BUTTON/LIST)
-    message: Union[str, Callable]  # Static text or dynamic message generator
-    validator: Optional[Callable]  # Input validation function
-    transformer: Optional[Callable] # Data transformation function
-```
+- **FlowAuditLogger**
+  - Logs flow events with member context
+  - Tracks state transitions
+  - Records validation results
+  - Enables state recovery
+  - Provides debugging context
 
-### Step Types
+### 2. Step Types
 
-The framework supports three types of interactions:
+Supports three interaction types:
 - `TEXT`: Free-form text input
 - `BUTTON`: Button-based responses
 - `LIST`: Selection from a list of options
 
-## Message Handling
+### 3. State Integration
 
-### Core Message Types
-
-The framework uses standardized message types from `core.messaging.types`:
-
-```python
-@dataclass
-class Message:
-    """Complete message with recipient and content"""
-    recipient: MessageRecipient
-    content: Union[
-        TextContent,
-        InteractiveContent,
-        TemplateContent,
-        MediaContent
-    ]
-```
-
-### Template Organization
-
-1. **Domain-Specific Templates**
-   ```python
-   class MemberTemplates:
-       @staticmethod
-       def create_first_name_prompt(recipient: str) -> Message:
-           return Message(
-               recipient=MessageRecipient(phone_number=recipient),
-               content=TextContent(body="What's your first name?")
-           )
-   ```
-   - Encapsulate domain-specific message creation
-   - Consistent message formatting
-   - Reusable across flows
-   - Type-safe message creation
-
-2. **Flow Integration**
-   ```python
-   class MemberFlow(Flow):
-       def _get_first_name_prompt(self, _) -> Message:
-           return MemberTemplates.create_first_name_prompt(
-               self.data.get("mobile_number")
-           )
-   ```
-   - Use template methods directly
-   - Clean flow implementation
-   - Consistent message handling
-   - Improved maintainability
-
-### Message Types
-
-1. **Text Messages**
-   ```python
-   def create_text_message(recipient: str, text: str) -> Message:
-       return Message(
-           recipient=MessageRecipient(phone_number=recipient),
-           content=TextContent(body=text)
-       )
-   ```
-
-2. **Button Messages**
-   ```python
-   def create_button_message(
-       recipient: str,
-       text: str,
-       buttons: List[Dict[str, str]]
-   ) -> Message:
-       return Message(
-           recipient=MessageRecipient(phone_number=recipient),
-           content=InteractiveContent(
-               interactive_type=InteractiveType.BUTTON,
-               body=text,
-               buttons=[
-                   Button(id=btn["id"], title=btn["title"])
-                   for btn in buttons
-               ]
-           )
-       )
-   ```
-
-3. **List Messages**
-   ```python
-   def create_list_message(
-       recipient: str,
-       text: str,
-       sections: List[Dict[str, Any]]
-   ) -> Message:
-       return Message(
-           recipient=MessageRecipient(phone_number=recipient),
-           content=InteractiveContent(
-               interactive_type=InteractiveType.LIST,
-               body=text,
-               action_items={
-                   "button": "Select",
-                   "sections": sections
-               }
-           )
-       )
-   ```
+Each flow maintains:
+- Member ID as primary identifier
+- Channel information
+- Current step index
+- Collected data
+- Minimal validation state in flow_data.data
+- Previous state for rollback
+- Audit trail data
+- Smart recovery paths
 
 ## Implementation
 
 ### Flow Creation
 
-Flows are created by extending the base Flow class and defining steps:
-
 ```python
 class CredexFlow(Flow):
-    def __init__(self, flow_type: str, **kwargs):
-        self.flow_type = flow_type
+    def __init__(self, flow_type: str, state: Dict = None):
+        # Get member ID and channel info
+        member_id = state.get("member_id")
+        channel_id = self._get_channel_identifier(state)
+
         steps = self._create_steps()
-        super().__init__(f"credex_{flow_type}", steps)
+        super().__init__(f"{flow_type}_{member_id}", steps)
 ```
 
-### Step Definition Example
+### Step Definition
 
 ```python
 Step(
@@ -171,60 +91,142 @@ Step(
 )
 ```
 
+### State Structure
+
+```python
+new_state = {
+    # Core identity - SINGLE SOURCE OF TRUTH
+    "member_id": member_id,  # Primary identifier, ONLY AND ALWAYS at top level
+
+    # Channel information
+    "channel": {
+        "type": "whatsapp",
+        "identifier": channel_id
+    },
+
+    # Flow and state info
+    "flow_data": {
+        "id": flow_id,
+        "step": current_step,
+        "data": {
+            "flow_type": flow_type,
+            "channel": {
+                "type": "whatsapp",
+                "identifier": channel_id
+            }
+        }
+    }
+}
+```
+
+### Audit Logging
+
+```python
+# Log flow event with member context
+audit.log_flow_event(
+    flow_id=f"credex_offer_{member_id}",
+    event_type="step_start",
+    step_id="amount",
+    state={
+        "member_id": member_id,
+        "channel": {
+            "type": "whatsapp",
+            "identifier": channel_id
+        },
+        **current_state
+    },
+    status="in_progress"
+)
+
+# Log validation with member context
+audit.log_validation_event(
+    flow_id=f"credex_offer_{member_id}",
+    step_id="amount",
+    input_data={
+        "member_id": member_id,
+        "channel": channel_info,
+        "data": input_data
+    },
+    validation_result=result
+)
+
+# Log state transition with member context
+audit.log_state_transition(
+    flow_id=f"credex_offer_{member_id}",
+    from_state=old_state,
+    to_state=new_state,
+    status="success"
+)
+```
+
+## Message Handling
+
+### 1. Message Types
+- Text messages
+- Button messages
+- List messages
+- Interactive content
+- Template messages
+
+### 2. Template Organization
+- Member-centric templates
+- Channel-aware components
+- Reusable components
+- Type-safe creation
+- Consistent formatting
+
 ## Best Practices
 
-1. **Message Handling**
-   - Use domain-specific template classes
-   - Return Message objects consistently
-   - Follow WhatsApp Cloud API limits
+1. **State Management**
+   - Use member_id as primary identifier
+   - Maintain proper channel abstraction
+   - Keep validation context in flow_data.data
+   - Use minimal required validations
+   - Implement smart state recovery
+   - Focus on critical data integrity
+   - Maintain focused audit trail
+
+2. **Flow Implementation**
+   - Keep flows focused and single-purpose
+   - Validate member and channel info
+   - Handle channel-specific requirements
+   - Validate input properly
    - Handle errors gracefully
+   - Log state transitions
+   - Enable automatic recovery
 
-2. **Template Organization**
-   - Group related templates in domain classes
-   - Use static methods for template creation
-   - Keep templates focused and reusable
-   - Document template parameters
+3. **Template Usage**
+   - Use member-centric templates
+   - Handle channel-specific formatting
+   - Keep templates reusable
+   - Follow channel limits
+   - Handle errors properly
 
-3. **Flow Implementation**
-   - Use template methods directly
-   - Keep flow logic separate from templates
-   - Handle state updates consistently
+4. **Error Recovery**
+   - Validate member and channel state
+   - Preserve context during errors
+   - Implement proper rollback
    - Provide clear error messages
+   - Log recovery attempts
 
-4. **Error Handling**
-   ```python
-   def complete(self) -> Message:
-       try:
-           if not self.validate_state():
-               return Templates.create_error_message(
-                   self.data.get("mobile_number"),
-                   "Invalid state"
-               )
-
-           result = self._process_completion()
-           self._update_state(result)
-
-           return Templates.create_success_message(
-               self.data.get("mobile_number"),
-               "Operation completed successfully"
-           )
-       except Exception as e:
-           logger.error(f"Flow completion error: {str(e)}")
-           return Templates.create_error_message(
-               self.data.get("mobile_number"),
-               str(e)
-           )
-   ```
+5. **Audit Logging**
+   - Include member context in logs
+   - Log channel information
+   - Track state transitions
+   - Record validation results
+   - Document error scenarios
+   - Enable debugging
 
 ## Integration
 
 The Flow Framework integrates with:
-- WhatsApp message handling through standardized Message objects
-- Redis state management with atomic updates
-- API services with error handling
-- User authentication with token management
+- WhatsApp message handling
+- Redis state management
+- API services
+- User authentication
+- Audit logging system
 
 For more details on:
-- WhatsApp integration: [WhatsApp](whatsapp.md)
-- State management: [State Management](state-management.md)
-- API integration: [API Integration](api-integration.md)
+- State Management: [State Management](state-management.md)
+- WhatsApp Integration: [WhatsApp](whatsapp.md)
+- API Integration: [API Integration](api-integration.md)
