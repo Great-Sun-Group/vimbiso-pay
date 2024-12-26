@@ -16,11 +16,9 @@
                 "eamodio.gitlens",
                 "visualstudioexptteam.vscodeintellicode",
                 "saoudrizwan.claude-dev",
-                "github.vscode-github-actions"
-                // Keeping Docker extension commented as it might relate to the Docker issues
-                // "ms-azuretools.vscode-docker",
-                // Keeping Terraform extension commented as we're keeping Terraform features disabled
-                // "hashicorp.terraform"
+                "github.vscode-github-actions",
+                "ms-azuretools.vscode-docker",
+                "hashicorp.terraform"
             ],
             "settings": {
                 "python.defaultInterpreterPath": "/usr/local/bin/python",
@@ -59,12 +57,11 @@
     },
     "forwardPorts": [8000, 6379],
     "postCreateCommand": "pip install -r requirements/dev.txt",
-    "remoteUser": "vscode"
-    // Keeping potentially problematic configurations commented
-    // "postStartCommand": "sudo apt-get update && sudo apt-get install -y chromium && sudo cp /workspaces/vimbiso-pay/scripts/fetchlogs.sh /usr/local/bin/fetchlogs && sudo chmod +x /usr/local/bin/fetchlogs",
-    // "remoteEnv": {
-    //     "AWS_REGION": "af-south-1",
-    //     "AWS_ACCESS_KEY_ID": "${localEnv:VIMBISOPAY_STAGING_AWS_ACCESS_KEY_ID}",
-    //     "AWS_SECRET_ACCESS_KEY": "${localEnv:VIMBISOPAY_STAGING_AWS_SECRET_ACCESS_KEY}"
-    // }
+    "remoteUser": "vscode",
+    "postStartCommand": "sudo apt-get update && sudo apt-get install -y chromium && sudo cp /workspaces/vimbiso-chatserver/scripts/fetchlogs.sh /usr/local/bin/fetchlogs && sudo chmod +x /usr/local/bin/fetchlogs",
+    "remoteEnv": {
+        "AWS_REGION": "af-south-1",
+        "AWS_ACCESS_KEY_ID": "${localEnv:VIMBISOPAY_STAGING_AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY": "${localEnv:VIMBISOPAY_STAGING_AWS_SECRET_ACCESS_KEY}"
+    }
 }
