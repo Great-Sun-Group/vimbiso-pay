@@ -1,6 +1,7 @@
 """Unified state validation for flow management"""
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
+
 from .validator_interface import ValidationResult
 
 logger = logging.getLogger(__name__)

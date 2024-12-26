@@ -22,7 +22,7 @@ class AuthManager(BaseAPIClient):
         url = f"{self.base_url}/login"
         logger.info(f"Login URL: {url}")
 
-        payload = {"phone": self.bot_service.user.mobile_number}
+        payload = {"phone": self.bot_service.user.channel_identifier}
         headers = {
             "Content-Type": "application/json",
             "x-client-api-key": config("CLIENT_API_KEY"),

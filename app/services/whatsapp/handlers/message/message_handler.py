@@ -66,12 +66,6 @@ class MessageHandler:
                 # Log initial state for debugging
                 logger.debug(f"Initial state: {self.service.user.state.state}")
 
-                # Check if user is already authenticated
-                current_state = self.service.user.state.state
-                if current_state and current_state.get("authenticated"):
-                    # User is authenticated, show regular menu
-                    return WhatsAppMessage.from_core_message(self.service.auth_handler.handle_action_menu())
-
                 # Prepare state with channel info
                 error = self.state_handler.prepare_flow_start(
                     is_greeting=True,
@@ -91,8 +85,8 @@ class MessageHandler:
                         "❌ Error: Channel initialization failed"
                     )
 
-                # Show registration menu only for unauthenticated users
-                return WhatsAppMessage.from_core_message(self.service.auth_handler.handle_action_menu(login=True))
+                # Call handle_hi which properly handles state refresh and menu display
+                return WhatsAppMessage.from_core_message(self.service.auth_handler.handle_hi())
 
             # Check for menu action first
             if action in self.FLOW_TYPES:

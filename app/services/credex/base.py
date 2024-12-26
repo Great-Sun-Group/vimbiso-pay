@@ -116,6 +116,23 @@ class BaseCredExService:
                     self._parent_service.user.state.set_jwt_token(new_token)
                     logger.debug("Updated parent service user state with refreshed token")
 
+            # Update state with dashboard data from response if available
+            try:
+                response_data = response.json()
+                if isinstance(response_data, dict):
+                    dashboard_data = response_data.get("data", {}).get("dashboard")
+                    if dashboard_data and hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
+                        current_state = self._parent_service.user.state.state or {}
+                        current_state.update({
+                            "profile": {
+                                "dashboard": dashboard_data
+                            }
+                        })
+                        self._parent_service.user.state.update_state(current_state)
+                        logger.debug("Updated state with dashboard data from response")
+            except Exception as e:
+                logger.error(f"Error updating state with dashboard data: {str(e)}")
+
             if response.status_code == 401 and require_auth:
                 logger.warning("Authentication failed, attempting to refresh token")
                 if payload and "phone" in payload:

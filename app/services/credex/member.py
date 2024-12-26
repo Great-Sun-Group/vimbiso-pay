@@ -12,22 +12,39 @@ class CredExMemberService(BaseCredExService):
     """Service for CredEx member operations"""
 
     def get_dashboard(self, phone: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get dashboard information from login response"""
+        """Get dashboard information with fresh data"""
         if not phone:
             raise ValidationError("Phone number is required")
 
         try:
-            # Get dashboard data from login response
-            success, response = self._auth.login(phone)
-            if not success:
-                error_msg = response.get("message", "Failed to fetch dashboard")
+            # Make direct request to dashboard endpoint
+            response = self._make_request(
+                CredExEndpoints.DASHBOARD,
+                payload={"phone": phone}
+            )
+
+            # Handle non-200 responses
+            if response.status_code != 200:
+                error_msg = response.json().get("message", "Failed to fetch dashboard")
                 logger.error(f"Dashboard fetch failed: {error_msg}")
-                if "Member not found" in error_msg:
+                if response.status_code == 404:
                     raise MemberNotFoundError(error_msg)
                 return False, {"message": error_msg}
 
+            data = response.json()
+
+            # Update state with fresh data
+            if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
+                current_state = self._parent_service.user.state.state or {}
+                current_state.update({
+                    "profile": {
+                        "dashboard": data.get("data", {}).get("dashboard", {})
+                    }
+                })
+                self._parent_service.user.state.update_state(current_state)
+
             logger.info("Dashboard fetched successfully")
-            return True, response
+            return True, data
 
         except MemberNotFoundError as e:
             logger.warning(f"Member not found: {str(e)}")

@@ -181,54 +181,17 @@ class MenuHandler(BaseActionHandler):
             "in_progress"
         )
 
-        # Prepare new state with proper structure
-        new_state = {
-            "channel": {
-                "type": "whatsapp",
-                "identifier": self.service.user.channel_identifier,
-                "metadata": {}
-            },
-            "flow_data": {
-                "id": "user_state",
-                "step": 0,
-                "data": {
-                    "flow_type": "auth",
-                    "_validation_context": {},
-                    "_validation_state": {}
-                },
-                "_previous_data": {}
-            },
-            # Preserve existing state data
-            "member_id": current_state.get("member_id"),
-            "account_id": current_state.get("account_id"),
-            "profile": current_state.get("profile", {}),
-            "authenticated": current_state.get("authenticated", False),
-            "jwt_token": current_state.get("jwt_token"),
-            "_validation_context": {},
-            "_validation_state": {},
-            "_last_updated": audit.get_current_timestamp()
-        }
-
-        # Log state transition
-        audit.log_state_transition(
-            "auth_handler",
-            current_state,
-            new_state,
-            "success"
-        )
-
         try:
-            # Update state
-            self.service.user.state.update_state(new_state, "greeting")
+            # Always attempt login to refresh state
+            success, dashboard_data = self.service.auth_handler.auth_flow.attempt_login()
 
-            # Log state after update
-            logger.debug(f"State after update in handle_hi: {self.service.user.state.state}")
-
-            # Check if already authenticated
-            if new_state.get("authenticated"):
+            if success:
+                # State is already updated by attempt_login
+                # Show menu with fresh data
                 return self.handle_menu()
             else:
-                return self.handle_menu(login=True)
+                # Show registration for new users
+                return self.service.auth_handler.auth_flow.handle_registration(register=True)
         except Exception as e:
             logger.error(f"Error in handle_hi: {str(e)}")
             return Message(
