@@ -45,23 +45,36 @@ class AtomicStateManager:
                 pipe.watch(*keys)
 
                 try:
+                    # Log state before validation
+                    logger.debug(f"State before validation: {state}")
+
                     # Validate state before update
                     validation_result = StateValidator.validate_state(state)
                     if not validation_result.is_valid:
+                        logger.error(f"State validation failed: {validation_result.error_message}")
+                        logger.debug(f"Invalid state: {state}")
                         return False, f"Invalid state structure: {validation_result.error_message}"
 
                     # Add version and timestamp
                     state['_version'] = int(datetime.now().timestamp())
                     state['_last_updated'] = datetime.now().isoformat()
 
+                    # Log state after validation
+                    logger.debug("State after validation:")
+                    logger.debug(f"- Has channel: {bool(state.get('channel'))}")
+                    logger.debug(f"- Has jwt_token: {bool(state.get('jwt_token'))}")
+                    logger.debug(f"- Version: {state['_version']}")
+
                     # Start transaction
                     pipe.multi()
 
                     # Store state with TTL
+                    state_json = json.dumps(state)
+                    logger.debug(f"Storing state with TTL {ttl}")
                     pipe.setex(
                         key_prefix,
                         ttl,
-                        json.dumps(state)
+                        state_json
                     )
 
                     # Set additional fields if provided

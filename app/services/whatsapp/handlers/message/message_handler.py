@@ -60,9 +60,31 @@ class MessageHandler:
             # Handle greeting
             if (self.service.message_type == "text" and
                     self.input_handler.is_greeting(self.service.body)):
-                error = self.state_handler.prepare_flow_start(is_greeting=True)
+                # Get channel identifier from service
+                channel_id = self.service.user.channel_identifier
+
+                # Log initial state for debugging
+                logger.debug(f"Initial state: {self.service.user.state.state}")
+
+                # Prepare state with channel info
+                error = self.state_handler.prepare_flow_start(
+                    is_greeting=True,
+                    channel_identifier=channel_id
+                )
                 if error:
                     return WhatsAppMessage.from_core_message(error)
+
+                # Log state after preparation
+                logger.debug(f"State after prepare_flow_start: {self.service.user.state.state}")
+
+                # Ensure channel info is set in state
+                if not self.service.user.state.state.get("channel", {}).get("identifier"):
+                    logger.error("Channel identifier missing after state preparation")
+                    return WhatsAppMessage.create_text(
+                        channel_id,
+                        "❌ Error: Channel initialization failed"
+                    )
+
                 return WhatsAppMessage.from_core_message(self.service.auth_handler.handle_action_menu(login=True))
 
             # Check for menu action first

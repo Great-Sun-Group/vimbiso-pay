@@ -72,6 +72,19 @@ class StateValidator:
 
         # Allow minimal state during greeting but ensure proper structure
         if not state.get("authenticated", False):
+            # Even during greeting, ensure channel info is present
+            if "channel" not in state or not isinstance(state["channel"], dict):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Channel info must be present even during greeting"
+                )
+
+            # Validate channel structure
+            channel_validation = cls.validate_channel_structure(state["channel"])
+            if not channel_validation.is_valid:
+                return channel_validation
+
+            # Allow other fields to be missing during greeting
             return ValidationResult(is_valid=True)
 
         # For non-greeting states, check for required fields

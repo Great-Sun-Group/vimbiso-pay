@@ -181,6 +181,12 @@ class StateManager:
     ) -> Optional[WhatsAppMessage]:
         """Validate and update state with proper error handling"""
         try:
+            # Log state before update
+            logger.debug("State before update:")
+            logger.debug(f"- Current state: {current_state}")
+            logger.debug(f"- New state: {new_state}")
+            logger.debug(f"- Operation: {operation}")
+
             # Start atomic update
             audit.log_flow_event(
                 "bot_service",
@@ -190,9 +196,26 @@ class StateManager:
                 "in_progress"
             )
 
+            # Ensure channel info is present
+            if "channel" not in new_state or not isinstance(new_state["channel"], dict):
+                new_state["channel"] = StateManager.create_channel_data(
+                    identifier=channel_identifier,
+                    channel_type="whatsapp"
+                )
+                logger.debug("Added missing channel info to new state")
+
+            # Preserve critical fields from current state if missing in new state
+            critical_fields = ["jwt_token", "member_id", "account_id", "authenticated"]
+            for field in critical_fields:
+                if field not in new_state and field in current_state:
+                    new_state[field] = current_state[field]
+                    logger.debug(f"Preserved {field} from current state")
+
             # Validate new state
             validation = StateValidator.validate_state(new_state)
             if not validation.is_valid:
+                logger.error(f"State validation failed: {validation.error_message}")
+                logger.debug(f"Invalid state: {new_state}")
                 audit.log_flow_event(
                     "bot_service",
                     "state_validation_error",
@@ -209,6 +232,11 @@ class StateManager:
             try:
                 # Attempt state update
                 state_manager.update_state(new_state, operation)
+
+                # Log state after update
+                logger.debug("State after update:")
+                logger.debug(f"- Updated state: {state_manager.state}")
+                logger.debug(f"- Has jwt_token: {bool(state_manager.jwt_token)}")
 
                 # Log successful transition only after update
                 audit.log_state_transition(
@@ -229,6 +257,13 @@ class StateManager:
                 return None
 
             except Exception as update_error:
+                # Log detailed error info
+                logger.error(f"State update error: {str(update_error)}")
+                logger.debug("Error context:")
+                logger.debug(f"- Operation: {operation}")
+                logger.debug(f"- Current state: {current_state}")
+                logger.debug(f"- Attempted new state: {new_state}")
+
                 # Rollback not needed as update_state should be atomic
                 audit.log_flow_event(
                     "bot_service",

@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from .auth import CredExAuthService
@@ -6,6 +7,8 @@ from .interface import CredExServiceInterface
 from .member import CredExMemberService
 from .offers import CredExOffersService
 from .recurring import CredExRecurringService
+
+logger = logging.getLogger(__name__)
 
 
 class CredExService(CredExServiceInterface):
@@ -21,19 +24,38 @@ class CredExService(CredExServiceInterface):
         self.config = config or CredExConfig.from_env()
         self._jwt_token = None
         self.user = user  # Store user instance from parent
+        self._parent_service = None  # Will be set by parent service
+
+        # Log initialization
+        logger.debug("Initializing CredEx service:")
+        logger.debug(f"- Has user: {bool(user)}")
+        if user:
+            logger.debug(f"- User has state: {bool(hasattr(user, 'state'))}")
+            logger.debug(f"- User state: {user.state.state if hasattr(user, 'state') else None}")
 
         # Initialize sub-services with parent reference
         self._auth = CredExAuthService(config=self.config)
         self._auth._parent_service = self
+        self._auth._jwt_token = self._jwt_token
 
         self._member = CredExMemberService(config=self.config)
         self._member._parent_service = self
+        self._member._jwt_token = self._jwt_token
 
         self._offers = CredExOffersService(config=self.config)
         self._offers._parent_service = self
+        self._offers._jwt_token = self._jwt_token
 
         self._recurring = CredExRecurringService(config=self.config)
         self._recurring._parent_service = self
+        self._recurring._jwt_token = self._jwt_token
+
+        # Get token from user state if available
+        if user and hasattr(user, 'state'):
+            token = user.state.jwt_token
+            if token:
+                logger.debug("Setting token from user state")
+                self.jwt_token = token
 
     def login(self, phone: str) -> Tuple[bool, str]:
         """Authenticate user with the CredEx API"""

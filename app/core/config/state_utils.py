@@ -14,6 +14,11 @@ def create_initial_state() -> Dict[str, Any]:
         "member_id": None,
         "account_id": None,
         "authenticated": False,
+        "channel": {
+            "type": "whatsapp",
+            "identifier": None,  # Will be set when user connects
+            "metadata": {}
+        },
         "_validation_context": {},
         "_validation_state": {},
         "_previous_state": {}
@@ -32,8 +37,20 @@ def prepare_state_update(current_state: Dict[str, Any], updates: Dict[str, Any])
 
 def update_critical_fields(state: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
     """Update critical fields with priority handling"""
-    critical_fields = ["jwt_token", "member_id", "account_id", "authenticated"]
+    critical_fields = ["jwt_token", "member_id", "account_id", "authenticated", "channel"]
     for field in critical_fields:
         if updates.get(field) is not None:
-            state[field] = updates[field]
+            if field == "channel" and isinstance(updates[field], dict):
+                # Update channel fields individually to preserve structure
+                if not isinstance(state.get("channel"), dict):
+                    state["channel"] = {
+                        "type": "whatsapp",
+                        "identifier": None,
+                        "metadata": {}
+                    }
+                for k, v in updates["channel"].items():
+                    if k in ["type", "identifier", "metadata"]:
+                        state["channel"][k] = v
+            else:
+                state[field] = updates[field]
     return state

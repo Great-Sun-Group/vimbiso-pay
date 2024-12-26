@@ -66,7 +66,30 @@ class CredExAuthService(BaseCredExService):
                 # Set token and propagate to parent service if available
                 self._jwt_token = token
                 if hasattr(self, '_parent_service'):
+                    # Log parent service state for debugging
+                    logger.debug("Parent service state before token update:")
+                    logger.debug(f"- Has jwt_token: {bool(self._parent_service.jwt_token)}")
+                    logger.debug(f"- Has user: {bool(hasattr(self._parent_service, 'user'))}")
+                    if hasattr(self._parent_service, 'user'):
+                        logger.debug(f"- Has user.state: {bool(hasattr(self._parent_service.user, 'state'))}")
+
+                    # Update token on parent service
                     self._parent_service.jwt_token = token
+
+                    # Ensure token is propagated to state
+                    if hasattr(self._parent_service, 'user') and hasattr(self._parent_service.user, 'state'):
+                        self._parent_service.user.state.jwt_token = token
+                        # Force state update to ensure token is saved
+                        current_state = self._parent_service.user.state.state or {}
+                        self._parent_service.user.state.update_state({
+                            **current_state,
+                            "jwt_token": token
+                        })
+
+                        # Log state after update
+                        logger.debug("State after token update:")
+                        logger.debug(f"- State jwt_token: {self._parent_service.user.state.state.get('jwt_token')}")
+
                 logger.info("Login successful")
                 return True, data
             else:

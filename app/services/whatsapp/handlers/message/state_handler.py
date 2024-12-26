@@ -19,24 +19,60 @@ class StateHandler:
     def __init__(self, service: Any):
         self.service = service
 
-    def prepare_flow_start(self, clear_menu: bool = True, is_greeting: bool = False, flow_type: Optional[str] = None, **kwargs) -> Optional[WhatsAppMessage]:
+    def prepare_flow_start(self, clear_menu: bool = True, is_greeting: bool = False, flow_type: Optional[str] = None, channel_identifier: Optional[str] = None, **kwargs) -> Optional[WhatsAppMessage]:
         """Prepare state for starting a new flow"""
-        current_state = self.service.user.state.state or {}
+        # Get current state and ensure it exists
+        current_state = self.service.user.state.state
+        if current_state is None:
+            current_state = {}
+            logger.warning("No existing state found, initializing empty state")
+
+        # Get channel identifier from kwargs or service
+        channel_id = channel_identifier or self.service.user.channel_identifier
+        if not channel_id:
+            logger.error("Missing channel identifier")
+            return WhatsAppMessage.create_text(
+                self.service.user.channel_identifier,
+                "❌ Error: Missing channel identifier"
+            )
+
+        # Log current state for debugging
+        logger.debug("State preparation:")
+        logger.debug(f"- Current state: {current_state}")
+        logger.debug(f"- Channel ID: {channel_id}")
+        logger.debug(f"- Is greeting: {is_greeting}")
+        logger.debug(f"- Flow type: {flow_type}")
 
         # For greetings, initialize state with required fields
         if is_greeting:
+            # Get existing state data
+            existing_member_id = current_state.get("member_id")
+            existing_account_id = current_state.get("account_id")
+            existing_profile = current_state.get("profile", {})
+            existing_jwt = current_state.get("jwt_token")
+            existing_auth = current_state.get("authenticated", False)
+
+            # Log existing data
+            logger.debug("Existing state data:")
+            logger.debug(f"- Member ID: {existing_member_id}")
+            logger.debug(f"- Account ID: {existing_account_id}")
+            logger.debug(f"- Has JWT: {bool(existing_jwt)}")
+            logger.debug(f"- Authenticated: {existing_auth}")
+
+            # Prepare new state preserving existing data
             new_state = {
                 # Channel info at top level - SINGLE SOURCE OF TRUTH
                 "channel": StateManager.create_channel_data(
-                    identifier=self.service.user.channel_identifier,
+                    identifier=channel_id,
                     channel_type="whatsapp"
                 ),
 
-                # Required fields initialized as empty/null
-                "member_id": None,
-                "account_id": None,
-                "profile": StateValidator.ensure_profile_structure({}),
-                "authenticated": False,
+                # Preserve existing fields
+                "member_id": existing_member_id,
+                "account_id": existing_account_id,
+                "profile": StateValidator.ensure_profile_structure(existing_profile),
+                "authenticated": existing_auth,
+                "jwt_token": existing_jwt,
 
                 # Initialize empty flow data
                 "flow_data": {
@@ -51,6 +87,13 @@ class StateHandler:
                 },
                 "_last_updated": audit.get_current_timestamp()
             }
+
+            # Log new state for debugging
+            logger.debug("New state preparation:")
+            logger.debug(f"- Has channel: {bool(new_state.get('channel'))}")
+            logger.debug(f"- Channel ID matches: {new_state.get('channel', {}).get('identifier') == channel_id}")
+            logger.debug(f"- Preserved member ID: {new_state.get('member_id') == existing_member_id}")
+            logger.debug(f"- Preserved JWT: {new_state.get('jwt_token') == existing_jwt}")
         else:
             # Get channel identifier from top level state
             channel_id = StateManager.get_channel_identifier(current_state)

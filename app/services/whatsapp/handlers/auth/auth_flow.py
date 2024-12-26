@@ -299,8 +299,15 @@ class AuthFlow(BaseActionHandler):
             # Update state
             self.service.user.state.update_state(new_state, "login_success")
 
-            # Ensure token is propagated to credex service
+            # Get or create credex service and set up relationships
             self.service.credex_service = self.service.user.state.get_or_create_credex_service()
+            self.service.credex_service._parent_service = self.service
+
+            # Log service setup for debugging
+            logger.debug("Service relationships after login:")
+            logger.debug(f"- Has credex_service: {bool(self.service.credex_service)}")
+            logger.debug(f"- Has parent_service: {bool(hasattr(self.service.credex_service, '_parent_service'))}")
+            logger.debug(f"- Parent service matches: {self.service.credex_service._parent_service == self.service}")
 
             # Update audit context with member info after successful login
             audit_context["member_id"] = member_id

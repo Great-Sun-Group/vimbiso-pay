@@ -210,7 +210,32 @@ class BaseCredExService:
         """Set the JWT token"""
         logger.debug("Setting new JWT token")
         self._jwt_token = value
+
+        # Log current service state
+        logger.debug("Current service state:")
+        logger.debug(f"- Service type: {type(self).__name__}")
+        logger.debug(f"- Has parent: {bool(hasattr(self, '_parent_service'))}")
+        if hasattr(self, '_parent_service'):
+            logger.debug(f"- Parent type: {type(self._parent_service).__name__}")
+            logger.debug(f"- Parent has user: {bool(hasattr(self._parent_service, 'user'))}")
+            if hasattr(self._parent_service, 'user'):
+                logger.debug(f"- User has state: {bool(hasattr(self._parent_service.user, 'state'))}")
+
         # Update parent service's user state if available
         if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
+            # Get current state
+            current_state = self._parent_service.user.state.state or {}
+            logger.debug(f"Current state before update: {current_state}")
+
+            # Set token in state
             self._parent_service.user.state.set_jwt_token(value)
+
+            # Force state update to ensure token is saved
+            self._parent_service.user.state.update_state({
+                **current_state,
+                "jwt_token": value
+            })
+
+            # Log state after update
+            logger.debug(f"State after update: {self._parent_service.user.state.state}")
             logger.debug("Updated parent service user state with new token")

@@ -25,18 +25,69 @@ class StateManager:
 
     def _initialize_state(self) -> None:
         """Initialize state with atomic operations"""
-        state_data, _ = atomic_state.atomic_get(self.key_prefix)
+        # Log initialization start
+        logger.debug(f"Initializing state for key prefix: {self.key_prefix}")
+
+        # Get existing state
+        state_data, error = atomic_state.atomic_get(self.key_prefix)
+        if error:
+            logger.error(f"Error getting state: {error}")
+
+        # Create initial state if none exists
         if not state_data:
             state_data = create_initial_state()
+            logger.debug("Created initial state")
 
+        # Extract channel ID from key prefix
+        channel_id = None
+        if self.key_prefix.startswith("channel:"):
+            channel_id = self.key_prefix.split(":", 1)[1]
+            logger.debug(f"Extracted channel ID from key prefix: {channel_id}")
+
+        # Ensure channel info is present and valid
+        if not state_data.get("channel") or not isinstance(state_data["channel"], dict):
+            state_data["channel"] = {
+                "type": "whatsapp",
+                "identifier": channel_id,
+                "metadata": {}
+            }
+            logger.debug("Added missing channel info to state")
+        elif channel_id and state_data["channel"].get("identifier") != channel_id:
+            state_data["channel"]["identifier"] = channel_id
+            logger.debug("Updated channel identifier in state")
+
+        # Validate state
         validation = StateValidator.validate_state(state_data)
         if not validation.is_valid:
+            logger.warning(f"State validation failed: {validation.error_message}")
             last_valid = audit.get_last_valid_state("user_state")
-            state_data = last_valid if last_valid else create_initial_state()
+            if last_valid:
+                logger.debug("Using last valid state")
+                state_data = last_valid
+            else:
+                logger.debug("Creating new initial state")
+                state_data = create_initial_state()
 
+            # Ensure channel info is present in fallback state
+            if channel_id:
+                state_data["channel"] = {
+                    "type": "whatsapp",
+                    "identifier": channel_id,
+                    "metadata": {}
+                }
+                logger.debug("Added channel info to fallback state")
+
+        # Set state and token
         self.state = state_data
         self.jwt_token = state_data.get("jwt_token")
-        atomic_state.atomic_update(self.key_prefix, state_data, ACTIVITY_TTL)
+        logger.debug(f"State initialized with JWT token: {bool(self.jwt_token)}")
+
+        # Update state in Redis
+        success, error = atomic_state.atomic_update(self.key_prefix, state_data, ACTIVITY_TTL)
+        if not success:
+            logger.error(f"Failed to update state in Redis: {error}")
+        else:
+            logger.debug("State successfully updated in Redis")
 
     def update_state(self, updates: Dict[str, Any]) -> None:
         """Update state with new values"""
@@ -55,9 +106,19 @@ class StateManager:
     def get_or_create_credex_service(self) -> CredExService:
         """Get or create CredEx service instance"""
         if not self._credex_service:
+            # Create service with proper relationships
             self._credex_service = CredExService(user=self)
+
+            # Log service creation
+            logger.debug("Creating new CredEx service:")
+            logger.debug(f"- Has user: {bool(self._credex_service.user)}")
+            logger.debug(f"- User state: {bool(self._credex_service.user.state)}")
+
+            # Set token if available
             if self.jwt_token:
                 self._update_service_token(self.jwt_token)
+                logger.debug(f"- Token set: {bool(self._credex_service._jwt_token)}")
+
         return self._credex_service
 
     def _update_service_token(self, jwt_token: str) -> None:
