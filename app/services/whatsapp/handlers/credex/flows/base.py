@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Union, Optional
 
-from core.messaging.flow import Flow, Step, FlowState
+from core.messaging.flow import Flow, Step, FlowState, StepType
 from core.utils.flow_audit import FlowAuditLogger
 from services.whatsapp.state_manager import StateManager
 
@@ -22,50 +22,125 @@ class CredexFlow(Flow):
     AMOUNT_PATTERN = re.compile(r'^(?:([A-Z]{3})\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:\(?([A-Z]{3})\)?)|(\d+(?:\.\d+)?))$')
     HANDLE_PATTERN = re.compile(r'^[a-zA-Z0-9_]+$')
 
-    def __init__(self, id: str, steps: List[Step], flow_type: str = None, state: Optional['FlowState'] = None, **kwargs):
+    def __init__(self, id: str, steps: Optional[List[Step]] = None, flow_type: str = None, state: Optional['FlowState'] = None):
         """Initialize flow with proper state management
 
         Args:
             id: Flow identifier
-            steps: List of flow steps
+            steps: Optional list of steps (None to create through _create_steps)
             flow_type: Type of flow (e.g. 'offer', 'accept')
             state: Optional FlowState object
-            **kwargs: Additional keyword arguments
+
+        Note:
+            All required data is accessed from state through _get_service_state()
+            Steps are created through _create_steps after service initialization
         """
-        # Initialize services
+        # Initialize core attributes
         self.validator = CredexFlowValidator()
         self.credex_service = None
-
-        # Store flow type
         self.flow_type = flow_type
 
-        # Initialize parent Flow with FlowState
-        super().__init__(id=id, steps=steps, state=state)
+        # Validate state has required fields
+        if state:
+            if not state.member_id:
+                raise ValueError("State missing member_id")
+            if not isinstance(state.data, dict):
+                raise ValueError("State data must be dictionary")
+            if "channel" not in state.data:
+                raise ValueError("State missing channel info")
 
-        # Log initialization
+        # Initialize base class with minimal state
+        super().__init__(id=id, steps=[], state=state)
+
+        # Log initialization with proper context
         logger.debug(f"Initialized {self.__class__.__name__}:")
         logger.debug(f"- Flow type: {self.flow_type}")
         logger.debug(f"- Flow ID: {self.id}")
-        logger.debug(f"- Steps: {[step.id for step in steps]}")
+        logger.debug(f"- Member ID: {self.member_id}")  # From state
+
+    def _validate_service(self) -> None:
+        """Validate service has required capabilities"""
+        if not self.credex_service:
+            raise ValueError("Service not initialized")
+
+        if not hasattr(self.credex_service, 'services'):
+            raise ValueError("Service missing required services")
+
+        required_services = {'member', 'offers'}
+        missing = required_services - set(self.credex_service.services.keys())
+        if missing:
+            raise ValueError(f"Service missing required capabilities: {', '.join(missing)}")
+
+    def _create_steps(self) -> List[Step]:
+        """Create flow steps after service initialization
+
+        Note:
+            This is called by Flow base class after service is initialized
+            All steps must have access to properly initialized service
+        """
+        # Validate service has required capabilities
+        self._validate_service()
+
+        # Create steps with access to initialized service
+        steps = [
+            Step(
+                id="amount",
+                type=StepType.TEXT,
+                message=self._get_amount_prompt,
+                validator=self._validate_amount,
+                transformer=self._transform_amount
+            ),
+            Step(
+                id="handle",
+                type=StepType.TEXT,
+                message=self._get_handle_prompt,
+                validator=self._validate_handle,
+                transformer=self._transform_handle
+            ),
+            Step(
+                id="confirm",
+                type=StepType.BUTTON,
+                message=self._create_confirmation_message,
+                validator=self._validate_button_response
+            )
+        ]
+
+        # Log step creation
+        logger.debug(f"Created steps: {[step.id for step in steps]}")
+
+        return steps
 
     def _get_service_state(self) -> Dict[str, Any]:
         """Get current state from service"""
-        if not self.credex_service or not hasattr(self.credex_service, '_parent_service'):
-            raise ValueError("Service not properly initialized")
+        # Validate service has required capabilities
+        self._validate_service()
 
-        state = self.credex_service._parent_service.user.state.state
+        state = self.credex_service.state_manager.state
         if not state:
             raise ValueError("State not initialized")
+
+        # Validate critical state fields
+        if not state.get("member_id"):
+            raise ValueError("State missing member_id")
+        if not state.get("channel", {}).get("identifier"):
+            raise ValueError("State missing channel identifier")
 
         return state
 
     def _get_channel_identifier(self) -> str:
         """Get channel identifier from service state using StateManager"""
-        return StateManager.get_channel_identifier(self._get_service_state())
+        state = self._get_service_state()
+        return StateManager.get_channel_identifier(state)
 
     def _get_amount_prompt(self, _) -> Dict[str, Any]:
         """Get amount prompt message"""
         return CredexTemplates.create_amount_prompt(
+            self._get_channel_identifier()
+        )
+
+    def _get_handle_prompt(self, _) -> Dict[str, Any]:
+        """Get handle prompt message"""
+        return CredexTemplates.create_handle_prompt(
             self._get_channel_identifier()
         )
 
@@ -326,7 +401,6 @@ class CredexFlow(Flow):
             # Create result with validation context
             result = {
                 "handle": handle,
-                "account_id": data.get("accountID"),
                 "name": data.get("accountName", handle),
                 **validation_context,
                 "_validation_success": True
@@ -389,7 +463,7 @@ class CredexFlow(Flow):
             profile_data = {
                 "action": {
                     "id": action.get("id", ""),
-                    "type": action.get("type", self.flow_type),
+                    "type": action.get("type"),
                     "timestamp": datetime.now().isoformat(),
                     "actor": member_id,
                     "details": action.get("details", {}),
@@ -413,27 +487,22 @@ class CredexFlow(Flow):
                 )
             )
 
-            # Build new state
+            # Build new state following SINGLE SOURCE OF TRUTH
             new_state = {
-                "member_id": member_id,
+                "member_id": member_id,  # SINGLE SOURCE OF TRUTH
                 "channel": StateManager.prepare_state_update(
                     current_state={},
                     channel_identifier=channel_id
-                )["channel"],
+                )["channel"],  # SINGLE SOURCE OF TRUTH
                 "authenticated": current_state.get("authenticated", True),
-                "jwt_token": current_state.get("jwt_token"),
+                "jwt_token": current_state.get("jwt_token"),  # SINGLE SOURCE OF TRUTH
                 "account_id": current_state.get("account_id"),
                 "current_account": personal_account,
                 "profile": profile_data,
                 "flow_data": {
                     "id": self.id,
                     "step": self.current_index,
-                    "data": {
-                        "account_id": current_state.get("account_id"),
-                        "flow_type": self.flow_type,
-                        **self.data
-                    },
-                    "flow_type": self.flow_type,
+                    "data": self.data,
                     "_previous_data": self._previous_data
                 },
                 "_validation_context": current_state.get("_validation_context", {}),
@@ -447,7 +516,7 @@ class CredexFlow(Flow):
                     new_state[key] = current_state[key]
 
             # Update state
-            self.credex_service._parent_service.user.state.update_state(new_state)
+            self.credex_service.state_manager.update_state(new_state)
 
             # Log success
             audit.log_state_transition(

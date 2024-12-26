@@ -120,16 +120,10 @@ class MessageHandler:
                     logger.error(f"Failed to prepare flow state: {error}")
                     return WhatsAppMessage.from_core_message(error)
 
-                # Initialize flow with channel info only
+                # Initialize flow (channel info already in state)
                 result = self.flow_manager.initialize_flow(
                     flow_type=flow_type,
-                    flow_class=flow_class,
-                    kwargs={
-                        "channel": {
-                            "type": WhatsAppStateManager.get_channel_type(state),
-                            "identifier": channel_id
-                        }
-                    }
+                    flow_class=flow_class
                 )
                 logger.info(f"Flow {flow_type} initialized")
                 return WhatsAppMessage.from_core_message(result)

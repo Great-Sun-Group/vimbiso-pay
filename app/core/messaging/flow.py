@@ -184,27 +184,59 @@ class Step:
 class Flow:
     """Base class for all flows"""
 
-    def __init__(self, id: str, steps: List[Step], state: Optional[FlowState] = None):
+    def __init__(
+        self,
+        id: str,
+        steps: Optional[List[Step]] = None,
+        flow_type: Optional[str] = None,
+        state: Optional[FlowState] = None
+    ):
         """Initialize flow with proper state management
 
         Args:
             id: Flow identifier
-            steps: List of flow steps
+            steps: Optional list of flow steps (None to create through _create_steps)
+            flow_type: Type of flow (e.g. 'offer', 'accept')
             state: Optional FlowState for initialization
 
         Note:
             If state is provided, it must contain member_id from top level state
+            If steps is None, subclasses must implement _create_steps()
+            Steps are created AFTER service initialization
         """
         self.id = id
-        self.steps = steps
         self.current_index = 0
         self.data: Dict[str, Any] = {}
         self._previous_data: Dict[str, Any] = {}  # Store previous state for rollback
         self.state: Optional[FlowState] = None  # Current flow state
+        self.flow_type = flow_type
+        self.steps: List[Step] = []  # Initialize empty steps list
 
         # Initialize state if provided
         if state:
+            # Ensure flow_type is set in state data
+            if flow_type and isinstance(state, FlowState):
+                state.data["flow_type"] = flow_type
             self.set_state(state)
+
+        # Log initialization
+        logger.debug(f"Flow {self.id} initialized:")
+        logger.debug(f"- Flow type: {self.flow_type}")
+        logger.debug(f"- Member ID: {self.member_id}")
+        logger.debug(f"- Has state: {bool(self.state)}")
+
+    def initialize_steps(self) -> None:
+        """Initialize steps after service initialization
+
+        Note:
+            This must be called after service is properly initialized
+            Subclasses must implement _create_steps() to provide steps
+        """
+        if hasattr(self, '_create_steps'):
+            self.steps = self._create_steps()
+            logger.debug(f"Steps initialized: {[step.id for step in self.steps]}")
+        else:
+            logger.warning(f"Flow {self.id} has no _create_steps method")
 
     @property
     def current_step(self) -> Optional[Step]:

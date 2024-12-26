@@ -26,10 +26,16 @@ class CredexBotService(BotServiceInterface, BaseActionHandler):
         # Initialize services and handlers
         self.credex_service = user.state.get_or_create_credex_service()
 
+        # Validate service initialization
+        if not self.credex_service or not self.credex_service.services:
+            logger.error("Service not properly initialized")
+            raise ValueError("Failed to initialize required services")
+
         # Log service initialization
         logger.debug("Service initialization:")
         logger.debug(f"- Has credex_service: {bool(self.credex_service)}")
         logger.debug(f"- Has jwt_token: {bool(self.credex_service.jwt_token)}")
+        logger.debug(f"- Services initialized: {list(self.credex_service.services.keys())}")
 
         # Initialize handlers
         self.auth_handler = AuthActionHandler(self)

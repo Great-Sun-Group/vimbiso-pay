@@ -3,8 +3,10 @@ import logging
 from typing import Any, Dict, Optional, Tuple
 
 from services.credex.service import CredExService
+
 from .config import ACTIVITY_TTL, atomic_state
-from .state_utils import create_initial_state, prepare_state_update, update_critical_fields
+from .state_utils import (create_initial_state, prepare_state_update,
+                          update_critical_fields)
 
 logger = logging.getLogger(__name__)
 

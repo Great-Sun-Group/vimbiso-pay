@@ -18,14 +18,14 @@ def update_current_state(response_data, current_state, reset):
 def handle_successful_refresh(current_state, state, bot_service):
     """Handle successful member refresh"""
     logger.info("Refresh successful")
-    state.update_state(current_state, "refresh")
+    state.update_state(current_state)
     return bot_service.action_handler.handle_action_select_profile()
 
 
 def handle_failed_refresh(current_state, state, error_message, bot_service):
     """Handle failed member refresh"""
     logger.error(f"Refresh failed: {error_message}")
-    state.update_state(current_state, "refresh_failed")
+    state.update_state(current_state)
     channel_identifier = bot_service.user.state.state.get("channel", {}).get("identifier")
     return wrap_text(
         REGISTER.format(message=error_message),

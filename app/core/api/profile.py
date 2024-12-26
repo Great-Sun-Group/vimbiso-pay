@@ -84,7 +84,7 @@ class ProfileManager(BaseAPIClient):
             current_state["current_account"] = {}
 
         # Update state
-        user.state.update_state(current_state, update_from)
+        user.state.update_state(current_state)
         logger.info(f"State updated from {update_from}")
 
     def _handle_account_setup(
@@ -264,7 +264,7 @@ class ProfileManager(BaseAPIClient):
             # Update state
             channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
             user = CachedUser(channel_identifier)
-            user.state.update_state(current_state, "refresh")
+            user.state.update_state(current_state)
 
             logger.info("State updated successfully after refresh")
             return None

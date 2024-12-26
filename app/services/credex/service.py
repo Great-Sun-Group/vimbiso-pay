@@ -14,16 +14,18 @@ logger = logging.getLogger(__name__)
 class CredExService(CredExServiceInterface):
     """CredEx service with minimal state coupling"""
 
-    def __init__(self, config: Optional[CredExConfig] = None, state_manager: Any = None):
+    def __init__(self, config: Optional[CredExConfig] = None, state_manager: Any = None, parent_service: Any = None):
         """Initialize CredEx service
 
         Args:
             config: Service configuration
             state_manager: State manager for token storage
+            parent_service: Parent service reference
         """
         # Share single config instance
         self.config = config or CredExConfig.from_env()
         self.state_manager = state_manager
+        self._parent_service = parent_service
 
         # Initialize services with shared config
         self.services = {
@@ -33,9 +35,21 @@ class CredExService(CredExServiceInterface):
             'recurring': CredExRecurringService(config=self.config)
         }
 
+        # Set parent reference on all services
+        for service in self.services.values():
+            service._parent_service = self
+
         # Initialize token if available
         if state_manager and (token := state_manager.jwt_token):
             self._set_token(token)
+
+        # Log initialization
+        logger.debug("CredEx service initialized:")
+        logger.debug(f"- Has config: {bool(self.config)}")
+        logger.debug(f"- Has state manager: {bool(self.state_manager)}")
+        logger.debug(f"- Has parent service: {bool(self._parent_service)}")
+        logger.debug(f"- Services initialized: {list(self.services.keys())}")
+        logger.debug(f"- Has token: {bool(self.jwt_token)}")
 
     def _set_token(self, token: str) -> None:
         """Set token in services and state"""
@@ -106,3 +120,34 @@ class CredExService(CredExServiceInterface):
     def jwt_token(self) -> Optional[str]:
         """Get JWT token from state manager"""
         return self.state_manager.jwt_token if self.state_manager else None
+
+    def validate_initialization(self) -> Optional[str]:
+        """Validate service initialization
+
+        Returns:
+            Optional[str]: Error message if validation fails
+        """
+        try:
+            if not self.config:
+                return "Service configuration not initialized"
+
+            if not self.state_manager:
+                return "State manager not initialized"
+
+            if not self._parent_service:
+                return "Parent service reference not set"
+
+            if not self.services:
+                return "No services initialized"
+
+            for service_name, service in self.services.items():
+                if not hasattr(service, '_parent_service'):
+                    return f"Service {service_name} missing parent reference"
+                if not service._parent_service:
+                    return f"Service {service_name} parent reference not set"
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Service validation error: {str(e)}")
+            return str(e)

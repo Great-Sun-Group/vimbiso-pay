@@ -13,8 +13,10 @@ import logging
 from typing import Any, Dict, Optional
 
 from core.utils.flow_audit import FlowAuditLogger
+from core.messaging.flow import FlowState
 
 from ...types import WhatsAppMessage
+from ...state_manager import StateManager
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -46,7 +48,32 @@ class FlowManager:
             )
             return None
 
-    def initialize_flow(self, flow_type: str, flow_class: Any, **kwargs) -> WhatsAppMessage:
+    def _validate_service(self) -> Optional[str]:
+        """Validate service initialization
+
+        Returns:
+            Optional[str]: Error message if validation fails
+        """
+        try:
+            if not self.service.credex_service:
+                return "CredEx service not initialized"
+
+            if not hasattr(self.service.credex_service, '_parent_service'):
+                return "Service missing parent reference"
+
+            if not hasattr(self.service.credex_service, 'services'):
+                return "Service missing required services"
+
+            if not self.service.credex_service.services:
+                return "Service has no initialized sub-services"
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Service validation error: {str(e)}")
+            return str(e)
+
+    def initialize_flow(self, flow_type: str, flow_class: Any) -> WhatsAppMessage:
         """Initialize a new flow with proper state management"""
         try:
             # Log flow start attempt
@@ -56,8 +83,7 @@ class FlowManager:
                 None,
                 {
                     "flow_type": flow_type,
-                    "flow_class": flow_class.__name__ if hasattr(flow_class, '__name__') else str(flow_class),
-                    **kwargs
+                    "flow_class": flow_class.__name__ if hasattr(flow_class, '__name__') else str(flow_class)
                 },
                 "in_progress"
             )
@@ -93,11 +119,25 @@ class FlowManager:
                 )
                 return WhatsAppMessage.create_text(channel_id, f"❌ Failed to start flow: {error_msg}")
 
+            # Validate service initialization
+            error_msg = self._validate_service()
+            if error_msg:
+                logger.error(f"Flow start error: {error_msg}")
+                audit.log_flow_event(
+                    "bot_service",
+                    "flow_start_error",
+                    None,
+                    {
+                        "error": error_msg,
+                        "state": state,
+                        "channel_id": channel_id
+                    },
+                    "failure"
+                )
+                return WhatsAppMessage.create_text(channel_id, f"❌ Failed to start flow: {error_msg}")
+
             # Create flow ID from type and member ID
             flow_id = f"{flow_type}_{member_id}"
-
-            # Create proper FlowState object from the start
-            from core.messaging.flow import FlowState
 
             # Initialize flow state with member_id from top level (SINGLE SOURCE OF TRUTH)
             flow_state = FlowState.create(
@@ -106,18 +146,30 @@ class FlowManager:
                 flow_type=flow_type
             )
 
-            # Create flow with FlowState
+            # Add channel info to state data (SINGLE SOURCE OF TRUTH)
+            flow_state.data["channel"] = StateManager.prepare_state_update(
+                current_state={},
+                channel_identifier=channel_id
+            )["channel"]
+
+            # Create flow with proper initialization
             flow = flow_class(
                 id=flow_id,
-                steps=[],  # Let flow create its own steps through _create_steps()
                 flow_type=flow_type,
                 state=flow_state
             )
+
+            # Initialize service BEFORE any step operations
             flow.credex_service = self.service.credex_service
+
+            # Initialize steps after service is ready
+            flow.initialize_steps()
 
             # Get flow state and update through state manager
             flow_data = flow.get_state().to_dict()
-            self.service.user.state.update_state({"flow_data": flow_data}, "flow_init")
+            self.service.user.state.update_state({
+                "flow_data": flow_data
+            })
 
             # Get initial message
             result = (flow.current_step.get_message(flow.data) if flow.current_step
