@@ -1,6 +1,6 @@
-# VimbisoPay
+# Vimbiso Chatbot Server
 
-A WhatsApp bot service that facilitates financial transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in a secure WhatsApp chat.
+A server that facilitates financial transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in secure WhatsApp and SMS chats.
 
 ## Documentation
 - [Flow Framework](docs/flow-framework.md) - Progressive interaction framework
