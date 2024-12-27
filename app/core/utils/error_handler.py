@@ -1,5 +1,7 @@
 import logging
 from typing import Dict, Any, Optional
+
+from core.utils.state_validator import StateValidator
 from .exceptions import (
     CredExCoreException as CredExBotException,
     InvalidInputException,
@@ -38,18 +40,40 @@ def handle_error(e: Exception, bot_service: Any) -> Dict[str, Any]:
     else:
         message = "I apologize, but something went wrong. Please try again later."
 
-    # Log error with context
-    logger.error(
-        f"Error: {type(e).__name__} - {str(e)}",
-        extra={
-            "error_type": type(e).__name__,
-            "error_message": str(e),
-            "channel": getattr(bot_service.user.state, "state", {}).get("channel", {}),
-            "state": getattr(bot_service.user.state, "state", {})
+    try:
+        # Get required state fields with validation at boundary
+        required_fields = {"channel"}
+        current_state = {
+            field: bot_service.user.state_manager.get(field)
+            for field in required_fields
         }
-    )
 
-    return wrap_text(message, bot_service.user.state.state.get("channel", {}).get("identifier"))
+        # Validate at boundary
+        validation = StateValidator.validate_state(current_state)
+        if not validation.is_valid:
+            logger.error(f"Invalid state: {validation.error_message}")
+            return wrap_text(message, "unknown")
+
+        channel = current_state["channel"]
+        if not isinstance(channel, dict) or not channel.get("identifier"):
+            logger.error("Invalid channel structure")
+            return wrap_text(message, "unknown")
+
+        # Log error with context
+        logger.error(
+            f"Error: {type(e).__name__} - {str(e)}",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "channel": channel,
+                "state": current_state
+            }
+        )
+
+        return wrap_text(message, channel["identifier"])
+    except Exception as log_error:
+        logger.error(f"Error during error handling: {str(log_error)}")
+        return wrap_text(message, "unknown")
 
 
 def handle_api_error(e: Exception) -> Dict[str, Any]:

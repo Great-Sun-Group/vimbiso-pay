@@ -3,10 +3,9 @@ import logging
 from typing import Any, Optional
 
 from core.messaging.flow import Flow
-from core.messaging.types import (
-    ChannelIdentifier, ChannelType, InteractiveContent,
-    InteractiveType, Message, MessageRecipient
-)
+from core.messaging.types import (ChannelIdentifier, ChannelType,
+                                  InteractiveContent, InteractiveType, Message,
+                                  MessageRecipient)
 from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
@@ -58,7 +57,7 @@ class DashboardFlow(Flow):
         # Initialize services
         self.state_manager = state_manager
         self.success_message = success_message
-        self.credex_service = state_manager.get_credex_service()
+        self.credex_service = state_manager.get_or_create_credex_service()
         if not self.credex_service:
             raise ValueError("Failed to initialize credex service")
 

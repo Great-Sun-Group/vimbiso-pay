@@ -1,12 +1,11 @@
 """Member tier upgrade flow implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 from core.messaging.flow import Flow, Step, StepType
 from core.messaging.types import Message
 from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
 
 from ...types import WhatsAppMessage
 from .templates import MemberTemplates
@@ -24,20 +23,17 @@ class UpgradeFlow(Flow):
         if not state_manager:
             raise ValueError("State manager is required")
 
-        # Validate initial state at boundary
-        validation = StateValidator.validate_before_access(
-            {
-                "member_id": state_manager.get("member_id"),
-                "channel": state_manager.get("channel")
-            },
-            {"member_id", "channel"}
-        )
-        if not validation.is_valid:
-            raise ValueError(f"Invalid initial state: {validation.error_message}")
+        # Get required state (already validated by message handler)
+        member_id = state_manager.get("member_id")
+        account_id = state_manager.get("account_id")
+        if not member_id:
+            raise ValueError("Member ID required for upgrade")
+        if not account_id:
+            raise ValueError("Account ID required for upgrade payment")
 
         self.validator = MemberFlowValidator()
         self.state_manager = state_manager
-        self.credex_service = state_manager.get_credex_service()
+        self.credex_service = state_manager.get_or_create_credex_service()
 
         # Create flow ID from member_id
         member_id = state_manager.get("member_id")
@@ -80,17 +76,7 @@ class UpgradeFlow(Flow):
     def _create_confirmation_message(self, state: Dict[str, Any]) -> Message:
         """Create tier upgrade confirmation message"""
         try:
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {
-                    "member_id": self.state_manager.get("member_id"),
-                    "channel": self.state_manager.get("channel")
-                },
-                {"member_id", "channel"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
-
+            # Get required state (already validated)
             channel = self.state_manager.get("channel")
             member_id = self.state_manager.get("member_id")
 
@@ -104,18 +90,7 @@ class UpgradeFlow(Flow):
     def complete(self) -> Message:
         """Complete tier upgrade flow"""
         try:
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {
-                    "member_id": self.state_manager.get("member_id"),
-                    "channel": self.state_manager.get("channel"),
-                    "account_id": self.state_manager.get("account_id")
-                },
-                {"member_id", "channel", "account_id"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
-
+            # Get required state (already validated)
             channel = self.state_manager.get("channel")
             member_id = self.state_manager.get("member_id")
             account_id = self.state_manager.get("account_id")

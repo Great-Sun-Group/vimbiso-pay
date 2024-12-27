@@ -2,6 +2,7 @@ import logging
 from typing import Optional, Tuple, Dict, Any
 from django.core.cache import cache
 from services.whatsapp.types import BotServiceInterface
+from core.utils.state_validator import StateValidator
 
 from .auth_client import AuthClient
 from .dashboard_client import DashboardClient
@@ -27,10 +28,18 @@ class APIInteractions:
         success, data = self.get_dashboard()
         if success:
             user = CachedUser(self.bot_service.user.channel_identifier)
-            current_state = user.state.get_state(user)
+            # Get required state fields with validation at boundary
+            required_fields = {"profile", "current_account", "jwt_token", "authenticated"}
+            current_state = {
+                field: user.state_manager.get(field)
+                for field in required_fields
+            }
 
-            if not isinstance(current_state, dict):
-                current_state = current_state.state
+            # Validate at boundary
+            validation = StateValidator.validate_state(current_state)
+            if not validation.is_valid:
+                logger.error(f"Invalid state: {validation.error_message}")
+                return None
             return self.dashboard_client.process_dashboard_response(current_state, data)
         return None
 
@@ -39,10 +48,18 @@ class APIInteractions:
         logger.info("Refreshing member info")
 
         user = CachedUser(self.bot_service.user.channel_identifier)
-        current_state = user.state.get_state(user)
+        # Get required state fields with validation at boundary
+        required_fields = {"profile", "current_account", "jwt_token", "authenticated"}
+        current_state = {
+            field: user.state_manager.get(field)
+            for field in required_fields
+        }
 
-        if not isinstance(current_state, dict):
-            current_state = current_state.state
+        # Validate at boundary
+        validation = StateValidator.validate_state(current_state)
+        if not validation.is_valid:
+            logger.error(f"Invalid state: {validation.error_message}")
+            return None
 
         self._handle_reset_and_init(reset, silent, init)
 
@@ -70,46 +87,73 @@ class APIInteractions:
 
     def register_member(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
         """Sends a registration request to the CredEx API"""
-        return self.auth_client.register_member(payload, self.bot_service.user.state.jwt_token)
+        return self.auth_client.register_member(
+            payload,
+            self.bot_service.user.state_manager.get("jwt_token")
+        )
 
     def get_dashboard(self) -> Tuple[bool, Dict[str, Any]]:
         """Fetches the member's dashboard from the CredEx API"""
         return self.dashboard_client.get_dashboard(
-            self.bot_service.user.state.state.get("channel", {}).get("identifier"),
-            self.bot_service.user.state.jwt_token
+            self.bot_service.user.state_manager.get("channel", {}).get("identifier"),
+            self.bot_service.user.state_manager.get("jwt_token")
         )
 
     def validate_handle(self, handle: str) -> Tuple[bool, Dict[str, Any]]:
         """Validates a handle by making an API call to CredEx"""
-        return self.dashboard_client.validate_handle(handle, self.bot_service.user.state.jwt_token)
+        return self.dashboard_client.validate_handle(
+            handle,
+            self.bot_service.user.state_manager.get("jwt_token")
+        )
 
     def offer_credex(self, payload: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """Sends an offer to the CredEx API"""
-        return self.credex_client.offer_credex(payload, self.bot_service.user.state.jwt_token)
+        return self.credex_client.offer_credex(
+            payload,
+            self.bot_service.user.state_manager.get("jwt_token")
+        )
 
     def accept_bulk_credex(self, payload: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """Accepts multiple CredEx offers"""
-        return self.credex_client.accept_bulk_credex(payload, self.bot_service.user.state.jwt_token)
+        return self.credex_client.accept_bulk_credex(
+            payload,
+            self.bot_service.user.state_manager.get("jwt_token")
+        )
 
     def accept_credex(self, payload: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """Accepts a CredEx offer"""
-        return self.credex_client.accept_credex(payload, self.bot_service.user.state.jwt_token)
+        return self.credex_client.accept_credex(
+            payload,
+            self.bot_service.user.state_manager.get("jwt_token")
+        )
 
     def decline_credex(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
         """Declines a CredEx offer"""
-        return self.credex_client.decline_credex(payload, self.bot_service.user.state.jwt_token)
+        return self.credex_client.decline_credex(
+            payload,
+            self.bot_service.user.state_manager.get("jwt_token")
+        )
 
     def cancel_credex(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
         """Cancels a CredEx offer"""
-        return self.credex_client.cancel_credex(payload, self.bot_service.user.state.jwt_token)
+        return self.credex_client.cancel_credex(
+            payload,
+            self.bot_service.user.state_manager.get("jwt_token")
+        )
 
     def get_credex(self, payload: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """Fetches a specific CredEx offer"""
-        return self.credex_client.get_credex(payload, self.bot_service.user.state.jwt_token)
+        return self.credex_client.get_credex(
+            payload,
+            self.bot_service.user.state_manager.get("jwt_token")
+        )
 
     def get_ledger(self, payload: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """Fetches ledger information"""
-        return self.dashboard_client.get_ledger(payload, self.bot_service.user.state.jwt_token)
+        return self.dashboard_client.get_ledger(
+            payload,
+            self.bot_service.user.state_manager.get("jwt_token")
+        )
 
     def _handle_reset_and_init(self, reset: bool, silent: bool, init: bool) -> None:
         """Handles reset and initialization logic"""
@@ -121,19 +165,19 @@ class APIInteractions:
         """Sends a delay message to the user"""
         if (
             self.bot_service.state.stage != "handle_action_register"
-            and not cache.get(f"{self.bot_service.user.state.state.get('channel', {}).get('identifier')}_interracted")
+            and not cache.get(f"{self.bot_service.user.state_manager.get('channel', {}).get('identifier')}_interracted")
         ):
             CredexWhatsappService(
                 payload={
                     "messaging_product": "whatsapp",
                     "preview_url": False,
                     "recipient_type": "individual",
-                    "to": self.bot_service.user.state.state.get("channel", {}).get("identifier"),
+                    "to": self.bot_service.user.state_manager.get("channel", {}).get("identifier"),
                     "type": "text",
                     "text": {"body": "Please wait while we process your request..."},
                 }
             ).send_message()
-            cache.set(f"{self.bot_service.user.state.state.get('channel', {}).get('identifier')}_interracted", True, 60 * 15)
+            cache.set(f"{self.bot_service.user.state_manager.get('channel', {}).get('identifier')}_interracted", True, 60 * 15)
 
     def _send_first_message(self) -> None:
         """Sends the first message to the user"""
@@ -143,7 +187,7 @@ class APIInteractions:
                 "messaging_product": "whatsapp",
                 "preview_url": False,
                 "recipient_type": "individual",
-                "to": self.bot_service.user.state.state.get("channel", {}).get("identifier"),
+                "to": self.bot_service.user.state_manager.get("channel", {}).get("identifier"),
                 "type": "text",
                 "text": {"body": first_message},
             }

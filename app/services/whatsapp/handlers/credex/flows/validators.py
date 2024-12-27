@@ -3,7 +3,9 @@ import logging
 import re
 from typing import Any, Dict, Union
 
-from core.utils import audit
+from core.utils.flow_audit import FlowAuditLogger
+
+audit = FlowAuditLogger()
 
 logger = logging.getLogger(__name__)
 

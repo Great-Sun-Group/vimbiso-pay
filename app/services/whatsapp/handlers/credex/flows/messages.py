@@ -2,12 +2,14 @@
 from typing import Any, Dict
 
 from services.whatsapp.types import WhatsAppMessage
-from ...message.state_handler import StateHandler
+from core.utils.state_validator import StateValidator
 
 
 def create_initial_prompt_with_state(state_manager: Any) -> Dict[str, Any]:
     """Create initial welcome message without state duplication"""
-    StateHandler.validate_state(state_manager)
+    validation_result = StateValidator.validate_state(state_manager)
+    if not validation_result.is_valid:
+        raise ValueError(f"Invalid state: {validation_result.error_message}")
     return WhatsAppMessage.create_text_with_state(
         state_manager,
         "Welcome! Please enter amount:"
@@ -16,7 +18,9 @@ def create_initial_prompt_with_state(state_manager: Any) -> Dict[str, Any]:
 
 def create_handle_prompt_with_state(state_manager: Any) -> Dict[str, Any]:
     """Create handle input prompt without state duplication"""
-    StateHandler.validate_state(state_manager)
+    validation_result = StateValidator.validate_state(state_manager)
+    if not validation_result.is_valid:
+        raise ValueError(f"Invalid state: {validation_result.error_message}")
     return WhatsAppMessage.create_text_with_state(
         state_manager,
         "Please enter handle:"
@@ -25,7 +29,9 @@ def create_handle_prompt_with_state(state_manager: Any) -> Dict[str, Any]:
 
 def create_confirmation_prompt_with_state(state_manager: Any) -> Dict[str, Any]:
     """Create confirmation prompt without state duplication"""
-    StateHandler.validate_state(state_manager)
+    validation_result = StateValidator.validate_state(state_manager)
+    if not validation_result.is_valid:
+        raise ValueError(f"Invalid state: {validation_result.error_message}")
     return WhatsAppMessage.create_text_with_state(
         state_manager,
         "Please confirm (yes/no):"
@@ -34,7 +40,9 @@ def create_confirmation_prompt_with_state(state_manager: Any) -> Dict[str, Any]:
 
 def create_success_message_with_state(state_manager: Any) -> Dict[str, Any]:
     """Create success message without state duplication"""
-    StateHandler.validate_state(state_manager)
+    validation_result = StateValidator.validate_state(state_manager)
+    if not validation_result.is_valid:
+        raise ValueError(f"Invalid state: {validation_result.error_message}")
     return WhatsAppMessage.create_text_with_state(
         state_manager,
         "Thank you! Your request has been processed."
@@ -43,7 +51,9 @@ def create_success_message_with_state(state_manager: Any) -> Dict[str, Any]:
 
 def create_cancel_message_with_state(state_manager: Any) -> Dict[str, Any]:
     """Create cancellation message without state duplication"""
-    StateHandler.validate_state(state_manager)
+    validation_result = StateValidator.validate_state(state_manager)
+    if not validation_result.is_valid:
+        raise ValueError(f"Invalid state: {validation_result.error_message}")
     return WhatsAppMessage.create_text_with_state(
         state_manager,
         "Request cancelled."
@@ -52,7 +62,9 @@ def create_cancel_message_with_state(state_manager: Any) -> Dict[str, Any]:
 
 def create_error_message_with_state(state_manager: Any, error: str) -> Dict[str, Any]:
     """Create error message without state duplication"""
-    StateHandler.validate_state(state_manager)
+    validation_result = StateValidator.validate_state(state_manager)
+    if not validation_result.is_valid:
+        raise ValueError(f"Invalid state: {validation_result.error_message}")
     return WhatsAppMessage.create_text_with_state(
         state_manager,
         str(error)
@@ -61,17 +73,21 @@ def create_error_message_with_state(state_manager: Any, error: str) -> Dict[str,
 
 def create_offer_confirmation_with_state(state_manager: Any) -> Dict[str, Any]:
     """Create offer confirmation message without state duplication"""
-    StateHandler.validate_state(state_manager)
+    validation_result = StateValidator.validate_state(state_manager)
+    if not validation_result.is_valid:
+        raise ValueError(f"Invalid state: {validation_result.error_message}")
 
     # Get offer details directly from state
     amount = state_manager.get("offer_amount")
+    denomination = state_manager.get("offer_denomination", "")
     handle = state_manager.get("offer_handle")
-    name = state_manager.get("offer_name")
+    name = state_manager.get("offer_name", handle)  # Fallback to handle if name not set
 
+    formatted_amount = f"{amount} {denomination}".strip()
     return WhatsAppMessage.create_text_with_state(
         state_manager,
         f"Confirm offer:\n"
-        f"Amount: {amount}\n"
+        f"Amount: {formatted_amount}\n"
         f"To: {name} ({handle})\n\n"
         "Please confirm (yes/no):"
     )
@@ -82,7 +98,9 @@ def create_action_confirmation_with_state(
     action: str
 ) -> Dict[str, Any]:
     """Create action confirmation message without state duplication"""
-    StateHandler.validate_state(state_manager)
+    validation_result = StateValidator.validate_state(state_manager)
+    if not validation_result.is_valid:
+        raise ValueError(f"Invalid state: {validation_result.error_message}")
 
     # Get action details directly from state
     amount = state_manager.get("action_amount")
@@ -118,7 +136,9 @@ def create_list_message_with_state(
     empty_message: str = None
 ) -> Dict[str, Any]:
     """Create list selection message without state duplication"""
-    StateHandler.validate_state(state_manager)
+    validation_result = StateValidator.validate_state(state_manager)
+    if not validation_result.is_valid:
+        raise ValueError(f"Invalid state: {validation_result.error_message}")
 
     # Get items directly from state
     items = state_manager.get("list_items", [])

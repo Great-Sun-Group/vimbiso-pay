@@ -18,45 +18,36 @@ class CachedUser:
         # Initialize state manager
         self._state_manager = StateManager(f"channel:{channel_identifier}")
 
-        # Validate and initialize state
-        validation = StateValidator.validate_state(self._state_manager.get_state())
+        # Validate state at boundary
+        validation = StateValidator.validate_state(self._state_manager._state)
         if not validation.is_valid:
-            logger.debug("Initializing empty state")
-            self._state_manager.update_state({
-                "member_id": None,
-                "channel": {
-                    "type": "whatsapp",
-                    "identifier": channel_identifier,
-                    "metadata": {}
-                },
-                "jwt_token": None
-            })
+            logger.error(f"Invalid state: {validation.error_message}")
+            raise ValueError(f"Invalid state: {validation.error_message}")
 
         logger.debug("CachedUser initialization complete")
 
-    def _validate_state_access(self, field: str) -> None:
-        """Validate state before accessing a field"""
-        validation = StateValidator.validate_before_access(
-            self._state_manager.get_state(),
-            {field}
-        )
-        if not validation.is_valid:
-            raise ValueError(f"Invalid state access: {validation.error_message}")
-
     def update_state(self, updates: Dict[str, Any]) -> None:
         """Update state while maintaining SINGLE SOURCE OF TRUTH"""
-        # Validate updates
-        new_state = {**self._state_manager.get_state(), **updates}
-        validation = StateValidator.validate_state(new_state)
+        # Validate updates at boundary
+        validation = StateValidator.validate_state(updates)
         if not validation.is_valid:
             raise ValueError(f"Invalid state update: {validation.error_message}")
 
-        self._state_manager.update_state(updates)
+        # Update through state manager
+        success, error = self._state_manager.update_state(updates)
+        if not success:
+            raise ValueError(f"Failed to update state: {error}")
 
     @property
     def member_id(self) -> Optional[str]:
         """Get member ID from state"""
-        self._validate_state_access("member_id")
+        # Validate at boundary
+        validation = StateValidator.validate_before_access(
+            {"member_id": self._state_manager.get("member_id")},
+            {"member_id"}
+        )
+        if not validation.is_valid:
+            raise ValueError(f"Invalid state access: {validation.error_message}")
         return self._state_manager.get("member_id")
 
     @member_id.setter
@@ -67,7 +58,13 @@ class CachedUser:
     @property
     def channel_identifier(self) -> Optional[str]:
         """Get channel identifier from state"""
-        self._validate_state_access("channel")
+        # Validate at boundary
+        validation = StateValidator.validate_before_access(
+            {"channel": self._state_manager.get("channel")},
+            {"channel"}
+        )
+        if not validation.is_valid:
+            raise ValueError(f"Invalid state access: {validation.error_message}")
         channel = self._state_manager.get("channel")
         return channel.get("identifier") if channel else None
 
@@ -85,7 +82,13 @@ class CachedUser:
     @property
     def jwt_token(self) -> Optional[str]:
         """Get JWT token from state"""
-        self._validate_state_access("jwt_token")
+        # Validate at boundary
+        validation = StateValidator.validate_before_access(
+            {"jwt_token": self._state_manager.get("jwt_token")},
+            {"jwt_token"}
+        )
+        if not validation.is_valid:
+            raise ValueError(f"Invalid state access: {validation.error_message}")
         return self._state_manager.get("jwt_token")
 
     @jwt_token.setter

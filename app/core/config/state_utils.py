@@ -2,23 +2,6 @@
 from typing import Any, Dict
 
 
-def create_initial_state() -> Dict[str, Any]:
-    """Create minimal initial state structure"""
-    return {
-        # Core identity (SINGLE SOURCE OF TRUTH)
-        "member_id": None,
-        "channel": {
-            "type": "whatsapp",
-            "identifier": None,
-            "metadata": {}
-        },
-        # Authentication (SINGLE SOURCE OF TRUTH)
-        "jwt_token": None,
-        # Essential state
-        "flow_data": None
-    }
-
-
 def prepare_state_update(current_state: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
     """Update state preserving SINGLE SOURCE OF TRUTH"""
     if not isinstance(current_state, dict):

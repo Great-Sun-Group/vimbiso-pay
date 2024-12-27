@@ -9,15 +9,21 @@ class StateValidator:
 
     # Critical fields that must be validated
     CRITICAL_FIELDS = {
-        "member_id",
-        "channel",
-        "jwt_token"
+        "channel"  # Only channel is required for new users
     }
 
     # Fields that must never be duplicated
     UNIQUE_FIELDS = {
         "member_id",
         "channel"
+    }
+
+    # Fields that must exist but can be None
+    NULLABLE_FIELDS = {
+        "member_id",
+        "jwt_token",
+        "authenticated",
+        "flow_data"
     }
 
     @classmethod
@@ -30,7 +36,7 @@ class StateValidator:
                 error_message="State must be a dictionary"
             )
 
-        # Validate critical fields exist
+        # Validate critical fields exist and are not None
         missing_fields = cls.CRITICAL_FIELDS - set(state.keys())
         if missing_fields:
             return ValidationResult(
@@ -43,19 +49,13 @@ class StateValidator:
         if not channel_validation.is_valid:
             return channel_validation
 
-        # Validate member_id (SINGLE SOURCE OF TRUTH)
-        if not isinstance(state["member_id"], (str, type(None))):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Member ID must be string or None"
-            )
-
-        # Validate jwt_token (SINGLE SOURCE OF TRUTH)
-        if not isinstance(state["jwt_token"], (str, type(None))):
-            return ValidationResult(
-                is_valid=False,
-                error_message="JWT token must be string or None"
-            )
+        # Validate nullable fields if present (SINGLE SOURCE OF TRUTH)
+        for field in cls.NULLABLE_FIELDS:
+            if field in state and not isinstance(state[field], (str, type(None), bool, dict)):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"{field} must be string, None, boolean or dict"
+                )
 
         # Validate no state duplication
         duplication_validation = cls._validate_no_duplication(state)
@@ -164,25 +164,47 @@ class StateValidator:
 
     @classmethod
     def validate_before_access(cls, state: Dict[str, Any], required_fields: Set[str]) -> ValidationResult:
-        """Validate state before accessing fields"""
-        # First validate core state structure
-        validation = cls.validate_state(state)
-        if not validation.is_valid:
-            return validation
-
-        # Then validate required fields exist
-        missing_fields = required_fields - set(state.keys())
-        if missing_fields:
+        """Validate state before accessing specific fields"""
+        # Validate state is dictionary
+        if not isinstance(state, dict):
             return ValidationResult(
                 is_valid=False,
-                error_message=f"Missing required fields for access: {', '.join(missing_fields)}"
+                error_message="State must be a dictionary"
             )
 
-        # Validate no state duplication in access
-        for field in required_fields:
-            if field in cls.UNIQUE_FIELDS:
-                duplication_validation = cls._validate_no_duplication(state)
-                if not duplication_validation.is_valid:
-                    return duplication_validation
+        # Validate critical fields if being accessed
+        critical_required = required_fields & cls.CRITICAL_FIELDS
+        if critical_required:
+            missing_critical = critical_required - set(state.keys())
+            if missing_critical:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Missing critical fields: {', '.join(missing_critical)}"
+                )
+
+            # Validate channel structure if required
+            if "channel" in critical_required:
+                channel_validation = cls._validate_channel(state.get("channel"))
+                if not channel_validation.is_valid:
+                    return channel_validation
+
+        # Validate types of any nullable fields being accessed
+        nullable_accessed = required_fields & cls.NULLABLE_FIELDS
+        for field in nullable_accessed:
+            if field in state and not isinstance(state[field], (str, type(None), bool, dict)):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"{field} must be string, None, boolean or dict"
+                )
+
+        # Check for duplication only in accessed fields
+        unique_accessed = required_fields & cls.UNIQUE_FIELDS
+        if unique_accessed:
+            for field in unique_accessed:
+                if any(isinstance(v, dict) and field in v for v in state.values()):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"{field} found in nested state - must only exist at top level"
+                    )
 
         return ValidationResult(is_valid=True)

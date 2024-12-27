@@ -4,11 +4,10 @@ from typing import Any, Dict, List
 
 from core.messaging.flow import Step, StepType
 from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
-
 from services.whatsapp.types import WhatsAppMessage
+
 from .base import CredexFlow
-from .messages import create_offer_confirmation
+from .messages import create_offer_confirmation_with_state
 from .transformers import validate_and_parse_amount
 
 logger = logging.getLogger(__name__)
@@ -30,32 +29,18 @@ class OfferFlow(CredexFlow):
         if not state_manager:
             raise ValueError("State manager required")
 
-        # Validate ALL required state at boundary
-        required_fields = {"channel", "member_id", "authenticated", "flow_data"}
-        current_state = {
-            field: state_manager.get(field)
-            for field in required_fields
-        }
-
-        # Initial validation
-        validation = StateValidator.validate_before_access(
-            current_state,
-            {"channel", "member_id"}  # Core requirements
-        )
-        if not validation.is_valid:
-            raise ValueError(f"State validation failed: {validation.error_message}")
-
-        # Get channel info (SINGLE SOURCE OF TRUTH)
+        # Get required state (already validated by message handler)
         channel = state_manager.get("channel")
-        if not channel or not channel.get("identifier"):
-            raise ValueError("Channel identifier not found")
+        member_id = state_manager.get("member_id")
+        if not member_id:
+            raise ValueError("Member ID required for offer flow")
 
         # Initialize base class
         super().__init__(id="offer_flow")
 
         # Initialize services
         self.state_manager = state_manager
-        self.credex_service = state_manager.get_credex_service()
+        self.credex_service = state_manager.get_or_create_credex_service()
         if not self.credex_service:
             raise ValueError("Failed to initialize credex service")
 
@@ -132,14 +117,10 @@ class OfferFlow(CredexFlow):
                 "offer_denomination": denomination
             })
 
-            # Validate state update
-            new_state = {"flow_data": new_flow_data}
-            validation = StateValidator.validate_state(new_state)
-            if not validation.is_valid:
-                raise ValueError(f"Invalid flow data: {validation.error_message}")
-
-            # Update state
-            success, error = self.state_manager.update_state(new_state)
+            # Update state (validation handled by state manager)
+            success, error = self.state_manager.update_state({
+                "flow_data": new_flow_data
+            })
             if not success:
                 raise ValueError(f"Failed to update flow data: {error}")
 
@@ -192,14 +173,10 @@ class OfferFlow(CredexFlow):
             new_flow_data = flow_data.copy()
             new_flow_data["offer_handle"] = handle
 
-            # Validate state update
-            new_state = {"flow_data": new_flow_data}
-            validation = StateValidator.validate_state(new_state)
-            if not validation.is_valid:
-                raise ValueError(f"Invalid flow data: {validation.error_message}")
-
-            # Update state
-            success, error = self.state_manager.update_state(new_state)
+            # Update state (validation handled by state manager)
+            success, error = self.state_manager.update_state({
+                "flow_data": new_flow_data
+            })
             if not success:
                 raise ValueError(f"Failed to update flow data: {error}")
 
@@ -222,26 +199,12 @@ class OfferFlow(CredexFlow):
     def _get_confirmation_message(self, state: Dict[str, Any]) -> WhatsAppMessage:
         """Get confirmation message with strict state validation"""
         try:
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {
-                    "channel": self.state_manager.get("channel"),
-                    "flow_data": self.state_manager.get("flow_data")
-                },
-                {"channel", "flow_data"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
-
-            channel = self.state_manager.get("channel")
+            # Get required data (validation handled by flow steps)
             flow_data = self.state_manager.get("flow_data")
+            if not flow_data:
+                raise ValueError("Flow data required for confirmation")
 
-            return create_offer_confirmation(
-                channel["identifier"],
-                flow_data["offer_amount"],
-                flow_data["offer_denomination"],
-                flow_data["offer_handle"]
-            )
+            return create_offer_confirmation_with_state(self.state_manager)
 
         except ValueError as e:
             logger.error(f"Failed to create confirmation message: {str(e)}")
@@ -250,30 +213,9 @@ class OfferFlow(CredexFlow):
     def complete(self) -> Dict[str, Any]:
         """Complete offer flow enforcing SINGLE SOURCE OF TRUTH"""
         try:
-            # Validate ALL required state at boundary
-            required_fields = {"channel", "member_id", "flow_data", "authenticated"}
-            current_state = {
-                field: self.state_manager.get(field)
-                for field in required_fields
-            }
-
-            # Validate required fields
-            validation = StateValidator.validate_before_access(
-                current_state,
-                {"channel", "member_id", "flow_data"}
-            )
-            if not validation.is_valid:
-                raise ValueError(f"State validation failed: {validation.error_message}")
-
-            # Get channel info (SINGLE SOURCE OF TRUTH)
+            # Get required data (already validated)
             channel = self.state_manager.get("channel")
-            if not channel or not channel.get("identifier"):
-                raise ValueError("Channel identifier not found")
-
-            # Get and validate flow data (SINGLE SOURCE OF TRUTH)
             flow_data = self.state_manager.get("flow_data")
-            if not isinstance(flow_data, dict):
-                raise ValueError("Invalid flow data format")
 
             # Validate required offer data
             required_offer_fields = {"offer_amount", "offer_denomination", "offer_handle"}

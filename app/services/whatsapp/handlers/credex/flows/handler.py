@@ -6,11 +6,8 @@ from core.utils.state_validator import StateValidator
 
 from .base import CredexFlow
 from .dashboard_handler import CredexDashboardHandler
-from .messages import (
-    create_cancel_message,
-    create_initial_prompt,
-    create_success_message
-)
+from .messages import (create_cancel_message, create_initial_prompt,
+                       create_success_message)
 from .steps import create_flow_steps
 
 logger = logging.getLogger(__name__)
@@ -59,7 +56,7 @@ class CredexHandler(CredexFlow):
 
         # Initialize services
         self.state_manager = state_manager
-        self.credex_service = state_manager.get_credex_service()
+        self.credex_service = state_manager.get_or_create_credex_service()
         if not self.credex_service:
             raise ValueError("Failed to initialize credex service")
 

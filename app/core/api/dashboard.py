@@ -2,6 +2,7 @@
 import logging
 from typing import Dict, Any, Tuple, Optional
 
+from core.utils.state_validator import StateValidator
 from .base import BaseAPIClient
 from .profile import ProfileManager
 
@@ -21,7 +22,7 @@ class DashboardManager(BaseAPIClient):
         url = f"{self.base_url}/getMemberDashboardByPhone"
         logger.info(f"Dashboard URL: {url}")
 
-        channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
+        channel_identifier = self.bot_service.user.state_manager.get("channel", {}).get("identifier")
         payload = {"phone": channel_identifier}
         headers = self._get_headers()
 
@@ -29,8 +30,18 @@ class DashboardManager(BaseAPIClient):
             response = self._make_api_request(url, headers, payload, login=False)
             if response.status_code == 200:
                 response_data = response.json()
-                # Get current state
-                current_state = self.profile_manager._get_current_state()
+                # Get required state fields with validation at boundary
+                required_fields = {"profile", "current_account", "jwt_token", "authenticated"}
+                current_state = {
+                    field: self.bot_service.user.state_manager.get(field)
+                    for field in required_fields
+                }
+
+                # Validate at boundary
+                validation = StateValidator.validate_state(current_state)
+                if not validation.is_valid:
+                    logger.error(f"Invalid state: {validation.error_message}")
+                    return False, {"message": "Invalid state"}
 
                 # Add current state's action data to response to preserve it
                 if "data" not in response_data:
@@ -69,8 +80,18 @@ class DashboardManager(BaseAPIClient):
                     response = self._make_api_request(url, headers, payload)
                     if response.status_code == 200:
                         response_data = response.json()
-                        # Get current state
-                        current_state = self.profile_manager._get_current_state()
+                        # Get required state fields with validation at boundary
+                        required_fields = {"profile", "current_account", "jwt_token", "authenticated"}
+                        current_state = {
+                            field: self.bot_service.user.state_manager.get(field)
+                            for field in required_fields
+                        }
+
+                        # Validate at boundary
+                        validation = StateValidator.validate_state(current_state)
+                        if not validation.is_valid:
+                            logger.error(f"Invalid state: {validation.error_message}")
+                            return False, {"message": "Invalid state"}
 
                         # Add current state's action data to response to preserve it
                         if "data" not in response_data:
@@ -126,15 +147,25 @@ class DashboardManager(BaseAPIClient):
         """Refresh member information"""
         logger.info("Refreshing member info")
 
-        # Get current state
-        current_state = self.profile_manager._get_current_state()
+        # Get required state fields with validation at boundary
+        required_fields = {"profile", "current_account", "jwt_token", "authenticated"}
+        current_state = {
+            field: self.bot_service.user.state_manager.get(field)
+            for field in required_fields
+        }
+
+        # Validate at boundary
+        validation = StateValidator.validate_state(current_state)
+        if not validation.is_valid:
+            logger.error(f"Invalid state: {validation.error_message}")
+            return "Invalid state"
 
         # Handle initialization messages
         self._handle_reset_and_init(reset, silent, init)
 
         try:
             url = f"{self.base_url}/getMemberDashboardByPhone"
-            channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
+            channel_identifier = self.bot_service.user.state_manager.get("channel", {}).get("identifier")
             payload = {"phone": channel_identifier}
             headers = self._get_headers()
 

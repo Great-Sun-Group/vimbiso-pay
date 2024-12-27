@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from core.messaging.flow import Flow, Step
 from core.utils.flow_audit import FlowAuditLogger
 
-from ...message.state_handler import StateHandler
+from core.utils.state_validator import StateValidator
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -52,8 +52,10 @@ class CredexFlow(Flow):
 
     def process_step_with_state(self, state_manager: Any, step_data: Dict[str, Any]) -> Dict[str, Any]:
         """Process a flow step without state duplication"""
-        # Validate at boundary
-        StateHandler.validate_state(state_manager)
+        # Validate state at boundary
+        validation_result = StateValidator.validate_state(state_manager)
+        if not validation_result.is_valid:
+            raise ValueError(f"Invalid state: {validation_result.error_message}")
 
         # Process step with state manager
         return self.steps[step_data.get("step", 0)].process_with_state(state_manager, step_data)

@@ -3,7 +3,6 @@ import logging
 from typing import Any, Dict, Optional, Tuple
 
 from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
 
 from ...base_handler import BaseActionHandler
 from ...screens import REGISTER
@@ -23,7 +22,7 @@ class AuthFlow(BaseActionHandler):
             state_manager: State manager instance
         """
         super().__init__(state_manager)
-        self.credex_service = state_manager.get_credex_service()
+        self.credex_service = state_manager.get_or_create_credex_service()
 
     def handle_registration(self, register: bool = False) -> WhatsAppMessage:
         """Handle registration flow enforcing SINGLE SOURCE OF TRUTH
@@ -38,24 +37,8 @@ class AuthFlow(BaseActionHandler):
             ValueError: If state validation fails or required data missing
         """
         try:
-            # Validate ALL required state at boundary
-            required_fields = {"channel", "member_id", "authenticated"}
-            current_state = {
-                field: self.state_manager.get(field)
-                for field in required_fields
-            }
-
-            validation = StateValidator.validate_before_access(
-                current_state,
-                required_fields
-            )
-            if not validation.is_valid:
-                raise ValueError(f"State validation failed: {validation.error_message}")
-
-            # Get channel info (SINGLE SOURCE OF TRUTH)
+            # Get channel info (already validated at service boundary)
             channel = self.state_manager.get("channel")
-            if not channel or not channel.get("identifier"):
-                raise ValueError("Channel identifier not found")
 
             # Log registration attempt
             audit.log_flow_event(
@@ -103,24 +86,8 @@ class AuthFlow(BaseActionHandler):
             ValueError: If state validation fails or required data missing
         """
         try:
-            # Validate ALL required state at boundary
-            required_fields = {"channel"}
-            current_state = {
-                field: self.state_manager.get(field)
-                for field in required_fields
-            }
-
-            validation = StateValidator.validate_before_access(
-                current_state,
-                required_fields
-            )
-            if not validation.is_valid:
-                raise ValueError(f"State validation failed: {validation.error_message}")
-
-            # Get channel info (SINGLE SOURCE OF TRUTH)
+            # Get channel info (already validated at service boundary)
             channel = self.state_manager.get("channel")
-            if not channel or not channel.get("identifier"):
-                raise ValueError("Channel identifier not found")
 
             # Log login attempt
             audit.log_flow_event(
@@ -198,12 +165,7 @@ class AuthFlow(BaseActionHandler):
                 }
             }
 
-            # Validate state update
-            validation = StateValidator.validate_state(new_state)
-            if not validation.is_valid:
-                raise ValueError(f"Invalid state update: {validation.error_message}")
-
-            # Update state
+            # Update state (validation handled by state manager)
             success, error = self.state_manager.update_state(new_state)
             if not success:
                 raise ValueError(f"Failed to update state: {error}")

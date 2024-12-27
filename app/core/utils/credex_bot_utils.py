@@ -1,6 +1,7 @@
 """Utility functions for CredEx bot"""
 import logging
 from core.utils import wrap_text
+from core.utils.state_validator import StateValidator
 from ..config.constants import REGISTER
 
 logger = logging.getLogger(__name__)
@@ -26,10 +27,38 @@ def handle_failed_refresh(current_state, state, error_message, bot_service):
     """Handle failed member refresh"""
     logger.error(f"Refresh failed: {error_message}")
     state.update_state(current_state)
-    channel_identifier = bot_service.user.state.state.get("channel", {}).get("identifier")
+
+    # Get required state fields with validation at boundary
+    required_fields = {"channel"}
+    current_state = {
+        field: bot_service.user.state_manager.get(field)
+        for field in required_fields
+    }
+
+    # Validate at boundary
+    validation = StateValidator.validate_state(current_state)
+    if not validation.is_valid:
+        logger.error(f"Invalid state: {validation.error_message}")
+        return wrap_text(
+            REGISTER.format(message=error_message),
+            "unknown",
+            extra_rows=[{"id": "1", "title": "Become a member"}],
+            include_menu=False,
+        )
+
+    channel = current_state["channel"]
+    if not isinstance(channel, dict) or not channel.get("identifier"):
+        logger.error("Invalid channel structure")
+        return wrap_text(
+            REGISTER.format(message=error_message),
+            "unknown",
+            extra_rows=[{"id": "1", "title": "Become a member"}],
+            include_menu=False,
+        )
+
     return wrap_text(
         REGISTER.format(message=error_message),
-        channel_identifier,
+        channel["identifier"],
         extra_rows=[{"id": "1", "title": "Become a member"}],
         include_menu=False,
     )

@@ -51,12 +51,8 @@ class StateManager:
     ) -> Dict[str, Any]:
         """Prepare state update maintaining SINGLE SOURCE OF TRUTH"""
         try:
-            # Validate current state
-            validation = StateValidator.validate_state(current_state)
-            if not validation.is_valid:
-                raise ValueError(f"Invalid current state: {validation.error_message}")
-
             # Create new state preserving SINGLE SOURCE OF TRUTH
+            # Note: Fields may be None until populated through flows
             new_state = {
                 # Core identity (SINGLE SOURCE OF TRUTH)
                 "member_id": current_state.get("member_id"),
@@ -77,11 +73,6 @@ class StateManager:
                 "_last_updated": audit.get_current_timestamp()
             }
 
-            # Validate new state before returning
-            validation = StateValidator.validate_state(new_state)
-            if not validation.is_valid:
-                raise ValueError(f"Invalid new state: {validation.error_message}")
-
             return new_state
 
         except Exception as e:
@@ -98,24 +89,7 @@ class StateManager:
     ) -> Optional[WhatsAppMessage]:
         """Validate and update state"""
         try:
-            # Validate new state before update
-            validation = StateValidator.validate_state(new_state)
-            if not validation.is_valid:
-                logger.error(f"State validation failed: {validation.error_message}")
-                audit.log_flow_event(
-                    "bot_service",
-                    "state_validation_error",
-                    operation,
-                    new_state,
-                    "failure",
-                    validation.error_message
-                )
-                return WhatsAppMessage.create_text(
-                    channel_identifier,
-                    f"Failed to update state: {validation.error_message}"
-                )
-
-            # Update state
+            # Update state (validation handled by state manager)
             success, error = state_manager.update_state(new_state)
             if not success:
                 logger.error(f"State update failed: {error}")

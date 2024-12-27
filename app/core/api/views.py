@@ -1,7 +1,6 @@
 """Cloud API webhook views"""
 import logging
 import sys
-from datetime import datetime
 
 from core.api.models import Message
 from core.config.constants import CachedUser
@@ -121,25 +120,11 @@ class CredexCloudApiWebhook(APIView):
                 logger.warning("No WA ID in contact")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Initialize or get cached user - this handles all state management
+            # Initialize cached user for state management
             logger.info(f"Initializing CachedUser for phone: {wa_id}")
             user = CachedUser(wa_id)
-            state = user.state
 
-            logger.info(f"Using CachedUser with state: {state.state}")
-
-            # Check message age
-            timestamp = message.get("timestamp")
-            if not timestamp:
-                logger.warning("No timestamp in message")
-                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-            message_stamp = datetime.fromtimestamp(int(timestamp))
-            if (datetime.now() - message_stamp).total_seconds() > 20:
-                logger.info(f"Ignoring old webhook from {message_stamp}")
-                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-            # Extract message text for logging
+            # Extract message text for processing
             message_text = ""
             if message_type == "text":
                 text = message.get("text", {})
@@ -148,7 +133,6 @@ class CredexCloudApiWebhook(APIView):
             elif message_type == "interactive":
                 interactive = message.get("interactive", {})
                 if isinstance(interactive, dict):
-                    # Log full interactive payload for debugging
                     logger.debug(f"Interactive message payload: {interactive}")
                     if "button_reply" in interactive:
                         button_reply = interactive["button_reply"]
@@ -159,24 +143,18 @@ class CredexCloudApiWebhook(APIView):
                         if isinstance(list_reply, dict):
                             message_text = list_reply.get("id", "")
                     else:
-                        # Log unhandled interactive type
                         logger.warning(f"Unhandled interactive message type: {interactive}")
                         message_text = str(interactive)
 
-            # Get flow data from state
-            flow_data = state.state.get("flow_data", {}) or {}
-            stage = flow_data.get("stage", "START")
-            option = flow_data.get("option", "NONE")
-
-            logger.info(
-                f"Credex [{stage}<|>{option}] RECEIVED -> {message_text} "
-                f"FROM {wa_id} @ {message_stamp}"
-            )
+            logger.info(f"Processing message: {message_text}")
 
             try:
                 logger.info("Creating CredexBotService...")
-                # Create bot service with cached CredEx service
-                service = CredexBotService(payload=request.data, user=user)
+                # Create bot service with state manager
+                service = CredexBotService(
+                    payload={"type": message_type, "text": message_text},
+                    state_manager=user._state_manager
+                )
 
                 # For mock testing return the response directly
                 if is_mock_testing:

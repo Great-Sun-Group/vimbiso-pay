@@ -1,11 +1,13 @@
 """Data transformation logic for credex flows enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any, Dict, Union, Tuple
+from typing import Any, Dict, Tuple, Union
 
-from core.utils import audit
+from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
 from .validators import AMOUNT_PATTERN
+
+audit = FlowAuditLogger()
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +47,7 @@ def validate_and_parse_handle(handle: Union[str, Dict[str, Any]], state_manager:
     handle = handle.strip()
 
     # Get service through state manager
-    credex_service = state_manager.get_credex_service()
+    credex_service = state_manager.get_or_create_credex_service()
 
     # Validate handle through API
     success, response = credex_service.services['member'].validate_handle(handle)

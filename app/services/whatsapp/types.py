@@ -3,7 +3,6 @@ import logging
 from typing import Any, Dict, Union, Optional
 
 from core.messaging.types import Message as CoreMessage
-from core.utils.state_validator import StateValidator
 
 logger = logging.getLogger(__name__)
 
@@ -17,20 +16,12 @@ class WhatsAppMessage(Dict[str, Any]):
     }
 
     @classmethod
-    def _validate_state_access(cls, state_manager: Any, required_fields: set) -> None:
-        """Validate state before access"""
-        validation = StateValidator.validate_before_access(
-            state_manager.get_state(),
-            required_fields
-        )
-        if not validation.is_valid:
-            raise ValueError(f"Invalid state access: {validation.error_message}")
-
-    @classmethod
     def _get_channel_identifier(cls, state_manager: Any) -> str:
         """Get channel identifier with validation"""
-        cls._validate_state_access(state_manager, {"channel"})
+        # Validate state access at boundary
         channel = state_manager.get("channel")
+        if not isinstance(channel, dict):
+            raise ValueError("Invalid channel structure")
         if not channel or not channel.get("identifier"):
             raise ValueError("Missing channel identifier")
         return channel["identifier"]

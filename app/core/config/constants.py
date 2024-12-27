@@ -11,7 +11,7 @@ from .config import (
 )
 from .cached_user import CachedUser
 from .state_manager import StateManager
-from .state_utils import create_initial_state, prepare_state_update, update_critical_fields
+from .state_utils import prepare_state_update, update_critical_fields
 
 __all__ = [
     'ACTIVITY_TTL',
@@ -24,7 +24,6 @@ __all__ = [
     'atomic_state',
     'CachedUser',
     'StateManager',
-    'create_initial_state',
     'prepare_state_update',
     'update_critical_fields',
 ]

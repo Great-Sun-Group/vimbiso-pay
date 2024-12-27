@@ -10,6 +10,7 @@ from decouple import config
 from django.core.cache import cache
 from requests.exceptions import RequestException
 from services.whatsapp.types import BotServiceInterface
+from core.utils.state_validator import StateValidator
 from ..config.constants import CachedUser
 from ..utils.utils import CredexWhatsappService
 
@@ -42,7 +43,25 @@ class BaseAPIClient:
         }
 
         if include_auth:
-            channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
+            # Get required state fields with validation at boundary
+            required_fields = {"channel", "jwt_token"}
+            current_state = {
+                field: self.bot_service.user.state_manager.get(field)
+                for field in required_fields
+            }
+
+            # Validate at boundary
+            validation = StateValidator.validate_state(current_state)
+            if not validation.is_valid:
+                logger.error(f"Invalid state: {validation.error_message}")
+                return headers
+
+            channel = current_state["channel"]
+            if not isinstance(channel, dict) or not channel.get("identifier"):
+                logger.error("Invalid channel structure")
+                return headers
+
+            channel_identifier = channel["identifier"]
             user = CachedUser(channel_identifier)
             if user.jwt_token:
                 headers["Authorization"] = f"Bearer {user.jwt_token}"
@@ -246,7 +265,25 @@ class BaseAPIClient:
 
     def _send_delay_message(self) -> None:
         """Send delay message to user"""
-        channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
+        # Get required state fields with validation at boundary
+        required_fields = {"channel"}
+        current_state = {
+            field: self.bot_service.user.state_manager.get(field)
+            for field in required_fields
+        }
+
+        # Validate at boundary
+        validation = StateValidator.validate_state(current_state)
+        if not validation.is_valid:
+            logger.error(f"Invalid state: {validation.error_message}")
+            return
+
+        channel = current_state["channel"]
+        if not isinstance(channel, dict) or not channel.get("identifier"):
+            logger.error("Invalid channel structure")
+            return
+
+        channel_identifier = channel["identifier"]
         if (
             self.bot_service.state.stage != "handle_action_register"
             and not cache.get(f"{channel_identifier}_interracted")
@@ -274,7 +311,25 @@ class BaseAPIClient:
     def _send_first_message(self) -> None:
         """Send welcome message to user"""
         try:
-            channel_identifier = self.bot_service.user.state.state.get("channel", {}).get("identifier")
+            # Get required state fields with validation at boundary
+            required_fields = {"channel"}
+            current_state = {
+                field: self.bot_service.user.state_manager.get(field)
+                for field in required_fields
+            }
+
+            # Validate at boundary
+            validation = StateValidator.validate_state(current_state)
+            if not validation.is_valid:
+                logger.error(f"Invalid state: {validation.error_message}")
+                return
+
+            channel = current_state["channel"]
+            if not isinstance(channel, dict) or not channel.get("identifier"):
+                logger.error("Invalid channel structure")
+                return
+
+            channel_identifier = channel["identifier"]
             first_message = "Welcome to CredEx! How can I assist you today?"
             CredexWhatsappService(
                 payload={

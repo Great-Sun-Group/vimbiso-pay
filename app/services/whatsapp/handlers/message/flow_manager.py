@@ -3,8 +3,6 @@ import logging
 from typing import Any
 
 from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
-
 from ...types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -28,25 +26,16 @@ class FlowManager:
             if not flow_class:
                 raise ValueError("Flow class is required")
 
-            # Validate ALL required state at boundary
-            required_fields = {"channel", "member_id", "authenticated", "flow_data"}
-            current_state = {
-                field: state_manager.get(field)
-                for field in required_fields
-            }
-
-            # Validate required fields
-            validation = StateValidator.validate_before_access(
-                current_state,
-                {"channel", "member_id", "authenticated"}
-            )
-            if not validation.is_valid:
-                raise ValueError(f"State validation failed: {validation.error_message}")
-
-            # Get channel info (SINGLE SOURCE OF TRUTH)
+            # Get required state (already validated at boundaries)
             channel = state_manager.get("channel")
-            if not channel or not channel.get("identifier"):
-                raise ValueError("Channel identifier not found")
+            member_id = state_manager.get("member_id")
+            authenticated = state_manager.get("authenticated")
+
+            # Validate flow requirements
+            if not authenticated:
+                raise ValueError("Authentication required to start flow")
+            if not member_id:
+                raise ValueError("Member ID required to start flow")
 
             # Log flow start attempt
             audit.log_flow_event(
@@ -65,19 +54,13 @@ class FlowManager:
             if not flow:
                 raise ValueError("Failed to initialize flow")
 
-            # Validate state update
-            new_state = {
+            # Update flow data (validation handled by state manager)
+            success, error = state_manager.update_state({
                 "flow_data": {
                     "id": flow_type,
                     "step": 0
                 }
-            }
-            validation = StateValidator.validate_state(new_state)
-            if not validation.is_valid:
-                raise ValueError(f"Invalid flow data: {validation.error_message}")
-
-            # Update flow data
-            success, error = state_manager.update_state(new_state)
+            })
             if not success:
                 raise ValueError(f"Failed to update flow data: {error}")
 
@@ -119,32 +102,17 @@ class FlowManager:
     def has_pending_offers(state_manager: Any) -> bool:
         """Check for pending offers enforcing SINGLE SOURCE OF TRUTH"""
         try:
-            # Validate ALL required state at boundary
-            required_fields = {"channel", "member_id", "account_id", "authenticated"}
-            current_state = {
-                field: state_manager.get(field)
-                for field in required_fields
-            }
-
-            # Validate required fields
-            validation = StateValidator.validate_before_access(
-                current_state,
-                {"channel", "member_id", "account_id"}
-            )
-            if not validation.is_valid:
-                logger.error(f"State validation failed: {validation.error_message}")
-                return False
-
-            # Get channel info (SINGLE SOURCE OF TRUTH)
+            # Get required state (already validated at boundaries)
             channel = state_manager.get("channel")
-            if not channel or not channel.get("identifier"):
-                logger.error("Channel identifier not found")
-                return False
-
-            # Get account ID (SINGLE SOURCE OF TRUTH)
+            member_id = state_manager.get("member_id")
             account_id = state_manager.get("account_id")
+
+            # Validate offer check requirements
+            if not member_id:
+                logger.error("Member ID required to check offers")
+                return False
             if not account_id:
-                logger.error("Account ID not found")
+                logger.error("Account ID required to check offers")
                 return False
 
             # Log check

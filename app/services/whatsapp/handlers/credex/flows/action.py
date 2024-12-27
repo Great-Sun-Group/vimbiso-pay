@@ -4,11 +4,12 @@ from typing import Any, Dict, List
 
 from core.messaging.flow import Step, StepType
 from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
 
 from .base import CredexFlow
 from .dashboard_handler import CredexDashboardHandler
-from .messages import create_list_message, create_action_confirmation
+from .messages import \
+    create_action_confirmation_with_state as create_action_confirmation
+from .messages import create_list_message_with_state as create_list_message
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -32,25 +33,11 @@ class ActionFlow(CredexFlow):
         if not flow_type or flow_type not in {"cancel", "accept", "decline"}:
             raise ValueError("Invalid flow type")
 
-        # Validate ALL required state at boundary
-        required_fields = {"channel", "member_id", "authenticated", "flow_data"}
-        current_state = {
-            field: state_manager.get(field)
-            for field in required_fields
-        }
-
-        # Initial validation
-        validation = StateValidator.validate_before_access(
-            current_state,
-            {"channel", "member_id"}  # Core requirements
-        )
-        if not validation.is_valid:
-            raise ValueError(f"State validation failed: {validation.error_message}")
-
-        # Get channel info (SINGLE SOURCE OF TRUTH)
+        # Get required state (already validated by message handler)
         channel = state_manager.get("channel")
-        if not channel or not channel.get("identifier"):
-            raise ValueError("Channel identifier not found")
+        member_id = state_manager.get("member_id")
+        if not member_id:
+            raise ValueError("Member ID required for action flow")
 
         # Initialize base class
         super().__init__(id=f"{flow_type}_flow")
@@ -58,7 +45,7 @@ class ActionFlow(CredexFlow):
         # Initialize services
         self.flow_type = flow_type
         self.state_manager = state_manager
-        self.credex_service = state_manager.get_credex_service()
+        self.credex_service = state_manager.get_or_create_credex_service()
         if not self.credex_service:
             raise ValueError("Failed to initialize credex service")
 
@@ -130,14 +117,10 @@ class ActionFlow(CredexFlow):
             new_flow_data = flow_data.copy()
             new_flow_data["selected_credex_id"] = credex_id
 
-            # Validate state update
-            new_state = {"flow_data": new_flow_data}
-            validation = StateValidator.validate_state(new_state)
-            if not validation.is_valid:
-                raise ValueError(f"Invalid flow data: {validation.error_message}")
-
-            # Update state
-            success, error = self.state_manager.update_state(new_state)
+            # Update state (validation handled by state manager)
+            success, error = self.state_manager.update_state({
+                "flow_data": new_flow_data
+            })
             if not success:
                 raise ValueError(f"Failed to update flow data: {error}")
 
@@ -160,19 +143,11 @@ class ActionFlow(CredexFlow):
     def _get_confirmation_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Get confirmation message with strict state validation"""
         try:
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {
-                    "channel": self.state_manager.get("channel"),
-                    "flow_data": self.state_manager.get("flow_data")
-                },
-                {"channel", "flow_data"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
-
+            # Get required data (validation handled by flow steps)
             channel = self.state_manager.get("channel")
             flow_data = self.state_manager.get("flow_data")
+            if not flow_data:
+                raise ValueError("Flow data required for confirmation")
 
             return create_action_confirmation(
                 channel["identifier"],
@@ -187,30 +162,11 @@ class ActionFlow(CredexFlow):
     def complete(self) -> Dict[str, Any]:
         """Complete action flow enforcing SINGLE SOURCE OF TRUTH"""
         try:
-            # Validate ALL required state at boundary
-            required_fields = {"channel", "member_id", "flow_data", "authenticated"}
-            current_state = {
-                field: self.state_manager.get(field)
-                for field in required_fields
-            }
-
-            # Validate required fields
-            validation = StateValidator.validate_before_access(
-                current_state,
-                {"channel", "member_id", "flow_data"}
-            )
-            if not validation.is_valid:
-                raise ValueError(f"State validation failed: {validation.error_message}")
-
-            # Get channel info (SINGLE SOURCE OF TRUTH)
+            # Get required data (already validated)
             channel = self.state_manager.get("channel")
-            if not channel or not channel.get("identifier"):
-                raise ValueError("Channel identifier not found")
-
-            # Get and validate flow data (SINGLE SOURCE OF TRUTH)
             flow_data = self.state_manager.get("flow_data")
-            if not isinstance(flow_data, dict):
-                raise ValueError("Invalid flow data format")
+            if not flow_data:
+                raise ValueError("Flow data required for action")
 
             # Get and validate credex ID
             credex_id = flow_data.get("selected_credex_id")

@@ -1,11 +1,10 @@
 """Member registration flow implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 from core.messaging.flow import Flow, Step, StepType
 from core.messaging.types import Message
 from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
 
 from ...types import WhatsAppMessage
 from .templates import MemberTemplates
@@ -23,14 +22,14 @@ class RegistrationFlow(Flow):
         if not state_manager:
             raise ValueError("State manager is required")
 
-        # Validate initial state at boundary
-        validation = StateValidator.validate_state({"channel": state_manager.get("channel")})
-        if not validation.is_valid:
-            raise ValueError(f"Invalid initial state: {validation.error_message}")
+        # Get channel (already validated at service boundary)
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise ValueError("Channel identifier required for registration")
 
         self.validator = MemberFlowValidator()
         self.state_manager = state_manager
-        self.credex_service = state_manager.get_credex_service()
+        self.credex_service = state_manager.get_or_create_credex_service()
 
         # Create flow ID from channel (not member_id)
         channel = state_manager.get("channel")
@@ -79,14 +78,7 @@ class RegistrationFlow(Flow):
     def _get_first_name_prompt(self, state: Dict[str, Any]) -> Message:
         """Get first name prompt"""
         try:
-            # Validate state access
-            validation = StateValidator.validate_before_access(
-                {"channel": self.state_manager.get("channel")},
-                {"channel"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
-
+            # Get channel (already validated)
             channel = self.state_manager.get("channel")
             return MemberTemplates.create_first_name_prompt(channel["identifier"])
         except ValueError as e:
@@ -95,14 +87,7 @@ class RegistrationFlow(Flow):
     def _get_last_name_prompt(self, state: Dict[str, Any]) -> Message:
         """Get last name prompt"""
         try:
-            # Validate state access
-            validation = StateValidator.validate_before_access(
-                {"channel": self.state_manager.get("channel")},
-                {"channel"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
-
+            # Get channel (already validated)
             channel = self.state_manager.get("channel")
             return MemberTemplates.create_last_name_prompt(channel["identifier"])
         except ValueError as e:
@@ -129,19 +114,11 @@ class RegistrationFlow(Flow):
     def _create_confirmation_message(self, state: Dict[str, Any]) -> Message:
         """Create registration confirmation message"""
         try:
-            # Validate state access
-            validation = StateValidator.validate_before_access(
-                {
-                    "channel": self.state_manager.get("channel"),
-                    "first_name": state.get("first_name"),
-                    "last_name": state.get("last_name")
-                },
-                {"channel", "first_name", "last_name"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
-
+            # Get required data (validation handled by flow steps)
             channel = self.state_manager.get("channel")
+            if not state.get("first_name") or not state.get("last_name"):
+                raise ValueError("Name data required for confirmation")
+
             first_name = state["first_name"]["first_name"]
             last_name = state["last_name"]["last_name"]
 
@@ -156,21 +133,16 @@ class RegistrationFlow(Flow):
     def complete(self) -> Message:
         """Complete registration flow"""
         try:
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {
-                    "channel": self.state_manager.get("channel"),
-                    "first_name": self.state_manager.get("first_name"),
-                    "last_name": self.state_manager.get("last_name")
-                },
-                {"channel", "first_name", "last_name"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
-
+            # Get required data (validation handled by state manager)
             channel = self.state_manager.get("channel")
-            first_name = self.state_manager.get("first_name")["first_name"]
-            last_name = self.state_manager.get("last_name")["last_name"]
+            first_name_data = self.state_manager.get("first_name")
+            last_name_data = self.state_manager.get("last_name")
+
+            if not first_name_data or not last_name_data:
+                raise ValueError("Name data required for registration")
+
+            first_name = first_name_data["first_name"]
+            last_name = last_name_data["last_name"]
 
             # Register member
             member_data = {
@@ -196,12 +168,7 @@ class RegistrationFlow(Flow):
                     "authenticated": True,
                     "_last_updated": audit.get_current_timestamp()
                 }
-                # Validate new state
-                validation = StateValidator.validate_state(new_state)
-                if not validation.is_valid:
-                    raise ValueError(f"Invalid state update: {validation.error_message}")
-
-                # Update through state manager
+                # Update through state manager (validation handled by manager)
                 success, error = self.state_manager.update_state(new_state)
                 if not success:
                     raise ValueError(f"Failed to update state: {error}")

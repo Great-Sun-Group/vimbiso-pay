@@ -2,10 +2,8 @@
 import logging
 from typing import Any, Optional
 
-from core.messaging.types import (
-    ChannelIdentifier, ChannelType, Message,
-    MessageRecipient, TextContent
-)
+from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
+                                  MessageRecipient, TextContent)
 from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
@@ -55,7 +53,7 @@ class MenuHandler(BaseActionHandler):
         super().__init__(state_manager)
 
         # Initialize services
-        self.credex_service = state_manager.get_credex_service()
+        self.credex_service = state_manager.get_or_create_credex_service()
         if not self.credex_service:
             raise ValueError("Failed to initialize credex service")
 
