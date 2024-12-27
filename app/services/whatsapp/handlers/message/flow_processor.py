@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict, Type
 
 # Core imports
-from core.messaging.flow import Flow, FlowState
+from core.messaging.flow import Flow
 from core.utils.flow_audit import FlowAuditLogger
 
 # Local imports
@@ -65,8 +65,7 @@ class FlowProcessor:
             Flow: Initialized flow instance
 
         Note:
-            Uses FlowState to maintain SINGLE SOURCE OF TRUTH with member_id
-            and channel info at top level state only.
+            Uses simple state structure with member_id and channel info at top level
         """
         try:
             # Get member ID from top level state - SINGLE SOURCE OF TRUTH
@@ -84,23 +83,22 @@ class FlowProcessor:
             logger.debug(f"- Member ID: {member_id}")
             logger.debug(f"- Flow data keys: {list(flow_data.keys())}")
 
-            # Create flow state with proper initialization
-            flow_state = FlowState.create(
-                flow_id=flow_id,
-                member_id=member_id,  # From top level state - SINGLE SOURCE OF TRUTH
+            # Simple flow data - no nesting madness
+            flow_data = {
+                "step": 0,
+                "flow_type": flow_type
+            }
+
+            # Update state with simple flow data
+            self.service.user.state.update_state({
+                "flow_data": flow_data
+            })
+
+            # Create flow with proper initialization
+            flow = flow_class(
+                id=flow_id,
                 flow_type=flow_type
             )
-
-            # Preserve validation context if exists
-            if isinstance(flow_data.get("data"), dict):
-                validation_context = {
-                    k: v for k, v in flow_data["data"].items()
-                    if k in ("_validation_context", "_validation_state")
-                }
-                flow_state.data.update(validation_context)
-
-            # Initialize flow with state
-            flow = flow_class(state=flow_state, **kwargs)
 
             # Set service for Credex flows and initialize steps
             if isinstance(flow, CredexFlow):
@@ -137,13 +135,13 @@ class FlowProcessor:
                     "❌ Error: Invalid flow data"
                 )
 
-            # Get flow type from state
+            # Get flow type from flow_data
             flow_type = flow_data.get("flow_type")
             if not flow_type:
-                logger.error("Missing flow type in state")
+                logger.error("Missing flow type in flow_data")
                 return WhatsAppMessage.create_text(
                     self.service.user.channel_identifier,
-                    "❌ Error: Missing flow type"
+                    "❌ Error: Missing flow type in flow data"
                 )
 
             kwargs = flow_data.get("kwargs", {})
@@ -152,10 +150,9 @@ class FlowProcessor:
             logger.debug("Processing flow data:")
             logger.debug(f"- Flow type: {flow_type}")
             logger.debug(f"- Flow data structure: {flow_data.keys()}")
-            logger.debug(f"- Data fields: {flow_data.get('data', {}).keys()}")
 
             # Initialize flow
-            flow_id = flow_data.get("id", "")
+            flow_id = f"{flow_type}_{self.service.user.state.state.get('member_id')}"
             flow_class = self.determine_flow_class(flow_id)
             flow = self.initialize_flow(flow_class, flow_type, flow_data, kwargs)
 
@@ -302,15 +299,22 @@ class FlowProcessor:
         if not member_id:
             raise ValueError("Missing member ID")
 
-        # Create dashboard state with proper initialization
-        dashboard_state = FlowState.create(
-            flow_id="dashboard_view",
-            member_id=member_id,  # From top level state
+        # Create simple dashboard flow data
+        flow_data = {
+            "step": 0,
+            "flow_type": "view"
+        }
+
+        # Update state with simple flow data
+        self.service.user.state.update_state({
+            "flow_data": flow_data
+        })
+
+        # Initialize dashboard with proper initialization
+        dashboard = DashboardFlow(
+            id=f"dashboard_view_{member_id}",
             flow_type="view"
         )
-        dashboard_state.data["success_message"] = success_message
-
-        # Initialize dashboard with state
-        dashboard.set_state(dashboard_state)
+        dashboard.credex_service = self.service.credex_service
 
         return WhatsAppMessage.from_core_message(dashboard.complete())

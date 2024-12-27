@@ -18,56 +18,24 @@ class OfferFlow(CredexFlow):
     def __init__(self, id: str, steps: List[Step] = None, flow_type: str = "offer", state: Optional[FlowState] = None, **kwargs):
         """Initialize offer flow"""
         try:
-            # Validate state has member_id before initialization
-            if not state or not state.member_id:
-                raise ValueError("State must include member_id")
-
-            # Validate state data structure
-            if not isinstance(state.data, dict):
-                raise ValueError("State data must be dictionary")
-
-            # Ensure channel info exists
-            if "channel" not in state.data:
-                raise ValueError("State missing channel info")
-
-            # Create steps if not provided
-            if steps is None:
-                steps = self._create_steps(state)
-
-            # Initialize base CredexFlow class with validated state
+            # Initialize base class first - it handles state validation
             super().__init__(
                 id=id,
-                steps=steps,
+                steps=steps or self._create_steps(state),
                 flow_type=flow_type,
                 state=state,
                 **kwargs
             )
 
-            # Get initialization context with validated member_id
-            init_context = {
-                "member_id": state.member_id,  # Now guaranteed to exist
-                "channel": None,
-                "flow_type": self.flow_type
-            }
-
-            # Add channel info if service is initialized
-            if self.credex_service:
-                try:
-                    channel_id = self._get_channel_identifier()
-                    if channel_id:
-                        init_context["channel"] = {
-                            "type": "whatsapp",
-                            "identifier": channel_id
-                        }
-                except Exception as channel_error:
-                    logger.warning(f"Could not get channel identifier: {str(channel_error)}")
-
-            # Log successful initialization
+            # Log initialization
             audit.log_flow_event(
                 self.id,
                 "initialization",
                 None,
-                init_context,
+                {
+                    "flow_type": flow_type,
+                    "state": self.state.to_dict()
+                },
                 "success"
             )
 
@@ -102,12 +70,11 @@ class OfferFlow(CredexFlow):
             During initialization, self.state is not yet set, so we use init_state
             After initialization, self.state will be available
         """
-        def get_handle_prompt(state: Dict[str, Any]) -> Dict[str, Any]:
-            """Get handle prompt with proper state access"""
-            flow_state = self.state.to_dict() if self.state else init_state.to_dict() if init_state else {"member_id": None}
+        def get_handle_prompt(state: Dict) -> Dict[str, Any]:
+            """Get handle prompt"""
             return CredexTemplates.create_handle_prompt(
                 self._get_channel_identifier(),
-                flow_state
+                state
             )
 
         return [

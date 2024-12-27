@@ -13,10 +13,8 @@ import logging
 from typing import Any, Dict, Optional
 
 from core.utils.flow_audit import FlowAuditLogger
-from core.messaging.flow import FlowState
 
 from ...types import WhatsAppMessage
-from ...state_manager import StateManager
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -139,24 +137,19 @@ class FlowManager:
             # Create flow ID from type and member ID
             flow_id = f"{flow_type}_{member_id}"
 
-            # Initialize flow state with member_id from top level (SINGLE SOURCE OF TRUTH)
-            flow_state = FlowState.create(
-                flow_id=flow_id,
-                member_id=member_id,  # From top level - SINGLE SOURCE OF TRUTH
-                flow_type=flow_type
-            )
+            # Update flow data and create flow
+            self.service.user.state.update_state({
+                "flow_data": {
+                    "step": 0,
+                    "flow_type": flow_type
+                }
+            })
 
-            # Add channel info to state data (SINGLE SOURCE OF TRUTH)
-            flow_state.data["channel"] = StateManager.prepare_state_update(
-                current_state={},
-                channel_identifier=channel_id
-            )["channel"]
-
-            # Create flow with proper initialization
+            # Create flow with state
             flow = flow_class(
                 id=flow_id,
                 flow_type=flow_type,
-                state=flow_state
+                state=self.service.user.state.state
             )
 
             # Initialize service BEFORE any step operations

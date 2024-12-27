@@ -2,7 +2,7 @@
 import logging
 from typing import Any, Dict, Optional
 
-from core.messaging.flow import Flow, FlowState
+from core.messaging.flow import Flow
 from core.utils.flow_audit import FlowAuditLogger
 
 from ...types import WhatsAppMessage
@@ -50,16 +50,15 @@ class StateHandler:
                     "channel": new_state["channel"]
                 })
 
-            # Create flow state with member_id from top level state - SINGLE SOURCE OF TRUTH
-            flow_state = FlowState.create(
-                flow_id=f"{flow_type}_{current_state.get('member_id')}" if flow_type else "user_state",
-                member_id=current_state.get("member_id"),
-                flow_type=flow_type or "init"
-            )
+            # Simple flow data - no nesting madness
+            flow_data = {
+                "step": 0,
+                "flow_type": flow_type or "init"
+            }
 
             # Update ONLY flow_data to preserve SINGLE SOURCE OF TRUTH
             self.service.user.state.update_state({
-                "flow_data": flow_state.to_dict()
+                "flow_data": flow_data
             })
 
             return None
@@ -101,7 +100,10 @@ class StateHandler:
 
             # Update ONLY flow_data
             self.service.user.state.update_state({
-                "flow_data": flow_state.to_dict()
+                "flow_data": {
+                    "step": flow_state.step,
+                    "flow_type": flow_type
+                }
             })
 
             return None
