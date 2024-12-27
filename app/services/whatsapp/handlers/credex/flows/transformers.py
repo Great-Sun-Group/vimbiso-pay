@@ -1,77 +1,39 @@
-"""Data transformation logic for credex flows"""
+"""Data transformation logic for credex flows enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, Tuple
 
 from core.utils import audit
-from .validators import AMOUNT_PATTERN, validate_amount, validate_handle
+from core.utils.state_validator import StateValidator
+
+from .validators import AMOUNT_PATTERN
 
 logger = logging.getLogger(__name__)
 
 
-def transform_amount(amount_str: str, flow_id: str = None) -> Dict[str, Any]:
-    """Transform amount string to structured data"""
-    # Validate first
-    validate_amount(amount_str, flow_id)
+def validate_and_parse_amount(amount_str: str) -> Tuple[float, str]:
+    """Validate and parse amount without state transformation"""
+    match = AMOUNT_PATTERN.match(str(amount_str).strip().upper())
+    if not match:
+        raise ValueError("Invalid amount format")
 
-    try:
-        match = AMOUNT_PATTERN.match(str(amount_str).strip().upper())
-        if not match:
-            raise ValueError("Invalid amount format")
+    # Extract amount and denomination
+    if match.group(1):  # Currency first
+        denom, amount = match.group(1), match.group(2)
+    elif match.group(3):  # Amount first
+        amount, denom = match.group(3), match.group(4)
+    else:  # Just amount
+        amount, denom = match.group(5), None
 
-        # Extract amount and denomination
-        if match.group(1):  # Currency first
-            denom, amount = match.group(1), match.group(2)
-        elif match.group(3):  # Amount first
-            amount, denom = match.group(3), match.group(4)
-        else:  # Just amount
-            amount, denom = match.group(5), None
+    # Validate amount is a positive number
+    amount_float = float(amount)
+    if amount_float <= 0:
+        raise ValueError("Amount must be greater than 0")
 
-        # Log transformation at INFO level
-        logger.info(f"Transforming amount: {amount} {denom or 'USD'}")
-
-        # Validate amount is a positive number
-        amount_float = float(amount)
-        if amount_float <= 0:
-            raise ValueError("Amount must be greater than 0")
-
-        result = {
-            "amount": amount_float,
-            "denomination": denom or "USD"
-        }
-
-        # Log details at DEBUG level
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Input: {amount_str}")
-            logger.debug(f"Parsed: {result}")
-
-        return result
-
-    except Exception as e:
-        # Log error with context
-        error_context = {
-            "input": amount_str,
-            "error": str(e),
-            "error_type": type(e).__name__
-        }
-        logger.error("Amount transformation failed", extra=error_context, exc_info=True)
-
-        if flow_id:
-            audit.log_validation_event(
-                flow_id,
-                "amount",
-                amount_str,
-                False,
-                str(e)
-            )
-
-        raise ValueError(f"Failed to transform amount: {str(e)}")
+    return amount_float, denom or "USD"
 
 
-def transform_handle(handle: Union[str, Dict[str, Any]], credex_service: Any, flow_id: str = None) -> Dict[str, Any]:
-    """Transform and validate handle"""
-    # Validate first
-    validate_handle(handle, flow_id)
-
+def validate_and_parse_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> str:
+    """Validate and parse handle with strict state validation"""
     # Extract handle from interactive or text
     if isinstance(handle, dict):
         interactive = handle.get("interactive", {})
@@ -82,69 +44,19 @@ def transform_handle(handle: Union[str, Dict[str, Any]], credex_service: Any, fl
 
     handle = handle.strip()
 
-    try:
-        # Store validation context
-        validation_context = {
-            "_validation_state": {
-                "step_id": "handle",
-                "input": handle,
-                "timestamp": audit.get_current_timestamp()
-            }
-        }
+    # Get service through state manager
+    credex_service = state_manager.get_credex_service()
 
-        # Validate handle through API
-        success, response = credex_service.services['member'].validate_handle(handle)
-        if not success:
-            if flow_id:
-                audit.log_validation_event(
-                    flow_id,
-                    "handle",
-                    handle,
-                    False,
-                    response.get("message", "Invalid handle")
-                )
-            raise ValueError(response.get("message", "Invalid handle"))
+    # Validate handle through API
+    success, response = credex_service.services['member'].validate_handle(handle)
+    if not success:
+        raise ValueError(response.get("message", "Invalid handle"))
 
-        # Get account data
-        data = response.get("data", {})
-        if not data or not data.get("accountID"):
-            raise ValueError("Invalid account data received from API")
-
-        # Create result with validation context
-        result = {
-            "handle": handle,
-            "name": data.get("accountName", handle),
-            "account_id": data.get("accountID"),
-            **validation_context,
-            "_validation_success": True
-        }
-
-        # Log successful validation
-        if flow_id:
-            audit.log_validation_event(
-                flow_id,
-                "handle",
-                handle,
-                True,
-                "Handle validated successfully"
-            )
-
-        return result
-
-    except Exception as e:
-        if flow_id:
-            audit.log_flow_event(
-                flow_id,
-                "handle_validation_error",
-                "handle",
-                {"error": str(e), "handle": handle},
-                "failure"
-            )
-        raise ValueError(f"Handle validation failed: {str(e)}")
+    return handle
 
 
-def format_amount(amount: float, denomination: str) -> str:
-    """Format amount based on denomination"""
+def format_amount_for_display(amount: float, denomination: str) -> str:
+    """Format amount for display without state transformation"""
     if denomination in {"USD", "ZWG", "CAD"}:
         return f"${amount:.2f} {denomination}"
     elif denomination == "XAU":
@@ -152,94 +64,92 @@ def format_amount(amount: float, denomination: str) -> str:
     return f"{amount} {denomination}"
 
 
-def transform_state_for_dashboard(current_state: Dict[str, Any], response: Dict[str, Any], flow_id: str = None) -> Dict[str, Any]:
-    """Transform state for dashboard update"""
+def store_dashboard_data(state_manager: Any, response: Dict[str, Any]) -> None:
+    """Store dashboard data enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Get dashboard data
-        dashboard = response.get("data", {}).get("dashboard")
-        if not dashboard:
-            if flow_id:
-                audit.log_flow_event(
-                    flow_id,
-                    "dashboard_update_error",
-                    None,
-                    current_state,
-                    "failure",
-                    "No dashboard data in response"
-                )
-            raise ValueError("Missing dashboard data")
+        # Validate input parameters
+        if not isinstance(response, dict):
+            raise ValueError("Invalid response format")
 
-        # Get channel ID from state
-        channel_id = current_state.get("channel", {}).get("identifier")
-        if not channel_id:
-            raise ValueError("Missing channel identifier")
-
-        # Structure profile data
-        action = response.get("data", {}).get("action", {})
-        profile_data = {
-            "action": {
-                "id": action.get("id", ""),
-                "type": action.get("type"),
-                "timestamp": audit.get_current_timestamp(),
-                "details": action.get("details", {}),
-                "message": (
-                    action.get("message") or
-                    action.get("details", {}).get("message") or
-                    ("CredEx offer created successfully" if action.get("type") == "CREDEX_CREATED" else "")
-                ),
-                "status": "success" if action.get("type") == "CREDEX_CREATED" else action.get("status", "")
-            },
-            "dashboard": dashboard
+        # Validate ALL required state at boundary
+        required_fields = {"channel", "member_id", "flow_data", "authenticated"}
+        current_state = {
+            field: state_manager.get(field)
+            for field in required_fields
         }
 
-        # Find personal account
-        accounts = dashboard.get("accounts", [])
-        personal_account = next(
-            (account for account in accounts if account.get("accountType") == "PERSONAL"),
-            next(
-                (account for account in accounts if account.get("accountHandle") == channel_id),
-                current_state.get("current_account")
-            )
+        # Validate required fields
+        validation = StateValidator.validate_before_access(
+            current_state,
+            {"channel", "member_id", "flow_data"}
         )
+        if not validation.is_valid:
+            raise ValueError(f"State validation failed: {validation.error_message}")
 
-        # Build new state preserving required fields
-        new_state = {
-            "member_id": current_state.get("member_id"),  # SINGLE SOURCE OF TRUTH
-            "channel": current_state.get("channel"),  # SINGLE SOURCE OF TRUTH
-            "authenticated": current_state.get("authenticated", True),
-            "jwt_token": current_state.get("jwt_token"),  # SINGLE SOURCE OF TRUTH
-            "account_id": current_state.get("account_id"),
-            "current_account": personal_account,
-            "profile": profile_data,
-            "_validation_context": current_state.get("_validation_context", {}),
-            "_validation_state": current_state.get("_validation_state", {}),
-            "_last_updated": audit.get_current_timestamp()
+        # Get channel info (SINGLE SOURCE OF TRUTH)
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise ValueError("Channel identifier not found")
+
+        # Extract and validate dashboard data
+        dashboard = response.get("data", {}).get("dashboard")
+        if not isinstance(dashboard, dict):
+            raise ValueError("Invalid dashboard data format")
+
+        # Extract and validate action data
+        action = response.get("data", {}).get("action", {})
+        if action and not isinstance(action, dict):
+            raise ValueError("Invalid action data format")
+
+        # Get current flow data (SINGLE SOURCE OF TRUTH)
+        flow_data = state_manager.get("flow_data")
+        if not isinstance(flow_data, dict):
+            flow_data = {}
+
+        # Prepare new flow data
+        new_flow_data = {
+            "dashboard": dashboard,
+            "last_updated": audit.get_current_timestamp()
         }
 
-        # Preserve additional fields
-        for key in current_state:
-            if key.startswith('_') and key not in new_state:
-                new_state[key] = current_state[key]
+        if action:
+            action_id = action.get("id")
+            action_type = action.get("type")
+            if not action_id or not action_type:
+                raise ValueError("Missing required action data")
 
-        # Log state transformation
-        if flow_id:
-            audit.log_state_transition(
-                flow_id,
-                current_state,
-                new_state,
-                "success"
-            )
+            new_flow_data.update({
+                "action_id": action_id,
+                "action_type": action_type,
+                "action_timestamp": audit.get_current_timestamp(),
+                "action_status": "success" if action_type == "CREDEX_CREATED" else action.get("status", "")
+            })
 
-        return new_state
+        # Merge with existing flow data
+        flow_data.update(new_flow_data)
 
-    except Exception as e:
-        logger.error(f"State transformation error: {str(e)}")
-        if flow_id:
-            audit.log_flow_event(
-                flow_id,
-                "state_transform_error",
-                None,
-                {"error": str(e)},
-                "failure"
-            )
+        # Validate state update
+        new_state = {"flow_data": flow_data}
+        validation = StateValidator.validate_state(new_state)
+        if not validation.is_valid:
+            raise ValueError(f"Invalid flow data: {validation.error_message}")
+
+        # Update state
+        success, error = state_manager.update_state(new_state)
+        if not success:
+            raise ValueError(f"Failed to update flow data: {error}")
+
+        # Log success
+        logger.info(f"Successfully stored dashboard data for channel {channel['identifier']}")
+
+    except ValueError as e:
+        # Get channel info for error logging
+        try:
+            channel = state_manager.get("channel")
+            channel_id = channel["identifier"] if channel else "unknown"
+        except (ValueError, KeyError, TypeError) as err:
+            logger.error(f"Failed to get channel for error logging: {str(err)}")
+            channel_id = "unknown"
+
+        logger.error(f"Failed to store dashboard data: {str(e)} for channel {channel_id}")
         raise

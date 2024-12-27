@@ -143,60 +143,143 @@ class BaseCredExService:
         return None
 
     def _update_token(self, token: str) -> None:
-        """Update token in service and state"""
-        self._jwt_token = token
-        if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
-            self._parent_service.user.state.update_state({"jwt_token": token})
+        """Update token enforcing SINGLE SOURCE OF TRUTH"""
+        try:
+            # Validate input
+            if not isinstance(token, str):
+                raise ValueError("Token must be a string")
+            if not token.strip():
+                raise ValueError("Token is required")
+
+            # Update local token (SINGLE SOURCE OF TRUTH)
+            self._jwt_token = token
+
+            # Update parent service state if available
+            if hasattr(self, '_parent_service'):
+                if not hasattr(self._parent_service, 'user'):
+                    logger.warning("Parent service has no user attribute")
+                    return
+                if not hasattr(self._parent_service.user, 'state'):
+                    logger.warning("Parent service user has no state attribute")
+                    return
+
+                try:
+                    self._parent_service.user.state.update_state({"jwt_token": token})
+                    logger.info("Token updated in parent service state")
+                except Exception as err:
+                    logger.error(f"Failed to update token in parent service state: {str(err)}")
+
+        except ValueError as e:
+            logger.error(f"Token update error: {str(e)}")
+            raise
 
     def _validate_response(
         self, response: requests.Response, error_mapping: Optional[Dict[int, str]] = None
     ) -> Dict[str, Any]:
-        """Validate API response"""
+        """Validate API response enforcing SINGLE SOURCE OF TRUTH"""
         try:
+            # Validate input
+            if not isinstance(response, requests.Response):
+                raise ValueError("Invalid response object")
+
+            # Get response metadata
             content_type = response.headers.get("Content-Type", "")
-            logger.info(f"Validating API response for status code {response.status_code}")
+            status_code = response.status_code
+
+            logger.info(f"Validating API response with status code {status_code}")
             logger.debug(f"Content-Type: {content_type}")
             logger.debug(f"Response text: {response.text}")
 
+            # Validate content type
             if "application/json" not in content_type.lower():
-                logger.error(f"Unexpected Content-Type: {content_type}")
-                raise TransactionError("Invalid response from server. Please try again.")
+                error_msg = f"Unexpected Content-Type: {content_type}"
+                logger.error(error_msg)
+                raise TransactionError("Invalid response format from server")
 
+            # Parse response data
             try:
                 data = response.json()
+                if not isinstance(data, dict):
+                    raise ValueError("Response data must be a dictionary")
                 logger.debug(f"Parsed JSON response: {data}")
-            except ValueError:
-                logger.error(f"Failed to parse response as JSON: {response.text}")
-                raise TransactionError("Invalid response format. Please try again.")
+            except ValueError as err:
+                logger.error(f"Failed to parse response as JSON: {str(err)}")
+                raise TransactionError("Invalid response format from server")
 
-            if response.status_code >= 400:
-                error_msg = error_mapping.get(response.status_code) if error_mapping else None
+            # Handle error responses
+            if status_code >= 400:
+                error_msg = error_mapping.get(status_code) if error_mapping else None
                 if not error_msg:
                     error_msg = self._extract_error_message(response)
-                logger.error(error_msg)  # Log the actual error message without prefix
+                logger.error(f"API error response: {error_msg}")
                 raise TransactionError(error_msg)
 
             return data
 
         except ValueError as e:
-            logger.error(f"Failed to parse API response: {str(e)}")
-            raise TransactionError("Invalid response from server. Please try again.")
+            logger.error(f"Response validation error: {str(e)}")
+            raise TransactionError("Invalid response format from server")
+        except Exception as e:
+            logger.error(f"Unexpected error validating response: {str(e)}")
+            raise TransactionError("Failed to validate server response")
 
     def _handle_error_response(self, response: requests.Response, error_mapping: Dict[int, str]) -> Tuple[bool, Dict[str, Any]]:
-        """Handle error response with proper error mapping"""
+        """Handle error response enforcing SINGLE SOURCE OF TRUTH"""
         try:
+            # Validate inputs
+            if not isinstance(response, requests.Response):
+                raise ValueError("Invalid response object")
+            if not isinstance(error_mapping, dict):
+                raise ValueError("Error mapping must be a dictionary")
+
+            # Get response metadata
+            status_code = response.status_code
+            logger.info(f"Handling error response with status code {status_code}")
+
+            # Extract error message
             error_msg = self._extract_error_message(response)
+            if not error_msg:
+                error_msg = error_mapping.get(status_code, "Unknown error occurred")
+
+            # Log error details
+            logger.error(f"API error response: {error_msg} (Status: {status_code})")
+
             return False, {"message": error_msg}
+
+        except ValueError as e:
+            logger.error(f"Error response handling validation error: {str(e)}")
+            return False, {"message": "Invalid error response format"}
         except Exception as e:
-            logger.error(f"Error handling error response: {str(e)}")
-            return False, {"message": str(e)}
+            logger.error(f"Unexpected error handling error response: {str(e)}")
+            return False, {"message": "Failed to process error response"}
 
     @property
     def jwt_token(self) -> Optional[str]:
-        """Get the current JWT token"""
-        return self._jwt_token
+        """Get the current JWT token enforcing SINGLE SOURCE OF TRUTH"""
+        try:
+            token = self._jwt_token
+            if token and not isinstance(token, str):
+                logger.error("Invalid token format in state")
+                return None
+            return token
+        except Exception as e:
+            logger.error(f"Error accessing JWT token: {str(e)}")
+            return None
 
     @jwt_token.setter
     def jwt_token(self, value: str):
-        """Set the JWT token"""
-        self._update_token(value)
+        """Set the JWT token enforcing SINGLE SOURCE OF TRUTH"""
+        try:
+            # Validate input
+            if not isinstance(value, str):
+                raise ValueError("Token must be a string")
+            if not value.strip():
+                raise ValueError("Token is required")
+
+            # Update token
+            self._update_token(value)
+            logger.info("JWT token updated successfully")
+
+        except ValueError as e:
+            logger.error(f"JWT token update error: {str(e)}")
+            raise

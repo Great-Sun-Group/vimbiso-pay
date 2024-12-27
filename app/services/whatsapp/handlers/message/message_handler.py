@@ -1,10 +1,10 @@
-"""WhatsApp message handling implementation using component-based architecture"""
+"""WhatsApp message handling implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any
+from typing import Any, Dict, Tuple, Type
 
 from core.utils.flow_audit import FlowAuditLogger
+from core.utils.state_validator import StateValidator
 
-from ...state_manager import StateManager as WhatsAppStateManager
 from ...types import WhatsAppMessage
 from ..credex.flows.action import AcceptFlow, CancelFlow, DeclineFlow
 from ..credex.flows.offer import OfferFlow
@@ -13,16 +13,15 @@ from ..member.upgrade import UpgradeFlow
 from .flow_manager import FlowManager
 from .flow_processor import FlowProcessor
 from .input_handler import InputHandler
-from .state_handler import StateHandler
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
 
 
 class MessageHandler:
-    """Handler for WhatsApp messages and flows"""
+    """Handler for WhatsApp messages with strict state management"""
 
-    FLOW_TYPES = {
+    FLOW_TYPES: Dict[str, Tuple[str, Type]] = {
         "offer": ("offer", OfferFlow),
         "accept": ("accept", AcceptFlow),
         "decline": ("decline", DeclineFlow),
@@ -31,118 +30,157 @@ class MessageHandler:
         "upgrade_tier": ("upgrade", UpgradeFlow)
     }
 
-    def __init__(self, service: Any):
-        """Initialize handler with service reference and components"""
-        self.service = service
-        self.input_handler = InputHandler(service)
-        self.state_handler = StateHandler(service)
-        self.flow_manager = FlowManager(service)
-        self.flow_processor = FlowProcessor(service, self.input_handler, self.state_handler)
+    def __init__(self, state_manager: Any):
+        """Initialize with state manager
 
-    def process_message(self) -> WhatsAppMessage:
-        """Process incoming message"""
+        Args:
+            state_manager: State manager instance
+        """
+        if not state_manager:
+            raise ValueError("State manager is required")
+        self.state_manager = state_manager
+        self.credex_service = state_manager.get_credex_service()
+        self.auth_handler = None  # Will be set by auth handler
+
+    def process_message(self, message_type: str, message_body: str) -> WhatsAppMessage:
+        """Process incoming message enforcing SINGLE SOURCE OF TRUTH"""
         try:
+            # Validate ALL required state at boundary
+            required_fields = {"channel", "authenticated", "flow_data", "member_id"}
+            current_state = {
+                field: self.state_manager.get(field)
+                for field in required_fields
+            }
+
+            # Initial validation requires only channel
+            validation = StateValidator.validate_before_access(
+                current_state,
+                {"channel"}
+            )
+            if not validation.is_valid:
+                raise ValueError(f"State validation failed: {validation.error_message}")
+
+            # Get channel info (SINGLE SOURCE OF TRUTH)
+            channel = self.state_manager.get("channel")
+            if not channel or not channel.get("identifier"):
+                raise ValueError("Channel identifier not found")
+
             # Log message processing start
             audit.log_flow_event(
                 "bot_service",
                 "message_processing",
                 None,
                 {
-                    "message_type": self.service.message_type,
-                    "body": self.service.body if self.service.message_type == "text" else None
+                    "message_type": message_type,
+                    "channel_id": channel["identifier"]
                 },
                 "in_progress"
             )
 
-            # Get action first
-            action = self.input_handler.get_action()
-            logger.info(f"Processing action: {action}")
+            # Initialize input handler
+            input_handler = InputHandler(message_body)
+            if not input_handler:
+                raise ValueError("Failed to initialize input handler")
+
+            # Get action from input
+            action = input_handler.get_action()
 
             # Handle greeting
-            if (self.service.message_type == "text" and
-                    self.input_handler.is_greeting(self.service.body)):
-                # Get channel identifier from service
-                channel_id = self.service.user.channel_identifier
+            if message_type == "text" and input_handler.is_greeting(message_body):
+                # Validate state update
+                new_flow_data = {
+                    "flow_data": {
+                        "id": "greeting",
+                        "step": 0
+                    }
+                }
+                validation = StateValidator.validate_state(new_flow_data)
+                if not validation.is_valid:
+                    raise ValueError(f"Invalid flow data: {validation.error_message}")
 
-                # Log initial state for debugging
-                logger.debug(f"Initial state: {self.service.user.state.state}")
+                # Update state
+                success, error = self.state_manager.update_state(new_flow_data)
+                if not success:
+                    raise ValueError(f"Failed to update state: {error}")
 
-                # Prepare state with channel info
-                error = self.state_handler.prepare_flow_start(
-                    is_greeting=True,
-                    channel_identifier=channel_id
+                # Handle greeting
+                return WhatsAppMessage.from_core_message(
+                    self.auth_handler.handle_hi()
                 )
-                if error:
-                    return WhatsAppMessage.from_core_message(error)
 
-                # Log state after preparation
-                logger.debug(f"State after prepare_flow_start: {self.service.user.state.state}")
-
-                # Ensure channel info is set in state
-                if not self.service.user.state.state.get("channel", {}).get("identifier"):
-                    logger.error("Channel identifier missing after state preparation")
-                    return WhatsAppMessage.create_text(
-                        channel_id,
-                        "❌ Error: Channel initialization failed"
-                    )
-
-                # Call handle_hi which properly handles state refresh and menu display
-                return WhatsAppMessage.from_core_message(self.service.auth_handler.handle_hi())
-
-            # Check for menu action first
+            # Handle menu action
             if action in self.FLOW_TYPES:
-                # Get current state
-                state = self.service.user.state.state or {}
-
-                # Check authentication first
-                if not state.get("authenticated"):
-                    logger.info("User not authenticated, redirecting to login")
+                # Validate authentication state
+                validation = StateValidator.validate_before_access(
+                    current_state,
+                    {"authenticated"}
+                )
+                if not validation.is_valid:
                     return WhatsAppMessage.from_core_message(
-                        self.service.auth_handler.handle_menu(login=True)
+                        self.auth_handler.handle_menu(login=True)
                     )
 
                 # Get flow type and class
                 flow_type, flow_class = self.FLOW_TYPES[action]
 
-                # Log flow initialization
-                logger.info(f"Starting {flow_type} flow")
-                logger.debug(f"Flow type: {flow_type}")
-                logger.debug(f"Flow class: {flow_class.__name__}")
+                # Validate state update
+                new_flow_data = {
+                    "flow_data": {
+                        "id": flow_type,
+                        "step": 0
+                    }
+                }
+                validation = StateValidator.validate_state(new_flow_data)
+                if not validation.is_valid:
+                    raise ValueError(f"Invalid flow data: {validation.error_message}")
 
-                channel_id = WhatsAppStateManager.get_channel_identifier(state)
+                # Update state
+                success, error = self.state_manager.update_state(new_flow_data)
+                if not success:
+                    raise ValueError(f"Failed to update state: {error}")
 
-                # Prepare flow start
-                error = self.state_handler.prepare_flow_start(
-                    flow_type=flow_type,
-                    channel_identifier=channel_id
+                # Initialize flow
+                return WhatsAppMessage.from_core_message(
+                    FlowManager.initialize_flow(
+                        self.state_manager,
+                        flow_type,
+                        flow_class
+                    )
                 )
-                if error:
-                    logger.error(f"Failed to prepare flow state: {error}")
-                    return WhatsAppMessage.from_core_message(error)
 
-                # Initialize flow (channel info already in state)
-                result = self.flow_manager.initialize_flow(
-                    flow_type=flow_type,
-                    flow_class=flow_class
-                )
-                logger.info(f"Flow {flow_type} initialized")
-                return WhatsAppMessage.from_core_message(result)
-
-            # Check for active flow if not a menu action
-            flow_data = self.state_handler.get_flow_data()
+            # Handle active flow
+            flow_data = self.state_manager.get("flow_data")
             if flow_data:
-                return self.flow_processor.process_flow(flow_data)
+                # Validate flow data
+                validation = StateValidator.validate_before_access(
+                    {"flow_data": flow_data},
+                    {"flow_data"}
+                )
+                if not validation.is_valid:
+                    raise ValueError(f"Invalid flow data: {validation.error_message}")
 
-            # If no active flow and not a menu action, default to menu
-            return WhatsAppMessage.from_core_message(self.service.auth_handler.handle_action_menu())
+                return FlowProcessor.process_flow(
+                    self.state_manager,
+                    input_handler,
+                    flow_data
+                )
 
-        except Exception as e:
-            logger.error(f"Message processing error: {str(e)}")
-            audit.log_flow_event(
-                "bot_service",
-                "message_processing_error",
-                None,
-                {"error": str(e)},
-                "failure"
+            # Default to menu
+            return WhatsAppMessage.from_core_message(
+                self.auth_handler.handle_action_menu()
             )
-            return WhatsAppMessage.from_core_message(self.state_handler.handle_error_state(str(e)))
+
+        except ValueError as e:
+            # Get channel info for error response
+            try:
+                channel = self.state_manager.get("channel")
+                channel_id = channel["identifier"] if channel else "unknown"
+            except (ValueError, KeyError, TypeError) as err:
+                logger.error(f"Failed to get channel for error response: {str(err)}")
+                channel_id = "unknown"
+
+            logger.error(f"Message processing error: {str(e)} for channel {channel_id}")
+            return WhatsAppMessage.create_text(
+                channel_id,
+                "Error: Unable to process message. Please try again."
+            )

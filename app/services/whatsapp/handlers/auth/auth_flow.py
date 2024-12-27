@@ -1,12 +1,12 @@
-"""Authentication flow implementation"""
+"""Authentication flow implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
 from typing import Any, Dict, Optional, Tuple
 
 from core.utils.flow_audit import FlowAuditLogger
+from core.utils.state_validator import StateValidator
 
 from ...base_handler import BaseActionHandler
 from ...screens import REGISTER
-from ...state_manager import StateManager as WhatsAppStateManager
 from ...types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -14,36 +14,61 @@ audit = FlowAuditLogger()
 
 
 class AuthFlow(BaseActionHandler):
-    """Handler for authentication flows"""
+    """Handler for authentication flows with strict state management"""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, state_manager: Any):
+        """Initialize with state manager
+
+        Args:
+            state_manager: State manager instance
+        """
+        super().__init__(state_manager)
+        self.credex_service = state_manager.get_credex_service()
 
     def handle_registration(self, register: bool = False) -> WhatsAppMessage:
-        """Handle registration flow"""
-        try:
-            # Get channel identifier from user
-            channel_id = self.service.user.channel_identifier
+        """Handle registration flow enforcing SINGLE SOURCE OF TRUTH
 
-            # Log registration attempt with channel info
-            audit_context = {
-                "channel": {
-                    "type": "whatsapp",
-                    "identifier": channel_id
-                }
+        Args:
+            register: Whether to start registration
+
+        Returns:
+            WhatsAppMessage: Response message
+
+        Raises:
+            ValueError: If state validation fails or required data missing
+        """
+        try:
+            # Validate ALL required state at boundary
+            required_fields = {"channel", "member_id", "authenticated"}
+            current_state = {
+                field: self.state_manager.get(field)
+                for field in required_fields
             }
 
+            validation = StateValidator.validate_before_access(
+                current_state,
+                required_fields
+            )
+            if not validation.is_valid:
+                raise ValueError(f"State validation failed: {validation.error_message}")
+
+            # Get channel info (SINGLE SOURCE OF TRUTH)
+            channel = self.state_manager.get("channel")
+            if not channel or not channel.get("identifier"):
+                raise ValueError("Channel identifier not found")
+
+            # Log registration attempt
             audit.log_flow_event(
                 "auth_handler",
                 "registration_start",
                 None,
-                audit_context,
+                {"channel_id": channel["identifier"]},
                 "in_progress"
             )
 
             if register:
                 return WhatsAppMessage.create_button(
-                    to=channel_id,
+                    to=channel["identifier"],
                     text=REGISTER,
                     buttons=[{
                         "id": "start_registration",
@@ -51,284 +76,149 @@ class AuthFlow(BaseActionHandler):
                     }]
                 )
 
-            return self.service.auth_handler.handle_action_menu()
+            return self.handle_action_menu()
 
-        except Exception as e:
-            logger.error(f"Registration error: {str(e)}")
+        except ValueError as e:
+            # Get channel info for error response
+            try:
+                channel = self.state_manager.get("channel")
+                channel_id = channel["identifier"] if channel else "unknown"
+            except (ValueError, KeyError, TypeError) as err:
+                logger.error(f"Failed to get channel for error response: {str(err)}")
+                channel_id = "unknown"
 
-            # Get channel identifier from user
-            channel_id = self.service.user.channel_identifier
-
-            audit.log_flow_event(
-                "auth_handler",
-                "registration_error",
-                None,
-                {
-                    "channel": {
-                        "type": "whatsapp",
-                        "identifier": channel_id
-                    },
-                    "error": str(e)
-                },
-                "failure"
-            )
-
+            logger.error(f"Registration error: {str(e)} for channel {channel_id}")
             return WhatsAppMessage.create_text(
                 channel_id,
-                "Registration failed. Please try again."
+                "Error: Unable to process registration. Please try again."
             )
 
     def attempt_login(self) -> Tuple[bool, Optional[Dict[str, Any]]]:
-        """Attempt login and store JWT token"""
-        try:
-            # Get channel identifier from user
-            channel_id = self.service.user.channel_identifier
+        """Attempt login enforcing SINGLE SOURCE OF TRUTH
 
-            # Log login attempt with channel info
-            audit_context = {
-                "channel": {
-                    "type": "whatsapp",
-                    "identifier": channel_id
-                }
+        Returns:
+            Tuple[bool, Optional[Dict[str, Any]]]: Success flag and dashboard data
+
+        Raises:
+            ValueError: If state validation fails or required data missing
+        """
+        try:
+            # Validate ALL required state at boundary
+            required_fields = {"channel"}
+            current_state = {
+                field: self.state_manager.get(field)
+                for field in required_fields
             }
+
+            validation = StateValidator.validate_before_access(
+                current_state,
+                required_fields
+            )
+            if not validation.is_valid:
+                raise ValueError(f"State validation failed: {validation.error_message}")
+
+            # Get channel info (SINGLE SOURCE OF TRUTH)
+            channel = self.state_manager.get("channel")
+            if not channel or not channel.get("identifier"):
+                raise ValueError("Channel identifier not found")
+
+            # Log login attempt
             audit.log_flow_event(
                 "auth_handler",
                 "login_attempt",
                 None,
-                audit_context,
+                {"channel_id": channel["identifier"]},
                 "in_progress"
             )
 
-            # Attempt login using channel identifier
-            success, response = self.service.credex_service.services['auth'].login(
-                channel_id  # Use channel identifier from state
+            # Attempt login through service
+            success, response = self.credex_service.services['auth'].login(
+                channel["identifier"]
             )
 
             if not success:
-                # Extract error details from response
+                # Extract error details
                 error_data = response.get("data", {}).get("action", {})
                 error_type = error_data.get("type")
-                error_details = error_data.get("details", {})
-                error_code = error_details.get("code")
-                error_reason = error_details.get("reason", "")
-                error_msg = response.get("message", "")
+                error_code = error_data.get("details", {}).get("code")
 
-                # Handle different error types based on API spec
-                # Handle different error types based on API spec
+                # Handle new user case
                 if error_type == "ERROR_NOT_FOUND" and error_code == "NOT_FOUND":
-                    # This is a new user case
                     audit.log_flow_event(
                         "auth_handler",
                         "login_new_user",
                         None,
-                        audit_context,
+                        {"channel_id": channel["identifier"]},
                         "success"
                     )
                     return False, None
 
+                # Handle validation error
                 if error_type == "ERROR_VALIDATION":
-                    # Handle validation errors
-                    logger.error(f"Validation error: {error_reason}")
-                    audit.log_flow_event(
-                        "auth_handler",
-                        "validation_error",
-                        None,
-                        {**audit_context, "error": error_reason},
-                        "failure"
-                    )
-                    return False, {"message": "Invalid format. Please try again."}
+                    raise ValueError("Invalid login format")
 
+                # Handle server error
                 if error_type == "ERROR_INTERNAL":
-                    # Handle server errors
-                    logger.error(f"Server error: {error_reason}")
-                    audit.log_flow_event(
-                        "auth_handler",
-                        "server_error",
-                        None,
-                        {**audit_context, "error": error_reason},
-                        "failure"
-                    )
-                    return False, {
-                        "message": "😔 We're having some technical difficulties. "
-                        "Please try again in a few minutes. Thank you for your patience!"
-                    }
+                    raise ValueError("Service temporarily unavailable")
 
-                # Handle other login failures
-                logger.error(f"Login failed: {error_msg}")
-                audit.log_flow_event(
-                    "auth_handler",
-                    "login_error",
-                    None,
-                    {
-                        **audit_context,
-                        "error": error_msg
-                    },
-                    "failure"
-                )
-                return False, None
+                # Handle other errors
+                raise ValueError(response.get("message", "Authentication failed"))
 
-            # Extract JWT token and dashboard data
-            jwt_token = self.service.credex_service.services['auth']._jwt_token
-            if not jwt_token:
-                audit.log_flow_event(
-                    "auth_handler",
-                    "login_error",
-                    None,
-                    {
-                        **audit_context,
-                        "error": "No JWT token received"
-                    },
-                    "failure"
-                )
-                return False, None
+            # Extract and validate required data
+            member_id = response.get("data", {}).get("action", {}).get("details", {}).get("memberID")
+            if not member_id:
+                raise ValueError("Member ID not received")
 
-            dashboard_data = response.get("data", {})
-            logger.info(f"Dashboard data from login: {dashboard_data}")
+            token = response.get("data", {}).get("action", {}).get("details", {}).get("token")
+            if not token:
+                raise ValueError("Authentication token not received")
 
-            # Extract member ID
-            member_id = (
-                response.get("data", {})
-                .get("action", {})
-                .get("details", {})
-                .get("memberID")
+            # Find personal account
+            accounts = response.get("data", {}).get("dashboard", {}).get("accounts", [])
+            personal_account = next(
+                (account for account in accounts if account.get("accountType") == "PERSONAL"),
+                None
             )
-
-            # Find account with accountType=PERSONAL
-            accounts = dashboard_data.get("dashboard", {}).get("accounts", [])
-            personal_account = None
-            for account in accounts:
-                if account.get("accountType") == "PERSONAL":
-                    personal_account = account
-                    break
-
             if not personal_account:
-                logger.error("Personal account not found")
-                audit.log_flow_event(
-                    "auth_handler",
-                    "login_error",
-                    None,
-                    {
-                        **audit_context,
-                        "error": "Personal account not found"
-                    },
-                    "failure"
-                )
-                return False, None
+                raise ValueError("Personal account not found")
 
             account_id = personal_account.get("accountID")
+            if not account_id:
+                raise ValueError("Account ID not found")
 
-            # Get current state for transition logging
-            current_state = self.service.user.state.state or {}
-
-            # Structure profile data properly
-            logger.debug(f"Preparing state update with JWT token: {jwt_token[:10]}...")
-            profile_data = {
-                "action": {
-                    "id": dashboard_data.get("action", {}).get("id", ""),
-                    "type": dashboard_data.get("action", {}).get("type", "login"),
-                    "timestamp": dashboard_data.get("action", {}).get("timestamp", ""),
-                    "actor": dashboard_data.get("action", {}).get("actor", member_id),  # Use member_id as actor
-                    "details": dashboard_data.get("action", {}).get("details", {})
-                },
-                "dashboard": {
-                    "member": dashboard_data.get("dashboard", {}).get("member", {}),
-                    "accounts": dashboard_data.get("dashboard", {}).get("accounts", [])
+            # Prepare state update (SINGLE SOURCE OF TRUTH)
+            new_state = {
+                "member_id": member_id,
+                "jwt_token": token,
+                "authenticated": True,
+                "account_id": account_id,
+                "flow_data": {
+                    "id": "user_state",
+                    "step": 0
                 }
             }
 
-            # Prepare new state with member-centric structure
-            new_state = {
-                # Core identity at top level - SINGLE SOURCE OF TRUTH
-                "member_id": member_id,  # Primary identifier
-
-                # Channel info at top level - SINGLE SOURCE OF TRUTH
-                "channel": WhatsAppStateManager.prepare_state_update(
-                    current_state={},
-                    channel_identifier=channel_id
-                )["channel"],
-
-                # Authentication and account
-                "authenticated": True,
-                "account_id": account_id,
-                "current_account": personal_account,
-                "jwt_token": jwt_token,
-
-                # Profile and flow data
-                "profile": profile_data,
-                "flow_data": {  # Initialize empty flow data structure
-                    "id": "user_state",
-                    "step": 0,
-                    "data": {
-                        "account_id": account_id,
-                        "flow_type": "auth",
-                        "_validation_context": {},
-                        "_validation_state": {}
-                    },
-                    "_previous_data": {}
-                },
-
-                # Validation context
-                "_validation_context": {},
-                "_validation_state": {},
-                "_last_updated": audit.get_current_timestamp()
-            }
-
-            # Validate login state specifically
-            validation = self.service.auth_handler.validator.validate_login_state(new_state)
+            # Validate state update
+            validation = StateValidator.validate_state(new_state)
             if not validation.is_valid:
-                audit.log_flow_event(
-                    "auth_handler",
-                    "state_validation_error",
-                    None,
-                    new_state,
-                    "failure",
-                    validation.error_message
-                )
-                return False, None
-
-            # Log state transition
-            audit.log_state_transition(
-                "auth_handler",
-                current_state,
-                new_state,
-                "success"
-            )
+                raise ValueError(f"Invalid state update: {validation.error_message}")
 
             # Update state
-            self.service.user.state.update_state(new_state)
+            success, error = self.state_manager.update_state(new_state)
+            if not success:
+                raise ValueError(f"Failed to update state: {error}")
 
-            # Get or create credex service and set up relationships
-            self.service.credex_service = self.service.user.state.get_or_create_credex_service()
-            self.service.credex_service._parent_service = self.service
-
-            # Log service setup for debugging
-            logger.debug("Service relationships after login:")
-            logger.debug(f"- Has credex_service: {bool(self.service.credex_service)}")
-            logger.debug(f"- Has parent_service: {bool(hasattr(self.service.credex_service, '_parent_service'))}")
-            logger.debug(f"- Parent service matches: {self.service.credex_service._parent_service == self.service}")
-
-            # Update audit context with member info after successful login
-            audit_context["member_id"] = member_id
+            # Log success
             audit.log_flow_event(
                 "auth_handler",
                 "login_success",
                 None,
-                audit_context,
+                {"channel_id": channel["identifier"]},
                 "success"
             )
 
-            return True, dashboard_data
+            return True, response.get("data", {})
 
-        except Exception as e:
-            logger.error(f"Login error: {str(e)}")
-            audit.log_flow_event(
-                "auth_handler",
-                "login_error",
-                None,
-                {
-                    **audit_context,
-                    "error": str(e)
-                },
-                "failure"
-            )
-            return False, None
+        except ValueError as e:
+            logger.error(f"Login error for channel {self.state_manager.get('channel', {}).get('identifier', 'unknown')}: {str(e)}")
+            raise

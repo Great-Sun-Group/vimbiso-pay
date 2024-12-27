@@ -1,12 +1,12 @@
-"""Validator for member flow states"""
+"""Validator for member flow states enforcing SINGLE SOURCE OF TRUTH"""
 from typing import Dict, Any, Set
-from core.utils.validator_interface import FlowValidatorInterface, ValidationResult
+
 from core.utils.state_validator import StateValidator
-from ...state_manager import StateManager
+from core.utils.validator_interface import FlowValidatorInterface, ValidationResult
 
 
 class MemberFlowValidator(FlowValidatorInterface):
-    """Validator for member flow states"""
+    """Validator for member flow states with strict validation"""
 
     def validate_flow_data(self, flow_data: Dict[str, Any]) -> ValidationResult:
         """Validate member flow data structure"""
@@ -20,6 +20,7 @@ class MemberFlowValidator(FlowValidatorInterface):
         if not flow_data:
             return ValidationResult(is_valid=True)
 
+        # Validate required fields
         required_fields = {"id", "step", "data"}
         missing = required_fields - set(flow_data.keys())
         if missing:
@@ -62,85 +63,37 @@ class MemberFlowValidator(FlowValidatorInterface):
     def validate_flow_state(self, state: Dict[str, Any]) -> ValidationResult:
         """Validate complete flow state"""
         # First validate core state structure
-        core_validation = StateValidator.validate_state(state)
-        if not core_validation.is_valid:
-            return core_validation
+        validation = StateValidator.validate_state(state)
+        if not validation.is_valid:
+            return validation
 
-        # Check required fields at top level - SINGLE SOURCE OF TRUTH
-        missing = self.get_required_fields() - set(state.keys())
-        if missing:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing required fields at top level: {', '.join(missing)}",
-                missing_fields=missing
-            )
-
-        # Validate channel info at top level - SINGLE SOURCE OF TRUTH
-        channel_validation = self._validate_channel_data(state.get("channel", {}))
-        if not channel_validation.is_valid:
-            return channel_validation
+        # Then validate flow-specific requirements
+        required_fields = self.get_required_fields()
+        validation = StateValidator.validate_before_access(state, required_fields)
+        if not validation.is_valid:
+            return validation
 
         # Validate flow data if present
         if "flow_data" in state:
-            return self.validate_flow_data(state["flow_data"])
+            flow_validation = self.validate_flow_data(state["flow_data"])
+            if not flow_validation.is_valid:
+                return flow_validation
 
         return ValidationResult(is_valid=True)
 
     def get_required_fields(self) -> Set[str]:
         """Get required fields at top level"""
-        return {"member_id", "channel"}  # Primary identifier and channel info at top level
+        return {"member_id", "channel"}
 
-    def _validate_channel_data(self, channel: Dict[str, Any]) -> ValidationResult:
-        """Validate channel information structure"""
-        if not isinstance(channel, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Channel must be a dictionary"
-            )
+    def validate_before_access(self, state: Dict[str, Any], required_fields: Set[str]) -> ValidationResult:
+        """Validate state before field access"""
+        # First validate core state
+        validation = StateValidator.validate_state(state)
+        if not validation.is_valid:
+            return validation
 
-        required_fields = {"type", "identifier"}
-        missing = required_fields - set(channel.keys())
-        if missing:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing channel fields: {', '.join(missing)}",
-                missing_fields=missing
-            )
-
-        # Validate channel type using StateManager
-        channel_type = StateManager.get_channel_type({"channel": channel})
-        if not channel_type:
-            return ValidationResult(
-                is_valid=False,
-                error_message="Missing channel type"
-            )
-
-        if not isinstance(channel_type, str):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Channel type must be a string"
-            )
-
-        if channel_type != "whatsapp":
-            return ValidationResult(
-                is_valid=False,
-                error_message="Invalid channel type"
-            )
-
-        # Validate channel identifier
-        if not isinstance(channel["identifier"], str):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Channel identifier must be a string"
-            )
-
-        if not channel["identifier"]:
-            return ValidationResult(
-                is_valid=False,
-                error_message="Channel identifier cannot be empty"
-            )
-
-        return ValidationResult(is_valid=True)
+        # Then validate required fields
+        return StateValidator.validate_before_access(state, required_fields)
 
     def _validate_registration_data(self, data: Dict[str, Any]) -> ValidationResult:
         """Validate registration-specific data"""

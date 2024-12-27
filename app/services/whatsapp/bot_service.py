@@ -1,53 +1,62 @@
 """WhatsApp bot service implementation"""
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
-from .base_handler import BaseActionHandler
-from .types import BotServiceInterface, WhatsAppMessage
+from core.utils.state_validator import StateValidator
 from .auth_handlers import AuthActionHandler
 from .handlers.message.message_handler import MessageHandler
+from .types import BotServiceInterface, WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 
 
-class CredexBotService(BotServiceInterface, BaseActionHandler):
+class CredexBotService(BotServiceInterface):
     """WhatsApp bot service implementation"""
 
-    def __init__(self, payload: Dict[str, Any], user: Any):
-        """Initialize bot service"""
-        BotServiceInterface.__init__(self, payload=payload, user=user)
-        BaseActionHandler.__init__(self, self)
+    def __init__(self, payload: Dict[str, Any], state_manager: Any):
+        """Initialize bot service with state manager
 
-        # Log initial state
-        logger.debug("Initializing bot service:")
-        logger.debug(f"- User state: {user.state.state}")
-        logger.debug(f"- Has jwt_token: {bool(user.state.jwt_token)}")
+        Args:
+            payload: Message payload
+            state_manager: State manager instance
+        """
+        if not state_manager:
+            raise ValueError("State manager is required")
 
-        # Initialize services and handlers
-        self.credex_service = user.state.get_or_create_credex_service()
+        # Validate initial state at boundary
+        validation = StateValidator.validate_before_access(
+            {
+                "channel": state_manager.get("channel"),
+                "member_id": state_manager.get("member_id"),
+                "jwt_token": state_manager.get("jwt_token")
+            },
+            {"channel"}  # Only channel is required initially
+        )
+        if not validation.is_valid:
+            raise ValueError(f"Invalid initial state: {validation.error_message}")
 
-        # Validate service initialization
-        if not self.credex_service or not self.credex_service.services:
-            logger.error("Service not properly initialized")
-            raise ValueError("Failed to initialize required services")
+        # Initialize with validated state
+        self.state_manager = state_manager
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise ValueError("Missing channel identifier")
 
-        # Log service initialization
-        logger.debug("Service initialization:")
-        logger.debug(f"- Has credex_service: {bool(self.credex_service)}")
-        logger.debug(f"- Has jwt_token: {bool(self.credex_service.jwt_token)}")
-        logger.debug(f"- Services initialized: {list(self.credex_service.services.keys())}")
+        # Initialize handlers with state manager
+        self.auth_handler = AuthActionHandler(state_manager)
+        self.message_handler = MessageHandler(state_manager)
 
-        # Initialize handlers
-        self.auth_handler = AuthActionHandler(self)
-        self.message_handler = MessageHandler(self)
-
-        # Log state before message processing
-        logger.debug("State before message processing:")
-        logger.debug(f"- User state: {user.state.state}")
-        logger.debug(f"- Has jwt_token: {bool(user.state.jwt_token)}")
-
-        # Process message
-        self.response = self.message_handler.process_message()
+        # Process message with validation
+        validation = StateValidator.validate_before_access(
+            {"channel": state_manager.get("channel")},
+            {"channel"}
+        )
+        if not validation.is_valid:
+            self.response = WhatsAppMessage.create_text(
+                channel["identifier"],
+                f"Error: Invalid state - {validation.error_message}"
+            )
+        else:
+            self.response = self.message_handler.process_message(payload)
 
     def handle(self) -> WhatsAppMessage:
         """Return processed response"""

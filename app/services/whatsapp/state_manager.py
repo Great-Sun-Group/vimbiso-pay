@@ -16,25 +16,32 @@ class StateManager:
     @staticmethod
     def get_channel_identifier(state: Dict[str, Any]) -> Optional[str]:
         """Get channel identifier from state following SINGLE SOURCE OF TRUTH"""
-        try:
-            return state.get("channel", {}).get("identifier")
-        except Exception as e:
-            logger.error(f"Error getting channel identifier: {str(e)}")
+        validation = StateValidator.validate_before_access(state, {"channel"})
+        if not validation.is_valid:
+            logger.error(f"State validation failed: {validation.error_message}")
             return None
+
+        return state.get("channel", {}).get("identifier")
 
     @staticmethod
     def get_channel_type(state: Dict[str, Any]) -> Optional[str]:
         """Get channel type from state following SINGLE SOURCE OF TRUTH"""
-        try:
-            return state.get("channel", {}).get("type")
-        except Exception as e:
-            logger.error(f"Error getting channel type: {str(e)}")
+        validation = StateValidator.validate_before_access(state, {"channel"})
+        if not validation.is_valid:
+            logger.error(f"State validation failed: {validation.error_message}")
             return None
 
+        return state.get("channel", {}).get("type")
+
     @staticmethod
-    def get_member_id(state: Dict) -> Optional[str]:
-        """Get member ID from state following single source of truth"""
-        return state.get("member_id") if state else None
+    def get_member_id(state: Dict[str, Any]) -> Optional[str]:
+        """Get member ID from state following SINGLE SOURCE OF TRUTH"""
+        validation = StateValidator.validate_before_access(state, {"member_id"})
+        if not validation.is_valid:
+            logger.error(f"State validation failed: {validation.error_message}")
+            return None
+
+        return state.get("member_id")
 
     @staticmethod
     def prepare_state_update(
@@ -44,32 +51,36 @@ class StateManager:
     ) -> Dict[str, Any]:
         """Prepare state update maintaining SINGLE SOURCE OF TRUTH"""
         try:
-            # Create new state
+            # Validate current state
+            validation = StateValidator.validate_state(current_state)
+            if not validation.is_valid:
+                raise ValueError(f"Invalid current state: {validation.error_message}")
+
+            # Create new state preserving SINGLE SOURCE OF TRUTH
             new_state = {
-                # Top level identity and auth
+                # Core identity (SINGLE SOURCE OF TRUTH)
                 "member_id": current_state.get("member_id"),
-                "account_id": current_state.get("account_id"),
                 "jwt_token": current_state.get("jwt_token"),
                 "authenticated": current_state.get("authenticated", False),
 
-                # Channel info at top level
+                # Channel info (SINGLE SOURCE OF TRUTH)
                 "channel": {
                     "type": "whatsapp",
-                    "identifier": channel_identifier or current_state.get("channel", {}).get("identifier")
+                    "identifier": channel_identifier or current_state.get("channel", {}).get("identifier"),
+                    "metadata": current_state.get("channel", {}).get("metadata", {}).copy()
                 },
-
-                # Profile data
-                "profile": current_state.get("profile", {}),
 
                 # Flow data
-                "flow_data": flow_data if flow_data is not None else {
-                    "step": 0,
-                    "flow_type": "auth"
-                },
+                "flow_data": flow_data if flow_data is not None else current_state.get("flow_data"),
 
                 # Metadata
                 "_last_updated": audit.get_current_timestamp()
             }
+
+            # Validate new state before returning
+            validation = StateValidator.validate_state(new_state)
+            if not validation.is_valid:
+                raise ValueError(f"Invalid new state: {validation.error_message}")
 
             return new_state
 
@@ -87,12 +98,7 @@ class StateManager:
     ) -> Optional[WhatsAppMessage]:
         """Validate and update state"""
         try:
-            # Preserve critical fields from current state
-            for field in ["jwt_token", "member_id", "account_id", "authenticated"]:
-                if field not in new_state and field in current_state:
-                    new_state[field] = current_state[field]
-
-            # Validate state
+            # Validate new state before update
             validation = StateValidator.validate_state(new_state)
             if not validation.is_valid:
                 logger.error(f"State validation failed: {validation.error_message}")
@@ -110,7 +116,13 @@ class StateManager:
                 )
 
             # Update state
-            state_manager.update_state(new_state)
+            success, error = state_manager.update_state(new_state)
+            if not success:
+                logger.error(f"State update failed: {error}")
+                return WhatsAppMessage.create_text(
+                    channel_identifier,
+                    f"Failed to update state: {error}"
+                )
 
             # Log transition
             audit.log_state_transition(

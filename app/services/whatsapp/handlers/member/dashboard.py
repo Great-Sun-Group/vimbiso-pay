@@ -1,438 +1,212 @@
-"""Dashboard flow implementation"""
+"""Dashboard flow implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from core.messaging.flow import Flow
-from core.messaging.types import (ChannelIdentifier, ChannelType,
-                                  InteractiveContent, InteractiveType, Message,
-                                  MessageRecipient, TextContent)
+from core.messaging.types import (
+    ChannelIdentifier, ChannelType, InteractiveContent,
+    InteractiveType, Message, MessageRecipient
+)
 from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
 from ...screens import format_account
-from ...state_manager import StateManager
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
 
 
 class DashboardFlow(Flow):
-    """Flow for handling dashboard display"""
+    """Flow for handling dashboard display with strict state management"""
 
-    def __init__(self, flow_type: str = "dashboard", state: Dict = None, success_message: Optional[str] = None, **kwargs):
-        """Initialize dashboard flow with proper state management"""
+    def __init__(self, state_manager: Any, success_message: Optional[str] = None, flow_type: str = "dashboard"):
+        """Initialize dashboard flow enforcing SINGLE SOURCE OF TRUTH
+
+        Args:
+            state_manager: State manager instance
+            success_message: Optional message to display
+            flow_type: Flow type identifier
+
+        Raises:
+            ValueError: If state validation fails or required data missing
+        """
+        if not state_manager:
+            raise ValueError("State manager is required")
+        if flow_type not in {"dashboard", "refresh", "offers", "transactions"}:
+            raise ValueError("Invalid flow type")
+
+        # Validate ALL required state at boundary
+        required_fields = {"channel", "member_id", "account_id", "authenticated", "jwt_token"}
+        current_state = {
+            field: state_manager.get(field)
+            for field in required_fields
+        }
+
+        # Initial validation
+        validation = StateValidator.validate_before_access(
+            current_state,
+            required_fields  # All fields required for dashboard
+        )
+        if not validation.is_valid:
+            raise ValueError(f"State validation failed: {validation.error_message}")
+
+        # Get channel info (SINGLE SOURCE OF TRUTH)
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise ValueError("Channel identifier not found")
+
+        # Initialize services
+        self.state_manager = state_manager
         self.success_message = success_message
-        self.credex_service = None
+        self.credex_service = state_manager.get_credex_service()
+        if not self.credex_service:
+            raise ValueError("Failed to initialize credex service")
 
-        # Initialize base state if none provided
-        if state is None:
-            state = {}
+        # Initialize base Flow class with static ID
+        super().__init__(id="dashboard_flow", steps=[])  # Dashboard has no steps, just displays info
 
-        # Get member ID and channel info from top level - SINGLE SOURCE OF TRUTH
-        member_id = StateManager.get_member_id(state)
-        channel_id = StateManager.get_channel_identifier(state)
-
-        # Create flow ID from type and member ID
-        flow_id = f"{flow_type}_{member_id}" if member_id else "dashboard"
-
-        # Initialize base Flow class with required arguments
-        super().__init__(id=flow_id, steps=[])  # Dashboard has no steps, just displays info
-
-        # Log initialization with member context
+        # Log initialization
         audit.log_flow_event(
             self.id,
             "initialization",
             None,
             {
                 "flow_type": flow_type,
-                "member_id": member_id,
-                "channel": {
-                    "type": "whatsapp",
-                    "identifier": channel_id
-                } if channel_id else None,
-                **kwargs
+                "channel_id": channel["identifier"]
             },
             "success"
         )
 
-    def _get_selected_account(
-        self,
-        accounts: List[Dict[str, Any]],
-        member_id: str,
-        channel_id: str
-    ) -> Optional[Dict[str, Any]]:
-        """Get selected account from dashboard data using member-centric approach"""
+        logger.info(f"Initialized {flow_type} dashboard flow for channel {channel['identifier']}")
+
+    def complete(self) -> Message:
+        """Complete flow enforcing SINGLE SOURCE OF TRUTH"""
         try:
-            if not accounts:
-                audit.log_flow_event(
-                    self.id,
-                    "account_selection",
-                    None,
-                    {"accounts": accounts},
-                    "failure",
-                    "No accounts available"
-                )
-                return None
-
-            # Try to find personal account first
-            personal_account = next(
-                (account for account in accounts
-                 if account.get("accountType") == "PERSONAL" and
-                 account.get("memberID") == member_id),
-                None
-            )
-            if personal_account:
-                audit.log_flow_event(
-                    self.id,
-                    "account_selection",
-                    None,
-                    {
-                        "selected": personal_account,
-                        "member_id": member_id,
-                        "channel": {
-                            "type": "whatsapp",
-                            "identifier": channel_id
-                        }
-                    },
-                    "success"
-                )
-                return personal_account
-
-            # Fallback to channel identifier match
-            channel_account = next(
-                (account for account in accounts
-                 if account.get("accountHandle") == channel_id),
-                None
-            )
-
-            audit.log_flow_event(
-                self.id,
-                "account_selection",
-                None,
-                {
-                    "selected": channel_account,
-                    "member_id": member_id,
-                    "channel": {
-                        "type": "whatsapp",
-                        "identifier": channel_id
-                    }
-                },
-                "success" if channel_account else "failure"
-            )
-            return channel_account
-
-        except Exception as e:
-            logger.error(f"Account selection error: {str(e)}")
-            audit.log_flow_event(
-                self.id,
-                "account_selection",
-                None,
-                {"accounts": accounts},
-                "failure",
-                str(e)
-            )
-            return None
-
-    def _format_dashboard_data(
-        self,
-        account: Dict[str, Any],
-        profile_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Format dashboard data for display"""
-        try:
-            account_data = account
-            balance_data = account_data.get("balanceData", {})
-            dashboard = profile_data.get("dashboard", {})
-
-            # Get counts
-            pending_in = len(account_data.get("pendingInData", []))
-            pending_out = len(account_data.get("pendingOutData", []))
-
-            # Get secured balances array (pre-formatted strings from server)
-            secured_balances = balance_data.get("securedNetBalancesByDenom", [])
-            if not isinstance(secured_balances, list):
-                secured_balances = []
-                logger.error("Invalid securedNetBalancesByDenom format")
-
-            # Add spacing to pre-formatted balance strings
-            balances = "\n".join(f"  {bal}" for bal in secured_balances) if secured_balances else ""
-
-            # Get tier info and remaining USD (only present for tier < 3)
-            member_tier = dashboard.get("member", {}).get("memberTier", 1)
-            remaining_usd = dashboard.get("remainingAvailableUSD")
-
-            # Only show tier limit if remainingAvailableUSD exists in response
-            tier_limit_display = ""
-            if remaining_usd is not None and member_tier <= 2:
-                tier_type = "OPEN" if member_tier == 1 else "VERIFIED"
-                tier_limit_display = (
-                    f"\n*{tier_type} TIER DAILY LIMIT*\n"
-                    f"  ${remaining_usd} USD"
-                )
-
-            # Get net assets (pre-formatted string from server)
-            net_assets = balance_data.get("netCredexAssetsInDefaultDenom", "")
-
-            formatted_data = {
-                "account_name": account_data.get("accountName", "Personal Account"),
-                "handle": account_data.get("accountHandle", "Not Available"),
-                "balances": balances,
-                "net_assets": net_assets,
-                "tier_limit_display": tier_limit_display,
-                "is_owned": account_data.get("isOwnedAccount", False),
-                "pending_in": pending_in,
-                "pending_out": pending_out,
-                "member_tier": member_tier
+            # Validate ALL required state at boundary
+            required_fields = {"channel", "member_id", "account_id", "authenticated", "jwt_token"}
+            current_state = {
+                field: self.state_manager.get(field)
+                for field in required_fields
             }
 
-            audit.log_flow_event(
-                self.id,
-                "format_dashboard",
-                None,
-                formatted_data,
-                "success"
-            )
-            return formatted_data
-
-        except Exception as e:
-            logger.error(f"Dashboard formatting error: {str(e)}")
-            audit.log_flow_event(
-                self.id,
-                "format_dashboard",
-                None,
-                {"account": account},
-                "failure",
-                str(e)
-            )
-            return {}
-
-    def _create_error_message(self, error: str) -> Message:
-        """Create error message with current state info"""
-        current_state = self.credex_service._parent_service.user.state.state or {}
-        channel_id = StateManager.get_channel_identifier(current_state) or "unknown"
-        member_id = StateManager.get_member_id(current_state) or "pending"
-
-        return Message(
-            recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
-            content=TextContent(
-                body=f"Failed to load dashboard: {error}"
-            )
-        )
-
-    def _build_menu_options(
-        self,
-        is_owned: bool,
-        pending_in: int,
-        pending_out: int,
-        member_tier: int
-    ) -> Dict[str, Any]:
-        """Build menu options"""
-        # Build menu rows with proper WhatsApp format
-        rows = [
-            {
-                "id": "offer",
-                "title": "💸 Offer Secured Credex",
-                "description": "Create secured credex offer"
-            },
-            {
-                "id": "accept",
-                "title": f"✅ Accept Offers ({pending_in})",
-                "description": "Accept incoming offers"
-            },
-            {
-                "id": "decline",
-                "title": f"❌ Decline Offers ({pending_in})",
-                "description": "Decline incoming offers"
-            },
-            {
-                "id": "cancel",
-                "title": f"📤 Cancel Outgoing Offers ({pending_out})",
-                "description": "Cancel your outgoing offers"
-            },
-            {
-                "id": "view",
-                "title": "📒 View Transactions",
-                "description": "View transaction history"
-            }
-        ]
-
-        # Add upgrade option for lower tiers
-        if member_tier <= 2:
-            rows.append({
-                "id": "upgrade",
-                "title": "⭐️ Upgrade Member Tier",
-                "description": "Increase transaction limits"
-            })
-
-        # Create menu with WhatsApp list format
-        menu = {
-            "button": "Options",
-            "sections": [
-                {
-                    "title": "Account Options",
-                    "rows": rows
-                }
-            ]
-        }
-
-        audit.log_flow_event(
-            self.id,
-            "build_menu",
-            None,
-            menu,
-            "success"
-        )
-        return menu
-
-    def complete(self) -> Dict[str, Any]:
-        """Complete flow and return formatted dashboard"""
-        try:
-            # Validate service
-            if not self.credex_service:
-                raise ValueError("Service not initialized")
-
-            if not hasattr(self.credex_service, '_parent_service'):
-                raise ValueError("Cannot access service state")
-
-            # Get current state
-            user_state = self.credex_service._parent_service.user.state
-            current_state = user_state.state or {}
-
-            # Validate current state
-            validation = StateValidator.validate_state(current_state)
-            if not validation.is_valid:
-                audit.log_flow_event(
-                    self.id,
-                    "state_validation_error",
-                    None,
-                    current_state,
-                    "failure",
-                    validation.error_message
-                )
-                # Attempt recovery from last valid state
-                last_valid = audit.get_last_valid_state(self.id)
-                if last_valid:
-                    current_state = last_valid
-                else:
-                    raise ValueError(f"Invalid state: {validation.error_message}")
-
-            profile_data = current_state.get("profile", {})
-            if not profile_data:
-                raise ValueError("No profile data found")
-
-            # Get accounts
-            accounts = profile_data.get("dashboard", {}).get("accounts", [])
-            if not accounts:
-                raise ValueError("No accounts found")
-
-            # Get member ID and channel info from top level state - SINGLE SOURCE OF TRUTH
-            member_id = StateManager.get_member_id(current_state)
-            if not member_id:
-                raise ValueError("Missing member ID in state")
-
-            channel_id = StateManager.get_channel_identifier(current_state)
-            if not channel_id:
-                raise ValueError("Missing channel identifier")
-
-            # Get selected account
-            selected_account = self._get_selected_account(
-                accounts,
-                member_id,
-                channel_id
-            )
-            if not selected_account:
-                raise ValueError("Personal account not found")
-
-            # Prepare new state with member-centric structure
-            new_state = {
-                # Core identity at top level - SINGLE SOURCE OF TRUTH
-                "member_id": member_id,  # Primary identifier
-
-                # Channel info at top level - SINGLE SOURCE OF TRUTH
-                "channel": {
-                    "type": "whatsapp",
-                    "identifier": channel_id,
-                },
-
-                # Authentication and account
-                "authenticated": current_state.get("authenticated", False),
-                "jwt_token": current_state.get("jwt_token"),
-                "account_id": current_state.get("account_id"),
-                "current_account": selected_account,
-
-                # Profile and flow data
-                "profile": profile_data,
-                "flow_data": {
-                    "type": "dashboard",
-                    "account_id": current_state.get("account_id")
-                },
-                "_last_updated": audit.get_current_timestamp()
-            }
-
-            # Log state preparation
-            logger.debug(f"[Dashboard {self.id}] Preparing new state:")
-            logger.debug(f"[Dashboard {self.id}] - Current state keys: {list(current_state.keys())}")
-            logger.debug(f"[Dashboard {self.id}] - New state keys: {list(new_state.keys())}")
-            logger.debug(f"[Dashboard {self.id}] - Flow data: {new_state['flow_data']}")
-
-            # Validate new state
-            validation = StateValidator.validate_state(new_state)
-            if not validation.is_valid:
-                audit.log_flow_event(
-                    self.id,
-                    "state_validation_error",
-                    None,
-                    new_state,
-                    "failure",
-                    validation.error_message
-                )
-                return self._create_error_message(f"Failed to update state: {validation.error_message}")
-
-            # Log state transition
-            audit.log_state_transition(
-                self.id,
+            # Validate required fields
+            validation = StateValidator.validate_before_access(
                 current_state,
-                new_state,
-                "success"
+                required_fields
             )
+            if not validation.is_valid:
+                raise ValueError(f"State validation failed: {validation.error_message}")
 
-            # Update state
-            user_state.update_state(new_state)
+            # Get channel info (SINGLE SOURCE OF TRUTH)
+            channel = self.state_manager.get("channel")
+            if not channel or not channel.get("identifier"):
+                raise ValueError("Channel identifier not found")
 
-            # Format dashboard data
-            display_data = self._format_dashboard_data(selected_account, profile_data)
-            if not display_data:
-                raise ValueError("Failed to format dashboard")
+            # Get member and account info (SINGLE SOURCE OF TRUTH)
+            member_id = self.state_manager.get("member_id")
+            if not member_id:
+                raise ValueError("Member ID not found")
+
+            account_id = self.state_manager.get("account_id")
+            if not account_id:
+                raise ValueError("Account ID not found")
+
+            # Log dashboard fetch attempt
+            logger.info(f"Fetching dashboard data for channel {channel['identifier']}")
+
+            # Get account details from CredEx service
+            success, account_data = self.credex_service.get_member_accounts(member_id)
+            if not success:
+                error_msg = account_data.get("message", "Failed to get account details")
+                logger.error(f"API call failed: {error_msg} for channel {channel['identifier']}")
+                raise ValueError(error_msg)
+
+            # Validate account data
+            if not isinstance(account_data, dict) or "accounts" not in account_data:
+                raise ValueError("Invalid account data format")
+
+            # Find personal account
+            personal_account = next(
+                (account for account in account_data["accounts"]
+                 if account.get("accountID") == account_id),
+                None
+            )
+            if not personal_account:
+                raise ValueError("Account not found")
 
             # Create dashboard text
-            dashboard_text = format_account({
-                "account": display_data["account_name"],
-                "handle": display_data["handle"],
-                "securedNetBalancesByDenom": display_data["balances"],
-                "netCredexAssetsInDefaultDenom": display_data["net_assets"],
-                "tier_limit_display": display_data["tier_limit_display"]
-            })
+            account_info = {
+                "account": personal_account.get("name", "Personal Account"),
+                "handle": personal_account.get("handle", "Not Available"),
+                "securedNetBalancesByDenom": personal_account.get("securedNetBalancesByDenom", ""),
+                "netCredexAssetsInDefaultDenom": personal_account.get("netCredexAssetsInDefaultDenom", ""),
+                "tier_limit_display": personal_account.get("tierLimitDisplay", "")
+            }
 
+            dashboard_text = format_account(account_info)
+
+            # Get menu options
+            menu_options = {
+                "button": "Options",
+                "sections": [
+                    {
+                        "title": "Account Options",
+                        "rows": [
+                            {
+                                "id": "refresh",
+                                "title": "🔄 Refresh Dashboard"
+                            },
+                            {
+                                "id": "offers",
+                                "title": "💰 View Offers"
+                            },
+                            {
+                                "id": "transactions",
+                                "title": "📊 View Transactions"
+                            }
+                        ]
+                    }
+                ]
+            }
+
+            # Add success message if provided
             if self.success_message:
-                dashboard_text = f"✅ {self.success_message}\n\n{dashboard_text}"
+                dashboard_text = f"{self.success_message}\n\n{dashboard_text}"
 
-            # Return formatted message using member ID and channel identifier
-            menu_options = self._build_menu_options(
-                display_data["is_owned"],
-                display_data["pending_in"],
-                display_data["pending_out"],
-                display_data["member_tier"]
-            )
+            # Log success
+            logger.info(f"Successfully fetched dashboard for channel {channel['identifier']}")
 
+            # Return formatted message
             return Message(
                 recipient=MessageRecipient(
                     member_id=member_id,
+                    channel_id=ChannelIdentifier(
+                        channel=ChannelType.WHATSAPP,
+                        value=channel["identifier"]
+                    )
+                ),
+                content=InteractiveContent(
+                    interactive_type=InteractiveType.LIST,
+                    body=dashboard_text,
+                    action_items=menu_options
+                )
+            )
+
+        except ValueError as e:
+            # Get channel info for error logging
+            try:
+                channel = self.state_manager.get("channel")
+                channel_id = channel["identifier"] if channel else "unknown"
+            except (ValueError, KeyError, TypeError) as err:
+                logger.error(f"Failed to get channel for error logging: {str(err)}")
+                channel_id = "unknown"
+
+            logger.error(f"Dashboard error: {str(e)} for channel {channel_id}")
+
+            # Return error message
+            return Message(
+                recipient=MessageRecipient(
+                    member_id="unknown",
                     channel_id=ChannelIdentifier(
                         channel=ChannelType.WHATSAPP,
                         value=channel_id
@@ -440,20 +214,20 @@ class DashboardFlow(Flow):
                 ),
                 content=InteractiveContent(
                     interactive_type=InteractiveType.LIST,
-                    body=dashboard_text,
-                    action_items=menu_options  # Use menu options directly
+                    body="❌ Error: Unable to load dashboard. Please try again.",
+                    action_items={
+                        "button": "Options",
+                        "sections": [
+                            {
+                                "title": "Available Actions",
+                                "rows": [
+                                    {
+                                        "id": "refresh",
+                                        "title": "🔄 Try Again"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
                 )
             )
-
-        except Exception as e:
-            logger.error(f"Dashboard completion error: {str(e)}")
-            audit.log_flow_event(
-                self.id,
-                "completion_error",
-                None,
-                self.data,
-                "failure",
-                str(e)
-            )
-
-            return self._create_error_message(str(e))

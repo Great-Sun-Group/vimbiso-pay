@@ -1,4 +1,4 @@
-"""Member tier upgrade flow implementation"""
+"""Member tier upgrade flow implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
 from datetime import datetime
 from typing import Dict, List, Any
@@ -6,7 +6,9 @@ from typing import Dict, List, Any
 from core.messaging.flow import Flow, Step, StepType
 from core.messaging.types import Message
 from core.utils.flow_audit import FlowAuditLogger
-from ...state_manager import StateManager
+from core.utils.state_validator import StateValidator
+
+from ...types import WhatsAppMessage
 from .templates import MemberTemplates
 from .validator import MemberFlowValidator
 
@@ -15,27 +17,30 @@ audit = FlowAuditLogger()
 
 
 class UpgradeFlow(Flow):
-    """Flow for member tier upgrade"""
+    """Flow for member tier upgrade with strict state management"""
 
-    def __init__(self, flow_type: str = "upgrade", state: Dict = None, **kwargs):
+    def __init__(self, flow_type: str = "upgrade", state_manager: Any = None, **kwargs):
         """Initialize upgrade flow with proper state management"""
+        if not state_manager:
+            raise ValueError("State manager is required")
+
+        # Validate initial state at boundary
+        validation = StateValidator.validate_before_access(
+            {
+                "member_id": state_manager.get("member_id"),
+                "channel": state_manager.get("channel")
+            },
+            {"member_id", "channel"}
+        )
+        if not validation.is_valid:
+            raise ValueError(f"Invalid initial state: {validation.error_message}")
+
         self.validator = MemberFlowValidator()
-        self.credex_service = None
+        self.state_manager = state_manager
+        self.credex_service = state_manager.get_credex_service()
 
-        # Initialize base state if none provided
-        if state is None:
-            state = {}
-
-        # Get member ID and channel info from top level - SINGLE SOURCE OF TRUTH
-        member_id = state.get("member_id")
-        if not member_id:
-            raise ValueError("Missing member ID")
-
-        channel_id = StateManager.get_channel_identifier(state)
-        if not channel_id:
-            raise ValueError("Missing channel identifier")
-
-        # Create flow ID from type and member ID
+        # Create flow ID from member_id
+        member_id = state_manager.get("member_id")
         flow_id = f"{flow_type}_{member_id}"
 
         # Create steps before initializing base class
@@ -44,20 +49,12 @@ class UpgradeFlow(Flow):
         # Initialize base Flow class with required arguments
         super().__init__(id=flow_id, steps=steps)
 
-        # Log initialization with member context
+        # Log initialization
         audit.log_flow_event(
             self.id,
             "initialization",
             None,
-            {
-                "flow_type": flow_type,
-                "member_id": member_id,
-                "channel": {
-                    "type": "whatsapp",
-                    "identifier": channel_id
-                },
-                **kwargs
-            },
+            {"flow_type": flow_type},
             "success"
         )
 
@@ -72,130 +69,81 @@ class UpgradeFlow(Flow):
             )
         ]
 
-    def _get_channel_identifier(self) -> str:
-        """Get channel identifier from state using StateManager"""
-        if not hasattr(self.credex_service, '_parent_service'):
-            raise ValueError("Service not properly initialized")
-        current_state = self.credex_service._parent_service.user.state.state or {}
-        return StateManager.get_channel_identifier(current_state)
-
     def _validate_button_response(self, response: Dict[str, Any]) -> bool:
         """Validate button response"""
-        try:
-            is_valid = (
-                response.get("type") == "interactive" and
-                response.get("interactive", {}).get("type") == "button_reply" and
-                response.get("interactive", {}).get("button_reply", {}).get("id") == "confirm_action"
-            )
-
-            audit.log_validation_event(
-                self.id,
-                self.current_step.id,
-                response,
-                is_valid,
-                None if is_valid else "Invalid button response"
-            )
-            return is_valid
-
-        except Exception as e:
-            audit.log_validation_event(
-                self.id,
-                self.current_step.id,
-                response,
-                False,
-                str(e)
-            )
-            return False
-
-    def _create_confirmation_message(self, _: Dict[str, Any]) -> Message:
-        """Create tier upgrade confirmation message"""
-        return MemberTemplates.create_upgrade_confirmation(
-            self._get_channel_identifier()
+        return (
+            response.get("type") == "interactive" and
+            response.get("interactive", {}).get("type") == "button_reply" and
+            response.get("interactive", {}).get("button_reply", {}).get("id") == "confirm_action"
         )
+
+    def _create_confirmation_message(self, state: Dict[str, Any]) -> Message:
+        """Create tier upgrade confirmation message"""
+        try:
+            # Validate state access at boundary
+            validation = StateValidator.validate_before_access(
+                {
+                    "member_id": self.state_manager.get("member_id"),
+                    "channel": self.state_manager.get("channel")
+                },
+                {"member_id", "channel"}
+            )
+            if not validation.is_valid:
+                raise ValueError(validation.error_message)
+
+            channel = self.state_manager.get("channel")
+            member_id = self.state_manager.get("member_id")
+
+            return MemberTemplates.create_upgrade_confirmation(
+                channel["identifier"],
+                member_id
+            )
+        except ValueError as e:
+            return WhatsAppMessage.create_text("unknown", f"Error: {str(e)}")
 
     def complete(self) -> Message:
         """Complete tier upgrade flow"""
         try:
-            # Get required data
-            account_id = self.data.get("account_id")
-            if not account_id:
-                raise ValueError("Missing account ID")
-
-            # Get member_id from top level state - SINGLE SOURCE OF TRUTH
-            current_state = self.credex_service._parent_service.user.state.state
-            member_id = current_state.get("member_id")
-            if not member_id:
-                raise ValueError("Missing member ID in state")
-
-            channel_id = self._get_channel_identifier()
-            if not channel_id:
-                raise ValueError("Missing channel identifier")
-
-            # Log upgrade attempt with member and channel context
-            audit_context = {
-                "member_id": member_id,
-                "account_id": account_id,
-                "channel": {
-                    "type": "whatsapp",
-                    "identifier": channel_id
-                }
-            }
-            audit.log_flow_event(
-                self.id,
-                "upgrade_attempt",
-                None,
-                audit_context,
-                "in_progress"
+            # Validate state access at boundary
+            validation = StateValidator.validate_before_access(
+                {
+                    "member_id": self.state_manager.get("member_id"),
+                    "channel": self.state_manager.get("channel"),
+                    "account_id": self.state_manager.get("account_id")
+                },
+                {"member_id", "channel", "account_id"}
             )
+            if not validation.is_valid:
+                raise ValueError(validation.error_message)
 
-            # Create recurring payment with member context
+            channel = self.state_manager.get("channel")
+            member_id = self.state_manager.get("member_id")
+            account_id = self.state_manager.get("account_id")
+
+            # Create recurring payment
             success, response = self.credex_service.services['recurring'].create_recurring({
                 "sourceAccountID": account_id,
-                "memberID": member_id,  # Include member ID
+                "memberID": member_id,
                 "templateType": "MEMBERTIER_SUBSCRIPTION",
                 "payFrequency": 28,
                 "startDate": datetime.now().strftime("%Y-%m-%d"),
                 "memberTier": 3,
                 "securedCredex": True,
                 "amount": 1.00,
-                "denomination": "USD",
-                "channel": {  # Include channel info
-                    "type": "whatsapp",
-                    "identifier": channel_id
-                }
+                "denomination": "USD"
             })
 
             if not success:
-                audit.log_flow_event(
-                    self.id,
-                    "upgrade_error",
-                    None,
-                    {**audit_context, "response": response},
-                    "failure",
-                    response.get("message", "Failed to process subscription")
-                )
                 raise ValueError(response.get("message", "Failed to process subscription"))
 
-            audit.log_flow_event(
-                self.id,
-                "upgrade_complete",
-                None,
-                {**audit_context, "response": response},
-                "success"
-            )
-
             return MemberTemplates.create_upgrade_success(
-                channel_id  # Use channel identifier
+                channel["identifier"],
+                member_id
             )
 
-        except Exception as e:
-            logger.error(f"Upgrade error: {str(e)}")
-            audit.log_flow_event(
-                self.id,
-                "upgrade_error",
-                None,
-                self.data,
-                "failure",
-                str(e)
+        except ValueError as e:
+            logger.error(f"Upgrade failed: {str(e)}")
+            return WhatsAppMessage.create_text(
+                "unknown",
+                f"Upgrade failed: {str(e)}"
             )
-            raise

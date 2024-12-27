@@ -22,39 +22,42 @@ def create_initial_state() -> Dict[str, Any]:
 def prepare_state_update(current_state: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
     """Update state preserving SINGLE SOURCE OF TRUTH"""
     if not isinstance(current_state, dict):
-        current_state = {}
+        raise ValueError("Current state must be a dictionary")
     if not isinstance(updates, dict):
         raise ValueError("Updates must be a dictionary")
 
-    # Start with current state
-    new_state = current_state.copy()
+    # Create new state (without copying to prevent duplication)
+    new_state = {}
 
-    # Handle member_id (SINGLE SOURCE OF TRUTH)
-    if "member_id" in updates:
-        new_state["member_id"] = updates["member_id"]
+    # Handle critical fields first (SINGLE SOURCE OF TRUTH)
+    for field in ["member_id", "jwt_token"]:
+        new_state[field] = updates.get(field) if field in updates else current_state.get(field)
 
     # Handle channel updates (SINGLE SOURCE OF TRUTH)
     if "channel" in updates:
         if not isinstance(updates["channel"], dict):
             raise ValueError("Channel must be a dictionary")
-        if "channel" not in new_state:
-            new_state["channel"] = {"type": "whatsapp", "identifier": None, "metadata": {}}
-        for field in ["type", "identifier"]:
-            if field in updates["channel"]:
-                new_state["channel"][field] = updates["channel"][field]
-        # Handle metadata updates
-        if "metadata" in updates["channel"]:
-            if not isinstance(updates["channel"]["metadata"], dict):
-                raise ValueError("Channel metadata must be a dictionary")
-            new_state["channel"]["metadata"].update(updates["channel"]["metadata"])
 
-    # Handle jwt_token (SINGLE SOURCE OF TRUTH)
-    if "jwt_token" in updates:
-        new_state["jwt_token"] = updates["jwt_token"]
+        new_state["channel"] = {
+            "type": updates["channel"].get("type", current_state.get("channel", {}).get("type", "whatsapp")),
+            "identifier": updates["channel"].get("identifier", current_state.get("channel", {}).get("identifier")),
+            "metadata": updates["channel"].get("metadata", {}) if "metadata" in updates["channel"] else current_state.get("channel", {}).get("metadata", {})
+        }
+    else:
+        new_state["channel"] = {
+            "type": current_state.get("channel", {}).get("type", "whatsapp"),
+            "identifier": current_state.get("channel", {}).get("identifier"),
+            "metadata": current_state.get("channel", {}).get("metadata", {})
+        }
 
-    # Handle other updates
+    # Handle other updates (non-critical fields)
     for field, value in updates.items():
         if field not in ["member_id", "channel", "jwt_token"]:
+            new_state[field] = value
+
+    # Copy over any remaining fields from current state
+    for field, value in current_state.items():
+        if field not in new_state and field not in ["member_id", "channel", "jwt_token"]:
             new_state[field] = value
 
     return new_state
@@ -63,30 +66,32 @@ def prepare_state_update(current_state: Dict[str, Any], updates: Dict[str, Any])
 def update_critical_fields(current_state: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
     """Update critical fields while enforcing SINGLE SOURCE OF TRUTH"""
     if not isinstance(current_state, dict):
-        current_state = {}
+        raise ValueError("Current state must be a dictionary")
     if not isinstance(updates, dict):
         raise ValueError("Updates must be a dictionary")
 
-    new_state = current_state.copy()
+    # Create new state (without copying to prevent duplication)
+    new_state = {}
 
     # Update critical fields (SINGLE SOURCE OF TRUTH)
-    critical_fields = {
-        "member_id",    # Primary identifier
-        "jwt_token"     # Authentication token
-    }
+    for field in ["member_id", "jwt_token"]:
+        new_state[field] = updates.get(field) if field in updates else current_state.get(field)
 
-    for field in critical_fields:
-        if field in updates:
-            new_state[field] = updates[field]
-
-    # Handle channel updates
+    # Handle channel updates (SINGLE SOURCE OF TRUTH)
     if "channel" in updates:
         if not isinstance(updates["channel"], dict):
             raise ValueError("Channel must be a dictionary")
-        if "channel" not in new_state:
-            new_state["channel"] = {"type": "whatsapp", "identifier": None, "metadata": {}}
-        for field in ["type", "identifier"]:
-            if field in updates["channel"]:
-                new_state["channel"][field] = updates["channel"][field]
+
+        new_state["channel"] = {
+            "type": updates["channel"].get("type", current_state.get("channel", {}).get("type", "whatsapp")),
+            "identifier": updates["channel"].get("identifier", current_state.get("channel", {}).get("identifier")),
+            "metadata": current_state.get("channel", {}).get("metadata", {})  # Metadata not updated in critical fields
+        }
+    else:
+        new_state["channel"] = {
+            "type": current_state.get("channel", {}).get("type", "whatsapp"),
+            "identifier": current_state.get("channel", {}).get("identifier"),
+            "metadata": current_state.get("channel", {}).get("metadata", {})
+        }
 
     return new_state
