@@ -1,122 +1,130 @@
+"""CredEx recurring payment operations using pure functions"""
 import logging
 from datetime import datetime
-from typing import Any, Dict, Set, Tuple
+from typing import Any, Dict, Set, Tuple, Optional
 
-from .base import BaseCredExService
+from .base import make_credex_request
 from .exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
+# Required fields for payment validation
+REQUIRED_PAYMENT_FIELDS: Set[str] = {
+    "sourceAccountID",
+    "templateType",
+    "payFrequency",
+    "startDate",
+    "securedCredex",
+    "amount",
+    "denomination"
+}
 
-class CredExRecurringService(BaseCredExService):
-    """Service for recurring payment operations"""
 
-    REQUIRED_PAYMENT_FIELDS: Set[str] = {
-        "sourceAccountID",
-        "templateType",
-        "payFrequency",
-        "startDate",
-        "securedCredex",
-        "amount",
-        "denomination"
-    }
+def validate_payment_data(data: Dict[str, Any]) -> None:
+    """Validate payment data"""
+    if not data:
+        raise ValidationError("Payment data is required")
 
-    def _validate_payment_data(self, data: Dict[str, Any]) -> None:
-        """Validate payment data"""
-        if not data:
-            raise ValidationError("Payment data is required")
+    if missing := REQUIRED_PAYMENT_FIELDS - set(data.keys()):
+        raise ValidationError(f"Missing required fields: {', '.join(missing)}")
 
-        if missing := self.REQUIRED_PAYMENT_FIELDS - set(data.keys()):
-            raise ValidationError(f"Missing required fields: {', '.join(missing)}")
 
-    def _process_payment_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process payment data for API compatibility"""
-        payment = data.copy()
+def process_payment_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Process payment data for API compatibility"""
+    payment = data.copy()
 
-        # Format date if needed
-        if isinstance(payment.get("startDate"), datetime):
-            payment["startDate"] = payment["startDate"].strftime("%Y-%m-%d")
+    # Format date if needed
+    if isinstance(payment.get("startDate"), datetime):
+        payment["startDate"] = payment["startDate"].strftime("%Y-%m-%d")
 
-        return payment
+    return payment
 
-    def create_recurring(self, payment_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
-        """Create recurring payment"""
-        try:
-            self._validate_payment_data(payment_data)
-            processed_data = self._process_payment_data(payment_data)
 
-            response = self._make_request(
-                'recurring', 'create',
-                payload=processed_data
-            )
-            data = response.json()
+def create_recurring(payment_data: Dict[str, Any], jwt_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+    """Create recurring payment"""
+    try:
+        validate_payment_data(payment_data)
+        processed_data = process_payment_data(payment_data)
 
-            if data.get("data"):
-                return True, data
-            return False, {"message": "Failed to create recurring payment"}
+        response = make_credex_request(
+            'recurring', 'create',
+            payload=processed_data,
+            jwt_token=jwt_token
+        )
+        data = response.json()
 
-        except ValidationError as e:
-            return False, {"message": str(e)}
-        except Exception as e:
-            logger.error(f"Payment creation failed: {str(e)}")
-            return False, {"message": str(e)}
+        if data.get("data"):
+            return True, data
+        return False, {"message": "Failed to create recurring payment"}
 
-    def accept_recurring(self, payment_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Accept recurring payment"""
-        if not payment_id:
-            raise ValidationError("Payment ID is required")
+    except ValidationError as e:
+        return False, {"message": str(e)}
+    except Exception as e:
+        logger.error(f"Payment creation failed: {str(e)}")
+        return False, {"message": str(e)}
 
-        try:
-            response = self._make_request(
-                'recurring', 'accept',
-                payload={"paymentID": payment_id}
-            )
-            data = response.json()
 
-            if data.get("data"):
-                return True, data
-            return False, {"message": "Failed to accept recurring payment"}
+def accept_recurring(payment_id: str, jwt_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+    """Accept recurring payment"""
+    if not payment_id:
+        raise ValidationError("Payment ID is required")
 
-        except Exception as e:
-            logger.error(f"Payment acceptance failed: {str(e)}")
-            return False, {"message": str(e)}
+    try:
+        response = make_credex_request(
+            'recurring', 'accept',
+            payload={"paymentID": payment_id},
+            jwt_token=jwt_token
+        )
+        data = response.json()
 
-    def cancel_recurring(self, payment_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Cancel recurring payment"""
-        if not payment_id:
-            raise ValidationError("Payment ID is required")
+        if data.get("data"):
+            return True, data
+        return False, {"message": "Failed to accept recurring payment"}
 
-        try:
-            response = self._make_request(
-                'recurring', 'cancel',
-                payload={"paymentID": payment_id}
-            )
-            data = response.json()
+    except Exception as e:
+        logger.error(f"Payment acceptance failed: {str(e)}")
+        return False, {"message": str(e)}
 
-            if data.get("data"):
-                return True, data
-            return False, {"message": "Failed to cancel recurring payment"}
 
-        except Exception as e:
-            logger.error(f"Payment cancellation failed: {str(e)}")
-            return False, {"message": str(e)}
+def cancel_recurring(payment_id: str, jwt_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+    """Cancel recurring payment"""
+    if not payment_id:
+        raise ValidationError("Payment ID is required")
 
-    def get_recurring(self, payment_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get recurring payment details"""
-        if not payment_id:
-            raise ValidationError("Payment ID is required")
+    try:
+        response = make_credex_request(
+            'recurring', 'cancel',
+            payload={"paymentID": payment_id},
+            jwt_token=jwt_token
+        )
+        data = response.json()
 
-        try:
-            response = self._make_request(
-                'recurring', 'get',
-                payload={"paymentID": payment_id}
-            )
-            data = response.json()
+        if data.get("data"):
+            return True, data
+        return False, {"message": "Failed to cancel recurring payment"}
 
-            if data.get("data"):
-                return True, data
-            return False, {"message": "Failed to get recurring payment details"}
+    except Exception as e:
+        logger.error(f"Payment cancellation failed: {str(e)}")
+        return False, {"message": str(e)}
 
-        except Exception as e:
-            logger.error(f"Payment details fetch failed: {str(e)}")
-            return False, {"message": str(e)}
+
+def get_recurring(payment_id: str, jwt_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+    """Get recurring payment details"""
+    if not payment_id:
+        raise ValidationError("Payment ID is required")
+
+    try:
+        response = make_credex_request(
+            'recurring', 'get',
+            payload={"paymentID": payment_id},
+            jwt_token=jwt_token
+        )
+        data = response.json()
+
+        if data.get("data"):
+            return True, data
+        return False, {"message": "Failed to get recurring payment details"}
+
+    except Exception as e:
+        logger.error(f"Payment details fetch failed: {str(e)}")
+        return False, {"message": str(e)}

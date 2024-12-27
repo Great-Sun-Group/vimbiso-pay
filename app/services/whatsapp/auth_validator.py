@@ -7,6 +7,80 @@ from core.utils.state_validator import StateValidator
 class AuthFlowValidator(FlowValidatorInterface):
     """Validator for authentication flows with strict state validation"""
 
+    def validate_before_access(self, state: Dict[str, Any], fields: Set[str]) -> ValidationResult:
+        """Validate state before access enforcing SINGLE SOURCE OF TRUTH
+
+        Args:
+            state: State to validate
+            fields: Fields being accessed
+
+        Returns:
+            ValidationResult: Validation result with error details if invalid
+
+        Rules:
+        - Must validate fields before access
+        - Must check for required fields
+        - Must prevent state duplication
+        - Must enforce single source of truth
+        """
+        try:
+            # Validate input types
+            if not isinstance(state, dict):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="State must be a dictionary"
+                )
+            if not isinstance(fields, set):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Fields must be a set"
+                )
+
+            # Check for required fields
+            missing = fields - set(state.keys())
+            if missing:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Missing required fields: {', '.join(missing)}",
+                    missing_fields=missing
+                )
+
+            # Check for state duplication in critical fields
+            for field in self.UNIQUE_FIELDS & fields:
+                value = state.get(field)
+                if isinstance(value, dict):
+                    for nested_key, nested_value in value.items():
+                        if isinstance(nested_value, dict) and field in nested_value:
+                            return ValidationResult(
+                                is_valid=False,
+                                error_message=f"{field} found in nested state - must only exist at top level"
+                            )
+
+            # Validate channel structure if being accessed
+            if "channel" in fields:
+                channel = state.get("channel", {})
+                if not isinstance(channel, dict):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="Channel must be a dictionary"
+                    )
+                required_channel = {"type", "identifier"}
+                missing_channel = required_channel - set(channel.keys())
+                if missing_channel:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"Missing channel fields: {', '.join(missing_channel)}",
+                        missing_fields=missing_channel
+                    )
+
+            return ValidationResult(is_valid=True)
+
+        except Exception as e:
+            return ValidationResult(
+                is_valid=False,
+                error_message=f"Validation error: {str(e)}"
+            )
+
     # Critical fields that must be validated
     CRITICAL_FIELDS = {
         "member_id",
@@ -14,80 +88,6 @@ class AuthFlowValidator(FlowValidatorInterface):
         "jwt_token"
     }
 
-    # Fields that must never be duplicated
-    UNIQUE_FIELDS = {
-        "member_id",
-        "channel"
-    }
-
-    # Required fields for authenticated state
-    AUTH_FIELDS = {
-        "member_id",    # Primary identifier (SINGLE SOURCE OF TRUTH)
-        "jwt_token",    # Authentication token
-        "channel",      # Channel information (SINGLE SOURCE OF TRUTH)
-        "account_id",   # Current account ID
-        "authenticated"     # Authentication state
-    }
-
-    def validate_flow_data(self, flow_data: Dict[str, Any]) -> ValidationResult:
-        """Validate auth flow data structure
-
-        Args:
-            flow_data: Flow data to validate
-
-        Returns:
-            ValidationResult: Validation result with error details if invalid
-
-        Rules:
-        - Must be None or a dictionary
-        - If dictionary, must have id and step fields
-        - Step must be a non-negative integer
-        - Must not contain any critical state fields
-        """
-        # Allow None for flow_data when clearing flow
-        if flow_data is None:
-            return ValidationResult(is_valid=True)
-
-        if not isinstance(flow_data, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Flow data must be a dictionary"
-            )
-
-        # Empty flow data is valid for initial state
-        if not flow_data:
-            return ValidationResult(is_valid=True)
-
-        # Check for state duplication
-        for field in self.UNIQUE_FIELDS:
-            if field in flow_data:
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"{field} found in flow data - must not be passed between components"
-                )
-
-        required_fields = {"id", "step"}
-        missing = required_fields - set(flow_data.keys())
-        if missing:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing required flow fields: {', '.join(missing)}",
-                missing_fields=missing
-            )
-
-        # Validate step
-        if not isinstance(flow_data["step"], int) or flow_data["step"] < 0:
-            return ValidationResult(
-                is_valid=False,
-                error_message="Step must be a non-negative integer"
-            )
-
-        return ValidationResult(is_valid=True)
-
-    def validate_flow_state(self, state: Dict[str, Any]) -> ValidationResult:
-        """Validate complete flow state
-
-        Args:
             state: State to validate
 
         Returns:

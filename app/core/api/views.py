@@ -158,7 +158,9 @@ class CredexCloudApiWebhook(APIView):
 
                 # For mock testing return the response directly
                 if is_mock_testing:
-                    return JsonResponse(service.response, status=status.HTTP_200_OK)
+                    # Convert WhatsAppMessage to dict and return
+                    response_dict = service.response.to_dict() if service.response else {}
+                    return JsonResponse(response_dict, status=status.HTTP_200_OK)
 
                 # For real requests send via WhatsApp
                 response = CredexWhatsappService(

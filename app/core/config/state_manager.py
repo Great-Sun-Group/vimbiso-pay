@@ -2,13 +2,12 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from services.credex.service import CredExService
+from services.credex.service import create_credex_service
 
 from core.utils.state_validator import StateValidator
 
 from .config import ACTIVITY_TTL, atomic_state
-from .state_utils import (prepare_state_update,
-                          update_critical_fields)
+from .state_utils import prepare_state_update
 
 logger = logging.getLogger(__name__)
 
@@ -106,10 +105,6 @@ class StateManager:
             # Update internal state
             self._state = new_state
 
-            # Update service token if needed (SINGLE SOURCE OF TRUTH)
-            if self._credex_service and "jwt_token" in updates:
-                self._credex_service.update_token(updates["jwt_token"])
-
             return True, None
 
         except ValueError as e:
@@ -135,11 +130,11 @@ class StateManager:
 
         return self._state.get(key)
 
-    def get_or_create_credex_service(self) -> CredExService:
+    def get_or_create_credex_service(self) -> Dict[str, Any]:
         """Get or create CredEx service instance with proper state access"""
         if not self._credex_service:
             # Create service with state access functions
-            self._credex_service = CredExService(
+            self._credex_service = create_credex_service(
                 get_token=lambda: self.get("jwt_token"),
                 get_member_id=lambda: self.get("member_id"),
                 get_channel=lambda: self.get("channel"),

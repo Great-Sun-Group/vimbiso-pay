@@ -1,65 +1,79 @@
-"""Base class for credex flows"""
+"""Core credex flow functions enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from core.messaging.flow import Flow, Step
 from core.utils.flow_audit import FlowAuditLogger
-
 from core.utils.state_validator import StateValidator
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
 
+# Required fields for all credex flows
+REQUIRED_FIELDS = {"channel", "member_id", "account_id", "authenticated", "jwt_token"}
 
-class CredexFlow(Flow):
-    """Base class for all credex flows"""
 
-    def __init__(
-        self,
-        id: str,
-        steps: List[Step],
-        **kwargs
-    ) -> None:
-        """Initialize credex flow without state duplication"""
-        if not id:
-            raise ValueError("Flow ID is required")
+def validate_credex_service(credex_service: Any) -> None:
+    """Validate service has required capabilities"""
+    if not credex_service:
+        raise ValueError("Service not initialized")
 
-        # Initialize base Flow class with minimal state
-        super().__init__(id=id, steps=steps)
+    if not hasattr(credex_service, 'services'):
+        raise ValueError("Service missing required services")
 
-        # Log initialization
-        audit.log_flow_event(
-            id,
-            "initialization",
-            None,
-            kwargs,
-            "success"
-        )
+    required_services = {'member', 'offers'}
+    missing = required_services - set(credex_service.services.keys())
+    if missing:
+        raise ValueError(f"Service missing required capabilities: {', '.join(missing)}")
 
-    @staticmethod
-    def validate_credex_service(credex_service: Any) -> None:
-        """Validate service has required capabilities"""
-        if not credex_service:
-            raise ValueError("Service not initialized")
 
-        if not hasattr(credex_service, 'services'):
-            raise ValueError("Service missing required services")
+def validate_flow_state(state_manager: Any, flow_id: str) -> None:
+    """Validate flow state enforcing SINGLE SOURCE OF TRUTH"""
+    # Validate state access at boundary
+    validation = StateValidator.validate_before_access(
+        {field: state_manager.get(field) for field in REQUIRED_FIELDS},
+        REQUIRED_FIELDS
+    )
+    if not validation.is_valid:
+        raise ValueError(validation.error_message)
 
-        required_services = {'member', 'offers'}
-        missing = required_services - set(credex_service.services.keys())
-        if missing:
-            raise ValueError(f"Service missing required capabilities: {', '.join(missing)}")
+    # Log validation
+    audit.log_flow_event(
+        flow_id,
+        "state_validation",
+        None,
+        {"channel_id": state_manager.get("channel")["identifier"]},
+        "success"
+    )
 
-    def process_step_with_state(self, state_manager: Any, step_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process a flow step without state duplication"""
-        # Validate state at boundary
-        validation_result = StateValidator.validate_state(state_manager)
-        if not validation_result.is_valid:
-            raise ValueError(f"Invalid state: {validation_result.error_message}")
 
-        # Process step with state manager
-        return self.steps[step_data.get("step", 0)].process_with_state(state_manager, step_data)
+def process_flow_step(
+    state_manager: Any,
+    flow_id: str,
+    step: str,
+    input_data: Any = None,
+    credex_service: Any = None
+) -> Dict[str, Any]:
+    """Process a flow step enforcing SINGLE SOURCE OF TRUTH"""
+    try:
+        # Validate state and service
+        validate_flow_state(state_manager, flow_id)
+        if credex_service:
+            validate_credex_service(credex_service)
 
-    def complete_with_state(self, state_manager: Any) -> Dict[str, Any]:
-        """Complete flow with state manager - must be implemented by subclasses"""
-        raise NotImplementedError("Subclasses must implement complete_with_state()")
+        # Get flow data
+        flow_data = state_manager.get("flow_data")
+        if not isinstance(flow_data, dict):
+            flow_data = {}
+
+        # Process step (to be implemented by specific flow handlers)
+        return {
+            "flow_id": flow_id,
+            "step": step,
+            "flow_data": flow_data,
+            "input_data": input_data,
+            "credex_service": credex_service
+        }
+
+    except ValueError as e:
+        logger.error(f"Flow step processing error: {str(e)}")
+        raise

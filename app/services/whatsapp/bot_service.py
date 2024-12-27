@@ -2,8 +2,8 @@
 import logging
 from typing import Any, Dict
 
-from .auth_handlers import AuthActionHandler
-from .handlers.message.message_handler import MessageHandler
+from . import auth_handlers as auth
+from .handlers.message import message_handler
 from .types import BotServiceInterface, WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -22,41 +22,30 @@ class CredexBotService(BotServiceInterface):
         if not state_manager:
             raise ValueError("State manager is required")
 
-        # Validate channel at initial boundary (SINGLE SOURCE OF TRUTH)
-        channel = state_manager.get("channel")
-        if not channel or not channel.get("identifier"):
-            raise ValueError("Missing channel identifier")
+        # Initialize parent with payload and state manager
+        super().__init__({"entry": [{"changes": [{"value": {
+            "messages": [{"type": payload.get("type", ""), "text": {"body": payload.get("text", "")}}]
+        }}]}]}, state_manager)
 
-        # Initialize with validated channel
-        self.state_manager = state_manager
-
-        # Initialize handlers with state manager
-        self.auth_handler = AuthActionHandler(state_manager)
-        self.message_handler = MessageHandler(state_manager)
-
-        # Set auth handler in message handler
-        self.message_handler.auth_handler = self.auth_handler
-
-        # Extract message type and text
-        message_type = payload.get("type", "")
-        message_text = payload.get("text", "")
-
-        # Handle initial greeting
-        if message_type == "text" and message_text.lower() == "hi":
-            try:
-                # Attempt login
-                success, data = self.auth_handler.auth_flow.attempt_login()
-                if success:
-                    self.response = self.auth_handler.handle_action_menu()
-                else:
-                    self.response = self.auth_handler.handle_action_register(register=True)
-            except ValueError as e:
-                self.response = WhatsAppMessage.create_text(
-                    channel["identifier"],
-                    f"Error: {str(e)}"
+        try:
+            # Handle message based on type
+            if self.message_type == "text" and self.body.lower() == "hi":
+                # Handle initial greeting
+                success, data = auth.handle_hi(state_manager)
+                self.response = (
+                    auth.handle_action_menu(state_manager) if success
+                    else auth.handle_action_register(state_manager, register=True)
                 )
-        else:
-            self.response = self.message_handler.process_message(message_type, message_text)
+            else:
+                # Handle other messages
+                self.response = message_handler.process_message(
+                    state_manager,
+                    self.message_type,
+                    self.body
+                )
+        except ValueError as e:
+            # Handle errors consistently
+            self.response = auth.handle_error(state_manager, "Bot service", e)
 
     def handle(self) -> WhatsAppMessage:
         """Return processed response"""

@@ -11,137 +11,138 @@ from .types import WhatsAppMessage
 logger = logging.getLogger(__name__)
 
 
-class BaseActionHandler:
-    """Base class for WhatsApp action handlers with strict state management"""
+def handle_default_action(state_manager: Any) -> WhatsAppMessage:
+    """Handle default or unknown actions
 
-    def __init__(self, state_manager: Any):
-        """Initialize the handler with state manager
+    Args:
+        state_manager: State manager instance for state access
 
-        Args:
-            state_manager: State manager instance for state access
-        """
+    Returns:
+        WhatsAppMessage: Error message for invalid actions
+    """
+    try:
         if not state_manager:
             raise ValueError("State manager is required")
-        self.state_manager = state_manager
 
-    def handle_default_action(self) -> WhatsAppMessage:
-        """Handle default or unknown actions
+        # Validate state access at boundary
+        validation = StateValidator.validate_before_access(
+            {"channel": state_manager.get("channel")},
+            {"channel"}
+        )
+        if not validation.is_valid:
+            raise ValueError(validation.error_message)
 
-        Returns:
-            WhatsAppMessage: Error message for invalid actions
-        """
-        try:
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {"channel": self.state_manager.get("channel")},
-                {"channel"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
+        channel = state_manager.get("channel")
+        return WhatsAppMessage.create_text(
+            channel["identifier"],
+            wrap_text(INVALID_ACTION, channel["identifier"])
+        )
+    except ValueError as e:
+        logger.error(f"Failed to handle default action: {str(e)}")
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"Error: {str(e)}"
+        )
 
-            channel = self.state_manager.get("channel")
-            return WhatsAppMessage.create_text(
-                channel["identifier"],
-                wrap_text(INVALID_ACTION, channel["identifier"])
-            )
-        except ValueError as e:
-            logger.error(f"Failed to handle default action: {str(e)}")
-            return WhatsAppMessage.create_text(
-                "unknown",  # Fallback identifier
-                f"Error: {str(e)}"
-            )
 
-    @staticmethod
-    def format_synopsis(synopsis: str, style: str = None) -> str:
-        """Format text synopsis with line breaks for better readability
+def format_synopsis(synopsis: str, style: str = None) -> str:
+    """Format text synopsis with line breaks for better readability
 
-        Args:
-            synopsis: Text to format
-            style: Optional style to apply to each word (e.g. '*' for bold)
+    Args:
+        synopsis: Text to format
+        style: Optional style to apply to each word (e.g. '*' for bold)
 
-        Returns:
-            str: Formatted text with appropriate line breaks
-        """
-        if not synopsis:
-            return ""
+    Returns:
+        str: Formatted text with appropriate line breaks
+    """
+    if not synopsis:
+        return ""
 
-        formatted_synopsis = ""
-        words = synopsis.split()
-        line_length = 0
+    formatted_synopsis = ""
+    words = synopsis.split()
+    line_length = 0
 
-        for word in words:
-            # If adding the word exceeds the line length, start a new line
-            if line_length + len(word) + 1 > 35:
-                formatted_synopsis += "\n"
-                line_length = 0
-            if style:
-                word = f"{style}{word}{style}"
-            formatted_synopsis += word + " "
-            line_length += len(word) + 1
+    for word in words:
+        # If adding the word exceeds the line length, start a new line
+        if line_length + len(word) + 1 > 35:
+            formatted_synopsis += "\n"
+            line_length = 0
+        if style:
+            word = f"{style}{word}{style}"
+        formatted_synopsis += word + " "
+        line_length += len(word) + 1
 
-        return formatted_synopsis.strip()
+    return formatted_synopsis.strip()
 
-    def get_response_template(self, message_text: str) -> WhatsAppMessage:
-        """Get a basic WhatsApp message template
 
-        Args:
-            message_text: Text content for the message
+def get_response_template(state_manager: Any, message_text: str) -> WhatsAppMessage:
+    """Get a basic WhatsApp message template
 
-        Returns:
-            WhatsAppMessage: Basic formatted WhatsApp message
-        """
-        try:
-            if not message_text:
-                raise ValueError("Message text is required")
+    Args:
+        state_manager: State manager instance for state access
+        message_text: Text content for the message
 
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {"channel": self.state_manager.get("channel")},
-                {"channel"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
+    Returns:
+        WhatsAppMessage: Basic formatted WhatsApp message
+    """
+    try:
+        if not state_manager:
+            raise ValueError("State manager is required")
+        if not message_text:
+            raise ValueError("Message text is required")
 
-            channel = self.state_manager.get("channel")
-            return WhatsAppMessage.create_text(channel["identifier"], message_text)
+        # Validate state access at boundary
+        validation = StateValidator.validate_before_access(
+            {"channel": state_manager.get("channel")},
+            {"channel"}
+        )
+        if not validation.is_valid:
+            raise ValueError(validation.error_message)
 
-        except ValueError as e:
-            logger.error(f"Failed to create response template: {str(e)}")
-            return WhatsAppMessage.create_text(
-                "unknown",  # Fallback identifier
-                f"Error: {str(e)}"
-            )
+        channel = state_manager.get("channel")
+        return WhatsAppMessage.create_text(channel["identifier"], message_text)
 
-    def _format_error_response(self, error_message: str) -> WhatsAppMessage:
-        """Format an error response message
+    except ValueError as e:
+        logger.error(f"Failed to create response template: {str(e)}")
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"Error: {str(e)}"
+        )
 
-        Args:
-            error_message: Error message to format
 
-        Returns:
-            WhatsAppMessage: Formatted error message
-        """
-        try:
-            if not error_message:
-                error_message = "An unknown error occurred"
+def format_error_response(state_manager: Any, error_message: str) -> WhatsAppMessage:
+    """Format an error response message
 
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {"channel": self.state_manager.get("channel")},
-                {"channel"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
+    Args:
+        state_manager: State manager instance for state access
+        error_message: Error message to format
 
-            channel = self.state_manager.get("channel")
-            return WhatsAppMessage.create_text(
-                channel["identifier"],
-                f"❌ {error_message}"
-            )
+    Returns:
+        WhatsAppMessage: Formatted error message
+    """
+    try:
+        if not state_manager:
+            raise ValueError("State manager is required")
+        if not error_message:
+            error_message = "An unknown error occurred"
 
-        except ValueError as e:
-            logger.error(f"Failed to format error response: {str(e)}")
-            return WhatsAppMessage.create_text(
-                "unknown",  # Fallback identifier
-                f"Critical Error: {str(e)}"
-            )
+        # Validate state access at boundary
+        validation = StateValidator.validate_before_access(
+            {"channel": state_manager.get("channel")},
+            {"channel"}
+        )
+        if not validation.is_valid:
+            raise ValueError(validation.error_message)
+
+        channel = state_manager.get("channel")
+        return WhatsAppMessage.create_text(
+            channel["identifier"],
+            f"❌ {error_message}"
+        )
+
+    except ValueError as e:
+        logger.error(f"Failed to format error response: {str(e)}")
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"Critical Error: {str(e)}"
+        )

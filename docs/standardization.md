@@ -34,7 +34,64 @@ These rules are ABSOLUTE and NON-NEGOTIABLE. NO EXCEPTIONS.
 - NO state fixing
 - NO error recovery
 
-## 4. Error Handling
+## 4. Stateless Handlers
+
+- ONLY use pure functions
+  ```python
+  # CORRECT
+  def handle_message(state_manager: Any, message: str) -> Response:
+      return process(state_manager.get("data"))
+
+  # WRONG
+  class MessageHandler:
+      def __init__(self, state_manager):
+          self.state = state_manager  # NO instance state!
+  ```
+
+- NO class state/instance variables
+  ```python
+  # CORRECT
+  def get_channel_id(state_manager: Any) -> str:
+      return state_manager.get("channel")["identifier"]
+
+  # WRONG
+  class Handler:
+      def __init__(self, state_manager):
+          self.channel = state_manager.get("channel")  # NO stored state!
+  ```
+
+- NO handler instantiation
+  ```python
+  # CORRECT
+  result = message_handler.process_message(state_manager, text)
+
+  # WRONG
+  handler = MessageHandler(state_manager)  # NO instantiation!
+  result = handler.process_message(text)
+  ```
+
+- State manager is ONLY shared component
+  ```python
+  # CORRECT
+  def handle_action(state_manager: Any) -> Response:
+      # Only state_manager is passed between components
+      return process_action(state_manager)
+
+  # WRONG
+  def handle_action(state_manager, stored_data):  # NO extra state!
+      return process_action(state_manager, stored_data)
+  ```
+
+- Clear module boundaries
+  ```python
+  # auth_handlers.py - Authentication functions
+  def handle_login(state_manager: Any): pass
+
+  # message_handler.py - Message processing
+  def process_message(state_manager: Any): pass
+  ```
+
+## 5. Error Handling
 
 - Fix ROOT CAUSES only
 - NO symptom fixes
@@ -62,15 +119,22 @@ STOP and verify before ANY code change:
    - [ ] NO state transformation?
    - [ ] NO state passing?
 
-4. Validation
+4. Handler Implementation
+   - [ ] Using pure functions?
+   - [ ] NO class state?
+   - [ ] NO handler instantiation?
+   - [ ] Clear module boundaries?
+
+5. Validation
    - [ ] Validating at boundaries?
    - [ ] Validating before access?
    - [ ] NO cleanup code?
 
-5. Error Handling
+6. Error Handling
    - [ ] Fixing root cause?
    - [ ] NO symptom fixes?
    - [ ] Clear error messages?
+
 
 ## Enforcement
 

@@ -4,10 +4,19 @@ This package provides a comprehensive interface for interacting with the CredEx 
 It handles authentication, member management, and CredEx offer operations.
 """
 
-from typing import Dict, Optional, Type, TypeVar
-
-from .auth import CredExAuthService
-from .base import BaseCredExService
+from .auth import (
+    login,
+    register_member,
+    refresh_token,
+    validate_member_data,
+    extract_token,
+)
+from .base import (
+    make_credex_request,
+    validate_response,
+    handle_error_response,
+    extract_error_message,
+)
 from .config import CredExConfig, CredExEndpoints
 from .exceptions import (
     APIError,
@@ -21,56 +30,53 @@ from .exceptions import (
     ResourceNotFoundError,
     ValidationError,
 )
-from .interface import CredExServiceInterface
-from .member import CredExMemberService
-from .offers import CredExOffersService
-from .service import CredExService
-
-# Type variable for service factory
-T = TypeVar('T', bound=BaseCredExService)
-
-
-def create_service(
-    service_class: Type[T],
-    config: Optional[CredExConfig] = None
-) -> T:
-    """Create a new instance of a CredEx service
-
-    Args:
-        service_class: The service class to instantiate
-        config: Optional configuration. If not provided, loads from environment.
-
-    Returns:
-        An instance of the requested service
-    """
-    return service_class(config=config)
-
-
-def create_from_config(config_dict: Dict) -> CredExService:
-    """Create a CredEx service from a configuration dictionary
-
-    Args:
-        config_dict: Configuration dictionary
-
-    Returns:
-        Configured CredEx service instance
-    """
-    config = CredExConfig.from_env()
-    for key, value in config_dict.items():
-        setattr(config, key, value)
-    return CredExService(config=config)
+from .member import (
+    get_dashboard,
+    validate_handle,
+    refresh_member_info,
+    get_member_accounts,
+)
+from .offers import (
+    offer_credex,
+    confirm_credex,
+    accept_credex,
+    accept_bulk_credex,
+    decline_credex,
+    cancel_credex,
+    get_credex,
+    get_ledger,
+)
 
 
 __all__ = [
-    # Main service
-    'CredExService',
-    'CredExServiceInterface',
+    # Auth functions
+    'login',
+    'register_member',
+    'refresh_token',
+    'validate_member_data',
+    'extract_token',
 
-    # Component services
-    'CredExAuthService',
-    'CredExMemberService',
-    'CredExOffersService',
-    'BaseCredExService',
+    # Base functions
+    'make_credex_request',
+    'validate_response',
+    'handle_error_response',
+    'extract_error_message',
+
+    # Member functions
+    'get_dashboard',
+    'validate_handle',
+    'refresh_member_info',
+    'get_member_accounts',
+
+    # Offer functions
+    'offer_credex',
+    'confirm_credex',
+    'accept_credex',
+    'accept_bulk_credex',
+    'decline_credex',
+    'cancel_credex',
+    'get_credex',
+    'get_ledger',
 
     # Configuration
     'CredExConfig',
@@ -87,8 +93,4 @@ __all__ = [
     'NetworkError',
     'ResourceNotFoundError',
     'ValidationError',
-
-    # Factory functions
-    'create_service',
-    'create_from_config',
 ]

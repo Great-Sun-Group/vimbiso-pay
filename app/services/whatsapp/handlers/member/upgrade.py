@@ -1,124 +1,153 @@
 """Member tier upgrade flow implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from core.messaging.flow import Flow, Step, StepType
-from core.messaging.types import Message
 from core.utils.flow_audit import FlowAuditLogger
-
+from core.utils.state_validator import StateValidator
+from core.messaging.types import Message
 from ...types import WhatsAppMessage
 from .templates import MemberTemplates
-from .validator import MemberFlowValidator
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
 
 
-class UpgradeFlow(Flow):
-    """Flow for member tier upgrade with strict state management"""
+def validate_button_response(response: Dict[str, Any]) -> bool:
+    """Validate button response"""
+    return (
+        response.get("type") == "interactive" and
+        response.get("interactive", {}).get("type") == "button_reply" and
+        response.get("interactive", {}).get("button_reply", {}).get("id") == "confirm_action"
+    )
 
-    def __init__(self, flow_type: str = "upgrade", state_manager: Any = None, **kwargs):
-        """Initialize upgrade flow with proper state management"""
-        if not state_manager:
-            raise ValueError("State manager is required")
 
-        # Get required state (already validated by message handler)
+def handle_upgrade_confirmation(state_manager: Any) -> Message:
+    """Create tier upgrade confirmation message enforcing SINGLE SOURCE OF TRUTH"""
+    try:
+        # Validate state access at boundary
+        validation = StateValidator.validate_before_access(
+            {
+                "channel": state_manager.get("channel"),
+                "member_id": state_manager.get("member_id")
+            },
+            {"channel", "member_id"}
+        )
+        if not validation.is_valid:
+            raise ValueError(validation.error_message)
+
+        # Get required data
+        channel = state_manager.get("channel")
+        member_id = state_manager.get("member_id")
+
+        return MemberTemplates.create_upgrade_confirmation(
+            channel["identifier"],
+            member_id
+        )
+    except ValueError as e:
+        return WhatsAppMessage.create_text("unknown", f"Error: {str(e)}")
+
+
+def handle_upgrade_completion(state_manager: Any, credex_service: Any) -> Message:
+    """Complete tier upgrade flow enforcing SINGLE SOURCE OF TRUTH"""
+    try:
+        # Validate state access at boundary
+        validation = StateValidator.validate_before_access(
+            {
+                "channel": state_manager.get("channel"),
+                "member_id": state_manager.get("member_id"),
+                "account_id": state_manager.get("account_id")
+            },
+            {"channel", "member_id", "account_id"}
+        )
+        if not validation.is_valid:
+            raise ValueError(validation.error_message)
+
+        # Get required data
+        channel = state_manager.get("channel")
         member_id = state_manager.get("member_id")
         account_id = state_manager.get("account_id")
-        if not member_id:
-            raise ValueError("Member ID required for upgrade")
-        if not account_id:
-            raise ValueError("Account ID required for upgrade payment")
 
-        self.validator = MemberFlowValidator()
-        self.state_manager = state_manager
-        self.credex_service = state_manager.get_or_create_credex_service()
+        # Create recurring payment
+        success, response = credex_service.services['recurring'].create_recurring({
+            "sourceAccountID": account_id,
+            "memberID": member_id,
+            "templateType": "MEMBERTIER_SUBSCRIPTION",
+            "payFrequency": 28,
+            "startDate": datetime.now().strftime("%Y-%m-%d"),
+            "memberTier": 3,
+            "securedCredex": True,
+            "amount": 1.00,
+            "denomination": "USD"
+        })
 
-        # Create flow ID from member_id
-        member_id = state_manager.get("member_id")
-        flow_id = f"{flow_type}_{member_id}"
+        if not success:
+            raise ValueError(response.get("message", "Failed to process subscription"))
 
-        # Create steps before initializing base class
-        steps = self._create_steps()
-
-        # Initialize base Flow class with required arguments
-        super().__init__(id=flow_id, steps=steps)
-
-        # Log initialization
+        # Log success
         audit.log_flow_event(
-            self.id,
-            "initialization",
+            f"upgrade_{member_id}",
+            "complete",
             None,
-            {"flow_type": flow_type},
+            {
+                "channel_id": channel["identifier"],
+                "member_id": member_id,
+                "account_id": account_id
+            },
             "success"
         )
 
-    def _create_steps(self) -> List[Step]:
-        """Create upgrade flow steps"""
-        return [
-            Step(
-                id="confirm",
-                type=StepType.BUTTON,
-                message=self._create_confirmation_message,
-                validator=self._validate_button_response
-            )
-        ]
+        # Clear flow data
+        state_manager.update({"flow_data": None})
 
-    def _validate_button_response(self, response: Dict[str, Any]) -> bool:
-        """Validate button response"""
-        return (
-            response.get("type") == "interactive" and
-            response.get("interactive", {}).get("type") == "button_reply" and
-            response.get("interactive", {}).get("button_reply", {}).get("id") == "confirm_action"
+        return MemberTemplates.create_upgrade_success(
+            channel["identifier"],
+            member_id
         )
 
-    def _create_confirmation_message(self, state: Dict[str, Any]) -> Message:
-        """Create tier upgrade confirmation message"""
-        try:
-            # Get required state (already validated)
-            channel = self.state_manager.get("channel")
-            member_id = self.state_manager.get("member_id")
+    except ValueError as e:
+        logger.error(f"Upgrade failed: {str(e)}")
+        return WhatsAppMessage.create_text(
+            "unknown",
+            f"Upgrade failed: {str(e)}"
+        )
 
-            return MemberTemplates.create_upgrade_confirmation(
-                channel["identifier"],
-                member_id
-            )
-        except ValueError as e:
-            return WhatsAppMessage.create_text("unknown", f"Error: {str(e)}")
 
-    def complete(self) -> Message:
-        """Complete tier upgrade flow"""
-        try:
-            # Get required state (already validated)
-            channel = self.state_manager.get("channel")
-            member_id = self.state_manager.get("member_id")
-            account_id = self.state_manager.get("account_id")
+def process_upgrade_step(state_manager: Any, step: str, input_data: Any = None) -> Message:
+    """Process upgrade step enforcing SINGLE SOURCE OF TRUTH"""
+    try:
+        # Validate state access at boundary
+        validation = StateValidator.validate_before_access(
+            {
+                "channel": state_manager.get("channel"),
+                "member_id": state_manager.get("member_id"),
+                "account_id": state_manager.get("account_id"),
+                "flow_data": state_manager.get("flow_data")
+            },
+            {"channel", "member_id", "account_id", "flow_data"}
+        )
+        if not validation.is_valid:
+            raise ValueError(validation.error_message)
 
-            # Create recurring payment
-            success, response = self.credex_service.services['recurring'].create_recurring({
-                "sourceAccountID": account_id,
-                "memberID": member_id,
-                "templateType": "MEMBERTIER_SUBSCRIPTION",
-                "payFrequency": 28,
-                "startDate": datetime.now().strftime("%Y-%m-%d"),
-                "memberTier": 3,
-                "securedCredex": True,
-                "amount": 1.00,
-                "denomination": "USD"
-            })
+        # Handle confirmation step
+        if step == "confirm":
+            if input_data:
+                if not validate_button_response(input_data):
+                    raise ValueError("Invalid confirmation response")
+                state_manager.update({
+                    "flow_data": {
+                        **state_manager.get("flow_data", {}),
+                        "confirmed": True,
+                        "current_step": "complete"
+                    }
+                })
+            return handle_upgrade_confirmation(state_manager)
 
-            if not success:
-                raise ValueError(response.get("message", "Failed to process subscription"))
+        else:
+            raise ValueError(f"Invalid upgrade step: {step}")
 
-            return MemberTemplates.create_upgrade_success(
-                channel["identifier"],
-                member_id
-            )
-
-        except ValueError as e:
-            logger.error(f"Upgrade failed: {str(e)}")
-            return WhatsAppMessage.create_text(
-                "unknown",
-                f"Upgrade failed: {str(e)}"
-            )
+    except ValueError as e:
+        return WhatsAppMessage.create_text(
+            state_manager.get("channel", {}).get("identifier", "unknown"),
+            f"Error: {str(e)}"
+        )

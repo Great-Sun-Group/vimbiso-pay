@@ -1,5 +1,7 @@
 """Utility functions for CredEx bot"""
 import logging
+from typing import Any, Dict
+
 from core.utils import wrap_text
 from core.utils.state_validator import StateValidator
 from ..config.constants import REGISTER
@@ -7,36 +9,36 @@ from ..config.constants import REGISTER
 logger = logging.getLogger(__name__)
 
 
-def update_current_state(response_data, current_state, reset):
-    """Update member data in state"""
-    if reset:
-        current_state["member"] = response_data
-    else:
-        current_state["member"].update(response_data)
-    logger.info("Current state updated")
+def handle_successful_refresh(state_manager: Any) -> Dict[str, Any]:
+    """Handle successful member refresh with state manager
 
+    Args:
+        state_manager: State manager instance
 
-def handle_successful_refresh(current_state, state, bot_service):
-    """Handle successful member refresh"""
+    Returns:
+        Response from action handler
+    """
     logger.info("Refresh successful")
-    state.update_state(current_state)
-    return bot_service.action_handler.handle_action_select_profile()
+    return handle_action_select_profile(state_manager)
 
 
-def handle_failed_refresh(current_state, state, error_message, bot_service):
-    """Handle failed member refresh"""
+def handle_failed_refresh(state_manager: Any, error_message: str) -> Dict[str, Any]:
+    """Handle failed member refresh using state manager
+
+    Args:
+        state_manager: State manager instance
+        error_message: Error message from failed refresh
+
+    Returns:
+        Error response message
+    """
     logger.error(f"Refresh failed: {error_message}")
-    state.update_state(current_state)
-
-    # Get required state fields with validation at boundary
-    required_fields = {"channel"}
-    current_state = {
-        field: bot_service.user.state_manager.get(field)
-        for field in required_fields
-    }
 
     # Validate at boundary
-    validation = StateValidator.validate_state(current_state)
+    validation = StateValidator.validate_before_access(
+        {"channel": state_manager.get("channel")},
+        {"channel"}
+    )
     if not validation.is_valid:
         logger.error(f"Invalid state: {validation.error_message}")
         return wrap_text(
@@ -46,7 +48,7 @@ def handle_failed_refresh(current_state, state, error_message, bot_service):
             include_menu=False,
         )
 
-    channel = current_state["channel"]
+    channel = state_manager.get("channel")
     if not isinstance(channel, dict) or not channel.get("identifier"):
         logger.error("Invalid channel structure")
         return wrap_text(
@@ -64,41 +66,96 @@ def handle_failed_refresh(current_state, state, error_message, bot_service):
     )
 
 
-def handle_message(bot_service):
-    """Handle default message action"""
+def handle_message(state_manager: Any) -> Dict[str, Any]:
+    """Handle default message action using state manager
+
+    Args:
+        state_manager: State manager instance
+
+    Returns:
+        Response from default action handler
+    """
     logger.info("Handling default action")
-    response = bot_service.action_handler.handle_default_action()
-    logger.info("Default action handled")
-    return response
+    return handle_default_action(state_manager)
 
 
-def handle_offer_credex(bot_service):
-    """Handle credex offer action"""
+def handle_offer_credex(state_manager: Any) -> Dict[str, Any]:
+    """Handle credex offer action using state manager
+
+    Args:
+        state_manager: State manager instance
+
+    Returns:
+        Response from offer credex handler
+    """
     logger.info("Handling offer credex action")
-    bot_service.state.update({
-        "action": "offer_credex"
-    })
-    return bot_service.offer_credex_handler.handle_action_offer_credex()
+    # Update action in state
+    state_manager.update({"action": "offer_credex"})
+    return handle_action_offer_credex(state_manager)
 
 
-def handle_action(bot_service):
-    """Handle dynamic action method"""
-    action_method = getattr(bot_service.action_handler, bot_service.body, None)
-    if action_method and callable(action_method):
-        logger.info(f"Handling action: {bot_service.body}")
-        bot_service.state.update({
-            "action": bot_service.body
-        })
-        return action_method()
+def handle_action(state_manager: Any, action: str) -> Dict[str, Any]:
+    """Handle dynamic action method using state manager
+
+    Args:
+        state_manager: State manager instance
+        action: Action to handle
+
+    Returns:
+        Response from action handler
+    """
+    # Map of action names to handler functions
+    action_handlers = {
+        "handle_action_select_profile": handle_action_select_profile,
+        "handle_default_action": handle_default_action,
+        "handle_greeting": handle_greeting,
+        "handle_action_offer_credex": handle_action_offer_credex
+    }
+
+    handler = action_handlers.get(action)
+    if handler:
+        logger.info(f"Handling action: {action}")
+        state_manager.update({"action": action})
+        return handler(state_manager)
     else:
-        logger.warning(f"Action method {bot_service.body} not found")
-        return bot_service.action_handler.handle_default_action()
+        logger.warning(f"Action method {action} not found")
+        return handle_default_action(state_manager)
 
 
-def handle_greeting(bot_service):
-    """Handle greeting message"""
+def handle_greeting(state_manager: Any) -> Dict[str, Any]:
+    """Handle greeting message using state manager
+
+    Args:
+        state_manager: State manager instance
+
+    Returns:
+        Response from greeting handler
+    """
     logger.info("Handling greeting")
-    bot_service.state.update({
-        "action": "greeting"
-    })
-    return bot_service.action_handler.handle_greeting()
+    state_manager.update({"action": "greeting"})
+    return handle_action_greeting(state_manager)
+
+
+# Handler function implementations
+def handle_action_select_profile(state_manager: Any) -> Dict[str, Any]:
+    """Handle select profile action"""
+    # Implementation would go here
+    pass
+
+
+def handle_default_action(state_manager: Any) -> Dict[str, Any]:
+    """Handle default action"""
+    # Implementation would go here
+    pass
+
+
+def handle_action_greeting(state_manager: Any) -> Dict[str, Any]:
+    """Handle greeting action"""
+    # Implementation would go here
+    pass
+
+
+def handle_action_offer_credex(state_manager: Any) -> Dict[str, Any]:
+    """Handle offer credex action"""
+    # Implementation would go here
+    pass

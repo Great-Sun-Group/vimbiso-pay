@@ -1,137 +1,80 @@
-"""Authentication and menu handlers"""
+"""Authentication and menu handlers enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any
+from typing import Any, Tuple, Dict
 
-from .base_handler import BaseActionHandler
 from .types import WhatsAppMessage
-from .auth_validator import AuthFlowValidator
-from .handlers.auth.auth_flow import AuthFlow
-from .handlers.auth.menu_handler import MenuHandler
+from .handlers.auth.auth_flow import (
+    handle_registration,
+    attempt_login
+)
+from .handlers.auth.menu_functions import (
+    handle_menu,
+    handle_hi,
+    handle_refresh
+)
 
 logger = logging.getLogger(__name__)
 
 
-class AuthActionHandler(BaseActionHandler):
-    """Handler for authentication and menu-related actions"""
+def get_channel_id(state_manager: Any) -> str:
+    """Get channel ID from state safely"""
+    try:
+        channel = state_manager.get("channel")
+        if channel and channel.get("identifier"):
+            return channel["identifier"]
+    except ValueError:
+        pass
+    return "unknown"
 
-    def __init__(self, state_manager: Any):
-        """Initialize with state manager
 
-        Args:
-            state_manager: State manager instance
-        """
-        super().__init__(state_manager)
-        self.validator = AuthFlowValidator()
-        self.auth_flow = AuthFlow(state_manager)
-        self.menu_handler = MenuHandler(state_manager)
+def handle_error(state_manager: Any, operation: str, error: ValueError) -> WhatsAppMessage:
+    """Handle errors consistently"""
+    logger.error(f"{operation} failed: {str(error)}")
+    return WhatsAppMessage.create_text(
+        get_channel_id(state_manager),
+        f"Error: {str(error)}"
+    )
 
-    def handle_action_register(self, register: bool = False) -> WhatsAppMessage:
-        """Handle registration flow
 
-        Args:
-            register: Whether to start registration
+def handle_action_register(state_manager: Any, register: bool = False) -> WhatsAppMessage:
+    """Handle registration flow"""
+    try:
+        return handle_registration(state_manager, register)
+    except ValueError as e:
+        return handle_error(state_manager, "Registration", e)
 
-        Returns:
-            WhatsAppMessage: Response message
-        """
-        try:
-            # Validate state access at boundary
-            validation = self.validator.validate_before_access(
-                {"channel": self.state_manager.get("channel")},
-                {"channel"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
 
-            return self.auth_flow.handle_registration(register)
+def handle_action_menu(state_manager: Any, message: str = None, login: bool = False) -> WhatsAppMessage:
+    """Display main menu"""
+    try:
+        return handle_menu(state_manager, message, login)
+    except ValueError as e:
+        return handle_error(state_manager, "Menu display", e)
 
-        except ValueError as e:
-            logger.error(f"Registration failed: {str(e)}")
-            channel = self.state_manager.get("channel")
-            return WhatsAppMessage.create_text(
-                channel["identifier"] if channel else "unknown",
-                f"Error: {str(e)}"
-            )
 
-    def handle_action_menu(self, message: str = None, login: bool = False) -> WhatsAppMessage:
-        """Display main menu
+def handle_action_refresh(state_manager: Any) -> WhatsAppMessage:
+    """Handle dashboard refresh"""
+    try:
+        return handle_refresh(state_manager)
+    except ValueError as e:
+        return handle_error(state_manager, "Refresh", e)
 
-        Args:
-            message: Optional message to display
-            login: Whether this is a login menu
 
-        Returns:
-            WhatsAppMessage: Menu message
-        """
-        try:
-            # Validate state access at boundary
-            validation = self.validator.validate_before_access(
-                {"channel": self.state_manager.get("channel")},
-                {"channel"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
+def handle_action_hi(state_manager: Any, credex_service: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Handle initial greeting with login attempt
 
-            return self.menu_handler.handle_menu(message, login)
+    Args:
+        state_manager: State manager instance
+        credex_service: CredEx service instance for authentication
 
-        except ValueError as e:
-            logger.error(f"Menu display failed: {str(e)}")
-            channel = self.state_manager.get("channel")
-            return WhatsAppMessage.create_text(
-                channel["identifier"] if channel else "unknown",
-                f"Error: {str(e)}"
-            )
-
-    def handle_hi(self) -> WhatsAppMessage:
-        """Handle initial greeting
-
-        Returns:
-            WhatsAppMessage: Greeting message
-        """
-        try:
-            # Validate state access at boundary
-            validation = self.validator.validate_before_access(
-                {"channel": self.state_manager.get("channel")},
-                {"channel"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
-
-            return self.menu_handler.handle_hi()
-
-        except ValueError as e:
-            logger.error(f"Greeting failed: {str(e)}")
-            channel = self.state_manager.get("channel")
-            return WhatsAppMessage.create_text(
-                channel["identifier"] if channel else "unknown",
-                f"Error: {str(e)}"
-            )
-
-    def handle_refresh(self) -> WhatsAppMessage:
-        """Handle dashboard refresh
-
-        Returns:
-            WhatsAppMessage: Refresh result message
-        """
-        try:
-            # Validate state access at boundary
-            validation = self.validator.validate_before_access(
-                {
-                    "channel": self.state_manager.get("channel"),
-                    "member_id": self.state_manager.get("member_id"),
-                    "jwt_token": self.state_manager.get("jwt_token")
-                },
-                {"channel", "member_id", "jwt_token"}
-            )
-            if not validation.is_valid:
-                raise ValueError(validation.error_message)
-
-            return self.menu_handler.handle_refresh()
-
-        except ValueError as e:
-            logger.error(f"Refresh failed: {str(e)}")
-            channel = self.state_manager.get("channel")
-            return WhatsAppMessage.create_text(
-                channel["identifier"] if channel else "unknown",
-                f"Error: {str(e)}"
-            )
+    Returns:
+        Tuple[bool, Dict[str, Any]]: Success flag and response data
+    """
+    try:
+        # Handle initial greeting
+        handle_hi(state_manager)
+        # Attempt login with service
+        return attempt_login(state_manager, credex_service)
+    except ValueError as e:
+        logger.error(f"Login error: {str(e)}")
+        return False, {"error": str(e)}
