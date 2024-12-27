@@ -136,49 +136,47 @@ def wrap_text(
     }
 
 
-class CredexWhatsappService:
-    def __init__(self, payload, phone_number_id=None):
-        self.phone_number_id = phone_number_id or config("WHATSAPP_PHONE_NUMBER_ID")
-        self.payload = payload
-        # Update API version to v20.0
-        self.api_url = config(
-            "WHATSAPP_API_URL", default="https://graph.facebook.com/v20.0/"
-        )
-        logger.debug(f"Initialized WhatsApp service with phone_number_id: {self.phone_number_id}")
+def send_whatsapp_message(payload: dict, phone_number_id: str = None) -> dict:
+    """Send message to WhatsApp Cloud API with detailed logging.
 
-    def send_message(self):
-        """Send message to WhatsApp Cloud API with detailed logging."""
-        url = f"{self.api_url}{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {config('WHATSAPP_ACCESS_TOKEN')}",
-            "Content-Type": "application/json",
-        }
+    Args:
+        payload: Message payload in WhatsApp format
+        phone_number_id: Optional phone number ID, defaults to config value
 
-        # Log the exact request we're sending
-        logger.info("WhatsApp request: %s", json.dumps({
-            "url": url,
-            "headers": {k: v for k, v in headers.items() if k != "Authorization"},
-            "payload": self.payload
-        }, indent=2))
+    Returns:
+        dict: API response
+    """
+    # Get configuration
+    phone_number_id = phone_number_id or config("WHATSAPP_PHONE_NUMBER_ID")
+    api_url = config("WHATSAPP_API_URL", default="https://graph.facebook.com/v20.0/")
+    url = f"{api_url}{phone_number_id}/messages"
 
-        try:
-            response = requests.post(url, json=self.payload, headers=headers)
+    headers = {
+        "Authorization": f"Bearer {config('WHATSAPP_ACCESS_TOKEN')}",
+        "Content-Type": "application/json",
+    }
 
-            # Log the complete response
-            logger.info("WhatsApp response: %s", json.dumps(response.json(), indent=2))
+    # Log the exact request we're sending
+    logger.info("WhatsApp request: %s", json.dumps({
+        "url": url,
+        "headers": {k: v for k, v in headers.items() if k != "Authorization"},
+        "payload": payload
+    }, indent=2))
 
-            if response.status_code != 200:
-                logger.error("WhatsApp API Error [%d]: %s",
-                             response.status_code, response.text)
-            return response.json()
+    try:
+        response = requests.post(url, json=payload, headers=headers)
 
-        except Exception as e:
-            logger.error("Error sending WhatsApp message: %s", str(e))
-            return {"error": str(e)}
+        # Log the complete response
+        logger.info("WhatsApp response: %s", json.dumps(response.json(), indent=2))
 
-    def notify(self):
-        """Send notification message."""
-        return self.send_message()
+        if response.status_code != 200:
+            logger.error("WhatsApp API Error [%d]: %s",
+                         response.status_code, response.text)
+        return response.json()
+
+    except Exception as e:
+        logger.error("Error sending WhatsApp message: %s", str(e))
+        return {"error": str(e)}
 
 
 def convert_timestamp_to_date(timestamp):

@@ -99,7 +99,9 @@ def _handle_account_setup(
 
         # Update state with validated account
         if personal_account:
-            state_manager.update({"current_account": personal_account})
+            success, error = state_manager.update_state({"current_account": personal_account})
+            if not success:
+                raise ValueError(f"Failed to update current account: {error}")
             logger.info(f"Successfully set default account: {personal_account['accountHandle']}")
         else:
             logger.warning("No valid personal account found")
@@ -145,7 +147,9 @@ def update_profile_from_response(
             updates["jwt_token"] = token
 
         # Update state with new profile
-        state_manager.update(updates)
+        success, error = state_manager.update_state(updates)
+        if not success:
+            raise ValueError(f"Failed to update state: {error}")
 
         # Handle account setup if dashboard data present
         dashboard_data = api_response.get("data", {}).get("dashboard")
@@ -211,7 +215,9 @@ def handle_successful_refresh(
         profile_data["dashboard"] = dashboard_data
 
         # Update state with new profile data
-        state_manager.update({"profile": profile_data})
+        success, error = state_manager.update_state({"profile": profile_data})
+        if not success:
+            raise ValueError(f"Failed to update profile: {error}")
 
         # Handle account setup
         _handle_account_setup(dashboard_data, state_manager)

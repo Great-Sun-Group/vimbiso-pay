@@ -1,11 +1,10 @@
 """Authentication and menu handlers enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any, Tuple, Dict
+from typing import Any
 
-from .types import WhatsAppMessage
+from core.messaging.types import Message, TextContent, MessageRecipient, ChannelIdentifier, ChannelType
 from .handlers.auth.auth_flow import (
-    handle_registration,
-    attempt_login
+    handle_registration
 )
 from .handlers.auth.menu_functions import (
     handle_menu,
@@ -27,16 +26,25 @@ def get_channel_id(state_manager: Any) -> str:
     return "unknown"
 
 
-def handle_error(state_manager: Any, operation: str, error: ValueError) -> WhatsAppMessage:
+def handle_error(state_manager: Any, operation: str, error: ValueError) -> Message:
     """Handle errors consistently"""
     logger.error(f"{operation} failed: {str(error)}")
-    return WhatsAppMessage.create_text(
-        get_channel_id(state_manager),
-        f"Error: {str(error)}"
+    channel_id = get_channel_id(state_manager)
+    return Message(
+        recipient=MessageRecipient(
+            member_id=state_manager.get("member_id") or "unknown",
+            channel_id=ChannelIdentifier(
+                channel=ChannelType.WHATSAPP,
+                value=channel_id
+            )
+        ),
+        content=TextContent(
+            body=f"Error: {str(error)}"
+        )
     )
 
 
-def handle_action_register(state_manager: Any, register: bool = False) -> WhatsAppMessage:
+def handle_action_register(state_manager: Any, register: bool = False) -> Message:
     """Handle registration flow"""
     try:
         return handle_registration(state_manager, register)
@@ -44,15 +52,15 @@ def handle_action_register(state_manager: Any, register: bool = False) -> WhatsA
         return handle_error(state_manager, "Registration", e)
 
 
-def handle_action_menu(state_manager: Any, message: str = None, login: bool = False) -> WhatsAppMessage:
+def handle_action_menu(state_manager: Any) -> Message:
     """Display main menu"""
     try:
-        return handle_menu(state_manager, message, login)
+        return handle_menu(state_manager)
     except ValueError as e:
         return handle_error(state_manager, "Menu display", e)
 
 
-def handle_action_refresh(state_manager: Any) -> WhatsAppMessage:
+def handle_action_refresh(state_manager: Any) -> Message:
     """Handle dashboard refresh"""
     try:
         return handle_refresh(state_manager)
@@ -60,21 +68,18 @@ def handle_action_refresh(state_manager: Any) -> WhatsAppMessage:
         return handle_error(state_manager, "Refresh", e)
 
 
-def handle_action_hi(state_manager: Any, credex_service: Any) -> Tuple[bool, Dict[str, Any]]:
+def handle_action_hi(state_manager: Any) -> Message:
     """Handle initial greeting with login attempt
 
     Args:
         state_manager: State manager instance
-        credex_service: CredEx service instance for authentication
 
     Returns:
-        Tuple[bool, Dict[str, Any]]: Success flag and response data
+        Message: Core message type with recipient and content
     """
     try:
-        # Handle initial greeting
-        handle_hi(state_manager)
-        # Attempt login with service
-        return attempt_login(state_manager, credex_service)
+        # Handle initial greeting and return response
+        return handle_hi(state_manager)
     except ValueError as e:
         logger.error(f"Login error: {str(e)}")
-        return False, {"error": str(e)}
+        return handle_error(state_manager, "Greeting", e)

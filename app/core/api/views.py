@@ -2,16 +2,17 @@
 import logging
 import sys
 
-from core.api.models import Message
+from core.api.models import Message as DBMessage  # Rename to avoid confusion
 from core.config.constants import CachedUser
-from core.utils.utils import CredexWhatsappService
+from core.messaging.types import Message as DomainMessage  # Import domain Message type
+from core.utils.utils import send_whatsapp_message
 from decouple import config
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
 from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
-from services.whatsapp.bot_service import CredexBotService
+from services.whatsapp.bot_service import process_bot_message
 
 # Configure logging with a standardized format
 logging.basicConfig(
@@ -149,25 +150,30 @@ class CredexCloudApiWebhook(APIView):
             logger.info(f"Processing message: {message_text}")
 
             try:
-                logger.info("Creating CredexBotService...")
-                # Create bot service with state manager
-                service = CredexBotService(
+                logger.info("Processing message...")
+                # Process message and get response
+                response = process_bot_message(
                     payload={"type": message_type, "text": message_text},
                     state_manager=user._state_manager
                 )
 
-                # For mock testing return the response directly
+                # Convert domain Message to transport format at boundary
+                if isinstance(response, DomainMessage):
+                    response_dict = response.to_dict()
+                else:
+                    logger.error("Invalid response type from bot service")
+                    raise ValueError("Bot service returned invalid response type")
+
+                # For mock testing return the formatted response
                 if is_mock_testing:
-                    # Convert WhatsAppMessage to dict and return
-                    response_dict = service.response.to_dict() if service.response else {}
                     return JsonResponse(response_dict, status=status.HTTP_200_OK)
 
                 # For real requests send via WhatsApp
-                response = CredexWhatsappService(
-                    payload=service.response,
+                whatsapp_response = send_whatsapp_message(
+                    payload=response_dict,
                     phone_number_id=payload["metadata"]["phone_number_id"]
-                ).send_message()
-                logger.info(f"WhatsApp API Response: {response}")
+                )
+                logger.info(f"WhatsApp API Response: {whatsapp_response}")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             except Exception as e:
@@ -196,10 +202,10 @@ class WelcomeMessage(APIView):
     @staticmethod
     def post(request):
         if request.data.get("message"):
-            if not Message.objects.all().first():
-                Message.objects.create(messsage=request.data.get("message"))
+            if not DBMessage.objects.all().first():
+                DBMessage.objects.create(messsage=request.data.get("message"))
             else:
-                obj = Message.objects.all().first()
+                obj = DBMessage.objects.all().first()
                 obj.messsage = request.data.get("message")
                 obj.save()
         return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
@@ -262,9 +268,9 @@ class CredexSendMessageWebhook(APIView):
                     }
                 }
 
-                response = CredexWhatsappService(payload=payload).notify()
-                logger.info(f"WhatsApp API Response: {response}")
-                return JsonResponse(response, status=status.HTTP_200_OK)
+                whatsapp_response = send_whatsapp_message(payload=payload)
+                logger.info(f"WhatsApp API Response: {whatsapp_response}")
+                return JsonResponse(whatsapp_response, status=status.HTTP_200_OK)
         return JsonResponse(
             {"status": "Successful", "message": "Missing API KEY"},
             status=status.HTTP_400_BAD_REQUEST

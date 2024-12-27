@@ -24,11 +24,8 @@ class AtomicStateManager:
         direction: Optional[str] = None,
         max_retries: int = 3
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Atomically update state components with SINGLE SOURCE OF TRUTH validation
-        Returns (success, error_message)
-        """
-        from .state_validator import StateValidator
+        """Atomically update state components in Redis
+        Returns (success, error_message)"""
         retry_count = 0
         while retry_count < max_retries:
             try:
@@ -45,25 +42,9 @@ class AtomicStateManager:
                 pipe.watch(*keys)
 
                 try:
-                    # Log state before validation
-                    logger.debug(f"State before validation: {state}")
-
-                    # Validate state before update
-                    validation_result = StateValidator.validate_state(state)
-                    if not validation_result.is_valid:
-                        logger.error(f"State validation failed: {validation_result.error_message}")
-                        logger.debug(f"Invalid state: {state}")
-                        return False, f"Invalid state structure: {validation_result.error_message}"
-
                     # Add version and timestamp
                     state['_version'] = int(datetime.now().timestamp())
                     state['_last_updated'] = datetime.now().isoformat()
-
-                    # Log state after validation
-                    logger.debug("State after validation:")
-                    logger.debug(f"- Has channel: {bool(state.get('channel'))}")
-                    logger.debug(f"- Has jwt_token: {bool(state.get('jwt_token'))}")
-                    logger.debug(f"- Version: {state['_version']}")
 
                     # Start transaction
                     pipe.multi()
@@ -169,36 +150,13 @@ class AtomicStateManager:
             logger.error(f"Redis get operation error: {str(e)}")
             return None, f"Redis get operation failed: {str(e)}"
 
-    def atomic_cleanup(
+    def atomic_delete(
         self,
-        key_prefix: str,
-        preserve_fields: Optional[set] = None
+        key_prefix: str
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Atomically cleanup state while preserving specified fields and maintaining SINGLE SOURCE OF TRUTH
-        Returns (success, error_message)
-        """
-        from .state_validator import StateValidator
+        """Atomically delete state and metadata from Redis
+        Returns (success, error_message)"""
         try:
-            # Get current state first
-            current_state, error = self.atomic_get(key_prefix)
-            if error:
-                return False, f"Failed to get current state: {error}"
-
-            if current_state and preserve_fields:
-                # Create new state with only preserved fields
-                preserved_state = {
-                    k: v for k, v in current_state.items()
-                    if k in preserve_fields or k in StateValidator.CRITICAL_FIELDS
-                }
-
-                # Validate preserved state
-                validation_result = StateValidator.validate_state(preserved_state)
-                if not validation_result.is_valid:
-                    return False, f"Invalid preserved state: {validation_result.error_message}"
-            else:
-                preserved_state = {}
-
             # Start pipeline with optimistic locking
             pipe = self.redis.pipeline()
             pipe.watch(key_prefix)
@@ -207,40 +165,25 @@ class AtomicStateManager:
                 # Start transaction
                 pipe.multi()
 
-                # Delete metadata keys
+                # Delete all keys
                 pipe.delete(
+                    key_prefix,
                     f"{key_prefix}_stage",
                     f"{key_prefix}_option",
                     f"{key_prefix}_direction"
                 )
-
-                # If we have preserved fields, update main state
-                if preserved_state:
-                    # Add version and timestamp
-                    preserved_state['_version'] = int(datetime.now().timestamp())
-                    preserved_state['_last_updated'] = datetime.now().isoformat()
-
-                    # Set with same TTL as atomic_update (300 - 5 minutes)
-                    pipe.setex(
-                        key_prefix,
-                        300,  # Match ACTIVITY_TTL from constants.py
-                        json.dumps(preserved_state)
-                    )
-                else:
-                    # If no fields to preserve, delete main state
-                    pipe.delete(key_prefix)
 
                 # Execute transaction
                 pipe.execute()
                 return True, None
 
             except Exception as e:
-                logger.error(f"Cleanup transaction error: {str(e)}")
-                return False, f"Cleanup failed: {str(e)}"
+                logger.error(f"Delete transaction error: {str(e)}")
+                return False, f"Delete failed: {str(e)}"
 
             finally:
                 pipe.reset()
 
         except Exception as e:
-            logger.error(f"Redis cleanup operation error: {str(e)}")
-            return False, f"Redis cleanup operation failed: {str(e)}"
+            logger.error(f"Redis delete operation error: {str(e)}")
+            return False, f"Redis delete operation failed: {str(e)}"

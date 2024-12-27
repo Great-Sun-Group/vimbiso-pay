@@ -90,7 +90,9 @@ def handle_offer_credex(state_manager: Any) -> Dict[str, Any]:
     """
     logger.info("Handling offer credex action")
     # Update action in state
-    state_manager.update({"action": "offer_credex"})
+    success, error = state_manager.update_state({"action": "offer_credex"})
+    if not success:
+        raise ValueError(f"Failed to update action state: {error}")
     return handle_action_offer_credex(state_manager)
 
 
@@ -115,7 +117,9 @@ def handle_action(state_manager: Any, action: str) -> Dict[str, Any]:
     handler = action_handlers.get(action)
     if handler:
         logger.info(f"Handling action: {action}")
-        state_manager.update({"action": action})
+        success, error = state_manager.update_state({"action": action})
+        if not success:
+            raise ValueError(f"Failed to update action state: {error}")
         return handler(state_manager)
     else:
         logger.warning(f"Action method {action} not found")
@@ -132,7 +136,9 @@ def handle_greeting(state_manager: Any) -> Dict[str, Any]:
         Response from greeting handler
     """
     logger.info("Handling greeting")
-    state_manager.update({"action": "greeting"})
+    success, error = state_manager.update_state({"action": "greeting"})
+    if not success:
+        raise ValueError(f"Failed to update action state: {error}")
     return handle_action_greeting(state_manager)
 
 

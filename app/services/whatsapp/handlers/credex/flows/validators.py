@@ -20,15 +20,15 @@ def validate_button_response(response: Union[str, Dict[str, Any]], current_step_
     # Log the response for debugging
     logger.debug(f"Validating button response: {response}")
 
-    # Handle string input (already parsed by BotServiceInterface)
+    # Handle string input (pre-parsed message)
     if isinstance(response, str):
         if response != "confirm_action":
             raise ValueError("Please use the confirmation button")
         return True
 
-    # Handle dict input (from BotServiceInterface)
+    # Handle dict input (raw message format)
     if isinstance(response, dict):
-        # Get message type and body from BotServiceInterface parsing
+        # Get message type and body from payload
         msg_type = response.get("type")
         body = response.get("body", "")
 

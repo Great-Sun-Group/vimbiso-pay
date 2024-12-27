@@ -17,13 +17,19 @@ def validate_credex_service(credex_service: Any) -> None:
     if not credex_service:
         raise ValueError("Service not initialized")
 
-    if not hasattr(credex_service, 'services'):
-        raise ValueError("Service missing required services")
+    if not isinstance(credex_service, dict):
+        raise ValueError("Invalid service format")
 
-    required_services = {'member', 'offers'}
-    missing = required_services - set(credex_service.services.keys())
+    # Check for required functions based on service.py implementation
+    required_functions = {
+        'validate_handle',  # member service
+        'get_credex',      # offers service
+        'offer_credex'     # offers service
+    }
+    # Since credex_service is a dict, we can use dict methods directly
+    missing = required_functions - set(credex_service)
     if missing:
-        raise ValueError(f"Service missing required capabilities: {', '.join(missing)}")
+        raise ValueError(f"Service missing required functions: {', '.join(missing)}")
 
 
 def validate_flow_state(state_manager: Any, flow_id: str) -> None:

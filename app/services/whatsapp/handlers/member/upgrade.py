@@ -69,7 +69,7 @@ def handle_upgrade_completion(state_manager: Any, credex_service: Any) -> Messag
         account_id = state_manager.get("account_id")
 
         # Create recurring payment
-        success, response = credex_service.services['recurring'].create_recurring({
+        success, response = credex_service['create_recurring']({
             "sourceAccountID": account_id,
             "memberID": member_id,
             "templateType": "MEMBERTIER_SUBSCRIPTION",
@@ -97,8 +97,10 @@ def handle_upgrade_completion(state_manager: Any, credex_service: Any) -> Messag
             "success"
         )
 
-        # Clear flow data
-        state_manager.update({"flow_data": None})
+        # Clear flow data using proper method
+        success, error = state_manager.update_state({"flow_data": None})
+        if not success:
+            raise ValueError(f"Failed to clear flow data: {error}")
 
         return MemberTemplates.create_upgrade_success(
             channel["identifier"],
@@ -134,13 +136,15 @@ def process_upgrade_step(state_manager: Any, step: str, input_data: Any = None) 
             if input_data:
                 if not validate_button_response(input_data):
                     raise ValueError("Invalid confirmation response")
-                state_manager.update({
+                success, error = state_manager.update_state({
                     "flow_data": {
                         **state_manager.get("flow_data", {}),
                         "confirmed": True,
                         "current_step": "complete"
                     }
                 })
+                if not success:
+                    raise ValueError(f"Failed to update flow data: {error}")
             return handle_upgrade_confirmation(state_manager)
 
         else:

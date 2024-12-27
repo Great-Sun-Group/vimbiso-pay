@@ -2,11 +2,11 @@
 import logging
 from typing import Any, Dict
 
+from core.messaging.types import Message
 from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
 from ... import auth_handlers as auth
-from ...types import WhatsAppMessage
 from .flow_manager import initialize_flow, FLOW_HANDLERS
 from .input_handler import get_action, extract_input_value
 
@@ -24,8 +24,12 @@ FLOW_TYPES: Dict[str, str] = {
 }
 
 
-def handle_menu_action(state_manager: Any, action: str) -> WhatsAppMessage:
-    """Handle menu action with proper state validation"""
+def handle_menu_action(state_manager: Any, action: str) -> Message:
+    """Handle menu action with proper state validation
+
+    Returns:
+        Message: Core message type
+    """
     try:
         # Validate state access at boundary
         validation = StateValidator.validate_before_access(
@@ -38,10 +42,12 @@ def handle_menu_action(state_manager: Any, action: str) -> WhatsAppMessage:
         # Check authentication
         authenticated = state_manager.get("authenticated")
         if not authenticated:
-            # Show login menu
-            return WhatsAppMessage.from_core_message(
-                auth.handle_action_menu(state_manager, login=True)
-            )
+            # Update state and show login menu
+            success, error = state_manager.update_state({"login_required": True})
+            if not success:
+                raise ValueError(f"Failed to update state: {error}")
+
+            return auth.handle_action_menu(state_manager)
 
         # Get flow type
         flow_type = FLOW_TYPES[action]
@@ -54,8 +60,12 @@ def handle_menu_action(state_manager: Any, action: str) -> WhatsAppMessage:
         return auth.handle_error(state_manager, "Menu action", e)
 
 
-def process_message(state_manager: Any, message_type: str, message_text: str) -> WhatsAppMessage:
-    """Process incoming message enforcing SINGLE SOURCE OF TRUTH"""
+def process_message(state_manager: Any, message_type: str, message_text: str, message: Dict[str, Any] = None) -> Message:
+    """Process incoming message enforcing SINGLE SOURCE OF TRUTH
+
+    Returns:
+        Message: Core message type with recipient and content
+    """
     try:
         # Validate state access at boundary
         validation = StateValidator.validate_before_access(
@@ -76,32 +86,36 @@ def process_message(state_manager: Any, message_type: str, message_text: str) ->
         )
 
         # Get action from input
-        action = get_action(message_text, message_type)
+        action = get_action(message_text, message_type, message)
 
         # Handle menu action
         if action in FLOW_TYPES:
             return handle_menu_action(state_manager, action)
 
         # Handle active flow
-        flow_data = state_manager.get("flow_data")
-        if flow_data and isinstance(flow_data, dict):
-            flow_type = flow_data.get("id")
-            current_step = flow_data.get("current_step")
+        validation = StateValidator.validate_before_access(
+            {"flow_data": state_manager.get("flow_data")},
+            {"flow_data"}
+        )
+        if validation.is_valid:
+            flow_data = state_manager.get("flow_data")
+            flow_type = flow_data["id"]
+            current_step = flow_data["current_step"]
 
             if flow_type in FLOW_HANDLERS:
                 # Get handler function
                 handler_name = FLOW_HANDLERS[flow_type]
-                handler_module = __import__(f"..{flow_type}.handler", fromlist=[handler_name])
+                handler_module = __import__(f"..credex.flows.{flow_type}", fromlist=[handler_name])
                 handler_func = getattr(handler_module, handler_name)
 
                 # Process step
                 input_value = extract_input_value(message_text, message_type)
                 return handler_func(state_manager, current_step, input_value)
+            else:
+                raise ValueError(f"Unknown flow type: {flow_type}")
 
         # Default to menu
-        return WhatsAppMessage.from_core_message(
-            auth.handle_action_menu(state_manager)
-        )
+        return auth.handle_action_menu(state_manager)
 
     except ValueError as e:
         logger.error(f"Message processing error: {str(e)}")

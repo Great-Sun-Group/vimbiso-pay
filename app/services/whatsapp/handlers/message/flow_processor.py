@@ -74,15 +74,14 @@ def process_flow(
         result = handler_func(state_manager, current_step, input_value)
         if not result:
             # Clear flow data
-            success, error = state_manager.update({"flow_data": None})
+            success, error = state_manager.update_state({"flow_data": None})
             if not success:
                 raise ValueError(f"Failed to clear flow data: {error}")
 
             # Show dashboard
             return handle_dashboard_display(
                 state_manager,
-                None,
-                "Operation completed successfully"
+                success_message="Operation completed successfully"
             )
 
         return result
@@ -136,15 +135,14 @@ def handle_flow_completion(state_manager: Any, success_message: Optional[str] = 
         )
 
         # Clear flow data
-        success, error = state_manager.update({"flow_data": None})
+        success, error = state_manager.update_state({"flow_data": None})
         if not success:
             raise ValueError(f"Failed to clear flow data: {error}")
 
         # Show dashboard
         return handle_dashboard_display(
             state_manager,
-            None,
-            success_message or "Operation completed successfully"
+            success_message=success_message or "Operation completed successfully"
         )
 
     except ValueError as e:

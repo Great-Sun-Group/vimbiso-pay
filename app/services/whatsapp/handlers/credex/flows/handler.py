@@ -94,7 +94,9 @@ def handle_initial_message(state_manager: Any) -> Dict[str, Any]:
         }
 
         # Update state
-        state_manager.update(new_state)
+        success, error = state_manager.update_state(new_state)
+        if not success:
+            raise ValueError(f"Failed to update state: {error}")
 
         # Log success
         logger.info(f"Initialized credex flow for channel {channel['identifier']}")
@@ -158,7 +160,9 @@ def handle_flow_message(state_manager: Any, message: Dict[str, Any], credex_serv
         })
 
         # Update state
-        state_manager.update({"flow_data": new_flow_data})
+        success, error = state_manager.update_state({"flow_data": new_flow_data})
+        if not success:
+            raise ValueError(f"Failed to update flow data: {error}")
 
         # Log progress
         logger.info(f"Processed step {flow_data['step']} for channel {channel['identifier']}")
@@ -210,12 +214,14 @@ def handle_completion(state_manager: Any, message: Dict[str, Any], credex_servic
 
         if confirm == "yes":
             # Process the credex operation
-            result = credex_service.process_flow(state_manager.get("flow_data"))
+            result = credex_service['process_flow'](state_manager.get("flow_data"))
             if not result:
                 raise ValueError("Operation failed")
 
             # Clear flow data
-            state_manager.update({"flow_data": None})
+            success, error = state_manager.update_state({"flow_data": None})
+            if not success:
+                raise ValueError(f"Failed to clear flow data: {error}")
 
             # Log success
             logger.info(f"Successfully completed credex flow for channel {channel['identifier']}")
@@ -223,7 +229,9 @@ def handle_completion(state_manager: Any, message: Dict[str, Any], credex_servic
             return create_success_message(channel["identifier"])
 
         # Clear flow data on cancel
-        state_manager.update({"flow_data": None})
+        success, error = state_manager.update_state({"flow_data": None})
+        if not success:
+            raise ValueError(f"Failed to clear flow data: {error}")
 
         # Log cancellation
         logger.info(f"Cancelled credex flow for channel {channel['identifier']}")

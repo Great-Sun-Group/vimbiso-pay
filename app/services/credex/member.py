@@ -1,131 +1,102 @@
-"""CredEx member operations using pure functions"""
+"""CredEx member operations with strict state validation"""
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
+from core.utils.exceptions import StateException
 from .base import make_credex_request
-from .exceptions import ValidationError
-from core.utils.state_validator import StateValidator
 
 logger = logging.getLogger(__name__)
 
 
-def get_dashboard(state_manager: Any, phone: str) -> Tuple[bool, Dict[str, Any]]:
+def get_dashboard(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Get dashboard information"""
-    if not state_manager:
-        raise ValueError("State manager is required")
-    if not phone:
-        raise ValidationError("Phone number is required")
-
     try:
+        # StateManager handles validation of phone and jwt_token
         response = make_credex_request(
             'member', 'get_dashboard',
-            payload={"phone": phone}
+            payload={"phone": state_manager.get("phone")},
+            jwt_token=state_manager.get("jwt_token")
         )
         data = response.json()
 
-        # Extract dashboard data
-        if dashboard := data.get("data", {}).get("dashboard"):
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {"profile": state_manager.get("profile")},
-                {"profile"}
-            )
-            if validation.is_valid:
-                # Update state with dashboard data
-                state_manager.update({
-                    "profile": {
-                        **state_manager.get("profile", {}),
-                        "dashboard": dashboard
-                    }
-                })
-            return True, data
-        return False, {"message": "No dashboard data received"}
+        if not data.get("data", {}).get("dashboard"):
+            raise StateException("No dashboard data received")
 
+        return True, data
+
+    except StateException:
+        # Re-raise StateException for proper error propagation
+        raise
     except Exception as e:
         logger.error(f"Dashboard fetch failed: {str(e)}")
-        return False, {"message": str(e)}
+        raise StateException(f"Dashboard fetch failed: {str(e)}")
 
 
-def validate_handle(handle: str) -> Tuple[bool, Dict[str, Any]]:
+def validate_handle(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Validate CredEx handle"""
-    if not handle:
-        raise ValidationError("Handle is required")
-
     try:
+        # StateManager handles validation of handle and jwt_token
         response = make_credex_request(
             'member', 'validate_handle',
-            payload={"accountHandle": handle.lower()}
+            payload={"accountHandle": state_manager.get("handle")},
+            jwt_token=state_manager.get("jwt_token")
         )
         data = response.json()
 
-        # Extract account details
-        if details := data.get("data", {}).get("action", {}).get("details"):
-            if account_id := details.get("accountID"):
-                return True, {
-                    "data": {
-                        "accountID": account_id,
-                        "accountName": details.get("accountName", ""),
-                        "accountHandle": handle
-                    }
-                }
-        return False, {"message": "Account not found"}
+        details = data.get("data", {}).get("action", {}).get("details", {})
+        if not details:
+            raise StateException("Account not found")
 
+        return True, {"data": details}
+
+    except StateException:
+        # Re-raise StateException for proper error propagation
+        raise
     except Exception as e:
         logger.error(f"Handle validation failed: {str(e)}")
-        return False, {"message": str(e)}
+        raise StateException(f"Handle validation failed: {str(e)}")
 
 
-def refresh_member_info(
-    state_manager: Any,
-    phone: str,
-    reset: bool = True,
-    silent: bool = True,
-    init: bool = False
-) -> Optional[str]:
+def refresh_member_info(state_manager: Any) -> None:
     """Refresh member information"""
-    if not state_manager:
-        raise ValueError("State manager is required")
-    if not phone:
-        raise ValidationError("Phone number is required")
-
     try:
-        # Re-authenticate to get fresh data
+        # StateManager handles validation of phone
         response = make_credex_request(
             'auth', 'login',
-            payload={"phone": phone}
+            payload={"phone": state_manager.get("phone")}
         )
         data = response.json()
 
-        if token := (data.get("data", {})
-                     .get("action", {})
-                     .get("details", {})
-                     .get("token")):
-            # Update token in state
-            state_manager.update({"jwt_token": token})
-            return None
-        return "Failed to refresh member info"
+        if not data.get("data", {}).get("action", {}).get("details", {}).get("token"):
+            raise StateException("Failed to refresh member info")
 
+        return None
+
+    except StateException:
+        # Re-raise StateException for proper error propagation
+        raise
     except Exception as e:
         logger.error(f"Member info refresh failed: {str(e)}")
-        return str(e)
+        raise StateException(f"Member info refresh failed: {str(e)}")
 
 
-def get_member_accounts(member_id: str) -> Tuple[bool, Dict[str, Any]]:
-    """Get member accounts"""
-    if not member_id:
-        raise ValidationError("Member ID is required")
-
+def get_member_accounts(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Get member accounts from state"""
     try:
-        response = make_credex_request(
-            'member', 'get_accounts',
-            payload={"memberID": member_id}
-        )
-        data = response.json()
+        # StateManager handles validation
+        personal_account = state_manager.get("personal_account")
+        if not personal_account:
+            raise StateException("Personal account data not found in state")
 
-        if accounts := data.get("data", {}).get("accounts"):
-            return True, {"data": {"accounts": accounts}}
-        return False, {"message": "No accounts found"}
+        return True, {
+            "data": {
+                "accounts": [personal_account]
+            }
+        }
 
+    except StateException:
+        # Re-raise StateException for proper error propagation
+        raise
     except Exception as e:
-        logger.error(f"Failed to get member accounts: {str(e)}")
-        return False, {"message": str(e)}
+        logger.error(f"Failed to get member accounts from state: {str(e)}")
+        raise StateException(f"Failed to get member accounts: {str(e)}")

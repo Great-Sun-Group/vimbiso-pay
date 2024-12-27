@@ -2,9 +2,9 @@
 import logging
 from typing import Any, Dict
 
+from core.messaging.types import Message
 from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
-from ...types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -20,8 +20,16 @@ FLOW_HANDLERS: Dict[str, Any] = {
 }
 
 
-def initialize_flow(state_manager: Any, flow_type: str) -> WhatsAppMessage:
-    """Initialize a new flow enforcing SINGLE SOURCE OF TRUTH"""
+def initialize_flow(state_manager: Any, flow_type: str) -> Message:
+    """Initialize a new flow enforcing SINGLE SOURCE OF TRUTH
+
+    Args:
+        state_manager: State manager instance
+        flow_type: Type of flow to initialize
+
+    Returns:
+        Message: Core message type with recipient and content
+    """
     try:
         # Validate input parameters
         if not flow_type or not isinstance(flow_type, str):
@@ -64,12 +72,15 @@ def initialize_flow(state_manager: Any, flow_type: str) -> WhatsAppMessage:
             "in_progress"
         )
 
+        # Get initial step based on flow type
+        initial_step = "amount" if flow_type == "offer" else "start"
+
         # Update flow data (validation handled by state manager)
-        success, error = state_manager.update({
+        success, error = state_manager.update_state({
             "flow_data": {
                 "id": flow_type,
                 "step": 0,
-                "current_step": "start"
+                "current_step": initial_step
             }
         })
         if not success:
@@ -77,10 +88,11 @@ def initialize_flow(state_manager: Any, flow_type: str) -> WhatsAppMessage:
 
         # Get initial message using handler function
         handler_name = FLOW_HANDLERS[flow_type]
-        handler_module = __import__(f"..{flow_type}.handler", fromlist=[handler_name])
+        handler_module = __import__(f"..credex.flows.{flow_type}", fromlist=[handler_name])
         handler_func = getattr(handler_module, handler_name)
 
-        result = handler_func(state_manager, "start")
+        # Initialize flow with initial step
+        result = handler_func(state_manager, initial_step)
         if not result:
             raise ValueError("Failed to get initial flow message")
 
@@ -108,9 +120,20 @@ def initialize_flow(state_manager: Any, flow_type: str) -> WhatsAppMessage:
             channel_id = "unknown"
 
         logger.error(f"Flow initialization error: {str(e)} for channel {channel_id}")
-        return WhatsAppMessage.create_text(
-            channel_id,
-            "Error: Unable to start flow. Please try again."
+        from core.messaging.types import TextContent, MessageRecipient, ChannelIdentifier, ChannelType
+
+        # Create error message using core types
+        return Message(
+            recipient=MessageRecipient(
+                member_id=state_manager.get("member_id") or "unknown",
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
+            content=TextContent(
+                body="Error: Unable to start flow. Please try again."
+            )
         )
 
 

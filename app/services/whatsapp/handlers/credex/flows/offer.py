@@ -2,9 +2,15 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
 
+from core.messaging.types import (
+    ChannelIdentifier,
+    ChannelType,
+    Message,
+    MessageRecipient,
+    TextContent
+)
 from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
-from core.messaging.types import Message, WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -24,12 +30,31 @@ def get_amount_prompt(state_manager: Any) -> Message:
             raise ValueError(validation.error_message)
 
         channel = state_manager.get("channel")
-        return WhatsAppMessage.create_text(
-            channel["identifier"],
-            "Enter amount to offer (e.g. 100 USD):"
+        return Message(
+            recipient=MessageRecipient(
+                member_id=state_manager.get("member_id"),
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel["identifier"]
+                )
+            ),
+            content=TextContent(
+                body="Enter amount to offer (e.g. 100 USD):"
+            )
         )
     except ValueError as e:
-        return WhatsAppMessage.create_text("unknown", f"Error: {str(e)}")
+        return Message(
+            recipient=MessageRecipient(
+                member_id="unknown",
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value="unknown"
+                )
+            ),
+            content=TextContent(
+                body=f"Error: {str(e)}"
+            )
+        )
 
 
 def validate_amount(amount: str) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
@@ -75,7 +100,7 @@ def store_amount(state_manager: Any, amount: str) -> Tuple[bool, Optional[str]]:
             "current_step": "handle"
         }
 
-        success, error = state_manager.update({"flow_data": new_flow_data})
+        success, error = state_manager.update_state({"flow_data": new_flow_data})
         if not success:
             return False, error
 
@@ -104,12 +129,31 @@ def get_handle_prompt(state_manager: Any) -> Message:
             raise ValueError(validation.error_message)
 
         channel = state_manager.get("channel")
-        return WhatsAppMessage.create_text(
-            channel["identifier"],
-            "Enter recipient handle:"
+        return Message(
+            recipient=MessageRecipient(
+                member_id=state_manager.get("member_id"),
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel["identifier"]
+                )
+            ),
+            content=TextContent(
+                body="Enter recipient handle:"
+            )
         )
     except ValueError as e:
-        return WhatsAppMessage.create_text("unknown", f"Error: {str(e)}")
+        return Message(
+            recipient=MessageRecipient(
+                member_id="unknown",
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value="unknown"
+                )
+            ),
+            content=TextContent(
+                body=f"Error: {str(e)}"
+            )
+        )
 
 
 def validate_handle(handle: str) -> Tuple[bool, Optional[str]]:
@@ -139,7 +183,7 @@ def store_handle(state_manager: Any, handle: str) -> Tuple[bool, Optional[str]]:
             "current_step": "confirm"
         }
 
-        success, error = state_manager.update({"flow_data": new_flow_data})
+        success, error = state_manager.update_state({"flow_data": new_flow_data})
         if not success:
             return False, error
 
@@ -179,13 +223,32 @@ def create_offer_confirmation_with_state(state_manager: Any) -> Message:
             f"Reply 'yes' to confirm or 'no' to cancel"
         )
 
-        return WhatsAppMessage.create_text(
-            channel["identifier"],
-            confirmation_text
+        return Message(
+            recipient=MessageRecipient(
+                member_id=state_manager.get("member_id"),
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel["identifier"]
+                )
+            ),
+            content=TextContent(
+                body=confirmation_text
+            )
         )
 
     except ValueError as e:
-        return WhatsAppMessage.create_text("unknown", f"Error: {str(e)}")
+        return Message(
+            recipient=MessageRecipient(
+                member_id="unknown",
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value="unknown"
+                )
+            ),
+            content=TextContent(
+                body=f"Error: {str(e)}"
+            )
+        )
 
 
 def get_confirmation_message(state_manager: Any) -> Message:
@@ -199,7 +262,18 @@ def get_confirmation_message(state_manager: Any) -> Message:
         return create_offer_confirmation_with_state(state_manager)
 
     except ValueError as e:
-        return WhatsAppMessage.create_text("unknown", f"Error: {str(e)}")
+        return Message(
+            recipient=MessageRecipient(
+                member_id="unknown",
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value="unknown"
+                )
+            ),
+            content=TextContent(
+                body=f"Error: {str(e)}"
+            )
+        )
 
 
 def complete_offer(state_manager: Any, credex_service: Any) -> Tuple[bool, Dict[str, Any]]:
@@ -215,7 +289,7 @@ def complete_offer(state_manager: Any, credex_service: Any) -> Tuple[bool, Dict[
             "denomination": flow_data["denomination"],
             "handle": flow_data["handle"]
         }
-        success, response = credex_service.offer_credex(offer_data)
+        success, response = credex_service['offer_credex'](offer_data)
         if not success:
             error_msg = response.get("message", "Failed to create offer")
             logger.error(f"API call failed: {error_msg}")
@@ -283,9 +357,17 @@ def process_offer_step(
                 success, response = complete_offer(state_manager, credex_service)
                 if not success:
                     raise ValueError(response["message"])
-                return WhatsAppMessage.create_text(
-                    state_manager.get("channel")["identifier"],
-                    "✅ Offer created successfully!"
+                return Message(
+                    recipient=MessageRecipient(
+                        member_id=state_manager.get("member_id"),
+                        channel_id=ChannelIdentifier(
+                            channel=ChannelType.WHATSAPP,
+                            value=state_manager.get("channel")["identifier"]
+                        )
+                    ),
+                    content=TextContent(
+                        body="✅ Offer created successfully!"
+                    )
                 )
             return get_confirmation_message(state_manager)
 
@@ -293,7 +375,15 @@ def process_offer_step(
             raise ValueError(f"Invalid offer step: {step}")
 
     except ValueError as e:
-        return WhatsAppMessage.create_text(
-            state_manager.get("channel", {}).get("identifier", "unknown"),
-            f"Error: {str(e)}"
+        return Message(
+            recipient=MessageRecipient(
+                member_id=state_manager.get("member_id", "unknown"),
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=state_manager.get("channel", {}).get("identifier", "unknown")
+                )
+            ),
+            content=TextContent(
+                body=f"Error: {str(e)}"
+            )
         )

@@ -61,7 +61,7 @@ def process_amount_step(state_manager: Any, input_data: Optional[str] = None) ->
         amount_data = transform_amount(input_data)
         flow_data = state_manager.get("flow_data", {})
 
-        success, error = state_manager.update({
+        success, error = state_manager.update_state({
             "flow_data": {
                 **flow_data,
                 **amount_data,
@@ -92,7 +92,7 @@ def process_handle_step(state_manager: Any, input_data: Optional[str] = None) ->
         handle_data = transform_handle(input_data)
         flow_data = state_manager.get("flow_data", {})
 
-        success, error = state_manager.update({
+        success, error = state_manager.update_state({
             "flow_data": {
                 **flow_data,
                 **handle_data,
@@ -122,7 +122,7 @@ def process_confirm_step(state_manager: Any, input_data: Optional[str] = None) -
 
         # Store confirmation
         flow_data = state_manager.get("flow_data", {})
-        success, error = state_manager.update({
+        success, error = state_manager.update_state({
             "flow_data": {
                 **flow_data,
                 "confirmed": input_lower == "yes",

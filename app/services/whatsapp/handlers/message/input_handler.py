@@ -15,6 +15,10 @@ audit = FlowAuditLogger()
 # Constants
 GREETING_KEYWORDS = {"hi", "hello", "hey", "start"}
 BUTTON_ACTIONS = {"confirm_action"}
+MENU_ACTIONS = {
+    "offer", "accept", "decline", "cancel",
+    "start_registration", "upgrade_tier", "refresh"
+}
 
 
 def get_action(message_body: str, message_type: str = "text", message: Dict[str, Any] = None) -> str:
@@ -41,7 +45,14 @@ def get_action(message_body: str, message_type: str = "text", message: Dict[str,
             return ""
 
         # Handle text messages
-        return message_body.strip().lower()
+        text = message_body.strip().lower()
+
+        # Check if it's a menu action
+        if text in MENU_ACTIONS:
+            return text
+
+        # Not an action - return empty string to let flow handler process it
+        return ""
 
     except Exception:
         return ""

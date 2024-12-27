@@ -1,53 +1,75 @@
-"""Dashboard flow implementation enforcing SINGLE SOURCE OF TRUTH"""
+"""Dashboard handler enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict
 
-from core.messaging.types import (ChannelIdentifier, ChannelType,
-                                  InteractiveContent, InteractiveType, Message,
-                                  MessageRecipient)
+from core.messaging.types import (ChannelIdentifier, ChannelType, InteractiveContent,
+                                  InteractiveType, Message, MessageRecipient)
+from core.utils.exceptions import StateException
 from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
-
-from ...screens import format_account
+from services.credex.member import get_member_accounts
+from services.whatsapp.screens import format_account
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
 
 
-def get_menu_options(include_all: bool = True) -> Dict[str, Any]:
+def get_menu_options(error: bool = False, account: Dict[str, Any] = None) -> Dict[str, Any]:
     """Get menu options for dashboard"""
-    if include_all:
+    if error:
         return {
             "button": "Options",
             "sections": [
                 {
-                    "title": "Account Options",
                     "rows": [
                         {
                             "id": "refresh",
-                            "title": "🔄 Refresh Dashboard"
-                        },
-                        {
-                            "id": "offers",
-                            "title": "💰 View Offers"
-                        },
-                        {
-                            "id": "transactions",
-                            "title": "📊 View Transactions"
+                            "title": "🔄 Try Again"
                         }
                     ]
                 }
             ]
         }
+
+    # Count pending and outgoing offers from account data
+    pending_offers = 0
+    outgoing_offers = 0
+    if account and "offerData" in account:
+        offers = account["offerData"].get("offers", [])
+        for offer in offers:
+            if offer.get("status") == "PENDING":
+                if offer.get("isOutgoing"):
+                    outgoing_offers += 1
+                else:
+                    pending_offers += 1
+
     return {
         "button": "Options",
         "sections": [
             {
-                "title": "Available Actions",
                 "rows": [
                     {
-                        "id": "refresh",
-                        "title": "🔄 Try Again"
+                        "id": "offer",
+                        "title": "💰 Offer Secured Credex"
+                    },
+                    {
+                        "id": "accept",
+                        "title": f"✅ Accept Offers ({pending_offers})"
+                    },
+                    {
+                        "id": "decline",
+                        "title": f"❌ Decline Offers ({pending_offers})"
+                    },
+                    {
+                        "id": "cancel",
+                        "title": f"🚫 Cancel Outgoing Offers ({outgoing_offers})"
+                    },
+                    {
+                        "id": "transactions",
+                        "title": "📊 View Transactions"
+                    },
+                    {
+                        "id": "upgrade",
+                        "title": "⭐ Upgrade Member Tier"
                     }
                 ]
             }
@@ -55,167 +77,87 @@ def get_menu_options(include_all: bool = True) -> Dict[str, Any]:
     }
 
 
-def get_account_details(state_manager: Any, credex_service: Any) -> Tuple[bool, Dict[str, Any], Optional[str]]:
-    """Get account details enforcing SINGLE SOURCE OF TRUTH"""
+def handle_dashboard_display(state_manager: Any) -> Message:
+    """Handle dashboard display enforcing SINGLE SOURCE OF TRUTH"""
+    error = False
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {
-                "member_id": state_manager.get("member_id"),
-                "account_id": state_manager.get("account_id")
-            },
-            {"member_id", "account_id"}
-        )
-        if not validation.is_valid:
-            return False, {}, validation.error_message
-
-        # Get required data
-        member_id = state_manager.get("member_id")
-        account_id = state_manager.get("account_id")
-
-        # Get account details from CredEx service
-        success, account_data = credex_service.get_member_accounts(member_id)
+        # Get account data and update state
+        success, result = get_member_accounts(state_manager)
         if not success:
-            error_msg = account_data.get("message", "Failed to get account details")
-            logger.error(f"API call failed: {error_msg}")
-            return False, {}, error_msg
+            raise StateException("Failed to get account details")
 
-        # Validate account data
-        if not isinstance(account_data, dict) or "accounts" not in account_data:
-            return False, {}, "Invalid account data format"
+        # Validate response structure
+        if not isinstance(result, dict) or "data" not in result or "accounts" not in result["data"]:
+            raise StateException("Invalid account data format")
 
-        # Find personal account
-        personal_account = next(
-            (account for account in account_data["accounts"]
-             if account.get("accountID") == account_id),
-            None
-        )
-        if not personal_account:
-            return False, {}, "Account not found"
+        # Extract and validate account data
+        account = result["data"]["accounts"][0]  # We know there's only personal account
+        if not isinstance(account, dict):
+            raise StateException("Invalid account format")
 
-        # Format account info
-        account_info = {
-            "account": personal_account.get("name", "Personal Account"),
-            "handle": personal_account.get("handle", "Not Available"),
-            "securedNetBalancesByDenom": personal_account.get("securedNetBalancesByDenom", ""),
-            "netCredexAssetsInDefaultDenom": personal_account.get("netCredexAssetsInDefaultDenom", ""),
-            "tier_limit_display": personal_account.get("tierLimitDisplay", "")
+        # Format and store account data in state
+        balance_data = account.get("balanceData", {})
+        secured_balances = balance_data.get("securedNetBalancesByDenom", [])
+        formatted_account = {
+            "account": account.get("accountName", "Personal Account"),
+            "handle": account.get("accountHandle", ""),
+            "securedNetBalancesByDenom": "\n".join(secured_balances) if secured_balances else "",
+            "netCredexAssetsInDefaultDenom": balance_data.get("netCredexAssetsInDefaultDenom", ""),
+            "tier_limit_display": account.get("tier_limit_display", "")
         }
 
-        return True, account_info, None
-
-    except Exception as e:
-        logger.error(f"Error getting account details: {str(e)}")
-        return False, {}, str(e)
-
-
-def handle_dashboard_display(
-    state_manager: Any,
-    credex_service: Any,
-    success_message: Optional[str] = None,
-    flow_type: str = "dashboard"
-) -> Message:
-    """Handle dashboard display enforcing SINGLE SOURCE OF TRUTH
-
-    Args:
-        state_manager: State manager instance
-        credex_service: CredEx service instance
-        success_message: Optional message to display
-        flow_type: Flow type identifier
-
-    Returns:
-        Message: Dashboard display message
-    """
-    try:
-        # Validate flow type
-        if flow_type not in {"dashboard", "refresh", "offers", "transactions"}:
-            raise ValueError("Invalid flow type")
-
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {
-                "channel": state_manager.get("channel"),
-                "member_id": state_manager.get("member_id"),
-                "account_id": state_manager.get("account_id"),
-                "authenticated": state_manager.get("authenticated"),
-                "jwt_token": state_manager.get("jwt_token")
-            },
-            {"channel", "member_id", "account_id", "authenticated", "jwt_token"}
-        )
-        if not validation.is_valid:
-            raise ValueError(validation.error_message)
-
-        # Get required data
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
-
-        # Log dashboard fetch attempt
-        logger.info(f"Fetching dashboard data for channel {channel['identifier']}")
-
-        # Get account details
-        success, account_info, error = get_account_details(state_manager, credex_service)
+        # Update state with formatted account data
+        success, error_msg = state_manager.update_state({
+            "formatted_account": formatted_account,
+            "account_data": account  # Store raw account data for other operations
+        })
         if not success:
-            raise ValueError(error)
+            raise StateException(f"Failed to update state: {error_msg}")
+    except StateException as e:
+        logger.error(f"Dashboard error: {str(e)}")
+        error = True
+        # Update state to reflect error
+        state_manager.update_state({"dashboard_error": str(e)})
 
-        # Create dashboard text
-        dashboard_text = format_account(account_info)
+    try:
+        # Get required data from state
+        channel_info = state_manager.get("channel")
+        if not channel_info or "type" not in channel_info or "identifier" not in channel_info:
+            raise StateException("Invalid channel information")
 
-        # Add success message if provided
-        if success_message:
-            dashboard_text = f"{success_message}\n\n{dashboard_text}"
+        # Get account data from state
+        account = state_manager.get("account_data") if not error else None
+        formatted_account = state_manager.get("formatted_account") if not error else None
 
-        # Log success
-        audit.log_flow_event(
-            "dashboard_flow",
-            "complete",
-            None,
-            {
-                "flow_type": flow_type,
-                "channel_id": channel["identifier"],
-                "member_id": member_id
-            },
-            "success"
-        )
-
-        # Return formatted message
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
+                member_id=state_manager.get("member_id"),
                 channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    channel=channel_info["type"],
+                    value=channel_info["identifier"]
                 )
             ),
             content=InteractiveContent(
                 interactive_type=InteractiveType.LIST,
-                body=dashboard_text,
-                action_items=get_menu_options(True)
+                body="❌ Error: Unable to load dashboard. Please try again." if error else format_account(formatted_account),
+                action_items=get_menu_options(error, account)
             )
         )
 
-    except ValueError as e:
-        # Get channel info for error logging
-        try:
-            channel = state_manager.get("channel")
-            channel_id = channel["identifier"] if channel else "unknown"
-        except (ValueError, KeyError, TypeError) as err:
-            logger.error(f"Failed to get channel for error logging: {str(err)}")
-            channel_id = "unknown"
-
-        logger.error(f"Dashboard error: {str(e)} for channel {channel_id}")
-
-        # Return error message
+    except StateException as e:
+        logger.error(f"Message creation error: {str(e)}")
+        # Return basic error message if we can't create proper message
         return Message(
             recipient=MessageRecipient(
-                member_id="unknown",
+                member_id=state_manager.get("member_id") or "unknown",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel_id
+                    value="unknown"
                 )
             ),
             content=InteractiveContent(
                 interactive_type=InteractiveType.LIST,
-                body="❌ Error: Unable to load dashboard. Please try again.",
-                action_items=get_menu_options(False)
+                body="❌ Critical Error: System temporarily unavailable",
+                action_items=get_menu_options(error=True)
             )
         )

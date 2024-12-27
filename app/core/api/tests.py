@@ -3,9 +3,16 @@ from django.core.cache import cache
 import requests
 from decouple import config
 import logging
-from ..utils.utils import CredexWhatsappService
-
 logger = logging.getLogger(__name__)
+
+# WhatsApp message format for testing
+WHATSAPP_TEST_MESSAGE = {
+    "messaging_product": "whatsapp",
+    "recipient_type": "individual",
+    "to": "test",
+    "type": "text",
+    "text": {"body": "test"}
+}
 
 
 def test_integrations(request):
@@ -57,26 +64,20 @@ def test_integrations(request):
 
     # Test 4: WhatsApp API
     try:
-        # Create a test message that won't actually be sent
-        test_service = CredexWhatsappService(
-            {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": "test",
-                "type": "text",
-                "text": {"body": "test"},
-            },
-            config("WHATSAPP_PHONE_NUMBER_ID"),
-        )
+        # Verify WhatsApp configuration
+        # Verify required environment variables
+        required_vars = [
+            "WHATSAPP_API_URL",
+            "WHATSAPP_PHONE_NUMBER_ID",
+            "WHATSAPP_ACCESS_TOKEN"
+        ]
+        for var in required_vars:
+            if not config(var, default=None):
+                raise ValueError(f"Missing required environment variable: {var}")
 
-        # Just verify we can construct the URL and headers
-        url = (
-            f"{config('WHATSAPP_API_URL')}{config('WHATSAPP_PHONE_NUMBER_ID')}/messages"
-        )
-        headers = {
-            "Authorization": f"Bearer {config('WHATSAPP_ACCESS_TOKEN')}",
-            "Content-Type": "application/json",
-        }
+        # Verify message format
+        if not all(k in WHATSAPP_TEST_MESSAGE for k in ["messaging_product", "to", "type"]):
+            raise ValueError("Invalid WhatsApp message format")
 
         results["tests"]["whatsapp"] = {
             "status": "success",

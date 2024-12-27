@@ -12,7 +12,7 @@ from requests.exceptions import RequestException
 
 from core.utils.state_validator import StateValidator
 from ..config.constants import CachedUser
-from ..utils.utils import CredexWhatsappService
+from ..utils.utils import send_whatsapp_message
 
 logger = logging.getLogger(__name__)
 
@@ -250,48 +250,39 @@ def get_basic_auth_header(channel_identifier: str) -> str:
     return f"Basic {encoded_credentials}"
 
 
-def send_delay_message(state_manager: Any, bot_service: Any) -> None:
+def send_delay_message(state_manager: Any) -> None:
     """Send delay message to user"""
     # Get required state fields with validation at boundary
-    required_fields = {"channel"}
-    current_state = {
-        field: state_manager.get(field)
-        for field in required_fields
-    }
-
-    # Validate at boundary
-    validation = StateValidator.validate_state(current_state)
+    validation = StateValidator.validate_before_access(
+        {
+            "stage": state_manager.get("stage"),
+            "channel": state_manager.get("channel")
+        },
+        {"stage", "channel"}
+    )
     if not validation.is_valid:
         logger.error(f"Invalid state: {validation.error_message}")
         return
 
-    channel = current_state["channel"]
-    if not isinstance(channel, dict) or not channel.get("identifier"):
-        logger.error("Invalid channel structure")
-        return
+    stage = state_manager.get("stage")
+    channel = state_manager.get("channel", {})
+    channel_id = channel.get("identifier")
 
-    channel_identifier = channel["identifier"]
     if (
-        bot_service.state.stage != "handle_action_register"
-        and not cache.get(f"{channel_identifier}_interracted")
+        stage != "handle_action_register"
+        and not cache.get(f"{channel_id}_interracted")
     ):
         try:
-            CredexWhatsappService(
-                payload={
-                    "messaging_product": "whatsapp",
-                    "preview_url": False,
-                    "recipient_type": "individual",
-                    "to": channel_identifier,
-                    "type": "text",
-                    "text": {"body": "Please wait while we process your request..."},
-                }
-            ).send_message()
+            send_whatsapp_message(payload={
+                "messaging_product": "whatsapp",
+                "preview_url": False,
+                "recipient_type": "individual",
+                "to": channel_id,
+                "type": "text",
+                "text": {"body": "Please wait while we process your request..."},
+            })
 
-            cache.set(
-                f"{channel_identifier}_interracted",
-                True,
-                60 * 15
-            )
+            cache.set(f"{channel_id}_interracted", True, 60 * 15)
         except Exception as e:
             logger.error(f"Failed to send delay message: {str(e)}")
 
@@ -299,42 +290,33 @@ def send_delay_message(state_manager: Any, bot_service: Any) -> None:
 def send_first_message(state_manager: Any) -> None:
     """Send welcome message to user"""
     try:
-        # Get required state fields with validation at boundary
-        required_fields = {"channel"}
-        current_state = {
-            field: state_manager.get(field)
-            for field in required_fields
-        }
-
-        # Validate at boundary
-        validation = StateValidator.validate_state(current_state)
+        # Validate channel info at boundary
+        validation = StateValidator.validate_before_access(
+            {"channel": state_manager.get("channel")},
+            {"channel"}
+        )
         if not validation.is_valid:
             logger.error(f"Invalid state: {validation.error_message}")
             return
 
-        channel = current_state["channel"]
-        if not isinstance(channel, dict) or not channel.get("identifier"):
-            logger.error("Invalid channel structure")
-            return
+        channel = state_manager.get("channel", {})
+        channel_id = channel.get("identifier")
 
-        channel_identifier = channel["identifier"]
         first_message = "Welcome to CredEx! How can I assist you today?"
-        CredexWhatsappService(
-            payload={
-                "messaging_product": "whatsapp",
-                "preview_url": False,
-                "recipient_type": "individual",
-                "to": channel_identifier,
-                "type": "text",
-                "text": {"body": first_message},
-            }
-        ).send_message()
+        send_whatsapp_message(payload={
+            "messaging_product": "whatsapp",
+            "preview_url": False,
+            "recipient_type": "individual",
+            "to": channel_id,
+            "type": "text",
+            "text": {"body": first_message},
+        })
     except Exception as e:
         logger.error(f"Failed to send welcome message: {str(e)}")
 
 
-def handle_reset_and_init(state_manager: Any, bot_service: Any, reset: bool, silent: bool, init: bool) -> None:
+def handle_reset_and_init(state_manager: Any, reset: bool, silent: bool, init: bool) -> None:
     """Handle reset and initialization messages"""
     if reset and not silent or init:
-        send_delay_message(state_manager, bot_service)
+        send_delay_message(state_manager)
         send_first_message(state_manager)

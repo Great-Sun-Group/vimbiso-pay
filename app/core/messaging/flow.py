@@ -90,7 +90,7 @@ def initialize_flow(state_manager: Any, flow_id: str, flow_type: Optional[str] =
 
     current_flow_data = state_manager.get("flow_data", {})
     if not current_flow_data.get("flow_type"):
-        state_manager.update({
+        success, error = state_manager.update_state({
             "flow_data": {
                 **current_flow_data,
                 "flow_type": flow_type,
@@ -146,7 +146,9 @@ def process_flow_input(
         # Update validation state
         flow_data = state_manager.get("flow_data", {})
         flow_data["_validation_state"] = validation_state
-        state_manager.update({"flow_data": flow_data})
+        success, error = state_manager.update_state({"flow_data": flow_data})
+        if not success:
+            raise ValueError(f"Failed to update flow data: {error}")
 
         # Log flow event
         audit.log_flow_event(
@@ -165,7 +167,9 @@ def process_flow_input(
             # Update validation state with error
             flow_data["_validation_state"]["success"] = False
             flow_data["_validation_state"]["error"] = "Invalid input"
-            state_manager.update({"flow_data": flow_data})
+            success, error = state_manager.update_state({"flow_data": flow_data})
+            if not success:
+                raise ValueError(f"Failed to update flow data: {error}")
 
             # Log validation failure
             audit.log_flow_event(
@@ -187,7 +191,9 @@ def process_flow_input(
         flow_data["_validation_state"]["success"] = True
         flow_data["_validation_state"]["transformed"] = transformed_data
         flow_data["current_step"] = flow_data.get("current_step", 0) + 1
-        state_manager.update({"flow_data": flow_data})
+        success, error = state_manager.update_state({"flow_data": flow_data})
+        if not success:
+            raise ValueError(f"Failed to update flow data: {error}")
 
         # Log successful state transition
         audit.log_flow_event(
@@ -218,7 +224,9 @@ def process_flow_input(
         flow_data = state_manager.get("flow_data", {})
         flow_data["_validation_state"]["success"] = False
         flow_data["_validation_state"]["error"] = str(validation_error)
-        state_manager.update({"flow_data": flow_data})
+        success, error = state_manager.update_state({"flow_data": flow_data})
+        if not success:
+            raise ValueError(f"Failed to update flow data: {error}")
 
         # Log validation error
         audit.log_flow_event(

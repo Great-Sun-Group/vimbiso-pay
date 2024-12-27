@@ -24,15 +24,23 @@ These rules are ABSOLUTE and NON-NEGOTIABLE. NO EXCEPTIONS.
 - NO state transformation
 - NO state duplication
 - NO passing state down
+- NO manual validation of state.get() results (handled by StateManager)
 
 ## 3. Validation
 
-- Validate at boundaries ONLY
-- Validate BEFORE accessing state
+- Validation is handled by StateManager/StateValidator
+- NO manual validation before state.get()
+- NO manual validation after state.get()
 - NO partial validation
 - NO cleanup code
 - NO state fixing
 - NO error recovery
+
+Note: StateManager automatically:
+- Validates at boundaries
+- Validates before access
+- Validates critical fields
+- Raises StateException for invalid access
 
 ## 4. Stateless Handlers
 

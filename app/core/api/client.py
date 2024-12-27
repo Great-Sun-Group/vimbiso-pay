@@ -1,8 +1,7 @@
 """Main API client using pure functions"""
 import logging
-from typing import Dict, Callable
+from typing import Any, Dict, Callable
 
-from services.whatsapp.types import BotServiceInterface
 from .auth import login as auth_login, register_member as auth_register
 from .credex import (
     offer_credex,
@@ -23,70 +22,78 @@ from .profile import update_profile_from_response
 logger = logging.getLogger(__name__)
 
 
-def create_api_service(bot_service: BotServiceInterface) -> Dict[str, Callable]:
+def create_api_service(state_manager: Any, channel_id: str) -> Dict[str, Callable]:
     """Create API service with all available operations
 
     Args:
-        bot_service: Bot service instance with state management
+        state_manager: State manager instance
+        channel_id: Channel identifier
 
     Returns:
-        Dictionary of API operations
+        Dict[str, Callable]: Dictionary of API operations
     """
     return {
         # Auth operations
-        "login": lambda: auth_login(bot_service.user.channel_identifier),
-        "register_member": lambda member_data: auth_register(member_data, bot_service.user.state_manager.get("jwt_token")),
+        "login": lambda: auth_login(channel_id),
+        "register_member": lambda member_data: auth_register(member_data, state_manager.get("jwt_token")),
 
         # Dashboard operations
         "get_dashboard": lambda: get_member_dashboard(
-            bot_service.user.channel_identifier,
-            bot_service.user.state_manager.get("jwt_token")
+            channel_id,
+            state_manager.get("jwt_token")
         ),
         "refresh_member_info": lambda reset=True, silent=True, init=False: refresh_member(
-            bot_service,
+            state_manager,
+            channel_id,
             reset,
             silent,
             init
         ),
         "validate_handle": lambda handle: validate_member_handle(
             handle,
-            bot_service.user.state_manager.get("jwt_token")
+            state_manager.get("jwt_token")
         ),
         "get_ledger": lambda payload: get_member_ledger(
             payload,
-            bot_service.user.state_manager.get("jwt_token")
+            state_manager.get("jwt_token")
         ),
 
         # CredEx operations
         "offer_credex": lambda offer_data: offer_credex(
-            bot_service,
+            state_manager,
+            channel_id,
             offer_data
         ),
         "accept_credex": lambda credex_id: accept_credex(
-            bot_service,
+            state_manager,
+            channel_id,
             credex_id
         ),
         "decline_credex": lambda credex_id: decline_credex(
-            bot_service,
+            state_manager,
+            channel_id,
             credex_id
         ),
         "cancel_credex": lambda credex_id: cancel_credex(
-            bot_service,
+            state_manager,
+            channel_id,
             credex_id
         ),
         "get_credex": lambda credex_id: get_credex(
-            bot_service,
+            state_manager,
+            channel_id,
             credex_id
         ),
         "accept_bulk_credex": lambda credex_ids: accept_bulk_credex(
-            bot_service,
+            state_manager,
+            channel_id,
             credex_ids
         ),
 
         # Profile operations
         "update_profile_from_response": lambda api_response, action_type, update_from, token=None: update_profile_from_response(
             api_response,
-            bot_service.user.state_manager,
+            state_manager,
             action_type,
             update_from,
             token

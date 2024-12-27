@@ -129,7 +129,7 @@ def handle_registration_completion(state_manager: Any, credex_service: Any) -> M
             "lastname": last_name,
             "defaultDenom": "USD"
         }
-        success, response = credex_service.services['auth'].register_member(
+        success, response = credex_service['register_member'](
             member_data,
             channel["identifier"]
         )
@@ -144,7 +144,7 @@ def handle_registration_completion(state_manager: Any, credex_service: Any) -> M
             raise ValueError("Registration response missing required data")
 
         # Update state
-        state_manager.update({
+        success, error = state_manager.update_state({
             "member_id": member_id,
             "jwt_token": token,
             "authenticated": True,
@@ -197,7 +197,7 @@ def process_registration_step(state_manager: Any, step: str, input_data: Any = N
             if input_data:
                 if not validate_name(input_data):
                     raise ValueError("Invalid first name format")
-                state_manager.update({
+                success, error = state_manager.update_state({
                     "flow_data": {
                         **state_manager.get("flow_data", {}),
                         "first_name": input_data.strip(),
@@ -211,7 +211,7 @@ def process_registration_step(state_manager: Any, step: str, input_data: Any = N
             if input_data:
                 if not validate_name(input_data):
                     raise ValueError("Invalid last name format")
-                state_manager.update({
+                success, error = state_manager.update_state({
                     "flow_data": {
                         **state_manager.get("flow_data", {}),
                         "last_name": input_data.strip(),
