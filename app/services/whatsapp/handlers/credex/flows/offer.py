@@ -9,8 +9,6 @@ from core.utils.flow_audit import FlowAuditLogger
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
 
-REQUIRED_FIELDS = {"channel", "member_id", "account_id", "authenticated", "jwt_token"}
-
 
 def get_amount_prompt(state_manager: Any) -> Message:
     """Get amount prompt with strict state validation"""
@@ -72,18 +70,26 @@ def store_amount(state_manager: Any, amount: str) -> Tuple[bool, Optional[str]]:
         if not valid:
             return False, error
 
-        # Update flow data through state manager
-        success, error = state_manager.update_state({
-            "flow_data": {
+        # Get current flow data
+        flow_data = state_manager.get("flow_data")
+        if not flow_data:
+            flow_data = {
                 "flow_type": "offer",
-                "data": {
-                    "amount_denom": {
-                        "amount": amount_data["amount"],
-                        "denomination": amount_data["denomination"]
-                    }
-                },
-                "current_step": "handle"
+                "step": 0,
+                "current_step": "handle",
+                "data": {}
             }
+
+        # Update with complete flow data structure
+        flow_data["data"]["amount_denom"] = {
+            "amount": amount_data["amount"],
+            "denomination": amount_data["denomination"]
+        }
+        flow_data["current_step"] = "handle"
+
+        # Let StateManager handle validation
+        success, error = state_manager.update_state({
+            "flow_data": flow_data
         })
         if not success:
             return False, error
@@ -146,15 +152,23 @@ def store_handle(state_manager: Any, handle: str) -> Tuple[bool, Optional[str]]:
         if not valid:
             return False, error
 
-        # Update flow data through state manager
-        success, error = state_manager.update_state({
-            "flow_data": {
+        # Get current flow data
+        flow_data = state_manager.get("flow_data")
+        if not flow_data:
+            flow_data = {
                 "flow_type": "offer",
-                "data": {
-                    "handle": handle.strip()
-                },
-                "current_step": "confirm"
+                "step": 0,
+                "current_step": "confirm",
+                "data": {}
             }
+
+        # Update with complete flow data structure
+        flow_data["data"]["handle"] = handle.strip()
+        flow_data["current_step"] = "confirm"
+
+        # Let StateManager handle validation
+        success, error = state_manager.update_state({
+            "flow_data": flow_data
         })
         if not success:
             return False, error
@@ -176,13 +190,19 @@ def create_offer_confirmation_with_state(state_manager: Any) -> Message:
         channel = state_manager.get("channel")
         flow_data = state_manager.get("flow_data")
 
-        # Format confirmation message
-        data = flow_data.get("data", {})
-        amount_denom = data.get("amount_denom", {})
+        if not flow_data or not flow_data.get("data"):
+            raise ValueError("Missing flow data")
+
+        amount_denom = flow_data["data"].get("amount_denom")
+        handle = flow_data["data"].get("handle")
+
+        if not amount_denom or not handle:
+            raise ValueError("Missing offer details")
+
         confirmation_text = (
             f"Please confirm offer details:\n\n"
-            f"Amount: {amount_denom.get('amount')} {amount_denom.get('denomination')}\n"
-            f"Recipient: {data.get('handle')}\n\n"
+            f"Amount: {amount_denom['amount']} {amount_denom['denomination']}\n"
+            f"Recipient: {handle}\n\n"
             f"Reply 'yes' to confirm or 'no' to cancel"
         )
 
@@ -215,13 +235,8 @@ def create_offer_confirmation_with_state(state_manager: Any) -> Message:
 def get_confirmation_message(state_manager: Any) -> Message:
     """Get confirmation message with strict state validation"""
     try:
-        # Get required data (validation handled by flow steps)
-        flow_data = state_manager.get("flow_data")
-        if not flow_data:
-            raise ValueError("Missing flow data")
-
+        # Let StateManager handle validation
         return create_offer_confirmation_with_state(state_manager)
-
     except ValueError as e:
         return Message(
             recipient=MessageRecipient(
@@ -239,19 +254,24 @@ def get_confirmation_message(state_manager: Any) -> Message:
 def complete_offer(state_manager: Any, credex_service: Any) -> Tuple[bool, Dict[str, Any]]:
     """Complete offer flow enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Get required data (already validated)
+        # Let StateManager handle validation
         channel = state_manager.get("channel")
         flow_data = state_manager.get("flow_data")
 
-        # Get data from flow state
-        data = flow_data.get("data", {})
-        amount_denom = data.get("amount_denom", {})
+        if not flow_data or not flow_data.get("data"):
+            raise ValueError("Missing flow data")
+
+        amount_denom = flow_data["data"].get("amount_denom")
+        handle = flow_data["data"].get("handle")
+
+        if not amount_denom or not handle:
+            raise ValueError("Missing offer details")
 
         # Make API call
         offer_data = {
-            "amount": amount_denom.get("amount"),
-            "denomination": amount_denom.get("denomination"),
-            "handle": data.get("handle")
+            "amount": amount_denom["amount"],
+            "denomination": amount_denom["denomination"],
+            "handle": handle
         }
         success, response = credex_service['offer_credex'](offer_data)
         if not success:
@@ -266,9 +286,9 @@ def complete_offer(state_manager: Any, credex_service: Any) -> Tuple[bool, Dict[
             None,
             {
                 "channel_id": channel["identifier"],
-                "amount": amount_denom.get("amount"),
-                "denomination": amount_denom.get("denomination"),
-                "handle": data.get("handle")
+                "amount": amount_denom["amount"],
+                "denomination": amount_denom["denomination"],
+                "handle": handle
             },
             "success"
         )
@@ -288,7 +308,6 @@ def process_offer_step(
 ) -> Message:
     """Process offer step enforcing SINGLE SOURCE OF TRUTH"""
     try:
-
         # Handle each step
         if step == "amount":
             if input_data:
@@ -335,7 +354,7 @@ def process_offer_step(
             recipient=MessageRecipient(
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=state_manager.get("channel", {}).get("identifier", "unknown")
+                    value="unknown"
                 )
             ),
             content=TextContent(

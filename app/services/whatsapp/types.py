@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict, Union, Optional
 
 from core.messaging.types import Message as CoreMessage
+from core.utils.exceptions import StateException
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +18,14 @@ class WhatsAppMessage(Dict[str, Any]):
 
     @classmethod
     def _get_channel_identifier(cls, state_manager: Any) -> str:
-        """Get channel identifier with validation"""
-        # Validate state access at boundary
-        channel = state_manager.get("channel")
-        if not isinstance(channel, dict):
-            raise ValueError("Invalid channel structure")
-        if not channel or not channel.get("identifier"):
-            raise ValueError("Missing channel identifier")
-        return channel["identifier"]
+        """Get channel identifier through StateManager"""
+        try:
+            # Let StateManager handle validation
+            channel = state_manager.get("channel")
+            return channel["identifier"]
+        except StateException as e:
+            logger.error(f"Failed to get channel identifier: {str(e)}")
+            raise ValueError(str(e))
 
     @classmethod
     def create_message(
@@ -249,13 +250,11 @@ class BotServiceInterface:
             # Extract channel identifier from metadata
             metadata = message_data.get("metadata", {})
             if "display_phone_number" in metadata:
-                # Update channel through state manager
-                self.user.state_manager.update_state({
-                    "channel": {
-                        "type": "whatsapp",
-                        "identifier": metadata["display_phone_number"].lstrip("+")
-                    }
-                })
+                # Let StateManager initialize channel info
+                self.user.initialize_channel(
+                    "whatsapp",
+                    metadata["display_phone_number"].lstrip("+")
+                )
 
             messages = message_data.get("messages", [{}])
             if not messages:

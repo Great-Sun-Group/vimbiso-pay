@@ -23,14 +23,6 @@ class StateManager:
     def update_state(self, updates: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """Update state using core state manager"""
         try:
-            # For flow_data updates, merge with existing flow data
-            if "flow_data" in updates:
-                current_flow = self._core.get("flow_data") or {}
-                if isinstance(current_flow, dict) and isinstance(updates["flow_data"], dict):
-                    merged_flow = current_flow.copy()
-                    merged_flow.update(updates["flow_data"])
-                    updates = {"flow_data": merged_flow}
-
             # Let core state manager handle validation and updates
             success = self._core.update_state(updates)
             if not success:

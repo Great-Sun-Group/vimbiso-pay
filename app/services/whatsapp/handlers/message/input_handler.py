@@ -4,6 +4,7 @@ from typing import Any, Dict, Union
 
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
+from core.utils.exceptions import StateException
 from core.utils.flow_audit import FlowAuditLogger
 from core.config.config import GREETINGS
 
@@ -62,7 +63,8 @@ def get_action(message_body: str, message_type: str = "text", message: Dict[str,
         logger.debug(f"No action recognized for text: '{text}'")
         return ""
 
-    except Exception:
+    except StateException as e:
+        logger.error(f"Action extraction error: {str(e)}")
         return ""
 
 
@@ -103,7 +105,8 @@ def extract_input_value(message_body: str, message_type: str = "text",
 
         return value
 
-    except Exception:
+    except StateException as e:
+        logger.error(f"Input extraction error: {str(e)}")
         return ""
 
 
@@ -130,7 +133,7 @@ def handle_invalid_input(state_manager: Any, flow_step_id: str = None) -> Messag
         Error message response
     """
     try:
-        # Get channel (validation handled by state manager)
+        # Get channel (StateManager validates)
         channel = state_manager.get("channel")
 
         # Log invalid input
@@ -164,16 +167,7 @@ def handle_invalid_input(state_manager: Any, flow_step_id: str = None) -> Messag
             )
         )
 
-    except ValueError as e:
+    except StateException as e:
         logger.error(f"Failed to handle invalid input: {str(e)}")
-        return Message(
-            recipient=MessageRecipient(
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value="unknown"
-                )
-            ),
-            content=TextContent(
-                body=f"❌ Critical Error: {str(e)}"
-            )
-        )
+        # Let caller handle error response
+        raise

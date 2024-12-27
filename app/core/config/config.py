@@ -1,13 +1,12 @@
 """Redis configuration and basic constants"""
 import logging
-from urllib.parse import urlparse
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 import redis
-from django.conf import settings
-
 from core.utils.flow_audit import FlowAuditLogger
 from core.utils.redis_atomic import AtomicStateManager
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()

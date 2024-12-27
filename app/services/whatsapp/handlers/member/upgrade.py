@@ -3,10 +3,10 @@ import logging
 from datetime import datetime
 from typing import Any, Dict
 
-from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
 from core.messaging.types import Message
-from ...types import WhatsAppMessage
+from core.utils.exceptions import StateException
+from core.utils.flow_audit import FlowAuditLogger
+
 from .templates import MemberTemplates
 
 logger = logging.getLogger(__name__)
@@ -25,18 +25,7 @@ def validate_button_response(response: Dict[str, Any]) -> bool:
 def handle_upgrade_confirmation(state_manager: Any) -> Message:
     """Create tier upgrade confirmation message enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {
-                "channel": state_manager.get("channel"),
-                "member_id": state_manager.get("member_id")
-            },
-            {"channel", "member_id"}
-        )
-        if not validation.is_valid:
-            raise ValueError(validation.error_message)
-
-        # Get required data
+        # Get required data (StateManager validates)
         channel = state_manager.get("channel")
         member_id = state_manager.get("member_id")
 
@@ -44,26 +33,15 @@ def handle_upgrade_confirmation(state_manager: Any) -> Message:
             channel["identifier"],
             member_id
         )
-    except ValueError as e:
-        return WhatsAppMessage.create_text("unknown", f"Error: {str(e)}")
+    except StateException as e:
+        logger.error(f"Upgrade confirmation error: {str(e)}")
+        raise
 
 
 def handle_upgrade_completion(state_manager: Any, credex_service: Any) -> Message:
     """Complete tier upgrade flow enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {
-                "channel": state_manager.get("channel"),
-                "member_id": state_manager.get("member_id"),
-                "account_id": state_manager.get("account_id")
-            },
-            {"channel", "member_id", "account_id"}
-        )
-        if not validation.is_valid:
-            raise ValueError(validation.error_message)
-
-        # Get required data
+        # Get required data (StateManager validates)
         channel = state_manager.get("channel")
         member_id = state_manager.get("member_id")
         account_id = state_manager.get("account_id")
@@ -82,7 +60,7 @@ def handle_upgrade_completion(state_manager: Any, credex_service: Any) -> Messag
         })
 
         if not success:
-            raise ValueError(response.get("message", "Failed to process subscription"))
+            raise StateException(response.get("message", "Failed to process subscription"))
 
         # Log success
         audit.log_flow_event(
@@ -97,61 +75,57 @@ def handle_upgrade_completion(state_manager: Any, credex_service: Any) -> Messag
             "success"
         )
 
-        # Clear flow data using proper method
-        success, error = state_manager.update_state({"flow_data": None})
+        # Transition to dashboard with success message
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "flow_type": "dashboard",
+                "step": 0,
+                "current_step": "display",
+                "data": {
+                    "message": "✅ Upgrade successful! Welcome to your new tier.",
+                    "subscription_id": response.get("subscriptionId"),
+                    "tier": 3,
+                    "timestamp": datetime.now().isoformat()
+                }
+            }
+        })
         if not success:
-            raise ValueError(f"Failed to clear flow data: {error}")
+            raise StateException(f"Failed to transition flow: {error}")
 
-        return MemberTemplates.create_upgrade_success(
-            channel["identifier"],
-            member_id
-        )
+        # Let dashboard handler show success message
+        from ..member.dashboard import handle_dashboard_display
+        return handle_dashboard_display(state_manager)
 
-    except ValueError as e:
+    except StateException as e:
         logger.error(f"Upgrade failed: {str(e)}")
-        return WhatsAppMessage.create_text(
-            "unknown",
-            f"Upgrade failed: {str(e)}"
-        )
+        raise
 
 
 def process_upgrade_step(state_manager: Any, step: str, input_data: Any = None) -> Message:
     """Process upgrade step enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {
-                "channel": state_manager.get("channel"),
-                "member_id": state_manager.get("member_id"),
-                "account_id": state_manager.get("account_id"),
-                "flow_data": state_manager.get("flow_data")
-            },
-            {"channel", "member_id", "account_id", "flow_data"}
-        )
-        if not validation.is_valid:
-            raise ValueError(validation.error_message)
+        # Get required data (StateManager validates)
+        flow_data = state_manager.get("flow_data")
 
         # Handle confirmation step
         if step == "confirm":
             if input_data:
                 if not validate_button_response(input_data):
-                    raise ValueError("Invalid confirmation response")
+                    raise StateException("Invalid confirmation response")
                 success, error = state_manager.update_state({
                     "flow_data": {
-                        **state_manager.get("flow_data", {}),
+                        **flow_data,
                         "confirmed": True,
                         "current_step": "complete"
                     }
                 })
                 if not success:
-                    raise ValueError(f"Failed to update flow data: {error}")
+                    raise StateException(f"Failed to update flow data: {error}")
             return handle_upgrade_confirmation(state_manager)
 
         else:
-            raise ValueError(f"Invalid upgrade step: {step}")
+            raise StateException(f"Invalid upgrade step: {step}")
 
-    except ValueError as e:
-        return WhatsAppMessage.create_text(
-            state_manager.get("channel", {}).get("identifier", "unknown"),
-            f"Error: {str(e)}"
-        )
+    except StateException as e:
+        logger.error(f"Upgrade step error: {str(e)}")
+        raise

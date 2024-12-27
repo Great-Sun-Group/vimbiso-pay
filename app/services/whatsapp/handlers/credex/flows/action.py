@@ -8,22 +8,15 @@ from core.messaging.types import (
     InteractiveContent,
     InteractiveType,
     Message,
-    MessageRecipient,
-    WhatsAppMessage
+    MessageRecipient
 )
-from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
 from core.utils.exceptions import StateException
-
-from services.credex.service import (
-    get_member_accounts
-)
+from core.utils.flow_audit import FlowAuditLogger
+from services.credex.service import get_member_accounts
 from ...member.dashboard import handle_dashboard_display
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
-
-REQUIRED_FIELDS = {"channel", "member_id", "account_id", "authenticated", "jwt_token"}
 
 ACTION_TITLES = {
     "cancel": "Cancel",
@@ -34,9 +27,17 @@ ACTION_TITLES = {
 
 def create_list_message(channel_id: str, flow_type: str) -> Message:
     """Create list message for action selection"""
-    return WhatsAppMessage.create_text(
-        channel_id,
-        f"Select an offer to {flow_type.lower()}:"
+    return Message(
+        recipient=MessageRecipient(
+            channel_id=ChannelIdentifier(
+                channel=ChannelType.WHATSAPP,
+                value=channel_id
+            )
+        ),
+        content=InteractiveContent(
+            interactive_type=InteractiveType.LIST,
+            body=f"Select an offer to {flow_type.lower()}:"
+        )
     )
 
 
@@ -72,19 +73,13 @@ def create_confirmation_message(channel_id: str, credex_id: str, flow_type: str)
 def get_list_message(state_manager: Any, flow_type: str) -> Message:
     """Get list message with strict state validation"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {"channel": state_manager.get("channel")},
-            {"channel"}
-        )
-        if not validation.is_valid:
-            raise StateException(validation.error_message)
-
+        # Get channel (StateManager validates)
         channel = state_manager.get("channel")
         return create_list_message(channel["identifier"], flow_type)
 
     except StateException as e:
-        return WhatsAppMessage.create_text("unknown", f"Error: {str(e)}")
+        logger.error(f"List message error: {str(e)}")
+        raise
 
 
 def validate_selection(selection: str, flow_type: str) -> bool:
@@ -100,23 +95,21 @@ def store_selection(state_manager: Any, selection: str, flow_type: str) -> Tuple
         if not credex_id:
             raise StateException("Invalid selection format")
 
-        # Get flow data (SINGLE SOURCE OF TRUTH)
-        flow_data = state_manager.get("flow_data")
-        if not isinstance(flow_data, dict):
-            flow_data = {}
+        # Get flow data (StateManager validates)
+        flow_data = state_manager.get("flow_data") or {}
 
-        # Update state (validation handled by state manager)
-        new_flow_data = {
-            "flow_type": flow_data.get("flow_type"),
-            "step": flow_data.get("step", 0),
-            "current_step": "confirm",
-            "data": {
-                **flow_data.get("data", {}),
-                "selected_credex_id": credex_id
+        # Update state
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "flow_type": flow_data.get("flow_type"),
+                "step": flow_data.get("step", 0),
+                "current_step": "confirm",
+                "data": {
+                    **flow_data.get("data", {}),
+                    "selected_credex_id": credex_id
+                }
             }
-        }
-
-        success, error = state_manager.update_state({"flow_data": new_flow_data})
+        })
         if not success:
             raise StateException(error)
 
@@ -133,48 +126,28 @@ def store_selection(state_manager: Any, selection: str, flow_type: str) -> Tuple
 def get_confirmation_message(state_manager: Any, flow_type: str) -> Message:
     """Get confirmation message with strict state validation"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            state_manager,
-            {"channel", "flow_data"}
-        )
-        if not validation.is_valid:
-            raise StateException(validation.error_message)
-
-        # Get required data
+        # Get required data (StateManager validates)
         channel = state_manager.get("channel")
         flow_data = state_manager.get("flow_data")
-        if not flow_data:
-            raise StateException("Missing flow data")
 
         return create_confirmation_message(
             channel["identifier"],
-            flow_data.get("data", {}).get("selected_credex_id"),
+            flow_data["data"]["selected_credex_id"],
             flow_type
         )
 
     except StateException as e:
-        return WhatsAppMessage.create_text("unknown", f"Error: {str(e)}")
+        logger.error(f"Confirmation message error: {str(e)}")
+        raise
 
 
 def complete_action(state_manager: Any, flow_type: str) -> Tuple[bool, Dict[str, Any]]:
     """Complete action flow enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            state_manager,
-            REQUIRED_FIELDS | {"flow_data"}
-        )
-        if not validation.is_valid:
-            raise StateException(validation.error_message)
-
-        # Get required data
+        # Get required data (StateManager validates)
         channel = state_manager.get("channel")
         flow_data = state_manager.get("flow_data")
-        if not flow_data:
-            raise StateException("Missing flow data")
-
-        credex_id = flow_data.get("data", {}).get("selected_credex_id")
+        credex_id = flow_data["data"]["selected_credex_id"]
 
         # Log attempt
         audit.log_flow_event(
@@ -234,14 +207,6 @@ def process_action_step(
 ) -> Message:
     """Process action step enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            state_manager,
-            REQUIRED_FIELDS
-        )
-        if not validation.is_valid:
-            raise StateException(validation.error_message)
-
         # Handle each step
         if step == "select":
             if input_data:
@@ -261,9 +226,18 @@ def process_action_step(
                 success, response = complete_action(state_manager, flow_type)
                 if not success:
                     raise StateException(response["message"])
-                return WhatsAppMessage.create_text(
-                    state_manager.get("channel")["identifier"],
-                    f"✅ Successfully {flow_type}ed offer!"
+                channel = state_manager.get("channel")
+                return Message(
+                    recipient=MessageRecipient(
+                        channel_id=ChannelIdentifier(
+                            channel=ChannelType.WHATSAPP,
+                            value=channel["identifier"]
+                        )
+                    ),
+                    content=InteractiveContent(
+                        interactive_type=InteractiveType.LIST,
+                        body=f"✅ Successfully {flow_type}ed offer!"
+                    )
                 )
             return get_confirmation_message(state_manager, flow_type)
 
@@ -271,10 +245,8 @@ def process_action_step(
             raise StateException(f"Invalid {flow_type} step: {step}")
 
     except StateException as e:
-        return WhatsAppMessage.create_text(
-            state_manager.get("channel", {}).get("identifier", "unknown"),
-            f"Error: {str(e)}"
-        )
+        logger.error(f"Action step error: {str(e)}")
+        raise
 
 
 def process_cancel_step(

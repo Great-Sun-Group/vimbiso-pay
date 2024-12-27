@@ -2,6 +2,7 @@
 import logging
 from typing import Any, Dict, Optional
 
+from core.utils.exceptions import StateException
 from core.utils.flow_audit import FlowAuditLogger
 from ...types import WhatsAppMessage
 from ..member.dashboard import handle_dashboard_display
@@ -27,54 +28,48 @@ def process_flow(
 ) -> WhatsAppMessage:
     """Process flow continuation enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Let StateManager handle validation
+        # Get channel (StateManager validates)
         channel = state_manager.get("channel")
-        flow_type = flow_data.get("flow_type") if isinstance(flow_data, dict) else None
-
-        if not flow_type:
-            raise ValueError("Invalid flow type")
 
         # Get handler function
+        flow_type = flow_data["flow_type"]  # StateManager validates flow_data structure
         handler_name = FLOW_HANDLERS.get(flow_type)
         if not handler_name:
-            raise ValueError(f"Unsupported flow type: {flow_type}")
+            raise StateException(f"Unsupported flow type: {flow_type}")
 
-        handler_module = __import__(f"services.whatsapp.handlers.credex.flows.{flow_type}", fromlist=[handler_name])
+        handler_module = __import__(
+            f"services.whatsapp.handlers.credex.flows.{flow_type}",
+            fromlist=[handler_name]
+        )
         handler_func = getattr(handler_module, handler_name)
 
-        # Get current step
-        current_step = flow_data.get("current_step")
-        if not current_step:
-            raise ValueError("Missing current step in flow data")
-
-        # Process step
-        result = handler_func(state_manager, current_step, input_value)
+        # Process step (StateManager validates current_step exists)
+        result = handler_func(state_manager, flow_data["current_step"], input_value)
         if not result:
-            # Clear flow data
-            success, error = state_manager.update_state({"flow_data": None})
+            # Transition to dashboard flow
+            success, error = state_manager.update_state({
+                "flow_data": {
+                    "flow_type": "dashboard",
+                    "step": 0,
+                    "current_step": "display",
+                    "data": {
+                        "message": "Operation completed successfully"
+                    }
+                }
+            })
             if not success:
-                raise ValueError(f"Failed to clear flow data: {error}")
+                raise StateException(f"Failed to transition flow: {error}")
 
             # Show dashboard
-            return handle_dashboard_display(
-                state_manager,
-                success_message="Operation completed successfully"
-            )
+            return handle_dashboard_display(state_manager)
 
         return result
 
-    except ValueError as e:
-        # Get channel info for error response
-        try:
-            channel = state_manager.get("channel")
-            channel_id = channel["identifier"] if channel else "unknown"
-        except (ValueError, KeyError, TypeError) as err:
-            logger.error(f"Failed to get channel for error response: {str(err)}")
-            channel_id = "unknown"
-
-        logger.error(f"Flow processing error: {str(e)} for channel {channel_id}")
+    except StateException as e:
+        logger.error(f"Flow processing error: {str(e)}")
+        channel = state_manager.get("channel")
         return WhatsAppMessage.create_text(
-            channel_id,
+            channel["identifier"],
             "Error: Unable to process flow. Please try again."
         )
 
@@ -82,7 +77,7 @@ def process_flow(
 def handle_flow_completion(state_manager: Any, success_message: Optional[str] = None) -> WhatsAppMessage:
     """Handle flow completion enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Let StateManager handle validation
+        # Get channel (StateManager validates)
         channel = state_manager.get("channel")
 
         # Log completion
@@ -94,28 +89,27 @@ def handle_flow_completion(state_manager: Any, success_message: Optional[str] = 
             "success"
         )
 
-        # Clear flow data
-        success, error = state_manager.update_state({"flow_data": None})
+        # Transition to dashboard flow
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "flow_type": "dashboard",
+                "step": 0,
+                "current_step": "display",
+                "data": {
+                    "message": success_message or "Operation completed successfully"
+                }
+            }
+        })
         if not success:
-            raise ValueError(f"Failed to clear flow data: {error}")
+            raise StateException(f"Failed to transition flow: {error}")
 
         # Show dashboard
-        return handle_dashboard_display(
-            state_manager,
-            success_message=success_message or "Operation completed successfully"
-        )
+        return handle_dashboard_display(state_manager)
 
-    except ValueError as e:
-        # Get channel info for error response
-        try:
-            channel = state_manager.get("channel")
-            channel_id = channel["identifier"] if channel else "unknown"
-        except (ValueError, KeyError, TypeError) as err:
-            logger.error(f"Failed to get channel for error response: {str(err)}")
-            channel_id = "unknown"
-
-        logger.error(f"Flow completion error: {str(e)} for channel {channel_id}")
+    except StateException as e:
+        logger.error(f"Flow completion error: {str(e)}")
+        channel = state_manager.get("channel")
         return WhatsAppMessage.create_text(
-            channel_id,
+            channel["identifier"],
             "Error: Unable to complete flow. Please try again."
         )

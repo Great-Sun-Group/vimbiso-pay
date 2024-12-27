@@ -2,10 +2,8 @@
 import logging
 from typing import Any, Dict, Tuple, Union
 
-from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
 from core.utils.exceptions import StateException
-
+from core.utils.flow_audit import FlowAuditLogger
 from services.credex.member import validate_handle
 
 from .validators import AMOUNT_PATTERN
@@ -39,13 +37,8 @@ def validate_and_parse_amount(amount_str: str) -> Tuple[float, str]:
 def validate_and_parse_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> str:
     """Validate and parse handle with strict state validation"""
     try:
-        # Validate state at boundary
-        validation = StateValidator.validate_before_access(
-            state_manager,
-            {"jwt_token"}
-        )
-        if not validation.is_valid:
-            raise StateException(validation.error_message)
+        # Let StateManager handle validation
+        jwt_token = state_manager.get("jwt_token")
 
         # Extract handle from interactive or text
         if isinstance(handle, dict):
@@ -60,7 +53,6 @@ def validate_and_parse_handle(handle: Union[str, Dict[str, Any]], state_manager:
             raise StateException("Handle cannot be empty")
 
         # Validate handle through API
-        jwt_token = state_manager.get("jwt_token")
         success, response = validate_handle(handle, jwt_token)
         if not success:
             raise StateException(response.get("message", "Invalid handle"))
@@ -84,47 +76,27 @@ def format_amount_for_display(amount: float, denomination: str) -> str:
 def store_dashboard_data(state_manager: Any, response: Dict[str, Any]) -> None:
     """Store dashboard data enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Validate input parameters
+        # Let StateManager handle validation
+        channel = state_manager.get("channel")
+        flow_data = state_manager.get("flow_data") or {}
+
+        # Validate response format
         if not isinstance(response, dict):
             raise StateException("Invalid response format")
 
-        # Validate ALL required state at boundary
-        required_fields = {"channel", "member_id", "flow_data", "authenticated"}
-        current_state = {
-            field: state_manager.get(field)
-            for field in required_fields
-        }
-
-        # Validate required fields
-        validation = StateValidator.validate_before_access(
-            current_state,
-            {"channel", "member_id", "flow_data"}
-        )
-        if not validation.is_valid:
-            raise StateException(f"State validation failed: {validation.error_message}")
-
-        # Get channel info (SINGLE SOURCE OF TRUTH)
-        channel = state_manager.get("channel")
-        if not channel or not channel.get("identifier"):
-            raise StateException("Channel identifier not found")
-
-        # Extract and validate dashboard data
+        # Extract dashboard data
         dashboard = response.get("data", {}).get("dashboard")
         if not isinstance(dashboard, dict):
             raise StateException("Invalid dashboard data format")
 
-        # Extract and validate action data
+        # Extract action data
         action = response.get("data", {}).get("action", {})
         if action and not isinstance(action, dict):
             raise StateException("Invalid action data format")
 
-        # Get current flow data (SINGLE SOURCE OF TRUTH)
-        flow_data = state_manager.get("flow_data")
-        if not isinstance(flow_data, dict):
-            flow_data = {}
-
-        # Prepare new flow data
+        # Prepare flow data update
         new_flow_data = {
+            **flow_data,
             "dashboard": dashboard,
             "last_updated": audit.get_current_timestamp()
         }
@@ -135,24 +107,28 @@ def store_dashboard_data(state_manager: Any, response: Dict[str, Any]) -> None:
             if not action_id or not action_type:
                 raise StateException("Missing required action data")
 
-            new_flow_data.update({
-                "action_id": action_id,
-                "action_type": action_type,
-                "action_timestamp": audit.get_current_timestamp(),
-                "action_status": "success" if action_type == "CREDEX_CREATED" else action.get("status", "")
+            # Let StateManager handle validation and update
+            success, error = state_manager.update_state({
+                "flow_data": {
+                    "flow_type": flow_data["flow_type"],
+                    "step": flow_data["step"],
+                    "current_step": flow_data["current_step"],
+                    "data": {
+                        **flow_data.get("data", {}),
+                        "action_id": action_id,
+                        "action_type": action_type,
+                        "action_timestamp": audit.get_current_timestamp(),
+                        "action_status": "success" if action_type == "CREDEX_CREATED" else action.get("status", "")
+                    }
+                }
             })
+            if not success:
+                raise StateException(f"Failed to update flow data: {error}")
 
-        # Merge with existing flow data
-        flow_data.update(new_flow_data)
-
-        # Validate state update
-        new_state = {"flow_data": flow_data}
-        validation = StateValidator.validate_state(new_state)
-        if not validation.is_valid:
-            raise StateException(f"Invalid flow data: {validation.error_message}")
-
-        # Update state
-        success, error = state_manager.update_state(new_state)
+        # Let StateManager handle validation and update
+        success, error = state_manager.update_state({
+            "flow_data": new_flow_data
+        })
         if not success:
             raise StateException(f"Failed to update flow data: {error}")
 
@@ -160,13 +136,5 @@ def store_dashboard_data(state_manager: Any, response: Dict[str, Any]) -> None:
         logger.info(f"Successfully stored dashboard data for channel {channel['identifier']}")
 
     except StateException as e:
-        # Get channel info for error logging
-        try:
-            channel = state_manager.get("channel")
-            channel_id = channel["identifier"] if channel else "unknown"
-        except (ValueError, KeyError, TypeError) as err:
-            logger.error(f"Failed to get channel for error logging: {str(err)}")
-            channel_id = "unknown"
-
-        logger.error(f"Failed to store dashboard data: {str(e)} for channel {channel_id}")
+        logger.error(f"Failed to store dashboard data: {str(e)}")
         raise
