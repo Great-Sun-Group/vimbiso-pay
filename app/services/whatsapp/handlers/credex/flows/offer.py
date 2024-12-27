@@ -2,15 +2,9 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from core.messaging.types import (
-    ChannelIdentifier,
-    ChannelType,
-    Message,
-    MessageRecipient,
-    TextContent
-)
+from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
+                                  MessageRecipient, TextContent)
 from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -21,18 +15,10 @@ REQUIRED_FIELDS = {"channel", "member_id", "account_id", "authenticated", "jwt_t
 def get_amount_prompt(state_manager: Any) -> Message:
     """Get amount prompt with strict state validation"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {"channel": state_manager.get("channel")},
-            {"channel"}
-        )
-        if not validation.is_valid:
-            raise ValueError(validation.error_message)
-
+        # Let StateManager handle validation
         channel = state_manager.get("channel")
         return Message(
             recipient=MessageRecipient(
-                member_id=state_manager.get("member_id"),
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel["identifier"]
@@ -45,7 +31,6 @@ def get_amount_prompt(state_manager: Any) -> Message:
     except ValueError as e:
         return Message(
             recipient=MessageRecipient(
-                member_id="unknown",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value="unknown"
@@ -82,25 +67,24 @@ def validate_amount(amount: str) -> Tuple[bool, Optional[str], Optional[Dict[str
 def store_amount(state_manager: Any, amount: str) -> Tuple[bool, Optional[str]]:
     """Store validated amount in state"""
     try:
-        # Get flow data (SINGLE SOURCE OF TRUTH)
-        flow_data = state_manager.get("flow_data")
-        if not isinstance(flow_data, dict):
-            flow_data = {}
-
         # Validate amount
         valid, error, amount_data = validate_amount(amount)
         if not valid:
             return False, error
 
-        # Update state (validation handled by state manager)
-        new_flow_data = {
-            **flow_data,
-            "amount": amount_data["amount"],
-            "denomination": amount_data["denomination"],
-            "current_step": "handle"
-        }
-
-        success, error = state_manager.update_state({"flow_data": new_flow_data})
+        # Update flow data through state manager
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "flow_type": "offer",
+                "data": {
+                    "amount_denom": {
+                        "amount": amount_data["amount"],
+                        "denomination": amount_data["denomination"]
+                    }
+                },
+                "current_step": "handle"
+            }
+        })
         if not success:
             return False, error
 
@@ -120,18 +104,10 @@ def store_amount(state_manager: Any, amount: str) -> Tuple[bool, Optional[str]]:
 def get_handle_prompt(state_manager: Any) -> Message:
     """Get handle prompt with strict state validation"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {"channel": state_manager.get("channel")},
-            {"channel"}
-        )
-        if not validation.is_valid:
-            raise ValueError(validation.error_message)
-
+        # Let StateManager handle validation
         channel = state_manager.get("channel")
         return Message(
             recipient=MessageRecipient(
-                member_id=state_manager.get("member_id"),
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel["identifier"]
@@ -144,7 +120,6 @@ def get_handle_prompt(state_manager: Any) -> Message:
     except ValueError as e:
         return Message(
             recipient=MessageRecipient(
-                member_id="unknown",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value="unknown"
@@ -166,24 +141,21 @@ def validate_handle(handle: str) -> Tuple[bool, Optional[str]]:
 def store_handle(state_manager: Any, handle: str) -> Tuple[bool, Optional[str]]:
     """Store validated handle in state"""
     try:
-        # Get flow data (SINGLE SOURCE OF TRUTH)
-        flow_data = state_manager.get("flow_data")
-        if not isinstance(flow_data, dict):
-            flow_data = {}
-
         # Validate handle
         valid, error = validate_handle(handle)
         if not valid:
             return False, error
 
-        # Update state (validation handled by state manager)
-        new_flow_data = {
-            **flow_data,
-            "handle": handle.strip(),
-            "current_step": "confirm"
-        }
-
-        success, error = state_manager.update_state({"flow_data": new_flow_data})
+        # Update flow data through state manager
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "flow_type": "offer",
+                "data": {
+                    "handle": handle.strip()
+                },
+                "current_step": "confirm"
+            }
+        })
         if not success:
             return False, error
 
@@ -200,32 +172,22 @@ def store_handle(state_manager: Any, handle: str) -> Tuple[bool, Optional[str]]:
 def create_offer_confirmation_with_state(state_manager: Any) -> Message:
     """Create offer confirmation message with state data"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {
-                "channel": state_manager.get("channel"),
-                "flow_data": state_manager.get("flow_data")
-            },
-            {"channel", "flow_data"}
-        )
-        if not validation.is_valid:
-            raise ValueError(validation.error_message)
-
-        # Get required data
+        # Let StateManager handle validation
         channel = state_manager.get("channel")
         flow_data = state_manager.get("flow_data")
 
         # Format confirmation message
+        data = flow_data.get("data", {})
+        amount_denom = data.get("amount_denom", {})
         confirmation_text = (
             f"Please confirm offer details:\n\n"
-            f"Amount: {flow_data['amount']} {flow_data['denomination']}\n"
-            f"Recipient: {flow_data['handle']}\n\n"
+            f"Amount: {amount_denom.get('amount')} {amount_denom.get('denomination')}\n"
+            f"Recipient: {data.get('handle')}\n\n"
             f"Reply 'yes' to confirm or 'no' to cancel"
         )
 
         return Message(
             recipient=MessageRecipient(
-                member_id=state_manager.get("member_id"),
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel["identifier"]
@@ -239,7 +201,6 @@ def create_offer_confirmation_with_state(state_manager: Any) -> Message:
     except ValueError as e:
         return Message(
             recipient=MessageRecipient(
-                member_id="unknown",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value="unknown"
@@ -264,7 +225,6 @@ def get_confirmation_message(state_manager: Any) -> Message:
     except ValueError as e:
         return Message(
             recipient=MessageRecipient(
-                member_id="unknown",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value="unknown"
@@ -283,11 +243,15 @@ def complete_offer(state_manager: Any, credex_service: Any) -> Tuple[bool, Dict[
         channel = state_manager.get("channel")
         flow_data = state_manager.get("flow_data")
 
+        # Get data from flow state
+        data = flow_data.get("data", {})
+        amount_denom = data.get("amount_denom", {})
+
         # Make API call
         offer_data = {
-            "amount": flow_data["amount"],
-            "denomination": flow_data["denomination"],
-            "handle": flow_data["handle"]
+            "amount": amount_denom.get("amount"),
+            "denomination": amount_denom.get("denomination"),
+            "handle": data.get("handle")
         }
         success, response = credex_service['offer_credex'](offer_data)
         if not success:
@@ -302,9 +266,9 @@ def complete_offer(state_manager: Any, credex_service: Any) -> Tuple[bool, Dict[
             None,
             {
                 "channel_id": channel["identifier"],
-                "amount": flow_data["amount"],
-                "denomination": flow_data["denomination"],
-                "handle": flow_data["handle"]
+                "amount": amount_denom.get("amount"),
+                "denomination": amount_denom.get("denomination"),
+                "handle": data.get("handle")
             },
             "success"
         )
@@ -324,13 +288,6 @@ def process_offer_step(
 ) -> Message:
     """Process offer step enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {field: state_manager.get(field) for field in REQUIRED_FIELDS},
-            REQUIRED_FIELDS
-        )
-        if not validation.is_valid:
-            raise ValueError(validation.error_message)
 
         # Handle each step
         if step == "amount":
@@ -359,7 +316,6 @@ def process_offer_step(
                     raise ValueError(response["message"])
                 return Message(
                     recipient=MessageRecipient(
-                        member_id=state_manager.get("member_id"),
                         channel_id=ChannelIdentifier(
                             channel=ChannelType.WHATSAPP,
                             value=state_manager.get("channel")["identifier"]
@@ -377,7 +333,6 @@ def process_offer_step(
     except ValueError as e:
         return Message(
             recipient=MessageRecipient(
-                member_id=state_manager.get("member_id", "unknown"),
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=state_manager.get("channel", {}).get("identifier", "unknown")

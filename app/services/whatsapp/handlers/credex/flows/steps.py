@@ -63,9 +63,13 @@ def process_amount_step(state_manager: Any, input_data: Optional[str] = None) ->
 
         success, error = state_manager.update_state({
             "flow_data": {
-                **flow_data,
-                **amount_data,
-                "current_step": "handle"
+                "flow_type": flow_data["flow_type"],
+                "step": flow_data["step"],
+                "current_step": "handle",
+                "data": {
+                    **flow_data.get("data", {}),
+                    "amount": amount_data
+                }
             }
         })
         if not success:
@@ -94,9 +98,13 @@ def process_handle_step(state_manager: Any, input_data: Optional[str] = None) ->
 
         success, error = state_manager.update_state({
             "flow_data": {
-                **flow_data,
-                **handle_data,
-                "current_step": "confirm"
+                "flow_type": flow_data["flow_type"],
+                "step": flow_data["step"],
+                "current_step": "confirm",
+                "data": {
+                    **flow_data.get("data", {}),
+                    "handle": handle_data
+                }
             }
         })
         if not success:
@@ -124,9 +132,13 @@ def process_confirm_step(state_manager: Any, input_data: Optional[str] = None) -
         flow_data = state_manager.get("flow_data", {})
         success, error = state_manager.update_state({
             "flow_data": {
-                **flow_data,
-                "confirmed": input_lower == "yes",
-                "current_step": "complete"
+                "flow_type": flow_data["flow_type"],
+                "step": flow_data["step"],
+                "current_step": "complete",
+                "data": {
+                    **flow_data.get("data", {}),
+                    "confirmed": input_lower == "yes"
+                }
             }
         })
         if not success:

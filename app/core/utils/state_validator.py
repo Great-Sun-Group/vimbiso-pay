@@ -23,7 +23,8 @@ class StateValidator:
         "member_id",
         "jwt_token",
         "authenticated",
-        "flow_data"
+        "flow_data",
+        "account_id"
     }
 
     @classmethod
@@ -124,12 +125,38 @@ class StateValidator:
             )
 
         # Required flow fields
-        required_fields = {"step", "flow_type"}
+        required_fields = {"step", "flow_type", "current_step"}
         missing_fields = required_fields - set(flow_data.keys())
         if missing_fields:
             return ValidationResult(
                 is_valid=False,
                 error_message=f"Flow data missing required fields: {', '.join(missing_fields)}"
+            )
+
+        # Validate field types
+        if not isinstance(flow_data["step"], int):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Flow step must be an integer"
+            )
+
+        if not isinstance(flow_data["flow_type"], str):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Flow type must be a string"
+            )
+
+        if not isinstance(flow_data["current_step"], str):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Current step must be a string"
+            )
+
+        # Validate optional data field
+        if "data" in flow_data and not isinstance(flow_data["data"], dict):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Flow data 'data' field must be a dictionary"
             )
 
         return ValidationResult(is_valid=True)
@@ -199,12 +226,11 @@ class StateValidator:
 
         # Check for duplication only in accessed fields
         unique_accessed = required_fields & cls.UNIQUE_FIELDS
-        if unique_accessed:
-            for field in unique_accessed:
-                if any(isinstance(v, dict) and field in v for v in state.values()):
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"{field} found in nested state - must only exist at top level"
-                    )
+        for field in unique_accessed:
+            if any(isinstance(v, dict) and field in v for v in state.values()):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"{field} found in nested state - must only exist at top level"
+                )
 
         return ValidationResult(is_valid=True)

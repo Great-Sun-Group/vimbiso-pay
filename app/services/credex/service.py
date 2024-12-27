@@ -2,18 +2,36 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from core.utils.state_validator import StateValidator
 from core.utils.exceptions import StateException
+from core.utils.state_validator import StateValidator
 
-from .auth import login as auth_login, register_member as auth_register
-from .member import (
-    get_dashboard as member_get_dashboard,
-    validate_handle as member_validate_handle,
-    refresh_member_info as member_refresh_info,
-    get_member_accounts as member_get_accounts,
-)
+from .auth import login as auth_login
+from .auth import register_member as auth_register
+from .member import get_dashboard as member_get_dashboard
+from .member import get_member_accounts as member_get_accounts
+from .member import refresh_member_info as member_refresh_info
+from .member import validate_handle as member_validate_handle
+from .offers import offer_credex, get_credex
 
 logger = logging.getLogger(__name__)
+
+
+def get_credex_service(state_manager: Any) -> Dict[str, Any]:
+    """Get CredEx service functions with strict state validation"""
+    # Validate required state upfront
+    validation = StateValidator.validate_before_access(
+        state_manager,
+        {"member_id", "jwt_token", "account_id"}
+    )
+    if not validation.is_valid:
+        raise ValueError(validation.error_message)
+
+    # Return service functions that need state
+    return {
+        'validate_handle': lambda handle: validate_member_handle(state_manager, handle),
+        'get_credex': lambda credex_id: get_credex(credex_id, state_manager.get("jwt_token")),
+        'offer_credex': lambda data: offer_credex(data, state_manager.get("jwt_token"))
+    }
 
 
 def handle_login(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:

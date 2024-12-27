@@ -2,18 +2,14 @@
 import logging
 from typing import Any, Dict, Union
 
-from core.messaging.types import (
-    ChannelIdentifier, ChannelType, Message,
-    MessageRecipient, TextContent
-)
+from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
+                                  MessageRecipient, TextContent)
 from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
+from core.config.config import GREETINGS
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
 
-# Constants
-GREETING_KEYWORDS = {"hi", "hello", "hey", "start"}
 BUTTON_ACTIONS = {"confirm_action"}
 MENU_ACTIONS = {
     "offer", "accept", "decline", "cancel",
@@ -45,13 +41,25 @@ def get_action(message_body: str, message_type: str = "text", message: Dict[str,
             return ""
 
         # Handle text messages
-        text = message_body.strip().lower()
+        text = str(message_body).strip().lower() if message_body else ""
+
+        # Log the input for debugging
+        logger.debug(f"Processing input text: '{text}'")
+        logger.debug(f"Menu actions: {MENU_ACTIONS}")
+        logger.debug(f"Is in menu actions: {text in MENU_ACTIONS}")
+
+        # Check if it's a greeting
+        if text in GREETINGS:
+            logger.info(f"Recognized greeting: {text}")
+            return "hi"  # Normalize all greetings to "hi" action
 
         # Check if it's a menu action
         if text in MENU_ACTIONS:
+            logger.info(f"Recognized menu action: {text}")
             return text
 
         # Not an action - return empty string to let flow handler process it
+        logger.debug(f"No action recognized for text: '{text}'")
         return ""
 
     except Exception:
@@ -100,7 +108,7 @@ def extract_input_value(message_body: str, message_type: str = "text",
 
 
 def is_greeting(text: str) -> bool:
-    """Check if message is a greeting
+    """Check if message is a greeting using core config
 
     Args:
         text: Message text to check
@@ -108,7 +116,7 @@ def is_greeting(text: str) -> bool:
     Returns:
         True if message is a greeting
     """
-    return text.lower() in GREETING_KEYWORDS
+    return text.lower() in GREETINGS
 
 
 def handle_invalid_input(state_manager: Any, flow_step_id: str = None) -> Message:
@@ -122,29 +130,17 @@ def handle_invalid_input(state_manager: Any, flow_step_id: str = None) -> Messag
         Error message response
     """
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {
-                "channel": state_manager.get("channel"),
-                "member_id": state_manager.get("member_id")
-            },
-            {"channel"}  # Only channel required
-        )
-        if not validation.is_valid:
-            raise ValueError(validation.error_message)
+        # Get channel (validation handled by state manager)
+        channel = state_manager.get("channel")
 
         # Log invalid input
         audit.log_flow_event(
             "bot_service",
             "invalid_input",
             flow_step_id,
-            {},
+            {"channel_id": channel["identifier"]},
             "failure"
         )
-
-        # Get required data
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
 
         # Return appropriate error message
         error_message = (
@@ -158,7 +154,6 @@ def handle_invalid_input(state_manager: Any, flow_step_id: str = None) -> Messag
 
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id or "pending",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel["identifier"]
@@ -173,7 +168,6 @@ def handle_invalid_input(state_manager: Any, flow_step_id: str = None) -> Messag
         logger.error(f"Failed to handle invalid input: {str(e)}")
         return Message(
             recipient=MessageRecipient(
-                member_id="unknown",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value="unknown"

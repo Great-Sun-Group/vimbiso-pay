@@ -32,7 +32,6 @@ def handle_error(state_manager: Any, operation: str, error: ValueError) -> Messa
     channel_id = get_channel_id(state_manager)
     return Message(
         recipient=MessageRecipient(
-            member_id=state_manager.get("member_id") or "unknown",
             channel_id=ChannelIdentifier(
                 channel=ChannelType.WHATSAPP,
                 value=channel_id

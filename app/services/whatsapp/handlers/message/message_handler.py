@@ -7,21 +7,11 @@ from core.utils.flow_audit import FlowAuditLogger
 from core.utils.state_validator import StateValidator
 
 from ... import auth_handlers as auth
-from .flow_manager import initialize_flow, FLOW_HANDLERS
-from .input_handler import get_action, extract_input_value
+from .flow_manager import FLOW_HANDLERS, initialize_flow
+from .input_handler import MENU_ACTIONS, extract_input_value, get_action
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
-
-# Flow type mapping at module level
-FLOW_TYPES: Dict[str, str] = {
-    "offer": "offer",
-    "accept": "accept",
-    "decline": "decline",
-    "cancel": "cancel",
-    "start_registration": "registration",
-    "upgrade_tier": "upgrade"
-}
 
 
 def handle_menu_action(state_manager: Any, action: str) -> Message:
@@ -31,26 +21,32 @@ def handle_menu_action(state_manager: Any, action: str) -> Message:
         Message: Core message type
     """
     try:
+        # Debug state
+        logger.info(f"Current state: {state_manager._state}")
+
+        # Get authentication state
+        authenticated = state_manager.get("authenticated")
+        logger.info(f"Authenticated value: {authenticated}")
+
+        # If not authenticated, must login first - no action continuation
+        if not authenticated:
+            logger.info("Not authenticated, attempting login")
+            return auth.handle_hi(state_manager)
+
         # Validate state access at boundary
         validation = StateValidator.validate_before_access(
-            {"authenticated": state_manager.get("authenticated")},
+            {"authenticated": authenticated},
             {"authenticated"}
         )
         if not validation.is_valid:
             raise ValueError(validation.error_message)
 
-        # Check authentication
-        authenticated = state_manager.get("authenticated")
-        if not authenticated:
-            # Update state and show login menu
-            success, error = state_manager.update_state({"login_required": True})
-            if not success:
-                raise ValueError(f"Failed to update state: {error}")
-
-            return auth.handle_action_menu(state_manager)
-
-        # Get flow type
-        flow_type = FLOW_TYPES[action]
+        # Map special flow types
+        flow_type = action
+        if action == "start_registration":
+            flow_type = "registration"
+        elif action == "upgrade_tier":
+            flow_type = "upgrade"
 
         # Initialize flow
         return initialize_flow(state_manager, flow_type)
@@ -89,7 +85,7 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
         action = get_action(message_text, message_type, message)
 
         # Handle menu action
-        if action in FLOW_TYPES:
+        if action in MENU_ACTIONS:
             return handle_menu_action(state_manager, action)
 
         # Handle active flow
@@ -105,16 +101,27 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
             if flow_type in FLOW_HANDLERS:
                 # Get handler function
                 handler_name = FLOW_HANDLERS[flow_type]
-                handler_module = __import__(f"..credex.flows.{flow_type}", fromlist=[handler_name])
+                handler_module = __import__(f"app.services.whatsapp.handlers.credex.flows.{flow_type}", fromlist=[handler_name])
                 handler_func = getattr(handler_module, handler_name)
+
+                # Get credex service if needed
+                credex_service = None
+                if flow_type == "offer":
+                    from services.credex.service import get_credex_service
+                    credex_service = get_credex_service(state_manager)
 
                 # Process step
                 input_value = extract_input_value(message_text, message_type)
-                return handler_func(state_manager, current_step, input_value)
+                return handler_func(state_manager, current_step, input_value, credex_service)
             else:
                 raise ValueError(f"Unknown flow type: {flow_type}")
 
-        # Default to menu
+        # If not authenticated, attempt login
+        if not state_manager.get("authenticated"):
+            logger.info("Not authenticated, attempting login")
+            return auth.handle_hi(state_manager)
+
+        # Default to menu only if authenticated
         return auth.handle_action_menu(state_manager)
 
     except ValueError as e:

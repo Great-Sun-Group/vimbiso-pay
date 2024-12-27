@@ -88,8 +88,10 @@ def handle_initial_message(state_manager: Any) -> Dict[str, Any]:
         # Initialize flow data
         new_state = {
             "flow_data": {
-                "id": "credex_flow",
-                "step": 0
+                "flow_type": "credex_flow",
+                "step": 0,
+                "current_step": "start",
+                "data": {}
             }
         }
 
@@ -153,11 +155,16 @@ def handle_flow_message(state_manager: Any, message: Dict[str, Any], credex_serv
             raise ValueError(f"Invalid {current_step['id']} format")
 
         # Update flow data
-        new_flow_data = flow_data.copy()
-        new_flow_data.update({
-            f"input_{flow_data['step']}": message.get("text", "").strip(),
-            "step": flow_data["step"] + 1
-        })
+        # Update flow data
+        new_flow_data = {
+            "flow_type": flow_data["flow_type"],
+            "step": flow_data["step"] + 1,
+            "current_step": steps[flow_data["step"] + 1]["id"],
+            "data": {
+                **flow_data.get("data", {}),
+                steps[flow_data["step"]]["id"]: message.get("text", "").strip()
+            }
+        }
 
         # Update state
         success, error = state_manager.update_state({"flow_data": new_flow_data})

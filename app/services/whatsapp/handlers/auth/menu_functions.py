@@ -23,7 +23,6 @@ def create_error_message(state_manager: Any, error_msg: str, error_type: str = "
 
         return Message(
             recipient=MessageRecipient(
-                member_id=state_manager.get("member_id") or "pending",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel["identifier"]
@@ -45,7 +44,6 @@ def create_error_message(state_manager: Any, error_msg: str, error_type: str = "
         logger.error(f"Failed to create error message: {str(e)}")
         return Message(
             recipient=MessageRecipient(
-                member_id="unknown",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value="unknown"
@@ -86,14 +84,27 @@ def handle_menu(state_manager: Any) -> Message:
             return show_dashboard(state_manager)
 
         from .auth_flow import handle_registration
+
         # Check if login is required
         if state_manager.get("login_required"):
             success, error = state_manager.update_state({
                 "flow_action": "login",
-                "login_required": False  # Reset after use
+                "login_required": False,  # Reset after use
+                "flow_data": {
+                    "flow_type": "auth",
+                    "step": 0,
+                    "current_step": "login"
+                }
             })
         else:
-            success, error = state_manager.update_state({"flow_action": "register"})
+            success, error = state_manager.update_state({
+                "flow_action": "register",
+                "flow_data": {
+                    "flow_type": "auth",
+                    "step": 0,
+                    "current_step": "registration"
+                }
+            })
 
         if not success:
             raise StateException(f"Failed to update state: {error}")
@@ -129,7 +140,12 @@ def handle_hi(state_manager: Any) -> Message:
             # User not found - start registration
             success, error = state_manager.update_state({
                 "flow_action": "register",
-                "authenticated": False
+                "authenticated": False,
+                "flow_data": {
+                    "flow_type": "auth",
+                    "step": 0,
+                    "current_step": "registration"
+                }
             })
             if not success:
                 raise StateException(f"Failed to update state: {error}")
@@ -157,7 +173,14 @@ def handle_hi(state_manager: Any) -> Message:
 def handle_refresh(state_manager: Any) -> Message:
     """Handle dashboard refresh"""
     try:
-        success, error = state_manager.update_state({"dashboard_message": "Dashboard refreshed"})
+        success, error = state_manager.update_state({
+            "dashboard_message": "Dashboard refreshed",
+            "flow_data": {
+                "flow_type": "dashboard",
+                "step": 0,
+                "current_step": "refresh"
+            }
+        })
         if not success:
             raise StateException(f"Failed to update state: {error}")
         return handle_menu(state_manager)

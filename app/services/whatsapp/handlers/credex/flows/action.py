@@ -107,9 +107,13 @@ def store_selection(state_manager: Any, selection: str, flow_type: str) -> Tuple
 
         # Update state (validation handled by state manager)
         new_flow_data = {
-            **flow_data,
-            "selected_credex_id": credex_id,
-            "current_step": "confirm"
+            "flow_type": flow_data.get("flow_type"),
+            "step": flow_data.get("step", 0),
+            "current_step": "confirm",
+            "data": {
+                **flow_data.get("data", {}),
+                "selected_credex_id": credex_id
+            }
         }
 
         success, error = state_manager.update_state({"flow_data": new_flow_data})
@@ -145,7 +149,7 @@ def get_confirmation_message(state_manager: Any, flow_type: str) -> Message:
 
         return create_confirmation_message(
             channel["identifier"],
-            flow_data["selected_credex_id"],
+            flow_data.get("data", {}).get("selected_credex_id"),
             flow_type
         )
 
@@ -170,7 +174,7 @@ def complete_action(state_manager: Any, flow_type: str) -> Tuple[bool, Dict[str,
         if not flow_data:
             raise StateException("Missing flow data")
 
-        credex_id = flow_data["selected_credex_id"]
+        credex_id = flow_data.get("data", {}).get("selected_credex_id")
 
         # Log attempt
         audit.log_flow_event(

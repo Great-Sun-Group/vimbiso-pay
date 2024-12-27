@@ -11,7 +11,6 @@ from django.core.cache import cache
 from requests.exceptions import RequestException
 
 from core.utils.state_validator import StateValidator
-from ..config.constants import CachedUser
 from ..utils.utils import send_whatsapp_message
 
 logger = logging.getLogger(__name__)
@@ -57,10 +56,9 @@ def get_headers(state_manager: Any, include_auth: bool = True) -> Dict[str, str]
             logger.error("Invalid channel structure")
             return headers
 
-        channel_identifier = channel["identifier"]
-        user = CachedUser(channel_identifier)
-        if user.jwt_token:
-            headers["Authorization"] = f"Bearer {user.jwt_token}"
+        jwt_token = state_manager.get("jwt_token")
+        if jwt_token:
+            headers["Authorization"] = f"Bearer {jwt_token}"
         else:
             logger.warning("No JWT token available for authenticated request")
 

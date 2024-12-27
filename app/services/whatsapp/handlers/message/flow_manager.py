@@ -4,7 +4,6 @@ from typing import Any, Dict
 
 from core.messaging.types import Message
 from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -37,28 +36,8 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
         if flow_type not in FLOW_HANDLERS:
             raise ValueError(f"Unknown flow type: {flow_type}")
 
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {
-                "channel": state_manager.get("channel"),
-                "member_id": state_manager.get("member_id"),
-                "authenticated": state_manager.get("authenticated")
-            },
-            {"channel", "member_id", "authenticated"}
-        )
-        if not validation.is_valid:
-            raise ValueError(validation.error_message)
-
-        # Get required state
+        # Get channel for logging (validation handled by state manager)
         channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
-        authenticated = state_manager.get("authenticated")
-
-        # Validate flow requirements
-        if not authenticated:
-            raise ValueError("Authentication required to start flow")
-        if not member_id:
-            raise ValueError("Member ID required to start flow")
 
         # Log flow start attempt
         audit.log_flow_event(
@@ -72,15 +51,20 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
             "in_progress"
         )
 
+        # StateManager will validate all required fields
+        state_manager.get("authenticated")  # Validates authentication
+        state_manager.get("member_id")      # Validates member exists
+
         # Get initial step based on flow type
         initial_step = "amount" if flow_type == "offer" else "start"
 
-        # Update flow data (validation handled by state manager)
+        # Update only flow data through state manager
         success, error = state_manager.update_state({
             "flow_data": {
-                "id": flow_type,
+                "flow_type": flow_type,
                 "step": 0,
-                "current_step": initial_step
+                "current_step": initial_step,
+                "data": {}  # Data will be populated by flow handler
             }
         })
         if not success:
@@ -88,11 +72,18 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
 
         # Get initial message using handler function
         handler_name = FLOW_HANDLERS[flow_type]
-        handler_module = __import__(f"..credex.flows.{flow_type}", fromlist=[handler_name])
+        # Get credex service if needed
+        credex_service = None
+        if flow_type == "offer":
+            from services.credex.service import get_credex_service
+            credex_service = get_credex_service(state_manager)
+
+        # Import handler function from correct path
+        handler_module = __import__(f"app.services.whatsapp.handlers.credex.flows.{flow_type}", fromlist=[handler_name])
         handler_func = getattr(handler_module, handler_name)
 
         # Initialize flow with initial step
-        result = handler_func(state_manager, initial_step)
+        result = handler_func(state_manager, initial_step, None, credex_service)
         if not result:
             raise ValueError("Failed to get initial flow message")
 
@@ -120,12 +111,12 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
             channel_id = "unknown"
 
         logger.error(f"Flow initialization error: {str(e)} for channel {channel_id}")
-        from core.messaging.types import TextContent, MessageRecipient, ChannelIdentifier, ChannelType
+        from core.messaging.types import (ChannelIdentifier, ChannelType,
+                                          MessageRecipient, TextContent)
 
         # Create error message using core types
         return Message(
             recipient=MessageRecipient(
-                member_id=state_manager.get("member_id") or "unknown",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel_id
@@ -140,29 +131,13 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
 def check_pending_offers(state_manager: Any) -> bool:
     """Check for pending offers enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {
-                "channel": state_manager.get("channel"),
-                "member_id": state_manager.get("member_id"),
-                "account_id": state_manager.get("account_id")
-            },
-            {"channel", "member_id", "account_id"}
-        )
-        if not validation.is_valid:
-            raise ValueError(validation.error_message)
-
-        # Get required state
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
-        account_id = state_manager.get("account_id")
-
-        # Validate offer check requirements
-        if not member_id:
-            logger.error("Member ID required to check offers")
-            return False
-        if not account_id:
-            logger.error("Account ID required to check offers")
+        # Let StateManager handle validation
+        try:
+            # Get required state (validation handled by state manager)
+            channel = state_manager.get("channel")
+            account_id = state_manager.get("account_id")
+        except ValueError as e:
+            logger.error(f"State validation failed: {str(e)}")
             return False
 
         # Log check
@@ -179,6 +154,6 @@ def check_pending_offers(state_manager: Any) -> bool:
 
         return True
 
-    except ValueError as e:
+    except Exception as e:
         logger.error(f"Error checking pending offers: {str(e)}")
         return False

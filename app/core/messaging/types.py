@@ -52,7 +52,6 @@ class ChannelIdentifier:
 @dataclass
 class MessageRecipient:
     """Message recipient information"""
-    member_id: str  # Primary system identifier
     channel_id: ChannelIdentifier  # Channel-specific identifier
     name: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -60,7 +59,6 @@ class MessageRecipient:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
         result = {
-            "member_id": self.member_id,
             "channel": self.channel_id.to_dict()
         }
         if self.name:
@@ -297,11 +295,9 @@ class Message:
             "to": self.recipient.channel_value,  # Use channel-specific identifier
             **self.content.to_dict()
         }
-        # Include member_id in metadata for tracking
-        if not self.metadata:
-            self.metadata = {}
-        self.metadata["member_id"] = self.recipient.member_id
-        result["metadata"] = self.metadata
+        # Only include non-state metadata if present
+        if self.metadata:
+            result["metadata"] = self.metadata.copy()  # Create copy to avoid modifying original
         return result
 
     def __str__(self) -> str:

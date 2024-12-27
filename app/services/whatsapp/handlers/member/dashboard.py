@@ -131,7 +131,6 @@ def handle_dashboard_display(state_manager: Any) -> Message:
 
         return Message(
             recipient=MessageRecipient(
-                member_id=state_manager.get("member_id"),
                 channel_id=ChannelIdentifier(
                     channel=channel_info["type"],
                     value=channel_info["identifier"]
@@ -149,7 +148,6 @@ def handle_dashboard_display(state_manager: Any) -> Message:
         # Return basic error message if we can't create proper message
         return Message(
             recipient=MessageRecipient(
-                member_id=state_manager.get("member_id") or "unknown",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value="unknown"

@@ -3,7 +3,7 @@ import logging
 import sys
 
 from core.api.models import Message as DBMessage  # Rename to avoid confusion
-from core.config.constants import CachedUser
+from core.config.state_manager import StateManager
 from core.messaging.types import Message as DomainMessage  # Import domain Message type
 from core.utils.utils import send_whatsapp_message
 from decouple import config
@@ -121,9 +121,16 @@ class CredexCloudApiWebhook(APIView):
                 logger.warning("No WA ID in contact")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Initialize cached user for state management
-            logger.info(f"Initializing CachedUser for phone: {wa_id}")
-            user = CachedUser(wa_id)
+            # Initialize state manager
+            logger.info(f"Initializing state manager for channel: {wa_id}")
+            state_manager = StateManager(f"channel:{wa_id}")
+
+            # Debug state after initialization
+            logger.info(f"Initial state: {state_manager._state}")
+            logger.info(f"Authenticated: {state_manager.get('authenticated')}")
+            logger.info(f"Member ID: {state_manager.get('member_id')}")
+            logger.info(f"Account ID: {state_manager.get('account_id')}")
+            logger.info(f"Flow Data: {state_manager.get('flow_data')}")
 
             # Extract message text for processing
             message_text = ""
@@ -153,8 +160,8 @@ class CredexCloudApiWebhook(APIView):
                 logger.info("Processing message...")
                 # Process message and get response
                 response = process_bot_message(
-                    payload={"type": message_type, "text": message_text},
-                    state_manager=user._state_manager
+                    payload={"entry": [{"changes": [{"value": payload}]}]},
+                    state_manager=state_manager
                 )
 
                 # Convert domain Message to transport format at boundary

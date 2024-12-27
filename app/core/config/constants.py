@@ -1,4 +1,4 @@
-"""Constants and cached user state management"""
+"""Constants and state management exports"""
 from .config import (
     ACTIVITY_TTL,
     GREETINGS,
@@ -9,9 +9,8 @@ from .config import (
     get_greeting,
     atomic_state,
 )
-from .cached_user import CachedUser
 from .state_manager import StateManager
-from .state_utils import prepare_state_update, update_critical_fields
+from .state_utils import merge_updates, get_channel_info
 
 __all__ = [
     'ACTIVITY_TTL',
@@ -22,8 +21,7 @@ __all__ = [
     'DELAY',
     'get_greeting',
     'atomic_state',
-    'CachedUser',
     'StateManager',
-    'prepare_state_update',
-    'update_critical_fields',
+    'merge_updates',
+    'get_channel_info',
 ]

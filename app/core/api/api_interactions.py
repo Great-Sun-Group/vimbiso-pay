@@ -5,7 +5,6 @@ from typing import Any, Callable, Dict, Optional
 from core.utils.state_validator import StateValidator
 from django.core.cache import cache
 
-from ..config.constants import CachedUser
 from ..utils.utils import send_whatsapp_message
 from .auth_client import login as auth_login
 from .auth_client import register_member as auth_register
@@ -96,11 +95,10 @@ def refresh_dashboard(state_manager: Any, channel_id: str) -> Optional[Dict[str,
         state_manager.get("jwt_token")
     )
     if success:
-        user = CachedUser(channel_id)
         # Get required state fields with validation at boundary
         required_fields = {"profile", "current_account", "jwt_token", "authenticated"}
         current_state = {
-            field: user.state_manager.get(field)
+            field: state_manager.get(field)
             for field in required_fields
         }
 
@@ -123,11 +121,10 @@ def refresh_member_info(
     """Refreshes member info by making an API call to CredEx"""
     logger.info("Refreshing member info")
 
-    user = CachedUser(channel_id)
     # Get required state fields with validation at boundary
     required_fields = {"profile", "current_account", "jwt_token", "authenticated"}
     current_state = {
-        field: user.state_manager.get(field)
+        field: state_manager.get(field)
         for field in required_fields
     }
 

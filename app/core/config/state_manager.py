@@ -44,6 +44,7 @@ class StateManager:
                 "member_id": None,
                 "jwt_token": None,
                 "authenticated": False,
+                "account_id": None,
                 "flow_data": None
             }
 
@@ -52,26 +53,35 @@ class StateManager:
             if not validation.is_valid:
                 raise StateException(f"Invalid initial state structure: {validation.error_message}")
 
-            # Attempt atomic update with initial state
-            success, error = atomic_state.atomic_update(self.key_prefix, initial_state, ACTIVITY_TTL)
-            if not success:
-                # If update failed, get existing state
-                state_data, get_error = atomic_state.atomic_get(self.key_prefix)
-                if get_error:
-                    raise StateException(f"Failed to get state after update failure: {get_error}")
+            # Try to get existing state first
+            logger.info(f"Getting existing state for key: {self.key_prefix}")
+            state_data, get_error = atomic_state.atomic_get(self.key_prefix)
+            logger.info(f"Got state data: {state_data}")
 
+            if get_error:
+                logger.error(f"Error getting state: {get_error}")
+                raise StateException(f"Failed to get state: {get_error}")
+
+            # If no existing state, use initial state
+            if state_data is None:
+                logger.info("No existing state found, using initial state")
+                state_data = initial_state
+            else:
                 # Validate existing state
-                if not isinstance(state_data, dict):
-                    raise StateException("Existing state must be a dictionary")
-
+                logger.info("Validating existing state")
                 validation = StateValidator.validate_state(state_data)
                 if not validation.is_valid:
-                    raise StateException(f"Invalid existing state structure: {validation.error_message}")
+                    logger.warning(f"Invalid state structure: {validation.error_message}")
+                    state_data = initial_state
 
-                return state_data
+            # Update state in Redis
+            logger.info(f"Updating state in Redis for channel {channel_id}: {state_data}")
+            success, error = atomic_state.atomic_update(self.key_prefix, state_data, ACTIVITY_TTL)
+            if not success:
+                raise StateException(f"Failed to update state: {error}")
 
-            logger.info(f"Initialized state for channel: {channel_id}")
-            return initial_state
+            logger.info(f"Successfully initialized state for channel {channel_id}: {state_data}")
+            return state_data
 
         except StateException as e:
             logger.error(f"State initialization error: {str(e)}")

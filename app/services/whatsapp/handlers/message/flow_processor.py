@@ -3,7 +3,6 @@ import logging
 from typing import Any, Dict, Optional
 
 from core.utils.flow_audit import FlowAuditLogger
-from core.utils.state_validator import StateValidator
 from ...types import WhatsAppMessage
 from ..member.dashboard import handle_dashboard_display
 
@@ -28,33 +27,11 @@ def process_flow(
 ) -> WhatsAppMessage:
     """Process flow continuation enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Validate ALL required state at boundary
-        required_fields = {"channel", "flow_data", "member_id", "authenticated"}
-        current_state = {
-            field: state_manager.get(field)
-            for field in required_fields
-        }
-
-        # Initial validation
-        validation = StateValidator.validate_before_access(
-            current_state,
-            {"channel", "flow_data"}  # Core requirements
-        )
-        if not validation.is_valid:
-            raise ValueError(f"State validation failed: {validation.error_message}")
-
-        # Get channel info (SINGLE SOURCE OF TRUTH)
+        # Let StateManager handle validation
         channel = state_manager.get("channel")
-        if not channel or not channel.get("identifier"):
-            raise ValueError("Channel identifier not found")
+        flow_type = flow_data.get("flow_type") if isinstance(flow_data, dict) else None
 
-        # Validate flow data structure
-        if not isinstance(flow_data, dict):
-            raise ValueError("Invalid flow data structure")
-
-        # Get and validate flow type
-        flow_type = flow_data.get("id")
-        if not flow_type or not isinstance(flow_type, str):
+        if not flow_type:
             raise ValueError("Invalid flow type")
 
         # Get handler function
@@ -62,7 +39,7 @@ def process_flow(
         if not handler_name:
             raise ValueError(f"Unsupported flow type: {flow_type}")
 
-        handler_module = __import__(f"..{flow_type}.handler", fromlist=[handler_name])
+        handler_module = __import__(f"services.whatsapp.handlers.credex.flows.{flow_type}", fromlist=[handler_name])
         handler_func = getattr(handler_module, handler_name)
 
         # Get current step
@@ -105,25 +82,8 @@ def process_flow(
 def handle_flow_completion(state_manager: Any, success_message: Optional[str] = None) -> WhatsAppMessage:
     """Handle flow completion enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Validate ALL required state at boundary
-        required_fields = {"channel", "member_id", "flow_data", "authenticated"}
-        current_state = {
-            field: state_manager.get(field)
-            for field in required_fields
-        }
-
-        # Validate required fields
-        validation = StateValidator.validate_before_access(
-            current_state,
-            {"channel", "member_id", "flow_data"}
-        )
-        if not validation.is_valid:
-            raise ValueError(f"State validation failed: {validation.error_message}")
-
-        # Get channel info (SINGLE SOURCE OF TRUTH)
+        # Let StateManager handle validation
         channel = state_manager.get("channel")
-        if not channel or not channel.get("identifier"):
-            raise ValueError("Channel identifier not found")
 
         # Log completion
         audit.log_flow_event(
