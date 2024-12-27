@@ -38,18 +38,24 @@ class CredexFlow(Flow):
         # Initialize core attributes
         self.validator = CredexFlowValidator()
         self.credex_service = None
-        self.flow_type = flow_type
+        self.flow_type = flow_type or (state.data.get("flow_data", {}).get("data", {}).get("flow_type") if state else None)
 
-        # Validate state has required fields
-        if state:
-            if not state.member_id:
-                raise ValueError("State missing member_id")
-            if not isinstance(state.data, dict):
-                raise ValueError("State data must be dictionary")
-            if "channel" not in state.data:
-                raise ValueError("State missing channel info")
+        if not self.flow_type:
+            raise ValueError("Flow type is required")
 
-        # Initialize base class with minimal state
+        # Validate state structure and required fields
+        if not state:
+            raise ValueError("State is required for CredexFlow")
+
+        if not state.member_id:
+            raise ValueError("State missing member_id")
+
+        if not isinstance(state.data, dict):
+            raise ValueError("State data must be dictionary")
+
+        # Channel info will be retrieved from service state when needed
+
+        # Initialize base class with empty steps - they'll be created after service init
         super().__init__(id=id, steps=[], state=state)
 
         # Log initialization with proper context
@@ -127,6 +133,29 @@ class CredexFlow(Flow):
 
         return state
 
+    def process_input(self, input_data: Any) -> Optional[Dict[str, Any]]:
+        """Override to handle WhatsApp messaging"""
+        try:
+            return super().process_input(input_data)
+        except ValueError as e:
+            # Get channel info from service state
+            service_state = self._get_service_state()
+            channel_id = service_state["channel"]["identifier"]
+
+            # Create error message
+            from services.whatsapp.types import WhatsAppMessage
+            if str(e) == "Invalid input" and self.current_step and self.current_step.id == "amount":
+                return WhatsAppMessage.create_text(
+                    channel_id,
+                    "Invalid amount format. Examples:\n"
+                    "100     (USD)\n"
+                    "USD 100\n"
+                    "ZWG 100\n"
+                    "XAU 1\n\n"
+                    "Please ensure you enter a valid number with an optional currency code."
+                )
+            return WhatsAppMessage.create_text(channel_id, str(e))
+
     def _get_channel_identifier(self) -> str:
         """Get channel identifier from service state using StateManager"""
         state = self._get_service_state()
@@ -134,21 +163,33 @@ class CredexFlow(Flow):
 
     def _get_amount_prompt(self, _) -> Dict[str, Any]:
         """Get amount prompt message"""
+        # Get service state - SINGLE SOURCE OF TRUTH
+        service_state = self._get_service_state()
+        if not service_state.get("member_id"):
+            raise ValueError("Missing member_id in service state")
+
         return CredexTemplates.create_amount_prompt(
-            self._get_channel_identifier()
+            self._get_channel_identifier(),
+            service_state  # Pass top level state containing member_id
         )
 
     def _get_handle_prompt(self, _) -> Dict[str, Any]:
         """Get handle prompt message"""
+        if not self.credex_service:
+            raise ValueError("Service not initialized")
         return CredexTemplates.create_handle_prompt(
-            self._get_channel_identifier()
+            self._get_channel_identifier(),
+            self.credex_service.state_manager  # Pass state manager - SINGLE SOURCE OF TRUTH
         )
 
     def _create_list_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Create list selection message"""
+        if not self.credex_service:
+            raise ValueError("Service not initialized")
         return CredexTemplates.create_pending_offers_list(
             self._get_channel_identifier(),
-            self.data
+            self.data,
+            self.credex_service.state_manager  # Pass state manager - SINGLE SOURCE OF TRUTH
         )
 
     def _create_confirmation_message(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -164,6 +205,9 @@ class CredexFlow(Flow):
 
     def _create_offer_confirmation(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Create offer confirmation message"""
+        if not self.credex_service:
+            raise ValueError("Service not initialized")
+
         amount_data = state.get("amount_denom", {})
         amount = self._format_amount(
             amount_data.get("amount", 0),
@@ -176,22 +220,30 @@ class CredexFlow(Flow):
             self._get_channel_identifier(),
             amount,
             handle,
-            name
+            name,
+            self.credex_service.state_manager  # Pass state manager - SINGLE SOURCE OF TRUTH
         )
 
     def _create_cancel_confirmation(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Create cancel confirmation message"""
+        if not self.credex_service:
+            raise ValueError("Service not initialized")
+
         amount = state.get("amount", "0")
         counterparty = state.get("counterparty", "Unknown")
 
         return CredexTemplates.create_cancel_confirmation(
             self._get_channel_identifier(),
             amount,
-            counterparty
+            counterparty,
+            self.credex_service.state_manager  # Pass state manager - SINGLE SOURCE OF TRUTH
         )
 
     def _create_action_confirmation(self, state: Dict[str, Any], action: str) -> Dict[str, Any]:
         """Create action confirmation message"""
+        if not self.credex_service:
+            raise ValueError("Service not initialized")
+
         amount = self._format_amount(
             float(state.get("amount", "0.00")),
             state.get("denomination", "USD")
@@ -202,7 +254,8 @@ class CredexFlow(Flow):
             self._get_channel_identifier(),
             amount,
             counterparty,
-            action
+            action,
+            self.credex_service.state_manager  # Pass state manager - SINGLE SOURCE OF TRUTH
         )
 
     def _validate_button_response(self, response: Union[str, Dict[str, Any]]) -> bool:
@@ -365,10 +418,9 @@ class CredexFlow(Flow):
 
         handle = handle.strip()
 
-        # Get current state and validate profile
-        current_state = self._get_service_state()
-        if not current_state.get("profile"):
-            raise ValueError("Profile data not found")
+        # Validate flow state - SINGLE SOURCE OF TRUTH
+        if not self.state or not self.state.member_id:
+            raise ValueError("Missing member ID in flow state")
 
         try:
             # Store validation context
@@ -452,11 +504,14 @@ class CredexFlow(Flow):
                 )
                 return
 
-            # Get member ID and channel ID from state
-            member_id = current_state.get("member_id")
+            # Get member ID from flow state - SINGLE SOURCE OF TRUTH
+            if not self.state or not self.state.member_id:
+                raise ValueError("Missing member ID in flow state")
+
+            # Get channel ID from state
             channel_id = StateManager.get_channel_identifier(current_state)
-            if not member_id or not channel_id:
-                raise ValueError("Missing required state fields")
+            if not channel_id:
+                raise ValueError("Missing channel identifier")
 
             # Structure profile data
             action = response.get("data", {}).get("action", {})
@@ -465,7 +520,7 @@ class CredexFlow(Flow):
                     "id": action.get("id", ""),
                     "type": action.get("type"),
                     "timestamp": datetime.now().isoformat(),
-                    "actor": member_id,
+                    "actor": self.state.member_id,  # From flow state
                     "details": action.get("details", {}),
                     "message": (
                         action.get("message") or
@@ -489,7 +544,7 @@ class CredexFlow(Flow):
 
             # Build new state following SINGLE SOURCE OF TRUTH
             new_state = {
-                "member_id": member_id,  # SINGLE SOURCE OF TRUTH
+                "member_id": self.state.member_id,  # From flow state - SINGLE SOURCE OF TRUTH
                 "channel": StateManager.prepare_state_update(
                     current_state={},
                     channel_identifier=channel_id

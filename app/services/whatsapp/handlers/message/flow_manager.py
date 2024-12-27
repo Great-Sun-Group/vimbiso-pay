@@ -172,7 +172,7 @@ class FlowManager:
             })
 
             # Get initial message
-            result = (flow.current_step.get_message(flow.data) if flow.current_step
+            result = (flow.current_step.get_message(flow.state) if flow.current_step
                       else WhatsAppMessage.create_text(channel_id, "Flow not properly initialized"))
 
             audit.log_flow_event(

@@ -37,23 +37,32 @@ class FlowState:
         "_validation_state": {}
     })
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, include_member_id: bool = False) -> Dict[str, Any]:
         """Convert to dict for JSON serialization
+
+        Args:
+            include_member_id: Whether to include member_id in output.
+                             Only set True when needed for message templates.
 
         Returns:
             Dict containing:
             - id: Flow ID
             - step: Current step
             - data: Flow data with validation context
+            - member_id: Only included if include_member_id=True
 
         Note:
-            Explicitly excludes member_id to maintain SINGLE SOURCE OF TRUTH
+            Normally excludes member_id to maintain SINGLE SOURCE OF TRUTH
+            Only includes member_id when explicitly requested for templates
         """
-        return {
+        result = {
             "id": self.id,
             "step": self.step,
             "data": self.data
         }
+        if include_member_id:
+            result["member_id"] = self.member_id
+        return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], member_id: str) -> 'FlowState':
@@ -266,13 +275,15 @@ class Flow:
                 "timestamp": audit.get_current_timestamp()
             }
 
-            # Create new state with validation info
+            # Create new state with validation
             new_state = FlowState(
                 id=self.id,
                 member_id=self.state.member_id,
                 step=self.current_index,
                 data={
-                    **self.state.data,
+                    "flow_type": self.state.data.get("flow_type"),
+                    **{k: v for k, v in self.state.data.items()
+                       if k != "flow_type"},  # Copy other fields
                     "_validation_state": validation_state
                 }
             )
@@ -287,22 +298,10 @@ class Flow:
             )
 
             # Log input processing
-            logger.debug(f"[Flow {self.id}] Processing input for step {step.id}")
-            logger.debug(f"[Flow {self.id}] Input data: {input_data}")
-            logger.debug(f"[Flow {self.id}] Current validation state: {validation_state}")
-
-            # Validate input
             validation_result = step.validate(input_data)
-            audit.log_validation_event(
-                self.id,
-                step.id,
-                input_data,
-                validation_result
-            )
+            logger.debug(f"Input validation result: {validation_result}")
 
             if not validation_result:
-                from services.whatsapp.types import WhatsAppMessage
-
                 # Update validation state with error
                 new_state.data["_validation_state"].update({
                     "success": False,
@@ -322,21 +321,8 @@ class Flow:
                 # Store error state
                 self.set_state(new_state)
 
-                channel_identifier = new_state.data.get("channel", {}).get("identifier")
-                if step.id == "amount":
-                    return WhatsAppMessage.create_text(
-                        channel_identifier,
-                        "Invalid amount format. Examples:\n"
-                        "100     (USD)\n"
-                        "USD 100\n"
-                        "ZWG 100\n"
-                        "XAU 1\n\n"
-                        "Please ensure you enter a valid number with an optional currency code."
-                    )
-                return WhatsAppMessage.create_text(
-                    channel_identifier,
-                    "Invalid input"
-                )
+                # Let subclass handle error response
+                raise ValueError("Invalid input")
 
             # Transform input
             transformed_data = step.transform(input_data)
@@ -381,7 +367,6 @@ class Flow:
 
         except ValueError as validation_error:
             # Handle validation errors with context
-            from services.whatsapp.types import WhatsAppMessage
 
             # Create error state
             error_state = FlowState(
@@ -389,7 +374,9 @@ class Flow:
                 member_id=self.state.member_id,
                 step=self.current_index,
                 data={
-                    **self.state.data,
+                    "flow_type": self.state.data.get("flow_type"),
+                    **{k: v for k, v in self.state.data.items()
+                       if k != "flow_type"},  # Copy other fields
                     "_validation_state": {
                         **validation_state,
                         "success": False,
@@ -411,11 +398,8 @@ class Flow:
             # Store error state
             self.set_state(error_state)
 
-            channel_identifier = error_state.data.get("channel", {}).get("identifier")
-            return WhatsAppMessage.create_text(
-                channel_identifier,
-                str(validation_error)
-            )
+            # Let subclass handle error response
+            raise ValueError(str(validation_error))
 
         except Exception as e:
             error_msg = f"Process error in {step.id}: {str(e)}"
@@ -431,45 +415,8 @@ class Flow:
                 error_msg
             )
 
-            # Attempt smart state recovery
-            current_step = self.current_step.id if self.current_step else None
-
-            # First try to recover to current step
-            last_valid_state = audit.get_last_valid_state(self.id, current_step)
-            if last_valid_state:
-                recovery_state = FlowState.from_dict(last_valid_state, self.state.member_id)
-                self.set_state(recovery_state)
-                logger.info(f"Recovered to valid state at step {current_step}")
-                channel_identifier = recovery_state.data.get("channel", {}).get("identifier")
-                return WhatsAppMessage.create_text(
-                    channel_identifier,
-                    "Recovered from error. Please try your last action again."
-                )
-
-            # If can't recover to current step, try to get recovery path
-            if current_step:
-                recovery_path = audit.get_recovery_path(self.id, current_step)
-                if recovery_path:
-                    # Find the last successful state in the path
-                    for state_dict in reversed(recovery_path):
-                        if state_dict.get("_validation_state", {}).get("success"):
-                            recovery_state = FlowState.from_dict(state_dict, self.state.member_id)
-                            self.set_state(recovery_state)
-                            recovered_step = state_dict.get("_validation_state", {}).get("step_id", "previous")
-                            logger.info(f"Recovered to earlier valid state at step {recovered_step}")
-                            channel_identifier = recovery_state.data.get("channel", {}).get("identifier")
-                            return WhatsAppMessage.create_text(
-                                channel_identifier,
-                                "Recovered to a previous step. Please continue from there."
-                            )
-
-            # If all recovery attempts fail, return error
-            from services.whatsapp.types import WhatsAppMessage
-            channel_identifier = self.state.data.get("channel", {}).get("identifier")
-            return WhatsAppMessage.create_text(
-                channel_identifier,
-                f"Error: {str(e)}"
-            )
+            # Let subclass handle error recovery and response
+            raise ValueError(str(e))
 
     def complete(self) -> Optional[Dict[str, Any]]:
         """Handle flow completion - override in subclasses"""

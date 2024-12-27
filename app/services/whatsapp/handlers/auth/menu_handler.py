@@ -106,7 +106,7 @@ class MenuHandler(BaseActionHandler):
 
             # If we're coming from a successful login, show dashboard
             if login:
-                return self.show_dashboard(message="✅ Login successful" if not message else message)
+                return self.show_dashboard(message="Login successful" if not message else message)
 
             # Check if user is already authenticated
             if current_state.get("authenticated"):

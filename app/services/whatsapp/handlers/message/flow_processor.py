@@ -102,9 +102,10 @@ class FlowProcessor:
             # Initialize flow with state
             flow = flow_class(state=flow_state, **kwargs)
 
-            # Set service for Credex flows
+            # Set service for Credex flows and initialize steps
             if isinstance(flow, CredexFlow):
                 flow.credex_service = self.service.credex_service
+                flow.initialize_steps()
 
             return flow
 
@@ -310,6 +311,6 @@ class FlowProcessor:
         dashboard_state.data["success_message"] = success_message
 
         # Initialize dashboard with state
-        dashboard.set_state(dashboard_state.to_dict())
+        dashboard.set_state(dashboard_state)
 
         return WhatsAppMessage.from_core_message(dashboard.complete())

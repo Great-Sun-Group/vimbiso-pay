@@ -1,6 +1,7 @@
 """Credex-specific message templates"""
 from typing import Any, Dict, Optional
 
+from core.config.state_manager import StateManager
 from core.messaging.types import (
     Message,
     MessageRecipient,
@@ -17,11 +18,17 @@ class CredexTemplates:
     """Templates for credex-related messages"""
 
     @staticmethod
-    def create_amount_prompt(channel_id: str, member_id: str) -> Message:
-        """Create amount prompt message"""
+    def create_amount_prompt(channel_id: str, state_manager: 'StateManager') -> Message:
+        """Create amount prompt message using state manager
+
+        Args:
+            channel_id: Channel identifier
+            state_manager: StateManager instance providing SINGLE SOURCE OF TRUTH
+        """
+        state = state_manager.get_state()
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
+                member_id=state["member_id"],
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel_id
@@ -38,11 +45,17 @@ class CredexTemplates:
         )
 
     @staticmethod
-    def create_handle_prompt(channel_id: str, member_id: str) -> Message:
-        """Create handle prompt message"""
+    def create_handle_prompt(channel_id: str, state_manager: StateManager) -> Message:
+        """Create handle prompt message using state manager
+
+        Args:
+            channel_id: Channel identifier
+            state_manager: StateManager instance providing SINGLE SOURCE OF TRUTH
+        """
+        state = state_manager.get_state()
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
+                member_id=state["member_id"],
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel_id
@@ -57,7 +70,7 @@ class CredexTemplates:
     def create_pending_offers_list(
         channel_id: str,
         data: Dict[str, Any],
-        member_id: str
+        state_manager: StateManager
     ) -> Message:
         """Create pending offers list message"""
         flow_type = data.get("flow_type", "cancel")
@@ -76,7 +89,7 @@ class CredexTemplates:
         if not offers:
             return Message(
                 recipient=MessageRecipient(
-                    member_id=member_id,
+                    member_id=state_manager.get_state()["member_id"],
                     channel_id=ChannelIdentifier(
                         channel=ChannelType.WHATSAPP,
                         value=channel_id
@@ -110,7 +123,7 @@ class CredexTemplates:
 
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
+                member_id=state_manager.get_state()["member_id"],
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel_id
@@ -132,12 +145,12 @@ class CredexTemplates:
         amount: str,
         handle: str,
         name: str,
-        member_id: str
+        state_manager: StateManager
     ) -> Message:
         """Create offer confirmation message"""
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
+                member_id=state_manager.get_state()["member_id"],
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel_id
@@ -161,12 +174,12 @@ class CredexTemplates:
         channel_id: str,
         amount: str,
         counterparty: str,
-        member_id: str
+        state_manager: StateManager
     ) -> Message:
         """Create cancel confirmation message"""
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
+                member_id=state_manager.get_state()["member_id"],
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel_id
@@ -191,12 +204,12 @@ class CredexTemplates:
         amount: str,
         counterparty: str,
         action: str,
-        member_id: str
+        state_manager: StateManager
     ) -> Message:
         """Create action confirmation message"""
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
+                member_id=state_manager.get_state()["member_id"],
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel_id
@@ -216,11 +229,11 @@ class CredexTemplates:
         )
 
     @staticmethod
-    def create_error_message(channel_id: str, error: str, member_id: Optional[str] = None) -> Message:
+    def create_error_message(channel_id: str, error: str, state_manager: Optional[StateManager] = None) -> Message:
         """Create error message"""
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id or "pending",
+                member_id=state_manager.get_state()["member_id"] if state_manager else "pending",
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel_id
@@ -232,11 +245,11 @@ class CredexTemplates:
         )
 
     @staticmethod
-    def create_success_message(channel_id: str, message: str, member_id: str) -> Message:
+    def create_success_message(channel_id: str, message: str, state_manager: StateManager) -> Message:
         """Create success message"""
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
+                member_id=state_manager.get_state()["member_id"],
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
                     value=channel_id
