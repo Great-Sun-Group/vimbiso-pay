@@ -24,7 +24,7 @@ def get_amount_prompt(state_manager: Any) -> Message:
                 )
             ),
             content=TextContent(
-                body="Enter amount to offer (e.g. 100 USD):"
+                body="How much would you like to offer? Your response defaults to USD unless otherwise indicated. Valid examples: `1`, `5`, `3.23`, `53.22 ZWG`, `ZWG 5384.54`, `0.04 XAU`, `CAD 5.18`"
             )
         )
     except StateException as e:
@@ -44,10 +44,28 @@ def validate_amount(amount: str) -> Dict[str, Any]:
     Raises:
         StateException: If validation fails
     """
-    if not amount or len(amount.split()) != 2:
-        raise StateException("Invalid amount format. Please enter amount and currency (e.g. 100 USD)")
+    # All denominations from prompt examples are valid
+    valid_denominations = {"USD", "ZWG", "XAU", "CAD"}
 
-    value, denomination = amount.split()
+    # Handle single number as USD
+    parts = amount.split()
+    if not amount or len(parts) > 2:
+        raise StateException("Invalid amount format. Enter amount with optional denomination (e.g. 100 or 100 USD or USD 100)")
+
+    if len(parts) == 1:
+        value = parts[0]
+        denomination = "USD"  # Default to USD
+    else:
+        # Try both denomination positions
+        first, second = parts
+        # Check if first part is a valid denomination
+        if first.upper() in valid_denominations:
+            denomination = first.upper()
+            value = second
+        else:
+            value = first
+            denomination = second.upper()
+
     try:
         value = float(value)
         if value <= 0:
@@ -55,8 +73,9 @@ def validate_amount(amount: str) -> Dict[str, Any]:
     except ValueError:
         raise StateException("Invalid amount value")
 
-    if denomination not in {"USD", "EUR", "GBP"}:
-        raise StateException("Invalid currency. Supported: USD, EUR, GBP")
+    # Validate final denomination
+    if denomination not in valid_denominations:
+        raise StateException(f"Invalid denomination. Supported: {', '.join(sorted(valid_denominations))}")
 
     return {"amount": value, "denomination": denomination}
 
@@ -71,21 +90,21 @@ def store_amount(state_manager: Any, amount: str) -> None:
     Raises:
         StateException: If validation or storage fails
     """
+    logger.debug(f"Validating amount: {amount}")
+
     # Validate amount (raises StateException if invalid)
     amount_data = validate_amount(amount)
+    logger.debug(f"Amount validated: {amount_data}")
 
-    # Let StateManager handle validation and update
+    # Let StateManager validate structure
     state_manager.update_state({
         "flow_data": {
             "data": {
-                "amount_denom": {
-                    "amount": amount_data["amount"],
-                    "denomination": amount_data["denomination"]
-                }
-            },
-            "current_step": "handle"
+                "amount_denom": amount_data
+            }
         }
     })
+    logger.debug("Amount stored successfully")
 
 
 def get_handle_prompt(state_manager: Any) -> Message:
@@ -136,32 +155,35 @@ def store_handle(state_manager: Any, handle: str) -> None:
     Raises:
         StateException: If validation or storage fails
     """
+    logger.debug(f"Validating handle: {handle}")
+
     # Validate handle (raises StateException if invalid)
     validated_handle = validate_handle(handle)
+    logger.debug(f"Handle validated: {validated_handle}")
 
-    # Let StateManager handle validation and update
+    # Let StateManager validate structure
     state_manager.update_state({
         "flow_data": {
             "data": {
                 "handle": validated_handle
-            },
-            "current_step": "confirm"
+            }
         }
     })
+    logger.debug("Handle stored successfully")
 
 
 def get_confirmation_message(state_manager: Any) -> Message:
     """Get confirmation message with strict state validation"""
     try:
-        # Let StateManager validate all state access
+        # Let StateManager validate and use state directly
         channel = state_manager.get("channel")
-        amount_denom = state_manager.get("flow_data")["data"]["amount_denom"]  # StateManager validates
-        handle = state_manager.get("flow_data")["data"]["handle"]  # StateManager validates
+        flow_data = state_manager.get("flow_data")["data"]  # StateManager validates
 
+        # Use state directly in template
         confirmation_text = (
             f"Please confirm offer details:\n\n"
-            f"Amount: {amount_denom['amount']} {amount_denom['denomination']}\n"
-            f"Recipient: {handle}\n\n"
+            f"Amount: {flow_data['amount_denom']['amount']} {flow_data['amount_denom']['denomination']}\n"
+            f"Recipient: {flow_data['handle']}\n\n"
             f"Reply 'yes' to confirm or 'no' to cancel"
         )
 
@@ -195,32 +217,22 @@ def complete_offer(state_manager: Any, credex_service: Any) -> Dict[str, Any]:
     Raises:
         StateException: If offer completion fails
     """
-    # Let StateManager validate data structure
-    amount_denom = state_manager.get("flow_data")["data"]["amount_denom"]  # StateManager validates
-    handle = state_manager.get("flow_data")["data"]["handle"]
-
-    # Make API call
-    offer_data = {
-        "amount": amount_denom["amount"],
-        "denomination": amount_denom["denomination"],
-        "handle": handle
-    }
-    success, response = credex_service['offer_credex'](offer_data)
+    # Let StateManager validate and pass state directly
+    flow_data = state_manager.get("flow_data")["data"]  # StateManager validates
+    success, response = credex_service['offer_credex'](flow_data)
     if not success:
         error_msg = response.get("message", "Failed to create offer")
         logger.error(f"API call failed: {error_msg}")
         raise StateException(error_msg)
 
-    # Log success
+    # Log success with direct state
     audit.log_flow_event(
         "offer_flow",
         "completion_success",
         None,
         {
             "channel_id": state_manager.get("channel")["identifier"],
-            "amount": amount_denom["amount"],
-            "denomination": amount_denom["denomination"],
-            "handle": handle
+            **flow_data  # Pass state directly without transformation
         },
         "success"
     )
@@ -235,11 +247,16 @@ def process_offer_step(
 ) -> Message:
     """Process offer step enforcing SINGLE SOURCE OF TRUTH"""
     try:
+        logger.debug(f"Processing offer step: '{step}' with input: '{input_data}'")
+
         # Handle each step (StateManager validates state)
         if step == "amount":
             if input_data:
+                logger.debug(f"Storing amount: {input_data}")
                 store_amount(state_manager, input_data)  # Raises StateException if invalid
+                logger.debug("Amount stored successfully, getting handle prompt")
                 return get_handle_prompt(state_manager)
+            logger.debug("No input data, getting amount prompt")
             return get_amount_prompt(state_manager)
 
         elif step == "handle":

@@ -72,10 +72,16 @@ def get_menu_options(account: Dict[str, Any] = None) -> Dict[str, Any]:
     }
 
 
-def handle_dashboard_display(state_manager: Any) -> Message:
-    """Handle dashboard display enforcing SINGLE SOURCE OF TRUTH"""
+def handle_dashboard_display(state_manager: Any, step: str = None, input_data: str = None) -> Message:
+    """Handle dashboard display and menu actions enforcing SINGLE SOURCE OF TRUTH
+
+    Args:
+        state_manager: State manager instance
+        step: Current step (e.g. "display")
+        input_data: Input data (e.g. menu action)
+    """
     try:
-        # Get account data
+        # Get account data and display dashboard
         success, result = get_member_accounts(state_manager)
         if not success:
             raise StateException("Failed to get account details")

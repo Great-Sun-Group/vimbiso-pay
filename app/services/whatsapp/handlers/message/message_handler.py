@@ -14,29 +14,6 @@ logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
 
 
-def handle_menu_action(state_manager: Any, action: str) -> Message:
-    """Handle menu action
-
-    Returns:
-        Message: Core message type
-    """
-    try:
-        # Let StateManager validate authentication
-        state_manager.get("authenticated")
-
-        # Map special flow types (after validation)
-        flow_type = "registration" if action == "start_registration" else (
-            "upgrade" if action == "upgrade_tier" else action
-        )
-
-        # Initialize flow (StateManager validates state)
-        return initialize_flow(state_manager, flow_type)
-
-    except StateException as e:
-        logger.error(f"Menu action error: {str(e)}")
-        return auth.handle_error(state_manager, "Menu action", e)
-
-
 def process_message(state_manager: Any, message_type: str, message_text: str, message: Dict[str, Any] = None) -> Message:
     """Process incoming message enforcing SINGLE SOURCE OF TRUTH
 
@@ -44,38 +21,82 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
         Message: Core message type with recipient and content
     """
     try:
-        # Log message processing start (only log type)
+        # Log message processing start
         audit.log_flow_event(
             "bot_service",
             "message_processing",
             None,
-            {"type": message_type},  # Only log message type
+            {"type": message_type},
             "in_progress"
         )
 
         # Get action from input
-        action = get_action(message_text, message_type, message)
+        action = get_action(message_text, state_manager, message_type, message)
 
-        # Handle menu action
+        # Get current state
+        flow_data = state_manager.get("flow_data")
+
+        # Handle menu actions that start multi-step flows
         if action in MENU_ACTIONS:
-            return handle_menu_action(state_manager, action)
+            # Map special flow types
+            flow_type = "registration" if action == "start_registration" else (
+                "upgrade" if action == "upgrade_tier" else action
+            )
 
-        # Let StateManager validate flow state structure
-        flow_type = state_manager.get("flow_data")["flow_type"]  # StateManager validates
-        current_step = state_manager.get("flow_data")["current_step"]  # StateManager validates
+            # Only initialize flow if it's a multi-step flow
+            if flow_type in FLOW_HANDLERS:
+                # Let StateManager validate authentication
+                state_manager.get("authenticated")
+                return initialize_flow(state_manager, flow_type)
 
-        # Get handler function
-        handler_name = FLOW_HANDLERS[flow_type]
-        # Import flow handler using relative path
-        handler_module = __import__(
-            f"services.whatsapp.handlers.credex.flows.{flow_type}",
-            fromlist=[handler_name]
-        )
-        handler_func = getattr(handler_module, handler_name)
+            # For non-flow actions like refresh, return to dashboard
+            from ...member.dashboard import handle_dashboard_display
+            return handle_dashboard_display(state_manager)
 
-        # Process step through state update
-        input_value = extract_input_value(message_text, message_type)
-        return handler_func(state_manager, current_step, input_value)
+        # If in a multi-step flow, process the step
+        if flow_data and flow_data.get("flow_type") in FLOW_HANDLERS:
+            current_flow = flow_data["flow_type"]
+            current_step = flow_data.get("current_step")
+
+            if not current_step:
+                raise StateException("Missing flow step")
+
+            # Get handler function
+            handler_name = FLOW_HANDLERS[current_flow]
+
+            try:
+                # Import and get handler function
+                if current_flow in ["registration", "upgrade"]:
+                    # Member-related flows
+                    handler_module = __import__(
+                        f"services.whatsapp.handlers.member.{current_flow}",
+                        fromlist=[handler_name]
+                    )
+                    handler_func = getattr(handler_module, handler_name)
+                else:
+                    # CredEx-related flows (offer, accept, decline, cancel)
+                    logger.debug(f"Getting credex flow handler: {current_flow}")
+                    from ...credex.flows import offer, action
+                    if current_flow == "offer":
+                        handler_func = offer.process_offer_step
+                    else:
+                        handler_func = getattr(action, handler_name)
+                    logger.debug(f"Got handler function: {handler_func}")
+            except Exception as e:
+                logger.error(f"Failed to import handler: {str(e)}")
+                raise StateException(f"Failed to load flow handler: {str(e)}")
+
+            # Process step through state update
+            input_value = extract_input_value(message_text, message_type)
+            logger.debug(f"Processing flow input: '{input_value}' for step '{current_step}'")
+
+            result = handler_func(state_manager, current_step, input_value)
+            logger.debug(f"Flow handler result: {result}")
+            return result
+
+        # Default to dashboard for any other input
+        from ...member.dashboard import handle_dashboard_display
+        return handle_dashboard_display(state_manager)
 
     except StateException as e:
         logger.error(f"Message processing error: {str(e)}")

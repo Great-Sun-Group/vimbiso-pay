@@ -32,46 +32,79 @@ These rules are ABSOLUTE and NON-NEGOTIABLE. NO EXCEPTIONS.
 All validation happens through state updates. If you need to validate something, update the state with it and let StateManager validate.
 
 ### Rules
-- NO direct validation of values
-- NO manual validation before/after state.get()
-- NO validation helper functions
+
+#### State Validation Rules
+- NO manual validation after state.get() (StateManager handles this)
+- NO manual verification of state updates (StateManager handles this)
 - NO cleanup code
 - NO error recovery
 - NO state fixing
 
+#### Flow-Specific Validation
+Flow implementations MAY include validation for:
+- Business rules (e.g. amount > 0)
+- Input formatting (e.g. "100 USD" or "USD 100")
+- Data parsing (e.g. converting strings to numbers)
+- Domain-specific requirements (e.g. valid denominations)
+
 ### How It Works
+
 StateManager automatically:
-- Validates all state updates
+- Validates state structure
 - Validates before state access
 - Validates critical fields
 - Raises StateException for invalid state
 
+Flow implementations:
+- Validate business rules
+- Parse/format input data
+- Enforce domain requirements
+- Provide flow-specific error messages
+
 ### Examples
 ```python
-# WRONG - Manual validation
-def validate_amount(amount: str) -> bool:
-    return amount.isdigit() and float(amount) > 0
+# CORRECT - Flow-specific validation
+def validate_amount(amount: str) -> Dict[str, Any]:
+    """Validate amount according to business rules"""
+    valid_denominations = {"USD", "ZWG", "XAU"}
+    parts = amount.split()
 
-# CORRECT - Validate through state update
-def process_amount(state_manager: Any, amount: str) -> None:
+    if not amount or len(parts) > 2:
+        raise StateException("Invalid format. Enter amount with optional denomination")
+
+    # Business logic for parsing amount format
+    value = float(parts[0])
+    if value <= 0:
+        raise StateException("Amount must be greater than 0")
+
+    # Domain-specific denomination validation
+    denom = parts[1] if len(parts) > 1 else "USD"
+    if denom not in valid_denominations:
+        raise StateException(f"Invalid denomination. Supported: {valid_denominations}")
+
+    return {"amount": value, "denomination": denom}
+
+# CORRECT - Update state through StateManager
+def store_amount(state_manager: Any, amount: str) -> None:
+    # Validate business rules
+    amount_data = validate_amount(amount)
+
+    # Let StateManager validate structure
     state_manager.update_state({
         "flow_data": {
-            "input": {
-                "amount": amount  # StateManager validates
+            "data": {  # StateManager preserves data structure
+                "amount_denom": amount_data  # StateManager validates
             }
         }
     })
 
-# WRONG - Manual validation after get
-def get_amount(state_manager: Any) -> float:
-    amount = state_manager.get("amount")
-    if not amount:  # NO manual validation!
-        raise ValueError("Missing amount")
-    return float(amount)
+    # NO manual verification after update!
 
-# CORRECT - Let StateManager validate
-def get_amount(state_manager: Any) -> float:
-    return state_manager.get("flow_data")["amount"]  # StateManager validates
+# WRONG - Manual state verification
+def verify_amount(state_manager: Any) -> None:
+    state = state_manager.get("flow_data")
+    if not state or "amount_denom" not in state:  # NO manual verification!
+        raise StateException("Failed to verify state")
 ```
 
 ## 4. Stateless Handlers

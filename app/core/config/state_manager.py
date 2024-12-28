@@ -110,12 +110,27 @@ class StateManager:
 
             # Handle state updates without transformation
             for key, value in updates.items():
-                if isinstance(value, dict) and isinstance(new_state.get(key), dict):
-                    # For dictionary fields, update nested values
+                if key == "flow_data" and isinstance(value, dict):
+                    # Special handling for flow_data to preserve structure
+                    current_flow_data = new_state.get("flow_data", {})
+                    if isinstance(current_flow_data, dict):
+                        # Update nested flow data while preserving structure
+                        if "data" in value:
+                            current_data = current_flow_data.get("data", {})
+                            if isinstance(current_data, dict):
+                                current_data.update(value["data"])
+                                value["data"] = current_data
+                        new_state["flow_data"] = {**current_flow_data, **value}
+                    else:
+                        new_state["flow_data"] = value
+                elif isinstance(value, dict) and isinstance(new_state.get(key), dict):
+                    # For other dictionary fields, update nested values
                     new_state[key].update(value)
                 else:
                     # For non-dictionary fields or new fields, set directly
                     new_state[key] = value
+
+            logger.debug(f"Updated state: {new_state}")
 
             # Validate complete state
             validation = StateValidator.validate_state(new_state)

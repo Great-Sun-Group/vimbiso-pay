@@ -2,11 +2,11 @@
 import logging
 from typing import Any, Dict, Union
 
+from core.config.config import GREETINGS
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
 from core.utils.exceptions import StateException
 from core.utils.flow_audit import FlowAuditLogger
-from core.config.config import GREETINGS
 
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
@@ -18,16 +18,18 @@ MENU_ACTIONS = {
 }
 
 
-def get_action(message_body: str, message_type: str = "text", message: Dict[str, Any] = None) -> str:
+def get_action(message_body: str, state_manager: Any = None, message_type: str = "text",
+               message: Dict[str, Any] = None) -> str:
     """Extract action from message
 
     Args:
         message_body: Raw message body text
+        state_manager: Optional state manager instance for flow state access
         message_type: Type of message (text, interactive, etc)
         message: Full message data for interactive messages
 
     Returns:
-        Extracted action string
+        Extracted action string or empty string for flow input
     """
     try:
         # Handle interactive messages
@@ -49,17 +51,24 @@ def get_action(message_body: str, message_type: str = "text", message: Dict[str,
         logger.debug(f"Menu actions: {MENU_ACTIONS}")
         logger.debug(f"Is in menu actions: {text in MENU_ACTIONS}")
 
-        # Check if it's a greeting
+        # First check if it's a greeting (using GREETINGS from config)
         if text in GREETINGS:
             logger.info(f"Recognized greeting: {text}")
             return "hi"  # Normalize all greetings to "hi" action
 
-        # Check if it's a menu action
+        # Then check if it's a menu action
         if text in MENU_ACTIONS:
             logger.info(f"Recognized menu action: {text}")
             return text
 
-        # Not an action - return empty string to let flow handler process it
+        # Finally check if we're in an active flow
+        flow_data = state_manager.get("flow_data") if state_manager else None
+        if flow_data and flow_data.get("current_step"):
+            # In a flow - return empty string to let flow handler process it
+            logger.debug(f"In flow '{flow_data.get('flow_type')}' at step '{flow_data.get('current_step')}' - passing input to flow")
+            return ""
+
+        # Not a greeting, flow input, or menu action - return empty string
         logger.debug(f"No action recognized for text: '{text}'")
         return ""
 

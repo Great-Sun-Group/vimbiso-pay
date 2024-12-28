@@ -10,7 +10,7 @@ from core.utils.flow_audit import FlowAuditLogger
 logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
 
-# Flow type to handler function mapping
+# Flow type to handler function mapping for multi-step flows
 FLOW_HANDLERS: Dict[str, Any] = {
     "offer": "process_offer_step",
     "accept": "process_accept_step",
@@ -40,14 +40,18 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
             raise StateException(f"Unknown flow type: {flow_type}")
 
         # Initialize flow state through state update
-        success, error = state_manager.update_state({
+        state_update = {
             "flow_data": {
                 "flow_type": flow_type,
-                "step": 0,
+                "step": 0,  # Must be int for validation
                 "current_step": "amount" if flow_type == "offer" else "start",
                 "data": {}
             }
-        })
+        }
+        logger.debug(f"Initializing flow state with: {state_update}")
+
+        success, error = state_manager.update_state(state_update)
+        logger.debug(f"Flow state initialization result - success: {success}, error: {error}")
         if not success:
             raise StateException(f"Failed to initialize flow state: {error}")
 
@@ -62,15 +66,32 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
 
         # Get handler name and import function
         handler_name = FLOW_HANDLERS[flow_type]  # Already validated flow_type exists
-        # Import flow handler using relative path
-        handler_module = __import__(
-            f"services.whatsapp.handlers.credex.flows.{flow_type}",
-            fromlist=[handler_name]
-        )
-        handler_func = getattr(handler_module, handler_name)
 
-        # Initialize flow through state update
-        result = handler_func(state_manager, "amount" if flow_type == "offer" else "start", None)
+        try:
+            # Import and get handler function
+            if flow_type in ["registration", "upgrade"]:
+                # Member-related flows
+                handler_module = __import__(
+                    f"services.whatsapp.handlers.member.{flow_type}",
+                    fromlist=[handler_name]
+                )
+                handler_func = getattr(handler_module, handler_name)
+            else:
+                # CredEx-related flows (offer, accept, decline, cancel)
+                logger.debug(f"Getting credex flow handler: {flow_type}")
+                from ...handlers.credex.flows import offer, action
+                if flow_type == "offer":
+                    handler_func = offer.process_offer_step
+                else:
+                    handler_func = getattr(action, handler_name)
+                logger.debug(f"Got handler function: {handler_func}")
+        except Exception as e:
+            logger.error(f"Failed to import handler: {str(e)}")
+            raise StateException(f"Failed to load flow handler: {str(e)}")
+
+        # Initialize flow through state update with correct step
+        current_step = state_manager.get("flow_data")["current_step"]
+        result = handler_func(state_manager, current_step, None)
         if not result:
             raise StateException("Failed to get initial flow message")
 

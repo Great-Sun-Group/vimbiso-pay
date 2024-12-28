@@ -36,14 +36,14 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
 
         # Handle message based on type
         if message_type == "text":
-            # Get action from input handler
-            action = get_action(message_text, message_type)
+            # Get action from input handler (pass state_manager for flow check)
+            action = get_action(message_text, state_manager, message_type)
 
             if action == "hi":
                 # Handle greeting action
                 return auth.handle_hi(state_manager)
             elif action:
-                # Handle specific flows like "offer"
+                # Process message through appropriate handler
                 return process_message(state_manager, message_type, message_text.lower())
             else:
                 # Default menu handling for unrecognized text

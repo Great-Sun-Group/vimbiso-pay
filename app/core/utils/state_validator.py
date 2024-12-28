@@ -64,6 +64,12 @@ class StateValidator:
                     error_message=f"{field} must be string, None, boolean or dict"
                 )
 
+        # Validate flow_data structure if present
+        if "flow_data" in state:
+            flow_validation = cls._validate_flow_data(state["flow_data"])
+            if not flow_validation.is_valid:
+                return flow_validation
+
         # Validate no state duplication
         duplication_validation = cls._validate_no_duplication(state)
         if not duplication_validation.is_valid:
@@ -108,6 +114,58 @@ class StateValidator:
                 return ValidationResult(
                     is_valid=False,
                     error_message="Channel metadata must be a dictionary"
+                )
+
+        return ValidationResult(is_valid=True)
+
+    @classmethod
+    def _validate_flow_data(cls, flow_data: Any) -> ValidationResult:
+        """Validate flow data structure"""
+        # Allow empty dict for initial state
+        if flow_data == {}:
+            return ValidationResult(is_valid=True)
+
+        # Must be a dictionary
+        if not isinstance(flow_data, dict):
+            return ValidationResult(
+                is_valid=False,
+                error_message="flow_data must be a dictionary"
+            )
+
+        # Validate required fields
+        required_fields = {"flow_type", "step", "current_step"}
+        missing_fields = required_fields - set(flow_data.keys())
+        if missing_fields:
+            return ValidationResult(
+                is_valid=False,
+                error_message=f"flow_data missing required fields: {', '.join(missing_fields)}"
+            )
+
+        # Validate field types
+        if not isinstance(flow_data["flow_type"], str):
+            return ValidationResult(
+                is_valid=False,
+                error_message="flow_type must be string"
+            )
+
+        if not isinstance(flow_data["step"], int):
+            return ValidationResult(
+                is_valid=False,
+                error_message="step must be integer"
+            )
+
+        if not isinstance(flow_data["current_step"], str):
+            return ValidationResult(
+                is_valid=False,
+                error_message="current_step must be string"
+            )
+
+        # Validate data field if present
+        if "data" in flow_data:
+            if not isinstance(flow_data["data"], dict):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="flow_data.data must be a dictionary"
                 )
 
         return ValidationResult(is_valid=True)
@@ -169,11 +227,17 @@ class StateValidator:
         # Validate types of any nullable fields being accessed
         nullable_accessed = required_fields & cls.NULLABLE_FIELDS
         for field in nullable_accessed:
-            if field in state and not isinstance(state[field], (str, type(None), bool, dict)):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"{field} must be string, None, boolean or dict"
-                )
+            if field in state:
+                if field == "flow_data":
+                    # Validate flow data structure when accessed
+                    flow_validation = cls._validate_flow_data(state[field])
+                    if not flow_validation.is_valid:
+                        return flow_validation
+                elif not isinstance(state[field], (str, type(None), bool, dict)):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"{field} must be string, None, boolean or dict"
+                    )
 
         # Check for duplication only in accessed fields
         unique_accessed = required_fields & cls.UNIQUE_FIELDS
