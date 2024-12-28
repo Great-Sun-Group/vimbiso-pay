@@ -1,4 +1,21 @@
-"""Offer flow implementation enforcing SINGLE SOURCE OF TRUTH"""
+"""Offer flow implementation enforcing SINGLE SOURCE OF TRUTH
+
+The flow maintains two step tracking fields in its state that serve distinct but complementary purposes:
+
+1. step (integer):
+    - Required by framework for validation and progression tracking
+    - Starts at 0 and increments with each step (0 -> 1 -> 2)
+    - Used by StateManager to validate flow progression
+    - Enables audit logging with clear step sequence
+    - Example: step: 0 for amount input, 1 for handle input, 2 for confirmation
+
+2. current_step (string):
+    - Used for flow-specific routing and logic
+    - Provides semantic meaning to each step
+    - Maps to specific validation rules and message handlers
+    - Makes code more readable and maintainable
+    - Example: current_step: "amount" -> "handle" -> "confirm"
+"""
 import logging
 from typing import Any, Dict
 
@@ -80,12 +97,15 @@ def validate_amount(amount: str) -> Dict[str, Any]:
     return {"amount": value, "denomination": denomination}
 
 
-def store_amount(state_manager: Any, amount: str) -> None:
+def store_amount(state_manager: Any, amount: str) -> bool:
     """Store validated amount in state
 
     Args:
         state_manager: State manager instance
         amount: Amount string to validate and store
+
+    Returns:
+        bool: True if storage successful
 
     Raises:
         StateException: If validation or storage fails
@@ -96,15 +116,19 @@ def store_amount(state_manager: Any, amount: str) -> None:
     amount_data = validate_amount(amount)
     logger.debug(f"Amount validated: {amount_data}")
 
-    # Let StateManager validate structure
-    state_manager.update_state({
+    # Let StateManager validate structure and preserve flow metadata
+    success, error = state_manager.update_state({
         "flow_data": {
-            "data": {
+            "data": {  # Only update data
                 "amount_denom": amount_data
             }
         }
     })
+    if not success:
+        raise StateException(f"Failed to store amount: {error}")
+
     logger.debug("Amount stored successfully")
+    return True  # Indicate successful storage
 
 
 def get_handle_prompt(state_manager: Any) -> Message:
@@ -145,12 +169,15 @@ def validate_handle(handle: str) -> str:
     return handle.strip()
 
 
-def store_handle(state_manager: Any, handle: str) -> None:
+def store_handle(state_manager: Any, handle: str) -> bool:
     """Store validated handle in state
 
     Args:
         state_manager: State manager instance
         handle: Handle string to validate and store
+
+    Returns:
+        bool: True if storage successful
 
     Raises:
         StateException: If validation or storage fails
@@ -161,15 +188,19 @@ def store_handle(state_manager: Any, handle: str) -> None:
     validated_handle = validate_handle(handle)
     logger.debug(f"Handle validated: {validated_handle}")
 
-    # Let StateManager validate structure
-    state_manager.update_state({
+    # Let StateManager validate structure and preserve flow metadata
+    success, error = state_manager.update_state({
         "flow_data": {
-            "data": {
+            "data": {  # Only update data
                 "handle": validated_handle
             }
         }
     })
+    if not success:
+        raise StateException(f"Failed to store handle: {error}")
+
     logger.debug("Handle stored successfully")
+    return True  # Indicate successful storage
 
 
 def get_confirmation_message(state_manager: Any) -> Message:
@@ -245,7 +276,13 @@ def process_offer_step(
     step: str,
     input_data: Any = None
 ) -> Message:
-    """Process offer step enforcing SINGLE SOURCE OF TRUTH"""
+    """Process offer step enforcing SINGLE SOURCE OF TRUTH
+
+    The flow progresses through steps using both numeric and named identifiers:
+    - step 0 ("amount"): Collect and validate offer amount
+    - step 1 ("handle"): Collect and validate recipient handle
+    - step 2 ("confirm"): Confirm offer details
+    """
     try:
         logger.debug(f"Processing offer step: '{step}' with input: '{input_data}'")
 
@@ -253,15 +290,40 @@ def process_offer_step(
         if step == "amount":
             if input_data:
                 logger.debug(f"Storing amount: {input_data}")
+                # Store amount data
                 store_amount(state_manager, input_data)  # Raises StateException if invalid
-                logger.debug("Amount stored successfully, getting handle prompt")
+                logger.debug("Amount stored successfully")
+
+                # Update flow state
+                state_manager.update_state({
+                    "flow_data": {
+                        "flow_type": "offer",
+                        "step": 1,
+                        "current_step": "handle"
+                    }
+                })
+                logger.debug("Flow state updated, getting handle prompt")
+
                 return get_handle_prompt(state_manager)
             logger.debug("No input data, getting amount prompt")
             return get_amount_prompt(state_manager)
 
         elif step == "handle":
             if input_data:
+                # Store handle data
                 store_handle(state_manager, input_data)  # Raises StateException if invalid
+                logger.debug("Handle stored successfully")
+
+                # Update flow state
+                state_manager.update_state({
+                    "flow_data": {
+                        "flow_type": "offer",
+                        "step": 2,
+                        "current_step": "confirm"
+                    }
+                })
+                logger.debug("Flow state updated, getting confirmation message")
+
                 return get_confirmation_message(state_manager)
             return get_handle_prompt(state_manager)
 

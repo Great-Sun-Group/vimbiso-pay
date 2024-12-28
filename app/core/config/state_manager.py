@@ -114,13 +114,20 @@ class StateManager:
                     # Special handling for flow_data to preserve structure
                     current_flow_data = new_state.get("flow_data", {})
                     if isinstance(current_flow_data, dict):
-                        # Update nested flow data while preserving structure
-                        if "data" in value:
-                            current_data = current_flow_data.get("data", {})
-                            if isinstance(current_data, dict):
-                                current_data.update(value["data"])
-                                value["data"] = current_data
-                        new_state["flow_data"] = {**current_flow_data, **value}
+                        # Deep merge flow_data to preserve all fields
+                        new_flow_data = current_flow_data.copy()
+                        for k, v in value.items():
+                            if k == "data" and isinstance(v, dict):
+                                # Merge data dictionary
+                                current_data = new_flow_data.get("data", {})
+                                if isinstance(current_data, dict):
+                                    new_flow_data["data"] = {**current_data, **v}
+                                else:
+                                    new_flow_data["data"] = v
+                            else:
+                                # Update other fields
+                                new_flow_data[k] = v
+                        new_state["flow_data"] = new_flow_data
                     else:
                         new_state["flow_data"] = value
                 elif isinstance(value, dict) and isinstance(new_state.get(key), dict):

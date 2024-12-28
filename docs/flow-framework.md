@@ -56,11 +56,17 @@ Supports three interaction types:
 Each flow maintains:
 - Member ID as primary identifier (ONLY at top level)
 - Channel information (ONLY at top level)
-- Current step index
+- Step tracking (dual representation):
+  - step (integer): Framework-level progression tracking (0,1,2...)
+  - current_step (string): Flow-specific routing ("amount","handle"...)
 - Collected data
 - NO validation state
 - NO previous state
 - NO recovery paths
+
+The dual step tracking serves distinct purposes:
+- Integer step: Required by framework for validation and audit logging
+- String current_step: Used by flows for routing and message handling
 
 ## Implementation
 

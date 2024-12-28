@@ -46,21 +46,18 @@ def process_flow(
         # Process step (StateManager validates current_step exists)
         result = handler_func(state_manager, flow_data["current_step"], input_value)
         if not result:
-            # Transition to dashboard flow
+            # Clear flow state and return to default display
             success, error = state_manager.update_state({
                 "flow_data": {
-                    "flow_type": "dashboard",
-                    "step": 0,
-                    "current_step": "display",
                     "data": {
                         "message": "Operation completed successfully"
                     }
                 }
             })
             if not success:
-                raise StateException(f"Failed to transition flow: {error}")
+                raise StateException(f"Failed to clear flow state: {error}")
 
-            # Show dashboard
+            # Show default dashboard display
             return handle_dashboard_display(state_manager)
 
         return result
@@ -89,19 +86,16 @@ def handle_flow_completion(state_manager: Any, success_message: Optional[str] = 
             "success"
         )
 
-        # Transition to dashboard flow
+        # Clear flow state and return to default display
         success, error = state_manager.update_state({
             "flow_data": {
-                "flow_type": "dashboard",
-                "step": 0,
-                "current_step": "display",
                 "data": {
                     "message": success_message or "Operation completed successfully"
                 }
             }
         })
         if not success:
-            raise StateException(f"Failed to transition flow: {error}")
+            raise StateException(f"Failed to clear flow state: {error}")
 
         # Show dashboard
         return handle_dashboard_display(state_manager)

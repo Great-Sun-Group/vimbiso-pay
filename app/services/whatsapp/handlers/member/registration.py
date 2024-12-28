@@ -103,9 +103,6 @@ def handle_registration_completion(state_manager: Any, credex_service: Any) -> M
             "jwt_token": token,
             "authenticated": True,
             "flow_data": {
-                "flow_type": "dashboard",
-                "step": 0,
-                "current_step": "display",
                 "data": {
                     "message": "✅ Registration successful! Welcome to Vimbiso."
                 }

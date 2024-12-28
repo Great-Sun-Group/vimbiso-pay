@@ -52,7 +52,10 @@ Flow implementations MAY include validation for:
 StateManager automatically:
 - Validates state structure
 - Validates before state access
-- Validates critical fields
+- Validates critical fields including:
+  - step (must be integer for framework validation)
+  - current_step (must be string for flow routing)
+  - flow_type (must be string for flow identification)
 - Raises StateException for invalid state
 
 Flow implementations:

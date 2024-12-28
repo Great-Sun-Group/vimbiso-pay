@@ -61,7 +61,13 @@ Core state includes:
 
     # Flow state
     "flow_data": {
-        "step": 0,
+        # Framework-level step tracking (required for validation)
+        "step": 0,  # Integer for progression tracking
+
+        # Flow-specific routing
+        "current_step": "amount",  # String for step identification
+
+        # Flow type identifier
         "flow_type": "flow_type"
     }
 }

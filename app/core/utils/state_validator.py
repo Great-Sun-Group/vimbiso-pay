@@ -121,10 +121,6 @@ class StateValidator:
     @classmethod
     def _validate_flow_data(cls, flow_data: Any) -> ValidationResult:
         """Validate flow data structure"""
-        # Allow empty dict for initial state
-        if flow_data == {}:
-            return ValidationResult(is_valid=True)
-
         # Must be a dictionary
         if not isinstance(flow_data, dict):
             return ValidationResult(
@@ -132,33 +128,38 @@ class StateValidator:
                 error_message="flow_data must be a dictionary"
             )
 
-        # Validate required fields
-        required_fields = {"flow_type", "step", "current_step"}
-        missing_fields = required_fields - set(flow_data.keys())
-        if missing_fields:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"flow_data missing required fields: {', '.join(missing_fields)}"
-            )
+        # Allow empty dict or data-only dict for default state
+        if flow_data == {} or (set(flow_data.keys()) <= {"data"}):
+            return ValidationResult(is_valid=True)
 
-        # Validate field types
-        if not isinstance(flow_data["flow_type"], str):
-            return ValidationResult(
-                is_valid=False,
-                error_message="flow_type must be string"
-            )
+        # If any flow fields present, all are required
+        flow_fields = {"flow_type", "step", "current_step"}
+        if any(field in flow_data for field in flow_fields):
+            missing_fields = flow_fields - set(flow_data.keys())
+            if missing_fields:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"flow_data missing required fields: {', '.join(missing_fields)}"
+                )
 
-        if not isinstance(flow_data["step"], int):
-            return ValidationResult(
-                is_valid=False,
-                error_message="step must be integer"
-            )
+            # Validate field types for flow state
+            if not isinstance(flow_data["flow_type"], str):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="flow_type must be string"
+                )
 
-        if not isinstance(flow_data["current_step"], str):
-            return ValidationResult(
-                is_valid=False,
-                error_message="current_step must be string"
-            )
+            if not isinstance(flow_data["step"], int):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="step must be integer"
+                )
+
+            if not isinstance(flow_data["current_step"], str):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="current_step must be string"
+                )
 
         # Validate data field if present
         if "data" in flow_data:

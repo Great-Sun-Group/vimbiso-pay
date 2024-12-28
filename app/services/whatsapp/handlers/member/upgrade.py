@@ -78,9 +78,6 @@ def handle_upgrade_completion(state_manager: Any, credex_service: Any) -> Messag
         # Transition to dashboard with success message
         success, error = state_manager.update_state({
             "flow_data": {
-                "flow_type": "dashboard",
-                "step": 0,
-                "current_step": "display",
                 "data": {
                     "message": "✅ Upgrade successful! Welcome to your new tier.",
                     "subscription_id": response.get("subscriptionId"),

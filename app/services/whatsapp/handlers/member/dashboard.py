@@ -89,12 +89,9 @@ def handle_dashboard_display(state_manager: Any, step: str = None, input_data: s
         # Get account data (StateManager validates structure)
         account = result["data"]["accounts"][0]  # We know there's only personal account
 
-        # Update flow data with account info
+        # Store account info in state (no flow type since dashboard is default)
         success, error = state_manager.update_state({
             "flow_data": {
-                "flow_type": "dashboard",
-                "step": 0,
-                "current_step": "display",
                 "data": {
                     "account": account
                 }

@@ -171,18 +171,18 @@ def handle_hi(state_manager: Any) -> Message:
 
 
 def handle_refresh(state_manager: Any) -> Message:
-    """Handle dashboard refresh"""
+    """Handle dashboard refresh by clearing flow state"""
     try:
+        # Clear flow state to return to default dashboard
         success, error = state_manager.update_state({
-            "dashboard_message": "Dashboard refreshed",
             "flow_data": {
-                "flow_type": "dashboard",
-                "step": 0,
-                "current_step": "refresh"
+                "data": {
+                    "message": "Dashboard refreshed"
+                }
             }
         })
         if not success:
-            raise StateException(f"Failed to update state: {error}")
+            raise StateException(f"Failed to clear flow state: {error}")
         return handle_menu(state_manager)
 
     except StateException as e:
