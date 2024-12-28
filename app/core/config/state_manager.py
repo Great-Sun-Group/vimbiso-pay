@@ -15,9 +15,6 @@ from .state_utils import (
 
 logger = logging.getLogger(__name__)
 
-# Critical fields that must never be transformed
-CRITICAL_FIELDS = {"channel"}
-
 
 class StateManager:
     """Manages state while enforcing SINGLE SOURCE OF TRUTH"""
@@ -145,8 +142,8 @@ class StateManager:
                     raise StateException(f"Invalid update: {validation.error_message}")
 
             # Validate critical fields are not being modified
-            if any(field in updates for field in CRITICAL_FIELDS):
-                raise StateException("Cannot modify critical fields")
+            if "channel" in updates:
+                raise StateException("Cannot modify channel - must only exist at top level")
 
             # Detect update type and route to appropriate function
             if "flow_data" in updates:
@@ -192,17 +189,6 @@ class StateManager:
             validation = StateValidator.validate_before_access(self._state, {key})
             if not validation.is_valid:
                 raise StateException(f"Invalid state access: {validation.error_message}")
-
-            # Validate critical fields
-            if key == "channel" and not self._state.get(key):
-                raise StateException("Required field channel not found in state")
-
-            # Validate auth state for all operations
-            if key != "channel":  # Allow channel access for initial setup
-                if not self._state.get("authenticated"):
-                    raise StateException("Authentication required")
-                if not self._state.get("jwt_token"):
-                    raise StateException("Valid session required")
 
             return self._state.get(key)
 

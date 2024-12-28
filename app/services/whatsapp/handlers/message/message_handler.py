@@ -7,6 +7,7 @@ from core.utils.exceptions import StateException
 from core.utils.flow_audit import FlowAuditLogger
 
 from ... import auth_handlers as auth
+from ..member.display import handle_dashboard_display
 from .flow_manager import FLOW_HANDLERS, initialize_flow
 from .input_handler import MENU_ACTIONS, extract_input_value, get_action
 
@@ -50,7 +51,6 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
                 return initialize_flow(state_manager, flow_type)
 
             # For non-flow actions like refresh, return to dashboard
-            from ...member.dashboard import handle_dashboard_display
             return handle_dashboard_display(state_manager)
 
         # If in a multi-step flow, process the step
@@ -76,7 +76,7 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
                 else:
                     # CredEx-related flows (offer, accept, decline, cancel)
                     logger.debug(f"Getting credex flow handler: {current_flow}")
-                    from ...credex.flows import offer, action
+                    from ...credex.flows import action, offer
                     if current_flow == "offer":
                         handler_func = offer.process_offer_step
                     else:
@@ -94,9 +94,12 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
             logger.debug(f"Flow handler result: {result}")
             return result
 
-        # Default to dashboard for any other input
-        from ...member.dashboard import handle_dashboard_display
-        return handle_dashboard_display(state_manager)
+        # For greetings, refresh from API
+        if action == "hi":
+            return auth.handle_hi(state_manager)
+
+        # For other inputs, show dashboard
+        return auth.handle_hi(state_manager)
 
     except StateException as e:
         logger.error(f"Message processing error: {str(e)}")

@@ -2,9 +2,9 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
-                                  MessageRecipient, TextContent, InteractiveContent,
-                                  InteractiveType)
+from core.messaging.types import (ChannelIdentifier, ChannelType,
+                                  InteractiveContent, InteractiveType, Message,
+                                  MessageRecipient, TextContent)
 from core.utils.exceptions import StateException
 from core.utils.flow_audit import FlowAuditLogger
 from services.credex.service import handle_login
@@ -116,27 +116,38 @@ def attempt_login(state_manager: Any) -> Tuple[bool, Optional[Dict[str, Any]]]:
         if not personal_account:
             raise StateException("Personal account not found in response")
 
-        # Let StateManager validate through state update
-        success, error = state_manager.update_state({
-            # Core identity at top level (SINGLE SOURCE OF TRUTH)
-            "member_id": details["memberID"],
+        # Extract member and account data
+        member_data = dashboard.get("member", {})
+        account_data = {
+            "accountID": personal_account["accountID"],
+            "accountName": personal_account["accountName"],
+            "accountHandle": personal_account["accountHandle"],
+            "balances": personal_account["balances"],
+            "offerData": personal_account["offerData"]
+        }
+
+        # Single atomic update to maintain consistency
+        state_manager.update_state({
+            # 1. Auth state first
             "jwt_token": details["token"],
             "authenticated": True,
-            "account_id": personal_account["accountID"],
 
-            # Account data at top level (SINGLE SOURCE OF TRUTH)
-            "personal_account": personal_account,
+            # 2. Member data (including tier info)
+            "member_id": details["memberID"],
+            "tier_limit_display": member_data.get("tier_limit_display"),
 
-            # Flow state for validation
+            # 3. Account data
+            "account_id": account_data["accountID"],
+            "personal_account": account_data,
+
+            # 4. Flow state last
             "flow_data": {
                 "flow_type": "dashboard",
                 "step": 0,
                 "current_step": "display",
-                "data": {}  # No duplication of account data
+                "data": {}
             }
         })
-        if not success:
-            raise StateException(f"Failed to update state: {error}")
 
         return True, None
 

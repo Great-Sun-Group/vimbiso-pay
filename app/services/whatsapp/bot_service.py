@@ -40,17 +40,19 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
             action = get_action(message_text, state_manager, message_type)
 
             if action == "hi":
-                # Handle greeting action
+                # Handle greeting action (attempts login and shows dashboard)
                 return auth.handle_hi(state_manager)
             elif action:
                 # Process message through appropriate handler
                 return process_message(state_manager, message_type, message_text.lower())
             else:
-                # Default menu handling for unrecognized text
-                return auth.handle_action_menu(state_manager)
+                # Default to dashboard for unrecognized input
+                from .handlers.member.display import handle_dashboard_display
+                return handle_dashboard_display(state_manager)
         else:
-            # Default menu handling for non-text messages
-            return auth.handle_action_menu(state_manager)
+            # Default to dashboard for non-text messages
+            from .handlers.member.display import handle_dashboard_display
+            return handle_dashboard_display(state_manager)
 
     except StateException as e:
         # Handle state validation errors consistently

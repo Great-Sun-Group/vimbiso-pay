@@ -13,25 +13,8 @@ class ValidationResult:
 class StateValidator:
     """Validates core state structure focusing on SINGLE SOURCE OF TRUTH"""
 
-    # Critical fields that must be validated
-    CRITICAL_FIELDS = {
-        "channel"  # Only channel is required for new users
-    }
-
-    # Fields that must never be duplicated
-    UNIQUE_FIELDS = {
-        "member_id",
-        "channel"
-    }
-
-    # Fields that must exist but can be None
-    NULLABLE_FIELDS = {
-        "member_id",
-        "jwt_token",
-        "authenticated",
-        "flow_data",
-        "account_id"
-    }
+    # Required fields that can't be modified
+    CRITICAL_FIELDS = {"channel"}
 
     @classmethod
     def validate_state(cls, state: Dict[str, Any]) -> ValidationResult:
@@ -43,26 +26,16 @@ class StateValidator:
                 error_message="State must be a dictionary"
             )
 
-        # Validate critical fields exist and are not None
-        missing_fields = cls.CRITICAL_FIELDS - set(state.keys())
-        if missing_fields:
+        # Validate channel exists and structure
+        if "channel" not in state:
             return ValidationResult(
                 is_valid=False,
-                error_message=f"Missing critical fields: {', '.join(missing_fields)}"
+                error_message="Missing required field: channel"
             )
 
-        # Validate channel structure (required)
-        channel_validation = cls._validate_channel(state.get("channel"))
+        channel_validation = cls._validate_channel(state["channel"])
         if not channel_validation.is_valid:
             return channel_validation
-
-        # Validate nullable fields if present
-        for field in cls.NULLABLE_FIELDS:
-            if field in state and not isinstance(state[field], (str, type(None), bool, dict)):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"{field} must be string, None, boolean or dict"
-                )
 
         # Validate flow_data structure if present
         if "flow_data" in state:
@@ -70,10 +43,18 @@ class StateValidator:
             if not flow_validation.is_valid:
                 return flow_validation
 
-        # Validate no state duplication
-        duplication_validation = cls._validate_no_duplication(state)
-        if not duplication_validation.is_valid:
-            return duplication_validation
+        # Only validate auth for non-null member/account operations
+        if (state.get("member_id") is not None or state.get("account_id") is not None):
+            if not state.get("authenticated"):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Authentication required for member operations"
+                )
+            if not state.get("jwt_token"):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Valid token required for member operations"
+                )
 
         return ValidationResult(is_valid=True)
 
@@ -173,34 +154,6 @@ class StateValidator:
         return ValidationResult(is_valid=True)
 
     @classmethod
-    def _validate_no_duplication(cls, state: Dict[str, Any]) -> ValidationResult:
-        """Validate no state duplication"""
-        # Check for nested member_id
-        if any(isinstance(v, dict) and "member_id" in v for v in state.values()):
-            return ValidationResult(
-                is_valid=False,
-                error_message="member_id found in nested state - must only exist at top level"
-            )
-
-        # Check for nested channel info
-        if any(isinstance(v, dict) and "channel" in v for v in state.values()):
-            return ValidationResult(
-                is_valid=False,
-                error_message="channel info found in nested state - must only exist at top level"
-            )
-
-        # Check for state passing in flow data
-        if "flow_data" in state and isinstance(state["flow_data"], dict):
-            for field in cls.UNIQUE_FIELDS:
-                if field in state["flow_data"]:
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"{field} found in flow data - must not be passed between components"
-                    )
-
-        return ValidationResult(is_valid=True)
-
-    @classmethod
     def validate_before_access(cls, state: Dict[str, Any], required_fields: Set[str]) -> ValidationResult:
         """Validate state before accessing specific fields"""
         # Validate state is dictionary
@@ -210,44 +163,34 @@ class StateValidator:
                 error_message="State must be a dictionary"
             )
 
-        # Validate critical fields if being accessed
-        critical_required = required_fields & cls.CRITICAL_FIELDS
-        if critical_required:
-            missing_critical = critical_required - set(state.keys())
-            if missing_critical:
+        # Validate channel if required
+        if "channel" in required_fields:
+            if "channel" not in state:
                 return ValidationResult(
                     is_valid=False,
-                    error_message=f"Missing critical fields: {', '.join(missing_critical)}"
+                    error_message="Missing required field: channel"
                 )
+            channel_validation = cls._validate_channel(state["channel"])
+            if not channel_validation.is_valid:
+                return channel_validation
 
-            # Validate channel structure if required
-            if "channel" in critical_required:
-                channel_validation = cls._validate_channel(state.get("channel"))
-                if not channel_validation.is_valid:
-                    return channel_validation
-
-        # Validate types of any nullable fields being accessed
-        nullable_accessed = required_fields & cls.NULLABLE_FIELDS
-        for field in nullable_accessed:
-            if field in state:
-                if field == "flow_data":
-                    # Validate flow data structure when accessed
-                    flow_validation = cls._validate_flow_data(state[field])
-                    if not flow_validation.is_valid:
-                        return flow_validation
-                elif not isinstance(state[field], (str, type(None), bool, dict)):
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"{field} must be string, None, boolean or dict"
-                    )
-
-        # Check for duplication only in accessed fields
-        unique_accessed = required_fields & cls.UNIQUE_FIELDS
-        for field in unique_accessed:
-            if any(isinstance(v, dict) and field in v for v in state.values()):
+        # Only validate auth for non-null member/account access
+        if ("member_id" in required_fields and state.get("member_id") is not None or "account_id" in required_fields and state.get("account_id") is not None):
+            if not state.get("authenticated"):
                 return ValidationResult(
                     is_valid=False,
-                    error_message=f"{field} found in nested state - must only exist at top level"
+                    error_message="Authentication required for member operations"
                 )
+            if not state.get("jwt_token"):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Valid token required for member operations"
+                )
+
+        # Validate flow_data structure if being accessed
+        if "flow_data" in required_fields and "flow_data" in state:
+            flow_validation = cls._validate_flow_data(state["flow_data"])
+            if not flow_validation.is_valid:
+                return flow_validation
 
         return ValidationResult(is_valid=True)
