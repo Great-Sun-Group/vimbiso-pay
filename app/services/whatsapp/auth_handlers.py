@@ -1,17 +1,12 @@
-"""Authentication and menu handlers enforcing SINGLE SOURCE OF TRUTH"""
+"""Authentication handlers enforcing SINGLE SOURCE OF TRUTH"""
 import logging
 from typing import Any
 
-from core.messaging.types import Message, TextContent, MessageRecipient, ChannelIdentifier, ChannelType
-from .handlers.auth.auth_flow import (
-    handle_registration
-)
+from core.messaging.types import Message
 from core.utils.exceptions import StateException
-from .handlers.auth.menu_functions import (
-    handle_menu,
-    handle_hi,
-    handle_refresh
-)
+
+from .handlers.auth.auth_flow import attempt_login, handle_registration
+from .handlers.member.display import handle_menu, handle_refresh
 
 logger = logging.getLogger(__name__)
 
@@ -19,35 +14,43 @@ logger = logging.getLogger(__name__)
 def handle_error(state_manager: Any, operation: str, error: Exception) -> Message:
     """Handle errors consistently"""
     logger.error(f"{operation} failed: {str(error)}")
-    # Let StateManager validate channel access
-    channel = state_manager.get("channel")
-    return Message(
-        recipient=MessageRecipient(
-            channel_id=ChannelIdentifier(
-                channel=ChannelType.WHATSAPP,
-                value=channel["identifier"]
-            )
-        ),
-        content=TextContent(
-            body=f"Error: {str(error)}"
-        )
-    )
-
-
-def handle_action_register(state_manager: Any, register: bool = False) -> Message:
-    """Handle registration flow"""
-    try:
-        return handle_registration(state_manager, register)
-    except StateException as e:
-        return handle_error(state_manager, "Registration", e)
+    # Let StateManager validate through state update
+    state_manager.update_state({
+        "flow_data": {
+            "flow_type": "registration",
+            "step": 0,
+            "current_step": "welcome",
+            "data": {
+                "error": str(error)  # Include error in state for audit
+            }
+        }
+    })
+    return handle_registration(state_manager)
 
 
 def handle_action_menu(state_manager: Any) -> Message:
-    """Display main menu"""
+    """Display main menu or handle registration"""
     try:
         return handle_menu(state_manager)
     except StateException as e:
         return handle_error(state_manager, "Menu display", e)
+
+
+def handle_action_hi(state_manager: Any) -> Message:
+    """Handle initial greeting with login attempt"""
+    try:
+        # Always attempt login first
+        success, error = attempt_login(state_manager)
+
+        if success:
+            # Login successful - show dashboard
+            return handle_menu(state_manager)
+
+        # Login failed - show welcome with registration button
+        return handle_registration(state_manager)
+
+    except StateException as e:
+        return handle_error(state_manager, "Greeting", e)
 
 
 def handle_action_refresh(state_manager: Any) -> Message:
@@ -56,20 +59,3 @@ def handle_action_refresh(state_manager: Any) -> Message:
         return handle_refresh(state_manager)
     except StateException as e:
         return handle_error(state_manager, "Refresh", e)
-
-
-def handle_action_hi(state_manager: Any) -> Message:
-    """Handle initial greeting with login attempt
-
-    Args:
-        state_manager: State manager instance
-
-    Returns:
-        Message: Core message type with recipient and content
-    """
-    try:
-        # Handle initial greeting and return response
-        return handle_hi(state_manager)
-    except StateException as e:
-        logger.error(f"Login error: {str(e)}")
-        return handle_error(state_manager, "Greeting", e)

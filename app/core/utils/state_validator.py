@@ -128,13 +128,14 @@ class StateValidator:
                 error_message="flow_data must be a dictionary"
             )
 
-        # Allow empty dict or data-only dict for default state
-        if flow_data == {} or (set(flow_data.keys()) <= {"data"}):
+        # Allow empty dict for initial state only
+        if flow_data == {}:
             return ValidationResult(is_valid=True)
 
-        # If any flow fields present, all are required
+        # Require all flow fields if any data or flow fields are present
         flow_fields = {"flow_type", "step", "current_step"}
-        if any(field in flow_data for field in flow_fields):
+        if "data" in flow_data or any(field in flow_data for field in flow_fields):
+            # Check all required fields exist
             missing_fields = flow_fields - set(flow_data.keys())
             if missing_fields:
                 return ValidationResult(
@@ -142,7 +143,7 @@ class StateValidator:
                     error_message=f"flow_data missing required fields: {', '.join(missing_fields)}"
                 )
 
-            # Validate field types for flow state
+            # Validate field types
             if not isinstance(flow_data["flow_type"], str):
                 return ValidationResult(
                     is_valid=False,

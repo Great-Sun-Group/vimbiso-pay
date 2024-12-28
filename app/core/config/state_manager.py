@@ -6,6 +6,12 @@ from core.utils.exceptions import StateException
 from core.utils.state_validator import StateValidator
 
 from .config import ACTIVITY_TTL, atomic_state
+from .state_utils import (
+    _update_state_core,
+    update_flow_state,
+    update_flow_data,
+    advance_flow
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +94,44 @@ class StateManager:
             raise
 
     def update_state(self, updates: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
-        """Update state enforcing SINGLE SOURCE OF TRUTH"""
+        """Update state enforcing SINGLE SOURCE OF TRUTH
+
+        This is the main entry point for all state updates. It detects the type of update
+        and routes to the appropriate utility function.
+
+        Args:
+            updates: Dictionary of updates to apply. The structure determines the type of update:
+
+            1. Flow State Update:
+            {
+                "flow_data": {
+                    "flow_type": str,
+                    "step": int,
+                    "current_step": str
+                }
+            }
+
+            2. Flow Data Update:
+            {
+                "flow_data": {
+                    "data": Dict[str, Any]
+                }
+            }
+
+            3. Flow Advance:
+            {
+                "flow_data": {
+                    "next_step": str,
+                    "data": Dict[str, Any] (optional)
+                }
+            }
+
+            4. Direct State Update:
+            Any other structure will be treated as a direct state update
+
+        Returns:
+            Tuple of (success, error_message)
+        """
         try:
             # Validate at boundary
             if not isinstance(updates, dict):
@@ -105,56 +148,32 @@ class StateManager:
             if any(field in updates for field in CRITICAL_FIELDS):
                 raise StateException("Cannot modify critical fields")
 
-            # Create new state without transformation
-            new_state = self._state.copy()
+            # Detect update type and route to appropriate function
+            if "flow_data" in updates:
+                flow_data = updates["flow_data"]
+                if not isinstance(flow_data, dict):
+                    raise StateException("flow_data must be a dictionary")
 
-            # Handle state updates without transformation
-            for key, value in updates.items():
-                if key == "flow_data" and isinstance(value, dict):
-                    # Special handling for flow_data to preserve structure
-                    current_flow_data = new_state.get("flow_data", {})
-                    if isinstance(current_flow_data, dict):
-                        # Deep merge flow_data to preserve all fields
-                        new_flow_data = current_flow_data.copy()
-                        for k, v in value.items():
-                            if k == "data" and isinstance(v, dict):
-                                # Merge data dictionary
-                                current_data = new_flow_data.get("data", {})
-                                if isinstance(current_data, dict):
-                                    new_flow_data["data"] = {**current_data, **v}
-                                else:
-                                    new_flow_data["data"] = v
-                            else:
-                                # Update other fields
-                                new_flow_data[k] = v
-                        new_state["flow_data"] = new_flow_data
-                    else:
-                        new_state["flow_data"] = value
-                elif isinstance(value, dict) and isinstance(new_state.get(key), dict):
-                    # For other dictionary fields, update nested values
-                    new_state[key].update(value)
-                else:
-                    # For non-dictionary fields or new fields, set directly
-                    new_state[key] = value
+                # Check for flow state update
+                if all(k in flow_data for k in ["flow_type", "step", "current_step"]):
+                    return update_flow_state(
+                        self,
+                        flow_data["flow_type"],
+                        flow_data["step"],
+                        flow_data["current_step"]
+                    )
 
-            logger.debug(f"Updated state: {new_state}")
+                # Check for flow data update
+                elif "data" in flow_data and isinstance(flow_data["data"], dict):
+                    return update_flow_data(self, flow_data["data"])
 
-            # Validate complete state
-            validation = StateValidator.validate_state(new_state)
-            if not validation.is_valid:
-                raise StateException(f"Invalid state after update: {validation.error_message}")
+                # Check for flow advance
+                elif "next_step" in flow_data:
+                    data_updates = flow_data.get("data", {})
+                    return advance_flow(self, flow_data["next_step"], data_updates)
 
-            # Store validated state
-            success, error = atomic_state.atomic_update(
-                self.key_prefix, new_state, ACTIVITY_TTL
-            )
-            if not success:
-                raise StateException(f"Failed to store state: {error}")
-
-            # Update internal state
-            self._state = new_state
-
-            return True, None
+            # Default to direct state update
+            return _update_state_core(self, updates)
 
         except StateException as e:
             logger.error(f"State update error: {str(e)}")
@@ -177,6 +196,13 @@ class StateManager:
             # Validate critical fields
             if key == "channel" and not self._state.get(key):
                 raise StateException("Required field channel not found in state")
+
+            # Validate auth state for all operations
+            if key != "channel":  # Allow channel access for initial setup
+                if not self._state.get("authenticated"):
+                    raise StateException("Authentication required")
+                if not self._state.get("jwt_token"):
+                    raise StateException("Valid session required")
 
             return self._state.get(key)
 

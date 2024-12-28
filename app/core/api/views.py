@@ -121,16 +121,12 @@ class CredexCloudApiWebhook(APIView):
                 logger.warning("No WA ID in contact")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Initialize state manager
+            # Initialize state manager with channel info (SINGLE SOURCE OF TRUTH)
             logger.info(f"Initializing state manager for channel: {wa_id}")
             state_manager = StateManager(f"channel:{wa_id}")
 
-            # Debug state after initialization
-            logger.info(f"Initial state: {state_manager._state}")
-            logger.info(f"Authenticated: {state_manager.get('authenticated')}")
-            logger.info(f"Member ID: {state_manager.get('member_id')}")
-            logger.info(f"Account ID: {state_manager.get('account_id')}")
-            logger.info(f"Flow Data: {state_manager.get('flow_data')}")
+            # Let StateManager initialize state with proper structure
+            # No need to update channel info as it's handled by _initialize_state()
 
             # Extract message text for processing
             message_text = ""

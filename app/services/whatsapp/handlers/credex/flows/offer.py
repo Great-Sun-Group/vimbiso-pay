@@ -290,18 +290,22 @@ def process_offer_step(
         if step == "amount":
             if input_data:
                 logger.debug(f"Storing amount: {input_data}")
+
                 # Store amount data
                 store_amount(state_manager, input_data)  # Raises StateException if invalid
                 logger.debug("Amount stored successfully")
 
-                # Update flow state
-                state_manager.update_state({
+                # Advance to next step using StateManager.update_state
+                flow_data = state_manager.get("flow_data")
+                success, error = state_manager.update_state({
                     "flow_data": {
-                        "flow_type": "offer",
-                        "step": 1,
+                        "flow_type": flow_data["flow_type"],
+                        "step": flow_data["step"] + 1,
                         "current_step": "handle"
                     }
                 })
+                if not success:
+                    raise StateException(f"Failed to advance flow: {error}")
                 logger.debug("Flow state updated, getting handle prompt")
 
                 return get_handle_prompt(state_manager)
@@ -314,14 +318,17 @@ def process_offer_step(
                 store_handle(state_manager, input_data)  # Raises StateException if invalid
                 logger.debug("Handle stored successfully")
 
-                # Update flow state
-                state_manager.update_state({
+                # Advance to next step using StateManager.update_state
+                flow_data = state_manager.get("flow_data")
+                success, error = state_manager.update_state({
                     "flow_data": {
-                        "flow_type": "offer",
-                        "step": 2,
+                        "flow_type": flow_data["flow_type"],
+                        "step": flow_data["step"] + 1,
                         "current_step": "confirm"
                     }
                 })
+                if not success:
+                    raise StateException(f"Failed to advance flow: {error}")
                 logger.debug("Flow state updated, getting confirmation message")
 
                 return get_confirmation_message(state_manager)

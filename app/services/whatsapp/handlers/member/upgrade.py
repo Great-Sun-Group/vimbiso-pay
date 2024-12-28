@@ -1,128 +1,104 @@
-"""Member tier upgrade flow implementation enforcing SINGLE SOURCE OF TRUTH"""
+"""Upgrade handler enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
-from core.messaging.types import Message
 from core.utils.exceptions import StateException
-from core.utils.flow_audit import FlowAuditLogger
-
-from .templates import MemberTemplates
+from services.credex.service import upgrade_member_tier
 
 logger = logging.getLogger(__name__)
-audit = FlowAuditLogger()
 
 
-def validate_button_response(response: Dict[str, Any]) -> bool:
-    """Validate button response"""
-    return (
-        response.get("type") == "interactive" and
-        response.get("interactive", {}).get("type") == "button_reply" and
-        response.get("interactive", {}).get("button_reply", {}).get("id") == "confirm_action"
-    )
-
-
-def handle_upgrade_confirmation(state_manager: Any) -> Message:
-    """Create tier upgrade confirmation message enforcing SINGLE SOURCE OF TRUTH"""
+def handle_upgrade(state_manager: Any, input_data: Optional[Dict[str, Any]] = None) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """Handle upgrade enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Get required data (StateManager validates)
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
-
-        return MemberTemplates.create_upgrade_confirmation(
-            channel["identifier"],
-            member_id
-        )
-    except StateException as e:
-        logger.error(f"Upgrade confirmation error: {str(e)}")
-        raise
-
-
-def handle_upgrade_completion(state_manager: Any, credex_service: Any) -> Message:
-    """Complete tier upgrade flow enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get required data (StateManager validates)
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
-        account_id = state_manager.get("account_id")
-
-        # Create recurring payment
-        success, response = credex_service['create_recurring']({
-            "sourceAccountID": account_id,
-            "memberID": member_id,
-            "templateType": "MEMBERTIER_SUBSCRIPTION",
-            "payFrequency": 28,
-            "startDate": datetime.now().strftime("%Y-%m-%d"),
-            "memberTier": 3,
-            "securedCredex": True,
-            "amount": 1.00,
-            "denomination": "USD"
-        })
-
-        if not success:
-            raise StateException(response.get("message", "Failed to process subscription"))
-
-        # Log success
-        audit.log_flow_event(
-            f"upgrade_{member_id}",
-            "complete",
-            None,
-            {
-                "channel_id": channel["identifier"],
-                "member_id": member_id,
-                "account_id": account_id
-            },
-            "success"
-        )
-
-        # Transition to dashboard with success message
+        # Initialize upgrade flow
         success, error = state_manager.update_state({
             "flow_data": {
+                "flow_type": "upgrade",
+                "step": 0,
+                "current_step": "start",
+                "data": {}
+            }
+        })
+        if not success:
+            raise StateException(f"Failed to initialize upgrade: {error}")
+
+        # Get member data
+        member_id = state_manager.get("member_id")
+        if not member_id:
+            raise StateException("Member ID required for upgrade")
+
+        # Get current account data
+        account_id = state_manager.get("account_id")
+        if not account_id:
+            raise StateException("Account ID required for upgrade")
+
+        # Update state with upgrade data
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "flow_type": "upgrade",
+                "step": 1,
+                "current_step": "confirm",
                 "data": {
-                    "message": "✅ Upgrade successful! Welcome to your new tier.",
-                    "subscription_id": response.get("subscriptionId"),
-                    "tier": 3,
-                    "timestamp": datetime.now().isoformat()
+                    "member_id": member_id,
+                    "account_id": account_id,
+                    "upgrade_data": input_data or {}
                 }
             }
         })
         if not success:
-            raise StateException(f"Failed to transition flow: {error}")
+            raise StateException(f"Failed to update upgrade state: {error}")
 
-        # Let dashboard handler show success message
-        from ..member.dashboard import handle_dashboard_display
-        return handle_dashboard_display(state_manager)
+        # If no input data, return to get confirmation
+        if not input_data:
+            return True, None
+
+        # Validate confirmation
+        if not input_data.get("confirmed"):
+            raise StateException("Invalid confirmation response")
+
+        # Attempt upgrade
+        success, response = upgrade_member_tier(member_id, account_id)
+        if not success:
+            raise StateException("Failed to upgrade member tier")
+
+        upgrade_data = response["data"]
+
+        # Update state with upgrade complete
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "flow_type": "upgrade",
+                "step": 2,
+                "current_step": "complete",
+                "data": {
+                    "upgrade": upgrade_data,
+                    "previous_tier": input_data.get("previous_tier"),
+                    "new_tier": upgrade_data["tier"]
+                }
+            }
+        })
+        if not success:
+            raise StateException(f"Failed to update completion state: {error}")
+
+        return True, None
 
     except StateException as e:
-        logger.error(f"Upgrade failed: {str(e)}")
-        raise
-
-
-def process_upgrade_step(state_manager: Any, step: str, input_data: Any = None) -> Message:
-    """Process upgrade step enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get required data (StateManager validates)
-        flow_data = state_manager.get("flow_data")
-
-        # Handle confirmation step
-        if step == "confirm":
-            if input_data:
-                if not validate_button_response(input_data):
-                    raise StateException("Invalid confirmation response")
-                success, error = state_manager.update_state({
-                    "flow_data": {
-                        **flow_data,
-                        "confirmed": True,
-                        "current_step": "complete"
-                    }
-                })
-                if not success:
-                    raise StateException(f"Failed to update flow data: {error}")
-            return handle_upgrade_confirmation(state_manager)
-
-        else:
-            raise StateException(f"Invalid upgrade step: {step}")
-
-    except StateException as e:
-        logger.error(f"Upgrade step error: {str(e)}")
-        raise
+        logger.error(f"Upgrade error: {str(e)}")
+        # Update state with error
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "upgrade",
+                "step": 0,
+                "current_step": "error",
+                "data": {
+                    "error": str(e),
+                    "input": input_data
+                }
+            }
+        })
+        return False, {
+            "error": {
+                "type": "UPGRADE_ERROR",
+                "message": str(e)
+            }
+        }
