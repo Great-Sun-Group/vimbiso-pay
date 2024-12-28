@@ -5,6 +5,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from redis import Redis, WatchError
 
+from .state_validator import StateValidator
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,9 +36,15 @@ class AtomicStateManager:
                     # Start transaction
                     pipe.multi()
 
-                    # Store state with TTL
+                    # Validate state before storage
+                    validation = StateValidator.validate_state(state)
+                    if not validation.is_valid:
+                        logger.error(f"Invalid state before Redis set: {validation.error_message}")
+                        return False, f"Invalid state structure: {validation.error_message}"
+
+                    # Store validated state with TTL
                     state_json = json.dumps(state)
-                    logger.debug(f"Storing state with TTL {ttl}")
+                    logger.debug(f"Storing validated state with TTL {ttl}")
                     pipe.setex(key_prefix, ttl, state_json)
 
                     # Execute transaction
@@ -87,10 +95,14 @@ class AtomicStateManager:
 
                 try:
                     state = json.loads(result[0])
+                    # Validate state after deserialization
+                    validation = StateValidator.validate_state(state)
+                    if not validation.is_valid:
+                        logger.error(f"Invalid state after Redis get: {validation.error_message}")
+                        return None, f"Invalid state structure: {validation.error_message}"
+                    return state, None
                 except json.JSONDecodeError:
                     return None, "Invalid state data format"
-
-                return state, None
 
             except WatchError:
                 logger.warning(f"Concurrent modification detected for {key_prefix}")

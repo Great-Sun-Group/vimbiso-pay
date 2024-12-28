@@ -1,6 +1,6 @@
 """WhatsApp service state management delegating to core StateManager"""
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict
 
 from core.config.state_manager import StateManager as CoreStateManager
 from core.utils.flow_audit import FlowAuditLogger
@@ -20,24 +20,22 @@ class StateManager:
         """Get state value using core state manager"""
         return self._core.get(key)
 
-    def update_state(self, updates: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
-        """Update state using core state manager"""
-        try:
-            # Let core state manager handle validation and updates
-            success = self._core.update_state(updates)
-            if not success:
-                return False, "State update failed"
+    def update_state(self, updates: Dict[str, Any]) -> None:
+        """Update state using core state manager
 
-            # Log transition
-            audit.log_state_transition(
-                "bot_service",
-                {"flow_data": self._core.get("flow_data")},  # Only log flow data changes
-                updates,
-                "success"
-            )
+        Args:
+            updates: State updates to apply
 
-            return True, None
+        Raises:
+            StateException: If state update fails
+        """
+        # Let core state manager handle validation and updates
+        self._core.update_state(updates)
 
-        except Exception as e:
-            logger.error(f"State update error: {str(e)}")
-            return False, str(e)
+        # Log transition
+        audit.log_state_transition(
+            "bot_service",
+            {"status": "before_update"},
+            {"status": "after_update"},  # Only log status
+            "success"
+        )

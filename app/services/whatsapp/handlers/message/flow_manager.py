@@ -32,22 +32,14 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
         Message: Core message type with recipient and content
     """
     try:
-        # Get channel (StateManager validates)
-        channel = state_manager.get("channel")
+        # Let StateManager validate channel access
+        state_manager.get("channel")
 
-        # Log flow start attempt
-        audit.log_flow_event(
-            "bot_service",
-            "flow_start_attempt",
-            None,
-            {
-                "flow_type": flow_type,
-                "channel_id": channel["identifier"]
-            },
-            "in_progress"
-        )
+        # Validate flow type through state update
+        if flow_type not in FLOW_HANDLERS:
+            raise StateException(f"Unknown flow type: {flow_type}")
 
-        # Update flow data (StateManager validates structure and fields)
+        # Initialize flow state through state update
         success, error = state_manager.update_state({
             "flow_data": {
                 "flow_type": flow_type,
@@ -57,12 +49,16 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
             }
         })
         if not success:
-            raise StateException(f"Failed to update flow data: {error}")
+            raise StateException(f"Failed to initialize flow state: {error}")
 
-        # Get handler function
-        handler_name = FLOW_HANDLERS.get(flow_type)
-        if not handler_name:
-            raise StateException(f"Unknown flow type: {flow_type}")
+        # Log flow start attempt
+        audit.log_flow_event(
+            "bot_service",
+            "flow_start_attempt",
+            None,
+            {"flow_type": flow_type},  # Only log flow type
+            "in_progress"
+        )
 
         # Get credex service if needed
         credex_service = None
@@ -70,7 +66,8 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
             from services.credex.service import get_credex_service
             credex_service = get_credex_service(state_manager)
 
-        # Import handler function
+        # Get handler name and import function
+        handler_name = FLOW_HANDLERS[flow_type]  # Already validated flow_type exists
         handler_module = __import__(
             f"app.services.whatsapp.handlers.credex.flows.{flow_type}",
             fromlist=[handler_name]
@@ -87,10 +84,7 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
             "bot_service",
             "flow_start_success",
             None,
-            {
-                "flow_type": flow_type,
-                "channel_id": channel["identifier"]
-            },
+            {"flow_type": flow_type},  # Only log flow type
             "success"
         )
 
@@ -115,19 +109,12 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
 def check_pending_offers(state_manager: Any) -> bool:
     """Check for pending offers enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Get required state (StateManager validates)
-        channel = state_manager.get("channel")
-        account_id = state_manager.get("account_id")
-
         # Log check
         audit.log_flow_event(
             "bot_service",
             "check_pending_offers",
             None,
-            {
-                "channel_id": channel["identifier"],
-                "account_id": account_id
-            },
+            {"status": "checking"},  # Only log status
             "success"
         )
 

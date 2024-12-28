@@ -97,65 +97,92 @@ class BaseCredExService:
 ### 1. Authentication Service
 ```python
 class CredExAuthService(BaseCredExService):
-    """Authentication with minimal complexity"""
+    """Authentication through state validation"""
 
-    def login(self, channel_identifier: str) -> Tuple[bool, Dict]:
-        """Authenticate user"""
+    def login(self, state_manager: Any) -> None:
+        """Authenticate user through state update
+
+        Args:
+            state_manager: State manager instance
+
+        Raises:
+            StateException: If authentication fails
+        """
+        # Let StateManager validate channel
+        channel_id = state_manager.get("channel")["identifier"]  # ONLY at top level
+
+        # Make API request (raises StateException if fails)
         response = self._make_request(
             'auth', 'login',
-            payload={"phone": channel_identifier}
+            payload={"phone": channel_id}
         )
-        data = response.json()
 
-        if token := self._extract_token(data):
-            self._update_token(token)
-            return True, data
-        return False, {"message": "Login failed"}
+        # Let StateManager validate and store token
+        state_manager.update_state({
+            "jwt_token": response.json()["token"]  # ONLY in state
+        })
 ```
 
 ### 2. Member Service
 ```python
 class CredExMemberService(BaseCredExService):
-    """Member operations with minimal state coupling"""
+    """Member operations through state validation"""
 
-    def get_dashboard(self, phone: str) -> Tuple[bool, Dict]:
-        """Get dashboard data"""
+    def get_dashboard(self, state_manager: Any) -> None:
+        """Get dashboard data through state update
+
+        Args:
+            state_manager: State manager instance
+
+        Raises:
+            StateException: If dashboard fetch fails
+        """
+        # Let StateManager validate channel
+        channel_id = state_manager.get("channel")["identifier"]  # ONLY at top level
+
+        # Make API request (raises StateException if fails)
         response = self._make_request(
             'member', 'get_dashboard',
-            payload={"phone": phone}
+            payload={"phone": channel_id}
         )
-        data = response.json()
 
-        if dashboard := data.get("data", {}).get("dashboard"):
-            self._update_state({"profile": {"dashboard": dashboard}})
-            return True, data
-        return False, {"message": "Failed to get dashboard"}
+        # Let StateManager validate and store dashboard
+        state_manager.update_state({
+            "flow_data": {
+                "dashboard": response.json()["data"]["dashboard"]
+            }
+        })
 ```
 
 ### 3. Offers Service
 ```python
 class CredExOffersService(BaseCredExService):
-    """Offer operations with helper methods"""
+    """Offer operations through state validation"""
 
-    def _process_offer_data(self, data: Dict) -> Dict:
-        """Process offer data for API"""
-        offer = data.copy()
-        if "denomination" in offer:
-            offer["Denomination"] = offer.pop("denomination")
-        return offer
+    def offer_credex(self, state_manager: Any) -> None:
+        """Create offer through state update
 
-    def offer_credex(self, offer_data: Dict) -> Tuple[bool, Dict]:
-        """Create new offer"""
-        processed_data = self._process_offer_data(offer_data)
+        Args:
+            state_manager: State manager instance
+
+        Raises:
+            StateException: If offer creation fails
+        """
+        # Let StateManager validate offer data
+        offer_data = state_manager.get("flow_data")["input"]["offer"]
+
+        # Make API request (raises StateException if fails)
         response = self._make_request(
             'credex', 'create',
-            payload=processed_data
+            payload=offer_data
         )
-        data = response.json()
 
-        if self._check_success(data, "CREDEX_CREATED"):
-            return True, data
-        return False, {"message": "Failed to create offer"}
+        # Let StateManager validate and store response
+        state_manager.update_state({
+            "flow_data": {
+                "offer": response.json()["data"]["offer"]
+            }
+        })
 ```
 
 ## Error Handling
@@ -170,46 +197,62 @@ class CredExOffersService(BaseCredExService):
 }
 ```
 
-### 2. Error Patterns
+### 2. Error Handling
 ```python
-try:
+def make_request(self, group: str, action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Make API request with state validation
+
+    Args:
+        group: Endpoint group
+        action: Endpoint action
+        payload: Request payload
+
+    Returns:
+        API response data
+
+    Raises:
+        StateException: If request fails
+    """
+    # Make request (raises StateException if fails)
     response = self._make_request(group, action, payload)
+
+    # Parse response (raises StateException if invalid)
     data = response.json()
+    if not data.get("success"):
+        raise StateException(f"API error: {data.get('message')}")
 
-    if self._check_success(data, expected_type):
-        return True, data
-    return False, {"message": f"Failed to {action}"}
-
-except Exception as e:
-    logger.error(f"{action} failed: {str(e)}")
-    return False, {"message": str(e)}
+    return data
 ```
 
 ## Best Practices
 
 1. **Service Design**
-   - Keep services focused
-   - Use helper methods
-   - Handle errors consistently
-   - Maintain clear boundaries
+   - Let StateManager validate
+   - NO manual validation
+   - NO error recovery
+   - NO state transformation
 
 2. **Token Management**
-   - Centralize token updates
-   - Use consistent patterns
-   - Keep token flow clear
-   - Handle errors properly
+   - JWT token ONLY in state
+   - NO token duplication
+   - NO manual validation
+   - NO error recovery
 
 3. **Error Handling**
-   - Use consistent patterns
-   - Keep error handling simple
-   - Provide clear messages
-   - Log appropriately
+   - Let StateManager validate
+   - NO manual validation
+   - NO error recovery
+   - NO state fixing
+   - Clear error messages
+   - Log errors only
 
 4. **State Integration**
-   - Minimize state coupling
-   - Use clear update patterns
-   - Follow SINGLE SOURCE OF TRUTH
-   - Keep updates minimal
+   - Member ID ONLY at top level
+   - Channel info ONLY at top level
+   - NO state duplication
+   - NO state transformation
+   - NO state passing
+   - NO manual validation
 
 ## Environment Setup
 ```bash

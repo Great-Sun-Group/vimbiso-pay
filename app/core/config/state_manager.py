@@ -45,7 +45,7 @@ class StateManager:
                 "jwt_token": None,
                 "authenticated": False,
                 "account_id": None,
-                "flow_data": None
+                "flow_data": {}  # Initialize as empty dict instead of None
             }
 
             # Validate initial state structure
@@ -105,9 +105,17 @@ class StateManager:
             if any(field in updates for field in CRITICAL_FIELDS):
                 raise StateException("Cannot modify critical fields")
 
-            # Update state directly (no transformation)
+            # Create new state without transformation
             new_state = self._state.copy()
-            new_state.update(updates)
+
+            # Handle state updates without transformation
+            for key, value in updates.items():
+                if isinstance(value, dict) and isinstance(new_state.get(key), dict):
+                    # For dictionary fields, update nested values
+                    new_state[key].update(value)
+                else:
+                    # For non-dictionary fields or new fields, set directly
+                    new_state[key] = value
 
             # Validate complete state
             validation = StateValidator.validate_state(new_state)

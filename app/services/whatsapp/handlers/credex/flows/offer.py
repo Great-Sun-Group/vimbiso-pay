@@ -1,9 +1,10 @@
 """Offer flow implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict
 
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
+from core.utils.exceptions import StateException
 from core.utils.flow_audit import FlowAuditLogger
 
 logger = logging.getLogger(__name__)
@@ -26,85 +27,65 @@ def get_amount_prompt(state_manager: Any) -> Message:
                 body="Enter amount to offer (e.g. 100 USD):"
             )
         )
-    except ValueError as e:
-        return Message(
-            recipient=MessageRecipient(
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value="unknown"
-                )
-            ),
-            content=TextContent(
-                body=f"Error: {str(e)}"
-            )
-        )
+    except StateException as e:
+        logger.error(f"Amount prompt error: {str(e)}")
+        raise
 
 
-def validate_amount(amount: str) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
-    """Validate amount input"""
+def validate_amount(amount: str) -> Dict[str, Any]:
+    """Validate amount input
+
+    Args:
+        amount: Amount string to validate
+
+    Returns:
+        Dict with validated amount and denomination
+
+    Raises:
+        StateException: If validation fails
+    """
+    if not amount or len(amount.split()) != 2:
+        raise StateException("Invalid amount format. Please enter amount and currency (e.g. 100 USD)")
+
+    value, denomination = amount.split()
     try:
-        if not amount or len(amount.split()) != 2:
-            return False, "Invalid amount format. Please enter amount and currency (e.g. 100 USD)", None
+        value = float(value)
+        if value <= 0:
+            raise StateException("Amount must be greater than 0")
+    except ValueError:
+        raise StateException("Invalid amount value")
 
-        value, denomination = amount.split()
-        try:
-            value = float(value)
-            if value <= 0:
-                return False, "Amount must be greater than 0", None
-        except ValueError:
-            return False, "Invalid amount value", None
+    if denomination not in {"USD", "EUR", "GBP"}:
+        raise StateException("Invalid currency. Supported: USD, EUR, GBP")
 
-        if denomination not in {"USD", "EUR", "GBP"}:
-            return False, "Invalid currency. Supported: USD, EUR, GBP", None
-
-        return True, None, {"amount": value, "denomination": denomination}
-    except Exception as e:
-        return False, str(e), None
+    return {"amount": value, "denomination": denomination}
 
 
-def store_amount(state_manager: Any, amount: str) -> Tuple[bool, Optional[str]]:
-    """Store validated amount in state"""
-    try:
-        # Validate amount
-        valid, error, amount_data = validate_amount(amount)
-        if not valid:
-            return False, error
+def store_amount(state_manager: Any, amount: str) -> None:
+    """Store validated amount in state
 
-        # Get current flow data
-        flow_data = state_manager.get("flow_data")
-        if not flow_data:
-            flow_data = {
-                "flow_type": "offer",
-                "step": 0,
-                "current_step": "handle",
-                "data": {}
-            }
+    Args:
+        state_manager: State manager instance
+        amount: Amount string to validate and store
 
-        # Update with complete flow data structure
-        flow_data["data"]["amount_denom"] = {
-            "amount": amount_data["amount"],
-            "denomination": amount_data["denomination"]
+    Raises:
+        StateException: If validation or storage fails
+    """
+    # Validate amount (raises StateException if invalid)
+    amount_data = validate_amount(amount)
+
+    # Let StateManager handle validation and update
+    state_manager.update_state({
+        "flow_data": {
+            "data": {
+                "amount_denom": {
+                    "amount": amount_data["amount"],
+                    "denomination": amount_data["denomination"]
+                }
+            },
+            "current_step": "handle"
         }
-        flow_data["current_step"] = "handle"
-
-        # Let StateManager handle validation
-        success, error = state_manager.update_state({
-            "flow_data": flow_data
-        })
-        if not success:
-            return False, error
-
-        # Log success
-        channel = state_manager.get("channel")
-        logger.info(
-            f"Stored amount {amount_data['amount']} {amount_data['denomination']} "
-            f"for channel {channel['identifier']}"
-        )
-        return True, None
-
-    except Exception as e:
-        logger.error(f"Failed to store amount: {str(e)}")
-        return False, str(e)
+    })
 
 
 def get_handle_prompt(state_manager: Any) -> Message:
@@ -123,81 +104,59 @@ def get_handle_prompt(state_manager: Any) -> Message:
                 body="Enter recipient handle:"
             )
         )
-    except ValueError as e:
-        return Message(
-            recipient=MessageRecipient(
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value="unknown"
-                )
-            ),
-            content=TextContent(
-                body=f"Error: {str(e)}"
-            )
-        )
+    except StateException as e:
+        logger.error(f"Handle prompt error: {str(e)}")
+        raise
 
 
-def validate_handle(handle: str) -> Tuple[bool, Optional[str]]:
-    """Validate handle input"""
+def validate_handle(handle: str) -> str:
+    """Validate handle input
+
+    Args:
+        handle: Handle string to validate
+
+    Returns:
+        Validated handle string
+
+    Raises:
+        StateException: If validation fails
+    """
     if not handle or len(handle) < 3:
-        return False, "Handle must be at least 3 characters"
-    return True, None
+        raise StateException("Handle must be at least 3 characters")
+    return handle.strip()
 
 
-def store_handle(state_manager: Any, handle: str) -> Tuple[bool, Optional[str]]:
-    """Store validated handle in state"""
+def store_handle(state_manager: Any, handle: str) -> None:
+    """Store validated handle in state
+
+    Args:
+        state_manager: State manager instance
+        handle: Handle string to validate and store
+
+    Raises:
+        StateException: If validation or storage fails
+    """
+    # Validate handle (raises StateException if invalid)
+    validated_handle = validate_handle(handle)
+
+    # Let StateManager handle validation and update
+    state_manager.update_state({
+        "flow_data": {
+            "data": {
+                "handle": validated_handle
+            },
+            "current_step": "confirm"
+        }
+    })
+
+
+def get_confirmation_message(state_manager: Any) -> Message:
+    """Get confirmation message with strict state validation"""
     try:
-        # Validate handle
-        valid, error = validate_handle(handle)
-        if not valid:
-            return False, error
-
-        # Get current flow data
-        flow_data = state_manager.get("flow_data")
-        if not flow_data:
-            flow_data = {
-                "flow_type": "offer",
-                "step": 0,
-                "current_step": "confirm",
-                "data": {}
-            }
-
-        # Update with complete flow data structure
-        flow_data["data"]["handle"] = handle.strip()
-        flow_data["current_step"] = "confirm"
-
-        # Let StateManager handle validation
-        success, error = state_manager.update_state({
-            "flow_data": flow_data
-        })
-        if not success:
-            return False, error
-
-        # Log success
+        # Let StateManager validate all state access
         channel = state_manager.get("channel")
-        logger.info(f"Stored handle {handle} for channel {channel['identifier']}")
-        return True, None
-
-    except Exception as e:
-        logger.error(f"Failed to store handle: {str(e)}")
-        return False, str(e)
-
-
-def create_offer_confirmation_with_state(state_manager: Any) -> Message:
-    """Create offer confirmation message with state data"""
-    try:
-        # Let StateManager handle validation
-        channel = state_manager.get("channel")
-        flow_data = state_manager.get("flow_data")
-
-        if not flow_data or not flow_data.get("data"):
-            raise ValueError("Missing flow data")
-
-        amount_denom = flow_data["data"].get("amount_denom")
-        handle = flow_data["data"].get("handle")
-
-        if not amount_denom or not handle:
-            raise ValueError("Missing offer details")
+        amount_denom = state_manager.get("flow_data")["data"]["amount_denom"]  # StateManager validates
+        handle = state_manager.get("flow_data")["data"]["handle"]  # StateManager validates
 
         confirmation_text = (
             f"Please confirm offer details:\n\n"
@@ -218,86 +177,55 @@ def create_offer_confirmation_with_state(state_manager: Any) -> Message:
             )
         )
 
-    except ValueError as e:
-        return Message(
-            recipient=MessageRecipient(
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value="unknown"
-                )
-            ),
-            content=TextContent(
-                body=f"Error: {str(e)}"
-            )
-        )
+    except StateException as e:
+        logger.error(f"Confirmation message error: {str(e)}")
+        raise
 
 
-def get_confirmation_message(state_manager: Any) -> Message:
-    """Get confirmation message with strict state validation"""
-    try:
-        # Let StateManager handle validation
-        return create_offer_confirmation_with_state(state_manager)
-    except ValueError as e:
-        return Message(
-            recipient=MessageRecipient(
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value="unknown"
-                )
-            ),
-            content=TextContent(
-                body=f"Error: {str(e)}"
-            )
-        )
+def complete_offer(state_manager: Any, credex_service: Any) -> Dict[str, Any]:
+    """Complete offer flow enforcing SINGLE SOURCE OF TRUTH
 
+    Args:
+        state_manager: State manager instance
+        credex_service: CredEx service instance
 
-def complete_offer(state_manager: Any, credex_service: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Complete offer flow enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Let StateManager handle validation
-        channel = state_manager.get("channel")
-        flow_data = state_manager.get("flow_data")
+    Returns:
+        API response data
 
-        if not flow_data or not flow_data.get("data"):
-            raise ValueError("Missing flow data")
+    Raises:
+        StateException: If offer completion fails
+    """
+    # Let StateManager validate data structure
+    amount_denom = state_manager.get("flow_data")["data"]["amount_denom"]  # StateManager validates
+    handle = state_manager.get("flow_data")["data"]["handle"]
 
-        amount_denom = flow_data["data"].get("amount_denom")
-        handle = flow_data["data"].get("handle")
+    # Make API call
+    offer_data = {
+        "amount": amount_denom["amount"],
+        "denomination": amount_denom["denomination"],
+        "handle": handle
+    }
+    success, response = credex_service['offer_credex'](offer_data)
+    if not success:
+        error_msg = response.get("message", "Failed to create offer")
+        logger.error(f"API call failed: {error_msg}")
+        raise StateException(error_msg)
 
-        if not amount_denom or not handle:
-            raise ValueError("Missing offer details")
-
-        # Make API call
-        offer_data = {
+    # Log success
+    audit.log_flow_event(
+        "offer_flow",
+        "completion_success",
+        None,
+        {
+            "channel_id": state_manager.get("channel")["identifier"],
             "amount": amount_denom["amount"],
             "denomination": amount_denom["denomination"],
             "handle": handle
-        }
-        success, response = credex_service['offer_credex'](offer_data)
-        if not success:
-            error_msg = response.get("message", "Failed to create offer")
-            logger.error(f"API call failed: {error_msg}")
-            return False, {"message": error_msg}
+        },
+        "success"
+    )
 
-        # Log success
-        audit.log_flow_event(
-            "offer_flow",
-            "completion_success",
-            None,
-            {
-                "channel_id": channel["identifier"],
-                "amount": amount_denom["amount"],
-                "denomination": amount_denom["denomination"],
-                "handle": handle
-            },
-            "success"
-        )
-
-        return True, response
-
-    except Exception as e:
-        logger.error(f"Offer completion failed: {str(e)}")
-        return False, {"message": str(e)}
+    return response
 
 
 def process_offer_step(
@@ -308,31 +236,25 @@ def process_offer_step(
 ) -> Message:
     """Process offer step enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Handle each step
+        # Handle each step (StateManager validates state)
         if step == "amount":
             if input_data:
-                success, error = store_amount(state_manager, input_data)
-                if not success:
-                    raise ValueError(error)
+                store_amount(state_manager, input_data)  # Raises StateException if invalid
                 return get_handle_prompt(state_manager)
             return get_amount_prompt(state_manager)
 
         elif step == "handle":
             if input_data:
-                success, error = store_handle(state_manager, input_data)
-                if not success:
-                    raise ValueError(error)
+                store_handle(state_manager, input_data)  # Raises StateException if invalid
                 return get_confirmation_message(state_manager)
             return get_handle_prompt(state_manager)
 
         elif step == "confirm":
             if not credex_service:
-                raise ValueError("CredEx service required for confirmation")
+                raise StateException("CredEx service required for confirmation")
 
             if input_data and input_data.lower() == "yes":
-                success, response = complete_offer(state_manager, credex_service)
-                if not success:
-                    raise ValueError(response["message"])
+                complete_offer(state_manager, credex_service)  # Raises StateException if fails
                 return Message(
                     recipient=MessageRecipient(
                         channel_id=ChannelIdentifier(
@@ -347,14 +269,15 @@ def process_offer_step(
             return get_confirmation_message(state_manager)
 
         else:
-            raise ValueError(f"Invalid offer step: {step}")
+            raise StateException(f"Invalid offer step: {step}")
 
-    except ValueError as e:
+    except StateException as e:
+        channel = state_manager.get("channel")
         return Message(
             recipient=MessageRecipient(
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value="unknown"
+                    value=channel["identifier"]
                 )
             ),
             content=TextContent(

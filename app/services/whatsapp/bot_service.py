@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict
 
 from core.messaging.types import Message
+from core.utils.exceptions import StateException
 
 from . import auth_handlers as auth
 from .handlers.message.input_handler import get_action
@@ -21,10 +22,10 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
     Returns:
         Message: Core message type with recipient and content
     """
-    if not state_manager:
-        raise ValueError("State manager is required")
-
     try:
+        # Let StateManager validate state by accessing a required field
+        state_manager.get("channel")
+
         # Extract message data from WhatsApp payload
         value = payload.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
         message_data = value.get("messages", [{}])[0]
@@ -51,6 +52,6 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
             # Default menu handling for non-text messages
             return auth.handle_action_menu(state_manager)
 
-    except ValueError as e:
-        # Handle errors consistently
+    except StateException as e:
+        # Handle state validation errors consistently
         return auth.handle_error(state_manager, "Bot service", e)

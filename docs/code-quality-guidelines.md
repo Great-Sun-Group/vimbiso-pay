@@ -16,18 +16,21 @@
 
 ## 3. State Management Rules
 
-- Maintain single source of truth
-- Use consistent types throughout
-- Handle all edge cases upfront
-- Ensure clean state transitions
-- Validate state at boundaries
+- Member ID ONLY at top level
+- Channel info ONLY at top level
+- NO state duplication
+- NO state transformation
+- NO state passing
+- NO manual validation
 
 ## 4. Error Handling Rules
 
-- Fix root causes not symptoms
-- Add proper error context
-- Log meaningful messages
-- Enable recovery paths
+- Let StateManager validate
+- NO manual validation
+- NO error recovery
+- NO state fixing
+- NO cleanup code
+- Clear error messages
 
 ## 5. Code Organization Rules
 
@@ -35,6 +38,8 @@
 - Use clear type hints
 - Document key decisions
 - Follow consistent patterns
+- NO validation helpers
+- NO error recovery
 
 ## Implementation
 
@@ -66,53 +71,43 @@ When implementing changes:
 
 ## Examples
 
-### Bad: Incremental Changes
+### Bad: Manual Validation
 
 ```python
-# Change 1: Add new field
-class State:
-    id: str
+# WRONG - Manual validation
+def validate_state(state: Dict[str, Any]) -> bool:
+    if not state.get("member_id"):
+        return False
+    if not isinstance(state.get("data"), dict):
+        return False
+    return True
 
-# Change 2: Add type hint
-class State:
-    id: str
-    data: Dict[str, Any]
-
-# Change 3: Add validation
-class State:
-    id: str
-    data: Dict[str, Any]
-
-    def validate(self):
-        if not self.id:
-            raise ValueError("Missing id")
+# WRONG - Error recovery
+def process_state(state: Dict[str, Any]) -> None:
+    if not validate_state(state):
+        state["member_id"] = "default"
+        state["data"] = {}
 ```
 
-### Good: Complete Change
+### Good: StateManager Validation
 
 ```python
-class State:
-    """State management with validation
+def process_state(state_manager: Any) -> None:
+    """Process state through StateManager validation
 
-    Attributes:
-        id: Unique identifier
-        data: State data dictionary
+    Args:
+        state_manager: State manager instance
+
+    Raises:
+        StateException: If validation fails
     """
-    def __init__(self, id: str, data: Dict[str, Any]):
-        self.id = id
-        self.data = data
-        self.validate()
-
-    def validate(self) -> None:
-        """Validate state invariants
-
-        Raises:
-            ValueError: If validation fails
-        """
-        if not self.id:
-            raise ValueError("Missing id")
-        if not isinstance(self.data, dict):
-            raise ValueError("Data must be dictionary")
+    # Let StateManager validate state
+    state_manager.update_state({
+        "member_id": "unique_id",  # ONLY at top level
+        "data": {
+            "field": "value"
+        }
+    })
 ```
 
 ## Benefits

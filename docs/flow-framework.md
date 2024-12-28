@@ -3,11 +3,11 @@
 ## Overview
 
 The Flow Framework provides a progressive interaction system for handling complex, multi-step conversations in WhatsApp, extendable to other channels. It enables:
-- Member-centric state management
+- Member-centric state management (SINGLE SOURCE OF TRUTH)
 - Multi-channel support
 - Structured data collection
-- Input validation
-- Error recovery
+- Validation through state updates
+- Clear error handling
 - Comprehensive audit logging
 
 ## Core Components
@@ -20,29 +20,28 @@ The framework consists of four main components:
   - Manages member-centric state
   - Handles channel abstraction
   - Manages step progression
-  - Handles data collection
+  - Processes input through state updates
   - Integrates with state management
-  - Provides error recovery
+  - Handles errors through StateException
   - Maintains audit trail
 
 - **FlowStateManager**
-  - Validates member and channel state
+  - Validates all state updates
   - Manages state transitions
-  - Handles rollbacks
-  - Preserves validation context
+  - Raises StateException for invalid state
+  - Enforces SINGLE SOURCE OF TRUTH
   - Manages channel information
 
 - **Step Definition**
   - Defines interaction type
-  - Provides validation rules
-  - Handles data transformation
+  - Updates state for validation
+  - Processes input through state
   - Generates channel-aware messages
 
 - **FlowAuditLogger**
   - Logs flow events with member context
   - Tracks state transitions
-  - Records validation results
-  - Enables state recovery
+  - Records state updates
   - Provides debugging context
 
 ### 2. Step Types
@@ -55,14 +54,13 @@ Supports three interaction types:
 ### 3. State Integration
 
 Each flow maintains:
-- Member ID as primary identifier
-- Channel information
+- Member ID as primary identifier (ONLY at top level)
+- Channel information (ONLY at top level)
 - Current step index
 - Collected data
-- Minimal validation state in flow_data.data
-- Previous state for rollback
-- Audit trail data
-- Smart recovery paths
+- NO validation state
+- NO previous state
+- NO recovery paths
 
 ## Implementation
 
@@ -82,41 +80,54 @@ class CredexFlow(Flow):
 ### Step Definition
 
 ```python
+# WRONG - Using validator and transformer functions
 Step(
     id="amount",
     type=StepType.TEXT,
     message=self._get_amount_prompt,
-    validator=self._validate_amount,
+    validator=self._validate_amount,  # NO manual validation!
     transformer=self._transform_amount
 )
+
+# CORRECT - Let StateManager validate through state updates
+Step(
+    id="amount",
+    type=StepType.TEXT,
+    message=self._get_amount_prompt,
+    process_input=self._process_amount  # Updates state for validation
+)
+
+def _process_amount(self, state_manager: Any, input_data: str) -> None:
+    """Process amount input through state update"""
+    state_manager.update_state({
+        "flow_data": {
+            "input": {
+                "amount": input_data  # StateManager validates
+            }
+        }
+    })
 ```
 
 ### State Structure
 
 ```python
-new_state = {
-    # Core identity - SINGLE SOURCE OF TRUTH
-    "member_id": member_id,  # Primary identifier, ONLY AND ALWAYS at top level
+# Core identity - SINGLE SOURCE OF TRUTH
+state_manager.update_state({
+    # Member ID - ONLY at top level
+    "member_id": member_id,
 
-    # Channel information
+    # Channel info - ONLY at top level
     "channel": {
         "type": "whatsapp",
         "identifier": channel_id
     },
 
-    # Flow and state info
+    # Flow state - NO validation state
     "flow_data": {
-        "id": flow_id,
         "step": current_step,
-        "data": {
-            "flow_type": flow_type,
-            "channel": {
-                "type": "whatsapp",
-                "identifier": channel_id
-            }
-        }
+        "flow_type": flow_type
     }
-}
+})
 ```
 
 ### Audit Logging
@@ -178,43 +189,44 @@ audit.log_state_transition(
 ## Best Practices
 
 1. **State Management**
-   - Use member_id as primary identifier
-   - Maintain proper channel abstraction
-   - Keep validation context in flow_data.data
-   - Use minimal required validations
-   - Implement smart state recovery
-   - Focus on critical data integrity
-   - Maintain focused audit trail
+   - Member ID ONLY at top level
+   - Channel info ONLY at top level
+   - NO validation state
+   - NO state duplication
+   - NO state transformation
+   - NO state passing
+   - NO error recovery
 
 2. **Flow Implementation**
    - Keep flows focused and single-purpose
-   - Validate member and channel info
+   - Let StateManager validate through updates
    - Handle channel-specific requirements
-   - Validate input properly
-   - Handle errors gracefully
+   - Process input through state updates
+   - Handle errors through StateException
    - Log state transitions
-   - Enable automatic recovery
+   - NO manual validation
 
 3. **Template Usage**
    - Use member-centric templates
    - Handle channel-specific formatting
    - Keep templates reusable
    - Follow channel limits
-   - Handle errors properly
+   - Let StateManager validate templates
 
-4. **Error Recovery**
-   - Validate member and channel state
-   - Preserve context during errors
-   - Implement proper rollback
-   - Provide clear error messages
-   - Log recovery attempts
+4. **Error Handling**
+   - Let StateManager validate state
+   - NO manual validation
+   - NO error recovery
+   - NO state fixing
+   - Clear error messages
+   - Log errors only
 
 5. **Audit Logging**
    - Include member context in logs
    - Log channel information
    - Track state transitions
-   - Record validation results
-   - Document error scenarios
+   - Log state updates
+   - Document errors
    - Enable debugging
 
 ## Integration

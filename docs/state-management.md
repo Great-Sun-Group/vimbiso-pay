@@ -2,7 +2,7 @@
 
 ## Overview
 
-VimbisoPay uses a simplified state management system that strictly enforces SINGLE SOURCE OF TRUTH:
+VimbisoPay uses a centralized state management system that strictly enforces SINGLE SOURCE OF TRUTH:
 - Member ID exists ONLY at top level
 - Channel info exists ONLY at top level
 - JWT token exists ONLY in state
@@ -10,29 +10,37 @@ VimbisoPay uses a simplified state management system that strictly enforces SING
 
 ## Core Principles
 
-1. **True SINGLE SOURCE OF TRUTH**
-   - member_id ONLY at top level
-   - channel info ONLY at top level
-   - jwt_token ONLY in state
-   - No duplication anywhere
+1. **SINGLE SOURCE OF TRUTH**
+   - Member ID ONLY at top level
+   - Channel info ONLY at top level
+   - JWT token ONLY in state
+   - NO duplication anywhere
+   - NO state passing
+   - NO state transformation
 
-2. **Minimal State Structure**
-   - Only essential fields
-   - No nested validation state
-   - No previous state tracking
-   - No redundant metadata
+2. **Validation Through State**
+   - ALL validation through state updates
+   - NO manual validation
+   - NO validation helpers
+   - NO validation state
+   - NO error recovery
+   - NO state fixing
 
 3. **Clear Responsibilities**
-   - StateManager: Manages state operations
-   - StateValidator: Validates structure
-   - StateUtils: Defines core structure
-   - No mixed concerns
+   - StateManager: Validates all updates
+   - StateValidator: Defines valid structure
+   - StateUtils: Provides core structure
+   - NO mixed concerns
+   - NO manual validation
+   - NO error handling
 
 4. **Simple Updates**
-   - Direct state updates
-   - Clear update paths
-   - Minimal validation
-   - No cleanup code
+   - Update state to validate
+   - Let StateManager validate
+   - NO manual validation
+   - NO cleanup code
+   - NO error recovery
+   - NO state fixing
 
 ## State Structure
 
@@ -68,42 +76,33 @@ Note: This is the COMPLETE structure. If you need more fields, question why.
 def create_initial_state() -> Dict[str, Any]:
     """Create minimal initial state"""
     return {
-        "member_id": None,
-        "channel": {
+        "member_id": None,  # ONLY at top level
+        "channel": {        # ONLY at top level
             "type": "whatsapp",
             "identifier": None
         },
-        "jwt_token": None,
-        "flow_data": None
+        "jwt_token": None,  # ONLY in state
+        "flow_data": None   # NO validation state
     }
 
-def prepare_state_update(current_state: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
-    """Update state preserving SINGLE SOURCE OF TRUTH"""
-    new_state = current_state.copy()
+def prepare_state_update(state_manager: Any, updates: Dict[str, Any]) -> Dict[str, Any]:
+    """Update state through StateManager validation
 
-    # Handle critical fields
-    if "member_id" in updates:
-        new_state["member_id"] = updates["member_id"]
+    Args:
+        state_manager: State manager instance
+        updates: State updates to validate
 
-    if "channel" in updates:
-        if not isinstance(updates["channel"], dict):
-            raise ValueError("Channel must be a dictionary")
-        if "channel" not in new_state:
-            new_state["channel"] = {"type": "whatsapp", "identifier": None}
-        for field in ["type", "identifier"]:
-            if field in updates["channel"]:
-                new_state["channel"][field] = updates["channel"][field]
+    Returns:
+        Validated state data
 
-    # Handle jwt_token
-    if "jwt_token" in updates:
-        new_state["jwt_token"] = updates["jwt_token"]
+    Raises:
+        StateException: If validation fails
+    """
+    # Let StateManager validate updates
+    state_manager.update_state(updates)
 
-    # Handle other updates
-    for field, value in updates.items():
-        if field not in ["member_id", "channel", "jwt_token"]:
-            new_state[field] = value
-
-    return new_state
+    # Get validated state
+    return state_manager.get("flow_data")
 ```
 
 ### 2. State Manager
@@ -112,78 +111,109 @@ class StateManager:
     """Manages state while enforcing SINGLE SOURCE OF TRUTH"""
 
     def __init__(self, key_prefix: str):
-        self.key_prefix = key_prefix
-        self.state = self._initialize_state()
+        """Initialize state manager
 
-    def update_state(self, updates: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
-        """Update state while maintaining SINGLE SOURCE OF TRUTH"""
-        try:
-            new_state = prepare_state_update(self.state, updates)
-            success, error = atomic_state.atomic_update(
-                self.key_prefix, new_state, ACTIVITY_TTL
-            )
-            if success:
-                self.state = new_state
-            return success, error
-        except Exception as e:
-            return False, str(e)
+        Args:
+            key_prefix: Redis key prefix
+
+        Raises:
+            StateException: If initialization fails
+        """
+        self.key_prefix = key_prefix
+        self._initialize_state()  # Raises StateException if invalid
+
+    def update_state(self, updates: Dict[str, Any]) -> None:
+        """Update state through validation
+
+        Args:
+            updates: State updates to validate
+
+        Raises:
+            StateException: If validation fails
+        """
+        # Let StateValidator validate updates
+        StateValidator.validate_state(updates)
+
+        # Store validated state (raises StateException if fails)
+        success, error = atomic_state.atomic_update(
+            self.key_prefix,
+            updates,
+            ACTIVITY_TTL
+        )
+        if not success:
+            raise StateException(f"Failed to update state: {error}")
 ```
 
 ### 3. State Validator
 ```python
 class StateValidator:
-    """Validates core state structure"""
+    """Validates state through updates"""
 
     @classmethod
-    def validate_state(cls, state: Dict[str, Any]) -> ValidationResult:
-        """Validate minimal state structure"""
-        if not isinstance(state, dict):
-            return ValidationResult(False, "State must be a dictionary")
+    def validate_state(cls, updates: Dict[str, Any]) -> None:
+        """Validate state through update structure
 
-        # Validate channel structure (required)
-        if "channel" not in state or not isinstance(state["channel"], dict):
-            return ValidationResult(False, "Channel info must be present")
+        Args:
+            updates: State updates to validate
 
-        # Validate channel fields
-        channel = state["channel"]
-        for field in ["type", "identifier"]:
-            if field not in channel:
-                return ValidationResult(False, f"Channel missing {field}")
-            if not isinstance(channel[field], (str, type(None))):
-                return ValidationResult(False, f"Channel {field} must be string or None")
+        Raises:
+            StateException: If validation fails
+        """
+        # Validate member_id at top level
+        if "member_id" in updates and not isinstance(updates["member_id"], (str, type(None))):
+            raise StateException("member_id must be string or None")
 
-        # Validate flow_data if present
-        if "flow_data" in state and not isinstance(state["flow_data"], (dict, type(None))):
-            return ValidationResult(False, "Flow data must be dictionary or None")
+        # Validate channel at top level
+        if "channel" in updates:
+            if not isinstance(updates["channel"], dict):
+                raise StateException("channel must be dictionary")
+            if "type" not in updates["channel"]:
+                raise StateException("channel missing type")
+            if "identifier" not in updates["channel"]:
+                raise StateException("channel missing identifier")
 
-        return ValidationResult(True)
+        # Validate jwt_token in state
+        if "jwt_token" in updates and not isinstance(updates["jwt_token"], (str, type(None))):
+            raise StateException("jwt_token must be string or None")
+
+        # Validate flow_data structure
+        if "flow_data" in updates and not isinstance(updates["flow_data"], (dict, type(None))):
+            raise StateException("flow_data must be dictionary or None")
 ```
 
 ## Best Practices
 
 1. **State Access**
-   - Always access member_id from top level
-   - Always access channel info from top level
-   - Always access jwt_token from state
-   - Never duplicate these values
+   - Member ID ONLY at top level
+   - Channel info ONLY at top level
+   - JWT token ONLY in state
+   - NO state duplication
+   - NO state passing
+   - NO state transformation
 
 2. **State Updates**
-   - Use StateManager for all updates
-   - Validate before updating
-   - Keep updates minimal
-   - Follow update patterns
+   - Let StateManager validate
+   - NO manual validation
+   - NO state duplication
+   - NO error recovery
+   - NO state fixing
+   - NO cleanup code
 
 3. **Flow Integration**
-   - Access state through StateManager
-   - Keep flow state minimal
-   - No validation state in flow_data
-   - Clear state boundaries
+   - Access through StateManager
+   - NO validation state
+   - NO state duplication
+   - NO state passing
+   - NO state transformation
+   - NO error recovery
 
 4. **Error Handling**
-   - Validate early
+   - Let StateManager validate
+   - NO manual validation
+   - NO error recovery
+   - NO state fixing
+   - NO cleanup code
    - Clear error messages
-   - Simple recovery
-   - No cleanup code
 
 For more details on:
 - Service architecture: [Service Architecture](service-architecture.md)

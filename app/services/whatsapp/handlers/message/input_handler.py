@@ -65,7 +65,7 @@ def get_action(message_body: str, message_type: str = "text", message: Dict[str,
 
     except StateException as e:
         logger.error(f"Action extraction error: {str(e)}")
-        return ""
+        raise  # Let caller handle error
 
 
 def extract_input_value(message_body: str, message_type: str = "text",
@@ -79,35 +79,33 @@ def extract_input_value(message_body: str, message_type: str = "text",
 
     Returns:
         Extracted input value
+
+    Raises:
+        StateException: If input extraction fails
     """
-    try:
-        # Handle interactive messages
-        if message_type == "interactive":
-            interactive = message.get("interactive", {}) if message else {}
-            interactive_type = interactive.get("type")
+    # Handle interactive messages
+    if message_type == "interactive":
+        interactive = message.get("interactive", {}) if message else {}
+        interactive_type = interactive.get("type")
 
-            if interactive_type == "list_reply":
-                return interactive.get("list_reply", {}).get("id", "")
-            elif interactive_type == "button_reply":
-                return interactive.get("button_reply", {})
+        if interactive_type == "list_reply":
+            return interactive.get("list_reply", {}).get("id", "")
+        elif interactive_type == "button_reply":
+            return interactive.get("button_reply", {})
 
-        # Handle text messages
-        value = str(message_body).strip()
+    # Handle text messages
+    value = str(message_body).strip()
 
-        # Log input processing
-        audit.log_flow_event(
-            "bot_service",
-            "input_processing",
-            None,
-            {"input": value, "type": message_type},
-            "success"
-        )
+    # Log input processing (only log type)
+    audit.log_flow_event(
+        "bot_service",
+        "input_processing",
+        None,
+        {"type": message_type},  # Only log message type
+        "success"
+    )
 
-        return value
-
-    except StateException as e:
-        logger.error(f"Input extraction error: {str(e)}")
-        return ""
+    return value
 
 
 def is_greeting(text: str) -> bool:
@@ -136,12 +134,12 @@ def handle_invalid_input(state_manager: Any, flow_step_id: str = None) -> Messag
         # Get channel (StateManager validates)
         channel = state_manager.get("channel")
 
-        # Log invalid input
+        # Log invalid input (only log step)
         audit.log_flow_event(
             "bot_service",
             "invalid_input",
             flow_step_id,
-            {"channel_id": channel["identifier"]},
+            {"step": flow_step_id} if flow_step_id else {},  # Only log step if present
             "failure"
         )
 

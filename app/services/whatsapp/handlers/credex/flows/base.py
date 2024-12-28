@@ -9,26 +9,6 @@ logger = logging.getLogger(__name__)
 audit = FlowAuditLogger()
 
 
-def validate_credex_service(credex_service: Any) -> None:
-    """Validate service has required capabilities"""
-    if not credex_service:
-        raise StateException("Service not initialized")
-
-    if not isinstance(credex_service, dict):
-        raise StateException("Invalid service format")
-
-    # Check for required functions based on service.py implementation
-    required_functions = {
-        'validate_handle',  # member service
-        'get_credex',      # offers service
-        'offer_credex'     # offers service
-    }
-    # Since credex_service is a dict, we can use dict methods directly
-    missing = required_functions - set(credex_service)
-    if missing:
-        raise StateException(f"Service missing required functions: {', '.join(missing)}")
-
-
 def process_flow_step(
     state_manager: Any,
     flow_id: str,
@@ -36,24 +16,42 @@ def process_flow_step(
     input_data: Any = None,
     credex_service: Any = None
 ) -> Dict[str, Any]:
-    """Process a flow step enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get required state (StateManager validates)
-        channel = state_manager.get("channel")
-        flow_data = state_manager.get("flow_data")
+    """Process a flow step enforcing SINGLE SOURCE OF TRUTH
 
-        # Log validation
+    Args:
+        state_manager: State manager instance
+        flow_id: Flow identifier
+        step: Current step name
+        input_data: Optional input data
+        credex_service: Optional CredEx service instance
+
+    Returns:
+        Dict containing flow step data
+
+    Raises:
+        StateException: If state validation fails
+    """
+    try:
+        # Let StateManager validate state
+        state_manager.get("channel")  # Validates channel exists
+        flow_data = state_manager.get("flow_data")  # Validates flow data exists
+
+        # Let StateManager validate service through state update
+        if credex_service:
+            state_manager.update_state({
+                "flow_data": {
+                    "service": credex_service  # StateManager validates service structure
+                }
+            })
+
+        # Log validation (using state_manager for channel id)
         audit.log_flow_event(
             flow_id,
             "state_validation",
             None,
-            {"channel_id": channel["identifier"]},
+            {"channel_id": state_manager.get("channel")["identifier"]},  # StateManager validates
             "success"
         )
-
-        # Validate service if provided
-        if credex_service:
-            validate_credex_service(credex_service)
 
         # Return step data for handler
         return {
@@ -66,4 +64,4 @@ def process_flow_step(
 
     except StateException as e:
         logger.error(f"Flow step processing error: {str(e)}")
-        raise
+        raise  # Let caller handle error

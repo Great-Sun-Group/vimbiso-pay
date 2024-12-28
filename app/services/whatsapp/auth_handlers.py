@@ -6,6 +6,7 @@ from core.messaging.types import Message, TextContent, MessageRecipient, Channel
 from .handlers.auth.auth_flow import (
     handle_registration
 )
+from core.utils.exceptions import StateException
 from .handlers.auth.menu_functions import (
     handle_menu,
     handle_hi,
@@ -15,26 +16,16 @@ from .handlers.auth.menu_functions import (
 logger = logging.getLogger(__name__)
 
 
-def get_channel_id(state_manager: Any) -> str:
-    """Get channel ID from state safely"""
-    try:
-        channel = state_manager.get("channel")
-        if channel and channel.get("identifier"):
-            return channel["identifier"]
-    except ValueError:
-        pass
-    return "unknown"
-
-
-def handle_error(state_manager: Any, operation: str, error: ValueError) -> Message:
+def handle_error(state_manager: Any, operation: str, error: Exception) -> Message:
     """Handle errors consistently"""
     logger.error(f"{operation} failed: {str(error)}")
-    channel_id = get_channel_id(state_manager)
+    # Let StateManager validate channel access
+    channel = state_manager.get("channel")
     return Message(
         recipient=MessageRecipient(
             channel_id=ChannelIdentifier(
                 channel=ChannelType.WHATSAPP,
-                value=channel_id
+                value=channel["identifier"]
             )
         ),
         content=TextContent(
@@ -47,7 +38,7 @@ def handle_action_register(state_manager: Any, register: bool = False) -> Messag
     """Handle registration flow"""
     try:
         return handle_registration(state_manager, register)
-    except ValueError as e:
+    except StateException as e:
         return handle_error(state_manager, "Registration", e)
 
 
@@ -55,7 +46,7 @@ def handle_action_menu(state_manager: Any) -> Message:
     """Display main menu"""
     try:
         return handle_menu(state_manager)
-    except ValueError as e:
+    except StateException as e:
         return handle_error(state_manager, "Menu display", e)
 
 
@@ -63,7 +54,7 @@ def handle_action_refresh(state_manager: Any) -> Message:
     """Handle dashboard refresh"""
     try:
         return handle_refresh(state_manager)
-    except ValueError as e:
+    except StateException as e:
         return handle_error(state_manager, "Refresh", e)
 
 
@@ -79,6 +70,6 @@ def handle_action_hi(state_manager: Any) -> Message:
     try:
         # Handle initial greeting and return response
         return handle_hi(state_manager)
-    except ValueError as e:
+    except StateException as e:
         logger.error(f"Login error: {str(e)}")
         return handle_error(state_manager, "Greeting", e)

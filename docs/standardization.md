@@ -26,21 +26,53 @@ These rules are ABSOLUTE and NON-NEGOTIABLE. NO EXCEPTIONS.
 - NO passing state down
 - NO manual validation of state.get() results (handled by StateManager)
 
-## 3. Validation
+## 3. Validation Through State
 
-- Validation is handled by StateManager/StateValidator
-- NO manual validation before state.get()
-- NO manual validation after state.get()
-- NO partial validation
+### Core Principle
+All validation happens through state updates. If you need to validate something, update the state with it and let StateManager validate.
+
+### Rules
+- NO direct validation of values
+- NO manual validation before/after state.get()
+- NO validation helper functions
 - NO cleanup code
-- NO state fixing
 - NO error recovery
+- NO state fixing
 
-Note: StateManager automatically:
-- Validates at boundaries
-- Validates before access
+### How It Works
+StateManager automatically:
+- Validates all state updates
+- Validates before state access
 - Validates critical fields
-- Raises StateException for invalid access
+- Raises StateException for invalid state
+
+### Examples
+```python
+# WRONG - Manual validation
+def validate_amount(amount: str) -> bool:
+    return amount.isdigit() and float(amount) > 0
+
+# CORRECT - Validate through state update
+def process_amount(state_manager: Any, amount: str) -> None:
+    state_manager.update_state({
+        "flow_data": {
+            "input": {
+                "amount": amount  # StateManager validates
+            }
+        }
+    })
+
+# WRONG - Manual validation after get
+def get_amount(state_manager: Any) -> float:
+    amount = state_manager.get("amount")
+    if not amount:  # NO manual validation!
+        raise ValueError("Missing amount")
+    return float(amount)
+
+# CORRECT - Let StateManager validate
+def get_amount(state_manager: Any) -> float:
+    return state_manager.get("flow_data")["amount"]  # StateManager validates
+```
 
 ## 4. Stateless Handlers
 
