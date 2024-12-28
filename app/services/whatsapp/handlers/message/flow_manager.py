@@ -60,22 +60,17 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
             "in_progress"
         )
 
-        # Get credex service if needed
-        credex_service = None
-        if flow_type == "offer":
-            from services.credex.service import get_credex_service
-            credex_service = get_credex_service(state_manager)
-
         # Get handler name and import function
         handler_name = FLOW_HANDLERS[flow_type]  # Already validated flow_type exists
+        # Import flow handler using relative path
         handler_module = __import__(
-            f"app.services.whatsapp.handlers.credex.flows.{flow_type}",
+            f"services.whatsapp.handlers.credex.flows.{flow_type}",
             fromlist=[handler_name]
         )
         handler_func = getattr(handler_module, handler_name)
 
-        # Initialize flow
-        result = handler_func(state_manager, "amount" if flow_type == "offer" else "start", None, credex_service)
+        # Initialize flow through state update
+        result = handler_func(state_manager, "amount" if flow_type == "offer" else "start", None)
         if not result:
             raise StateException("Failed to get initial flow message")
 

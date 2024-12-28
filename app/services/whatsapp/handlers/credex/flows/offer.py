@@ -231,8 +231,7 @@ def complete_offer(state_manager: Any, credex_service: Any) -> Dict[str, Any]:
 def process_offer_step(
     state_manager: Any,
     step: str,
-    input_data: Any = None,
-    credex_service: Any = None
+    input_data: Any = None
 ) -> Message:
     """Process offer step enforcing SINGLE SOURCE OF TRUTH"""
     try:
@@ -250,10 +249,12 @@ def process_offer_step(
             return get_handle_prompt(state_manager)
 
         elif step == "confirm":
-            if not credex_service:
-                raise StateException("CredEx service required for confirmation")
-
             if input_data and input_data.lower() == "yes":
+                # Get credex service through state validation
+                from services.credex.service import get_credex_service
+                credex_service = get_credex_service(state_manager)
+
+                # Complete offer through state update
                 complete_offer(state_manager, credex_service)  # Raises StateException if fails
                 return Message(
                     recipient=MessageRecipient(

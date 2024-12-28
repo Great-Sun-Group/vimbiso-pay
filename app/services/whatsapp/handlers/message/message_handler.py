@@ -66,13 +66,14 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
 
         # Get handler function
         handler_name = FLOW_HANDLERS[flow_type]
+        # Import flow handler using relative path
         handler_module = __import__(
-            f"app.services.whatsapp.handlers.credex.flows.{flow_type}",
+            f"services.whatsapp.handlers.credex.flows.{flow_type}",
             fromlist=[handler_name]
         )
         handler_func = getattr(handler_module, handler_name)
 
-        # Process step (service initialization handled by flow manager)
+        # Process step through state update
         input_value = extract_input_value(message_text, message_type)
         return handler_func(state_manager, current_step, input_value)
 
