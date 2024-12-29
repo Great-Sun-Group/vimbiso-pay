@@ -82,8 +82,7 @@ class StateValidator:
             "accountName": str,
             "accountHandle": str,
             "accountType": str,
-            "balances": dict,
-            "offerData": dict
+            "balanceData": dict  # Match API structure
         }
 
         # Validate each account
@@ -162,6 +161,16 @@ class StateValidator:
 
         return ValidationResult(is_valid=True)
 
+    # Flow types that require authentication
+    AUTHENTICATED_FLOWS = {
+        "dashboard",    # Requires member dashboard access
+        "offer",       # Requires member to make offers
+        "accept",      # Requires member to accept offers
+        "decline",     # Requires member to decline offers
+        "cancel",      # Requires member to cancel offers
+        "upgrade"      # Requires member to upgrade tier
+    }
+
     @classmethod
     def _validate_flow_data(cls, flow_data: Any) -> ValidationResult:
         """Validate flow data structure"""
@@ -194,6 +203,14 @@ class StateValidator:
                     error_message="flow_type must be string"
                 )
 
+            # Validate authentication for protected flows
+            flow_type = flow_data["flow_type"]
+            if flow_type in cls.AUTHENTICATED_FLOWS:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Flow type '{flow_type}' requires authentication"
+                )
+
             if not isinstance(flow_data["step"], int):
                 return ValidationResult(
                     is_valid=False,
@@ -214,8 +231,10 @@ class StateValidator:
                     error_message="flow_data.data must be a dictionary"
                 )
 
-            # Validate dashboard data structure if present
+            # Validate login response structure
             data = flow_data["data"]
+
+            # Validate dashboard structure if present
             if "dashboard" in data:
                 dashboard = data["dashboard"]
                 if not isinstance(dashboard, dict):
@@ -224,14 +243,37 @@ class StateValidator:
                         error_message="dashboard must be a dictionary"
                     )
 
-                # Validate accounts array
-                if "accounts" not in data:
+                # Validate member data in dashboard
+                if "member" not in dashboard:
                     return ValidationResult(
                         is_valid=False,
-                        error_message="accounts required with dashboard data"
+                        error_message="dashboard missing member data"
                     )
 
-                accounts = data["accounts"]
+                member = dashboard["member"]
+                if not isinstance(member, dict):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="dashboard member must be a dictionary"
+                    )
+
+                # Validate required member fields
+                required_member = {"memberTier", "firstname", "lastname", "memberHandle", "defaultDenom"}
+                missing_member = required_member - set(member.keys())
+                if missing_member:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"member missing fields: {', '.join(missing_member)}"
+                    )
+
+                # Validate accounts array in dashboard
+                if "accounts" not in dashboard:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="dashboard missing accounts array"
+                    )
+
+                accounts = dashboard["accounts"]
                 if not isinstance(accounts, list):
                     return ValidationResult(
                         is_valid=False,
@@ -254,8 +296,8 @@ class StateValidator:
                     "accountID": str,
                     "accountName": str,
                     "accountHandle": str,
-                    "balances": dict,
-                    "offerData": dict
+                    "accountType": str,
+                    "balanceData": dict  # Match API structure
                 }
                 for field, field_type in required_account_fields.items():
                     if field not in personal_account:

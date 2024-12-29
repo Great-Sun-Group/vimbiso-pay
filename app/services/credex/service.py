@@ -4,10 +4,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from core.utils.exceptions import StateException
 
-from .auth import get_dashboard as auth_get_dashboard
 from .auth import login as auth_login
 from .auth import register_member as auth_register
-from .member import get_member_accounts as member_get_accounts
 from .member import refresh_member_info as member_refresh_info
 from .member import validate_account_handle as member_validate_handle
 from .offers import get_credex, offer_credex
@@ -34,19 +32,6 @@ def get_credex_service(state_manager: Any) -> Dict[str, Any]:
     }
 
 
-def handle_login(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Handle login with strict state validation"""
-    try:
-        # Let StateManager validate internally
-        success, result = auth_login(state_manager.get("channel")["identifier"])
-        logger.info("Login attempt completed")
-        return success, result
-
-    except StateException as e:
-        logger.error(f"Login error: {str(e)}")
-        return False, {"message": str(e)}
-
-
 def handle_registration(state_manager: Any, member_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
     """Handle member registration with strict state validation"""
     try:
@@ -67,66 +52,70 @@ def handle_registration(state_manager: Any, member_data: Dict[str, Any]) -> Tupl
         return False, {"message": str(e)}
 
 
-def get_member_accounts(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Get member accounts with strict state validation"""
-    try:
-        # Let StateManager validate through state update
+def update_member_state(state_manager: Any, result: Dict[str, Any]) -> None:
+    """Update member state from API response"""
+    data = result.get("data", {})
+    action = data.get("action", {})
+    details = action.get("details", {})
+    dashboard = data.get("dashboard", {})
+
+    # Only update state if dashboard has data (empty for simple endpoints)
+    if dashboard.get("member") or dashboard.get("accounts"):
         state_manager.update_state({
-            "flow_data": {
-                "flow_type": "accounts",
-                "step": 0,
-                "current_step": "fetch"
-            }
+            # Auth data
+            "jwt_token": details.get("token"),
+            "authenticated": True,
+            "member_id": details.get("memberID"),
+            # Member data
+            "member_data": dashboard.get("member"),
+            # Account data
+            "accounts": dashboard.get("accounts", []),
+            "active_account_id": next(
+                (account["accountID"] for account in dashboard.get("accounts", [])
+                 if account["accountType"] == "PERSONAL"),
+                None
+            )
+        })
+    # Always update token if present
+    elif details.get("token"):
+        state_manager.update_state({
+            "jwt_token": details.get("token")
         })
 
-        return member_get_accounts(
-            state_manager.get("member_id"),
-            state_manager.get("jwt_token")
-        )
 
-    except Exception as e:
-        logger.error(f"Failed to get member accounts: {str(e)}")
+def handle_login(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Handle login with strict state validation"""
+    try:
+        # Initial login just needs phone number
+        success, result = auth_login(state_manager.get("channel")["identifier"])
+        if not success:
+            return False, result
+
+        # Extract auth data from response
+        data = result.get("data", {})
+        action = data.get("action", {})
+
+        # Verify login succeeded
+        if action.get("type") != "MEMBER_LOGIN":
+            return False, {
+                "message": "Invalid login response"
+            }
+
+        # Update complete member state
+        update_member_state(state_manager, result)
+
+        logger.info("Login completed and state updated")
+        return True, result
+
+    except StateException as e:
+        logger.error(f"Login error: {str(e)}")
         return False, {"message": str(e)}
 
 
-def get_member_dashboard(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Get member dashboard with strict state validation"""
-    try:
-        # Let StateManager validate through state update
-        state_manager.update_state({
-            "flow_data": {
-                "flow_type": "dashboard",
-                "step": 0,
-                "current_step": "fetch"
-            }
-        })
-
-        return auth_get_dashboard(
-            state_manager.get("channel")["identifier"],
-            state_manager.get("jwt_token")
-        )
-
-    except StateException as e:
-        error_msg = str(e)
-        logger.error(f"Dashboard validation error: {error_msg}")
-        return False, {"message": error_msg}
-
-
 def validate_member_handle(state_manager: Any, handle: str) -> Tuple[bool, Dict[str, Any]]:
-    """Validate member handle with strict state validation"""
+    """Validate member handle (simple endpoint, no state update needed)"""
     try:
-        # Let StateManager validate through state update
-        state_manager.update_state({
-            "flow_data": {
-                "flow_type": "handle",
-                "step": 0,
-                "current_step": "validate",
-                "data": {
-                    "handle": handle
-                }
-            }
-        })
-
+        # Simple validation endpoint - just return result
         return member_validate_handle(handle, state_manager.get("jwt_token"))
 
     except StateException as e:
@@ -136,18 +125,16 @@ def validate_member_handle(state_manager: Any, handle: str) -> Tuple[bool, Dict[
 
 
 def refresh_member_info(state_manager: Any) -> Optional[str]:
-    """Refresh member info with strict state validation"""
+    """Refresh member info with dashboard data"""
     try:
-        # Let StateManager validate through state update
-        state_manager.update_state({
-            "flow_data": {
-                "flow_type": "refresh",
-                "step": 0,
-                "current_step": "fetch"
-            }
-        })
+        # Get fresh member info
+        result = member_refresh_info(state_manager.get("channel")["identifier"])
+        if isinstance(result, str):  # Error case
+            return result
 
-        return member_refresh_info(state_manager.get("channel")["identifier"])
+        # Update state with fresh dashboard data
+        update_member_state(state_manager, result)
+        return None
 
     except StateException as e:
         error_msg = str(e)

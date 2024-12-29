@@ -36,14 +36,15 @@ def handle_registration(state_manager: Any, input_data: Dict[str, Any]) -> Tuple
         dashboard = response["data"]["dashboard"]
         action = response["data"]["action"]
 
-        # Get member data from dashboard
+        # Get member data from dashboard.member
+        member = dashboard["member"]  # Member data is under member
         member_data = {
-            "memberTier": dashboard["memberTier"],  # Always 1 for new members
-            "remainingAvailableUSD": dashboard["remainingAvailableUSD"],
-            "firstname": dashboard["firstname"],
-            "lastname": dashboard["lastname"],
-            "memberHandle": dashboard["memberHandle"],  # Initially phone number
-            "defaultDenom": dashboard["defaultDenom"]
+            "memberTier": member["memberTier"],  # Always 1 for new members
+            "remainingAvailableUSD": member.get("remainingAvailableUSD"),
+            "firstname": member["firstname"],
+            "lastname": member["lastname"],
+            "memberHandle": member["memberHandle"],  # Initially phone number
+            "defaultDenom": member["defaultDenom"]
         }
 
         # Update state with member data and registration complete

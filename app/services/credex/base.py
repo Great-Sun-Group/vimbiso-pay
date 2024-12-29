@@ -103,8 +103,14 @@ def make_credex_request(
             return response
 
         # Handle errors
-        if response.status_code >= 400 and requires_auth:
+        if response.status_code >= 400:
             raise TransactionError(extract_error_message(response))
+
+        # Log successful response for debugging
+        try:
+            logger.debug(f"Success response content: {response.json()}")
+        except Exception:
+            logger.debug(f"Non-JSON success response: {response.text}")
 
         return response
 

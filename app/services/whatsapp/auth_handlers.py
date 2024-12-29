@@ -36,7 +36,7 @@ def handle_hi(state_manager: Any) -> Message:
         if not success:
             return handle_registration(state_manager)
 
-        # Login successful - show dashboard
+        # Login successful - show dashboard (StateManager validates authentication)
         return handle_dashboard_display(state_manager)
 
     except StateException as e:

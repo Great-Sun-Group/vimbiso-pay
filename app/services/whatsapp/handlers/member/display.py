@@ -84,16 +84,7 @@ def prepare_menu_options(pending_count: int, outgoing_count: int) -> Dict:
 
 def handle_dashboard_display(state_manager: Any) -> Message:
     """Display dashboard with menu options"""
-    # Let StateManager validate through state update
-    state_manager.update_state({
-        "flow_data": {
-            "flow_type": "dashboard",
-            "step": 0,
-            "current_step": "display"
-        }
-    })
-
-    # Get state data (StateManager validates on access)
+    # Get state data first (StateManager validates on access)
     channel = state_manager.get("channel")
     accounts = state_manager.get("accounts")
     active_id = state_manager.get("active_account_id")
@@ -104,6 +95,15 @@ def handle_dashboard_display(state_manager: Any) -> Message:
         account for account in accounts
         if account["accountID"] == active_id
     )
+
+    # Update flow state after getting data
+    state_manager.update_state({
+        "flow_data": {
+            "flow_type": "dashboard",
+            "step": 0,
+            "current_step": "display"
+        }
+    })
 
     # Prepare display data with member tier info
     display_data = prepare_display_data(active_account, member_data)
