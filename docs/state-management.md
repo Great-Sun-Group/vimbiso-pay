@@ -58,6 +58,20 @@ Core state includes:
 
     # Authentication (SINGLE SOURCE OF TRUTH)
     "jwt_token": "token",
+    "authenticated": True,
+
+    # Account state (SINGLE SOURCE OF TRUTH)
+    "accounts": [  # All available accounts
+        {
+            "accountID": "account_id",
+            "accountName": "Account Name",
+            "accountHandle": "@handle",
+            "accountType": "PERSONAL",  # or other types
+            "balances": {...},
+            "offerData": {...}
+        }
+    ],
+    "active_account_id": "current_account_id",  # Currently active account
 
     # Flow state
     "flow_data": {
@@ -72,6 +86,26 @@ Core state includes:
     }
 }
 ```
+
+### Account State Rules
+
+1. **Registration**
+- Creates single personal account
+- Sets as active account
+- Stores in accounts array
+- NO manual account access
+
+2. **Login**
+- May return multiple accounts
+- Sets personal account as active
+- Stores all accounts
+- NO manual account access
+
+3. **Account Access**
+- Use active_account_id to find current account
+- Get accounts from top level state
+- Let StateManager validate account existence
+- NO manual account validation
 
 Note: This is the COMPLETE structure. If you need more fields, question why.
 

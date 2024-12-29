@@ -3,100 +3,113 @@ import logging
 from typing import Any, Dict, Tuple
 
 from core.utils.exceptions import StateException
+
 from .base import make_credex_request
 
 logger = logging.getLogger(__name__)
 
 
-def get_dashboard(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Get dashboard information"""
-    try:
-        # StateManager handles validation of phone and jwt_token
-        response = make_credex_request(
-            'member', 'get_dashboard',
-            payload={"phone": state_manager.get("phone")},
-            jwt_token=state_manager.get("jwt_token")
-        )
-        data = response.json()
-
-        if not data.get("data", {}).get("dashboard"):
-            raise StateException("No dashboard data received")
-
-        return True, data
-
-    except StateException:
-        # Re-raise StateException for proper error propagation
-        raise
-    except Exception as e:
-        logger.error(f"Dashboard fetch failed: {str(e)}")
-        raise StateException(f"Dashboard fetch failed: {str(e)}")
-
-
-def validate_handle(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Validate CredEx handle"""
-    try:
-        # StateManager handles validation of handle and jwt_token
-        response = make_credex_request(
-            'member', 'validate_handle',
-            payload={"accountHandle": state_manager.get("handle")},
-            jwt_token=state_manager.get("jwt_token")
-        )
-        data = response.json()
-
-        details = data.get("data", {}).get("action", {}).get("details", {})
-        if not details:
-            raise StateException("Account not found")
-
-        return True, {"data": details}
-
-    except StateException:
-        # Re-raise StateException for proper error propagation
-        raise
-    except Exception as e:
-        logger.error(f"Handle validation failed: {str(e)}")
-        raise StateException(f"Handle validation failed: {str(e)}")
-
-
-def refresh_member_info(state_manager: Any) -> None:
-    """Refresh member information"""
-    try:
-        # StateManager handles validation of phone
-        response = make_credex_request(
-            'auth', 'login',
-            payload={"phone": state_manager.get("phone")}
-        )
-        data = response.json()
-
-        if not data.get("data", {}).get("action", {}).get("details", {}).get("token"):
-            raise StateException("Failed to refresh member info")
-
-        return None
-
-    except StateException:
-        # Re-raise StateException for proper error propagation
-        raise
-    except Exception as e:
-        logger.error(f"Member info refresh failed: {str(e)}")
-        raise StateException(f"Member info refresh failed: {str(e)}")
-
-
 def get_member_accounts(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Get member accounts from state"""
+    """Get member accounts from state enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # StateManager handles validation
-        personal_account = state_manager.get("personal_account")
-        if not personal_account:
-            raise StateException("Personal account data not found in state")
+        # Let StateManager validate through update
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "accounts",
+                "step": 0,
+                "current_step": "fetch"
+            }
+        })
+
+        # Get accounts from state (StateManager validates)
+        accounts = state_manager.get("accounts")
+        active_id = state_manager.get("active_account_id")
 
         return True, {
             "data": {
-                "accounts": [personal_account]
+                "accounts": accounts,
+                "active_account_id": active_id
             }
         }
 
     except StateException:
         # Re-raise StateException for proper error propagation
         raise
-    except Exception as e:
-        logger.error(f"Failed to get member accounts from state: {str(e)}")
-        raise StateException(f"Failed to get member accounts: {str(e)}")
+
+
+def validate_account_handle(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Validate CredEx handle enforcing SINGLE SOURCE OF TRUTH"""
+    try:
+        # Let StateManager validate through update
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "handle_validation",
+                "step": 0,
+                "current_step": "validate",
+                "data": {
+                    "handle": state_manager.get("handle")
+                }
+            }
+        })
+
+        # Make API request (StateManager validates jwt_token)
+        response = make_credex_request(
+            'member', 'validate_account_handle',
+            payload={"accountHandle": state_manager.get("handle")},
+            jwt_token=state_manager.get("jwt_token")
+        )
+
+        # Let StateManager validate response through update
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "handle_validation",
+                "step": 1,
+                "current_step": "complete",
+                "data": {
+                    "validation": response.json()
+                }
+            }
+        })
+
+        return True, response.json()
+
+    except StateException:
+        # Re-raise StateException for proper error propagation
+        raise
+
+
+def refresh_member_info(state_manager: Any) -> None:
+    """Refresh member information enforcing SINGLE SOURCE OF TRUTH"""
+    try:
+        # Let StateManager validate through update
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "refresh",
+                "step": 0,
+                "current_step": "start"
+            }
+        })
+
+        # Make API request (StateManager validates channel)
+        response = make_credex_request(
+            'auth', 'login',
+            payload={"phone": state_manager.get("channel")["identifier"]}
+        )
+
+        # Let StateManager validate response through update
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "refresh",
+                "step": 1,
+                "current_step": "complete",
+                "data": {
+                    "refresh": response.json()
+                }
+            }
+        })
+
+        return None
+
+    except StateException:
+        # Re-raise StateException for proper error propagation
+        raise

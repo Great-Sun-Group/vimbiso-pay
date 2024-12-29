@@ -43,7 +43,7 @@ class CredExEndpoints:
             'register': {'path': 'onboardMember', 'requires_auth': False}
         },
         'member': {
-            'validate_handle': {'path': 'getAccountByHandle'},
+            'validate_account_handle': {'path': 'getAccountByHandle'},
             'get_dashboard': {'path': 'getDashboard'}
         },
         'credex': {

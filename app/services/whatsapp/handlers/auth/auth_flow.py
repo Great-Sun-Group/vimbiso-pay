@@ -102,52 +102,74 @@ def attempt_login(state_manager: Any) -> Tuple[bool, Optional[Dict[str, Any]]]:
         if not success:
             return handle_login_error(response)
 
-        data = response["data"]
-        action = data["action"]
-        details = action["details"]
-        dashboard = data["dashboard"]
-        accounts = dashboard["accounts"]
+        # Check for error response (has empty dashboard)
+        action_type = response["data"]["action"]["type"]
+        if action_type.startswith("ERROR_"):
+            return handle_login_error({
+                "message": response["data"]["action"]["details"].get("reason", "Login failed")
+            })
 
-        # Find personal account
-        personal_account = next(
-            (account for account in accounts if account.get("accountType") == "PERSONAL"),
-            None
+        # Get accounts from dashboard
+        dashboard = response["data"]["dashboard"]
+        raw_accounts = dashboard["accounts"]
+        accounts = []
+        for account in raw_accounts:
+            # Keep exact API structure
+            accounts.append({
+                "accountID": account["accountID"],
+                "accountName": account["accountName"],
+                "accountHandle": account["accountHandle"],
+                "accountType": account["accountType"],
+                "defaultDenom": account["defaultDenom"],
+                "isOwnedAccount": account["isOwnedAccount"],
+                "sendOffersTo": account.get("sendOffersTo"),
+                "balanceData": account["balanceData"],
+                "pendingInData": account.get("pendingInData", []),
+                "pendingOutData": account.get("pendingOutData", [])
+            })
+
+        # Find personal account ID
+        active_account_id = next(
+            account["accountID"]
+            for account in accounts
+            if account["accountType"] == "PERSONAL"
         )
-        if not personal_account:
-            raise StateException("Personal account not found in response")
 
-        # Extract member and account data
-        member_data = dashboard.get("member", {})
-        account_data = {
-            "accountID": personal_account["accountID"],
-            "accountName": personal_account["accountName"],
-            "accountHandle": personal_account["accountHandle"],
-            "balances": personal_account["balances"],
-            "offerData": personal_account["offerData"]
+        # Get member data from dashboard
+        dashboard = response["data"]["dashboard"]
+        member_data = {
+            "memberTier": dashboard["memberTier"],
+            "remainingAvailableUSD": dashboard.get("remainingAvailableUSD"),
+            "firstname": dashboard["firstname"],
+            "lastname": dashboard["lastname"],
+            "memberHandle": dashboard["memberHandle"],
+            "defaultDenom": dashboard["defaultDenom"]
         }
 
-        # Single atomic update to maintain consistency
-        state_manager.update_state({
-            # 1. Auth state first
-            "jwt_token": details["token"],
+        # Let StateManager validate through state update
+        success, error = state_manager.update_state({
+            # Core identity - SINGLE SOURCE OF TRUTH
+            "jwt_token": response["data"]["action"]["details"]["token"],
             "authenticated": True,
+            "member_id": response["data"]["action"]["details"]["memberID"],
 
-            # 2. Member data (including tier info)
-            "member_id": details["memberID"],
-            "tier_limit_display": member_data.get("tier_limit_display"),
+            # Member data at top level
+            "member_data": member_data,
 
-            # 3. Account data
-            "account_id": account_data["accountID"],
-            "personal_account": account_data,
+            # Account data at top level for future account switching
+            "accounts": accounts,
+            "active_account_id": active_account_id,
 
-            # 4. Flow state last
+            # Flow state only for routing
             "flow_data": {
                 "flow_type": "dashboard",
                 "step": 0,
-                "current_step": "display",
-                "data": {}
+                "current_step": "display"
             }
         })
+
+        if not success:
+            raise StateException(f"Failed to update auth state: {error}")
 
         return True, None
 
@@ -168,28 +190,19 @@ def attempt_login(state_manager: Any) -> Tuple[bool, Optional[Dict[str, Any]]]:
 
 
 def handle_login_error(response: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
-    """Handle login error"""
-    try:
-        error_data = response["data"]["action"]
-        error_type = error_data["type"]
-        error_code = error_data["details"]["code"]
-
-        if error_type == "ERROR_NOT_FOUND" and error_code == "NOT_FOUND":
-            return False, None
-
-        if error_type == "ERROR_VALIDATION":
-            return False, create_error_response("VALIDATION_ERROR", "Invalid login format")
-
-        if error_type == "ERROR_INTERNAL":
-            return False, create_error_response("SYSTEM_ERROR", "Service temporarily unavailable")
-
-        return False, create_error_response(
-            "AUTH_ERROR",
-            response.get("message", "Authentication failed")
-        )
-
-    except KeyError:
-        return False, create_error_response("AUTH_ERROR", "Invalid response format")
+    """Handle login error through state validation"""
+    # Let StateManager validate error response structure
+    return False, {
+        "data": {
+            "action": {
+                "type": "ERROR_VALIDATION",
+                "details": {
+                    "code": "AUTH_ERROR",
+                    "message": response.get("message", "Authentication failed")
+                }
+            }
+        }
+    }
 
 
 def create_error_response(code: str, message: str) -> Dict[str, Any]:

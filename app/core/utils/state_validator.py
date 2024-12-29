@@ -44,7 +44,7 @@ class StateValidator:
                 return flow_validation
 
         # Only validate auth for non-null member/account operations
-        if (state.get("member_id") is not None or state.get("account_id") is not None):
+        if (state.get("member_id") is not None or state.get("active_account_id") is not None):
             if not state.get("authenticated"):
                 return ValidationResult(
                     is_valid=False,
@@ -54,6 +54,69 @@ class StateValidator:
                 return ValidationResult(
                     is_valid=False,
                     error_message="Valid token required for member operations"
+                )
+
+            # Validate accounts structure if present
+            if "accounts" in state:
+                accounts_validation = cls._validate_accounts(
+                    state["accounts"],
+                    state.get("active_account_id")
+                )
+                if not accounts_validation.is_valid:
+                    return accounts_validation
+
+        return ValidationResult(is_valid=True)
+
+    @classmethod
+    def _validate_accounts(cls, accounts: Any, active_id: Optional[str]) -> ValidationResult:
+        """Validate accounts structure"""
+        if not isinstance(accounts, list):
+            return ValidationResult(
+                is_valid=False,
+                error_message="accounts must be an array"
+            )
+
+        # Required account fields and types
+        required_fields = {
+            "accountID": str,
+            "accountName": str,
+            "accountHandle": str,
+            "accountType": str,
+            "balances": dict,
+            "offerData": dict
+        }
+
+        # Validate each account
+        for account in accounts:
+            if not isinstance(account, dict):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="each account must be a dictionary"
+                )
+
+            # Check required fields
+            for field, field_type in required_fields.items():
+                if field not in account:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"account missing required field: {field}"
+                    )
+                if not isinstance(account[field], field_type):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"account {field} must be {field_type.__name__}"
+                    )
+
+        # Validate active account exists if specified
+        if active_id is not None:
+            active_exists = any(
+                account["accountID"] == active_id
+                for account in accounts
+            )
+            if not active_exists:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"active account {active_id} not found"
                 )
 
         return ValidationResult(is_valid=True)
@@ -151,6 +214,61 @@ class StateValidator:
                     error_message="flow_data.data must be a dictionary"
                 )
 
+            # Validate dashboard data structure if present
+            data = flow_data["data"]
+            if "dashboard" in data:
+                dashboard = data["dashboard"]
+                if not isinstance(dashboard, dict):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="dashboard must be a dictionary"
+                    )
+
+                # Validate accounts array
+                if "accounts" not in data:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="accounts required with dashboard data"
+                    )
+
+                accounts = data["accounts"]
+                if not isinstance(accounts, list):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="accounts must be an array"
+                    )
+
+                # Find and validate personal account
+                personal_account = next(
+                    (account for account in accounts if account.get("accountType") == "PERSONAL"),
+                    None
+                )
+                if not personal_account:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="personal account not found"
+                    )
+
+                # Validate required account fields
+                required_account_fields = {
+                    "accountID": str,
+                    "accountName": str,
+                    "accountHandle": str,
+                    "balances": dict,
+                    "offerData": dict
+                }
+                for field, field_type in required_account_fields.items():
+                    if field not in personal_account:
+                        return ValidationResult(
+                            is_valid=False,
+                            error_message=f"personal account missing required field: {field}"
+                        )
+                    if not isinstance(personal_account[field], field_type):
+                        return ValidationResult(
+                            is_valid=False,
+                            error_message=f"{field} must be {field_type.__name__}"
+                        )
+
         return ValidationResult(is_valid=True)
 
     @classmethod
@@ -175,7 +293,7 @@ class StateValidator:
                 return channel_validation
 
         # Only validate auth for non-null member/account access
-        if ("member_id" in required_fields and state.get("member_id") is not None or "account_id" in required_fields and state.get("account_id") is not None):
+        if ("member_id" in required_fields and state.get("member_id") is not None or "active_account_id" in required_fields and state.get("active_account_id") is not None):
             if not state.get("authenticated"):
                 return ValidationResult(
                     is_valid=False,
@@ -186,6 +304,20 @@ class StateValidator:
                     is_valid=False,
                     error_message="Valid token required for member operations"
                 )
+
+        # Validate accounts if required
+        if "accounts" in required_fields:
+            if "accounts" not in state:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Missing required field: accounts"
+                )
+            accounts_validation = cls._validate_accounts(
+                state["accounts"],
+                state.get("active_account_id")
+            )
+            if not accounts_validation.is_valid:
+                return accounts_validation
 
         # Validate flow_data structure if being accessed
         if "flow_data" in required_fields and "flow_data" in state:

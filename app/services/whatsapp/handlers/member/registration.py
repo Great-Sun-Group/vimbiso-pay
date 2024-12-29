@@ -32,24 +32,39 @@ def handle_registration(state_manager: Any, input_data: Dict[str, Any]) -> Tuple
         if not success:
             raise StateException("Failed to register member")
 
-        member_data = response["data"]
-        member_id = member_data["member_id"]
-        account_id = member_data["account_id"]
+        # Get data from onboarding response
+        dashboard = response["data"]["dashboard"]
+        action = response["data"]["action"]
+
+        # Get member data from dashboard
+        member_data = {
+            "memberTier": dashboard["memberTier"],  # Always 1 for new members
+            "remainingAvailableUSD": dashboard["remainingAvailableUSD"],
+            "firstname": dashboard["firstname"],
+            "lastname": dashboard["lastname"],
+            "memberHandle": dashboard["memberHandle"],  # Initially phone number
+            "defaultDenom": dashboard["defaultDenom"]
+        }
 
         # Update state with member data and registration complete
         success, error = state_manager.update_state({
-            # Member data at top level
-            "member_id": member_id,
-            "account_id": account_id,
+            # Core identity - SINGLE SOURCE OF TRUTH
+            "jwt_token": action["details"]["token"],
             "authenticated": True,
-            # Flow state
+            "member_id": action["details"]["memberID"],
+
+            # Member data at top level
+            "member_data": member_data,
+
+            # Account data at top level (single personal account)
+            "accounts": dashboard["accounts"],
+            "active_account_id": action["details"]["defaultAccountID"],
+
+            # Flow state only for routing
             "flow_data": {
                 "flow_type": "registration",
                 "step": 1,
-                "current_step": "complete",
-                "data": {
-                    "member": member_data
-                }
+                "current_step": "complete"
             }
         })
         if not success:
@@ -90,9 +105,9 @@ def validate_registration_input(state_manager: Any, input_data: Dict[str, Any]) 
                 "current_step": "validate",
                 "data": {
                     "validation": {
-                        "first_name": input_data.get("first_name"),
-                        "last_name": input_data.get("last_name"),
-                        "email": input_data.get("email")
+                        "firstname": input_data.get("firstname"),
+                        "lastname": input_data.get("lastname"),
+                        "defaultDenom": input_data.get("defaultDenom")
                     }
                 }
             }
@@ -104,20 +119,21 @@ def validate_registration_input(state_manager: Any, input_data: Dict[str, Any]) 
         flow_data = state_manager.get("flow_data")
         validation = flow_data["data"]["validation"]
 
-        # First name validation
-        first_name = validation["first_name"]
-        if not first_name or len(first_name) < 2:
-            raise StateException("First name must be at least 2 characters")
+        # Validate required fields from API spec
+        firstname = validation["firstname"]
+        if not firstname or len(firstname) < 3 or len(firstname) > 50:
+            raise StateException("First name must be between 3 and 50 characters")
 
-        # Last name validation
-        last_name = validation["last_name"]
-        if not last_name or len(last_name) < 2:
-            raise StateException("Last name must be at least 2 characters")
+        lastname = validation["lastname"]
+        if not lastname or len(lastname) < 3 or len(lastname) > 50:
+            raise StateException("Last name must be between 3 and 50 characters")
 
-        # Email validation
-        email = validation["email"]
-        if not email or "@" not in email:
-            raise StateException("Invalid email format")
+        defaultDenom = validation["defaultDenom"]
+        valid_denoms = {"CXX", "CAD", "USD", "XAU", "ZWG"}
+        if not defaultDenom or defaultDenom not in valid_denoms:
+            raise StateException(f"Invalid defaultDenom. Must be one of: {', '.join(valid_denoms)}")
+
+        # Phone validation handled by channel (phone number format: ^[1-9]\d{1,14}$)
 
         # Update state with validated data
         success, error = state_manager.update_state({
@@ -126,9 +142,9 @@ def validate_registration_input(state_manager: Any, input_data: Dict[str, Any]) 
                 "step": 0,
                 "current_step": "validated",
                 "data": {
-                    "first_name": first_name,
-                    "last_name": last_name,
-                    "email": email,
+                    "firstname": firstname,
+                    "lastname": lastname,
+                    "defaultDenom": defaultDenom,
                     "validation": {
                         "success": True
                     }

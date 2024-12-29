@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from .base import BaseTransactionService
 from .exceptions import (InvalidTransactionCommandError,
                          TransactionProcessingError)
-from .types import (Account, Transaction, TransactionOffer,
-                    TransactionResult, TransactionStatus, TransactionType)
+from .types import (Account, Transaction, TransactionOffer, TransactionResult,
+                    TransactionStatus, TransactionType)
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ class CredexTransactionService(BaseTransactionService):
         try:
             # First validate the handle if not already validated
             if not offer.receiver_account_id and offer.handle:
-                success, handle_data = self.api_client.services['member'].validate_handle(offer.handle)
+                success, handle_data = self.api_client.services['member'].validate_account_handle(offer.handle)
                 if not success:
                     return TransactionResult(
                         success=False,

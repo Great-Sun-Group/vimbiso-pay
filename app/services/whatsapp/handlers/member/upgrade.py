@@ -29,9 +29,9 @@ def handle_upgrade(state_manager: Any, input_data: Optional[Dict[str, Any]] = No
             raise StateException("Member ID required for upgrade")
 
         # Get current account data
-        account_id = state_manager.get("account_id")
-        if not account_id:
-            raise StateException("Account ID required for upgrade")
+        active_account_id = state_manager.get("active_account_id")
+        if not active_account_id:
+            raise StateException("Active account required for upgrade")
 
         # Update state with upgrade data
         success, error = state_manager.update_state({
@@ -41,7 +41,7 @@ def handle_upgrade(state_manager: Any, input_data: Optional[Dict[str, Any]] = No
                 "current_step": "confirm",
                 "data": {
                     "member_id": member_id,
-                    "account_id": account_id,
+                    "account_id": active_account_id,
                     "upgrade_data": input_data or {}
                 }
             }
@@ -58,7 +58,7 @@ def handle_upgrade(state_manager: Any, input_data: Optional[Dict[str, Any]] = No
             raise StateException("Invalid confirmation response")
 
         # Attempt upgrade
-        success, response = upgrade_member_tier(member_id, account_id)
+        success, response = upgrade_member_tier(member_id, active_account_id)
         if not success:
             raise StateException("Failed to upgrade member tier")
 

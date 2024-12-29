@@ -152,7 +152,7 @@ def get_handle_prompt(state_manager: Any) -> Message:
         raise
 
 
-def validate_handle(handle: str) -> str:
+def validate_account_handle(handle: str) -> str:
     """Validate handle input
 
     Args:
@@ -185,7 +185,7 @@ def store_handle(state_manager: Any, handle: str) -> bool:
     logger.debug(f"Validating handle: {handle}")
 
     # Validate handle (raises StateException if invalid)
-    validated_handle = validate_handle(handle)
+    validated_handle = validate_account_handle(handle)
     logger.debug(f"Handle validated: {validated_handle}")
 
     # Let StateManager validate structure and preserve flow metadata

@@ -47,7 +47,8 @@ class StateManager:
                 "member_id": None,
                 "jwt_token": None,
                 "authenticated": False,
-                "account_id": None,
+                "accounts": [],
+                "active_account_id": None,
                 "flow_data": {}  # Initialize as empty dict instead of None
             }
 

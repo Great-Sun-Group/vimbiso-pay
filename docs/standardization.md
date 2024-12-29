@@ -16,6 +16,16 @@ These rules are ABSOLUTE and NON-NEGOTIABLE. NO EXCEPTIONS.
 - NEVER stored in parts
 - NEVER passed to other components
 
+### Account State
+- EXISTS ONLY AT TOP LEVEL STATE
+- accounts array contains ALL accounts
+- active_account_id tracks current account
+- NEVER store account data in flow_data
+- NEVER duplicate account information
+- NEVER pass account data to components
+- Registration creates SINGLE personal account
+- Login (and other endpoints) may return MULTIPLE accounts
+
 ## 2. State Access
 
 - ONLY use state.get() for access
@@ -56,6 +66,8 @@ StateManager automatically:
   - step (must be integer for framework validation)
   - current_step (must be string for flow routing)
   - flow_type (must be string for flow identification)
+  - accounts (must be array at top level)
+  - active_account_id (must reference valid account)
 - Raises StateException for invalid state
 
 Flow implementations:
@@ -66,6 +78,19 @@ Flow implementations:
 
 ### Examples
 ```python
+# CORRECT - Account access through state
+def get_active_account(state_manager: Any) -> Dict[str, Any]:
+    """Get active account through state validation"""
+    # Get validated state data
+    active_id = state_manager.get("active_account_id")
+    accounts = state_manager.get("accounts")
+
+    # Find active account (StateManager has already validated it exists)
+    return next(
+        account for account in accounts
+        if account["accountID"] == active_id
+    )
+
 # CORRECT - Flow-specific validation
 def validate_amount(amount: str) -> Dict[str, Any]:
     """Validate amount according to business rules"""
@@ -183,6 +208,9 @@ STOP and verify before ANY code change:
 1. State Location
    - [ ] member_id ONLY at top level?
    - [ ] channel info ONLY at top level?
+   - [ ] accounts array at top level?
+   - [ ] active_account_id at top level?
+   - [ ] NO account data in flow_data?
    - [ ] NO new state duplication?
 
 2. State Access

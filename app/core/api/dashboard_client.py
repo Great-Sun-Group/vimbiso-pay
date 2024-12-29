@@ -1,12 +1,10 @@
 """Dashboard-related API operations using pure functions"""
 import logging
-from typing import Tuple, Dict, Any, Optional
+from typing import Any, Dict, Optional, Tuple
+
 from decouple import config
-from .base import (
-    make_api_request,
-    handle_error_response,
-    BASE_URL
-)
+
+from .base import BASE_URL, handle_error_response, make_api_request
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +36,7 @@ def get_dashboard(phone_number: str, jwt_token: str) -> Tuple[bool, Dict[str, An
         return False, {"message": f"Dashboard fetch failed: {str(e)}"}
 
 
-def validate_handle(handle: str, jwt_token: str) -> Tuple[bool, Dict[str, Any]]:
+def validate_account_handle(handle: str, jwt_token: str) -> Tuple[bool, Dict[str, Any]]:
     """Validates a handle by making an API call to CredEx"""
     logger.info(f"Validating handle: {handle}")
     url = f"{BASE_URL}/getAccountByHandle"

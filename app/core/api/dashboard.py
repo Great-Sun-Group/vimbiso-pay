@@ -1,22 +1,15 @@
 """Dashboard and member operations using pure functions"""
 import logging
-from typing import Dict, Any, Tuple, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from core.utils.state_validator import StateValidator
-from .base import (
-    make_api_request,
-    get_headers,
-    handle_error_response,
-    process_api_response,
-    handle_reset_and_init,
-    BASE_URL,
-)
-from .profile import (
-    update_profile_from_response,
-    handle_successful_refresh,
-    _structure_profile_data,
-)
+
 from .auth import login
+from .base import (BASE_URL, get_headers, handle_error_response,
+                   handle_reset_and_init, make_api_request,
+                   process_api_response)
+from .profile import (_structure_profile_data, handle_successful_refresh,
+                      update_profile_from_response)
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +189,7 @@ def refresh_member_info(
         return str(e)
 
 
-def validate_handle(bot_service: Any, handle: str) -> Tuple[bool, Dict[str, Any]]:
+def validate_account_handle(bot_service: Any, handle: str) -> Tuple[bool, Dict[str, Any]]:
     """Validate member handle"""
     logger.info(f"Validating handle: {handle}")
     url = f"{BASE_URL}/getAccountByHandle"

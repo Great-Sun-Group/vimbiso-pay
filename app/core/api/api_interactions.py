@@ -17,7 +17,7 @@ from .credex import offer_credex as create_credex
 from .dashboard_client import get_dashboard as get_member_dashboard
 from .dashboard_client import get_ledger as get_member_ledger
 from .dashboard_client import process_dashboard_response
-from .dashboard_client import validate_handle as validate_member_handle
+from .dashboard_client import validate_account_handle as validate_member_handle
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +189,7 @@ def create_api_interactions(state_manager: Any, channel_id: str) -> Dict[str, Ca
             silent,
             init
         ),
-        "validate_handle": lambda handle: validate_member_handle(
+        "validate_account_handle": lambda handle: validate_member_handle(
             handle,
             state_manager.get("jwt_token")
         ),

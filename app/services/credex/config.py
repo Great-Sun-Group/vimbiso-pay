@@ -1,12 +1,9 @@
+import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Dict, Optional
 from urllib.parse import urljoin
 
 from decouple import config
-
-
-import logging
-from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -131,8 +128,11 @@ class CredExEndpoints:
             'register': {'path': 'onboardMember', 'requires_auth': False}
         },
         'member': {
-            'validate_handle': {'path': 'getAccountByHandle'},
-            'get_dashboard': {'path': 'getDashboard'}
+            # placeholder until more member-level endpoints added
+        },
+        'account': {
+            'validate_account_handle': {'path': 'getAccountByHandle'}
+            # Dashboard and account data comes from login, onboard, and all responses where changes are made
         },
         'credex': {
             'create': {'path': 'createCredex'},

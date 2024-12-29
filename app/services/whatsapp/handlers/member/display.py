@@ -9,28 +9,30 @@ from services.whatsapp.screens import format_account
 logger = logging.getLogger(__name__)
 
 
-def prepare_display_data(account: Dict, balance_data: Dict) -> Dict:
+def prepare_display_data(account: Dict, member_data: Dict) -> Dict:
     """Prepare account display data"""
+    # Format tier limit if available (n/a for tier >= 3)
+    tier_display = ""
+    if member_data["memberTier"] < 3 and member_data.get("remainingAvailableUSD") is not None:
+        tier_name = "OPEN" if member_data["memberTier"] == 1 else "VERIFIED"
+        tier_display = f"DAILY {tier_name} TIER LIMIT: {member_data['remainingAvailableUSD']} USD"
+
     return {
         "account": account["accountName"],
         "handle": account["accountHandle"],
         "balances": {
-            "secured": "\n".join(balance_data["securedNetBalancesByDenom"]),
-            "total": balance_data["netCredexAssetsInDefaultDenom"]
+            "secured": "\n".join(account["balanceData"]["securedNetBalancesByDenom"]),
+            "total": account["balanceData"]["netCredexAssetsInDefaultDenom"]
         },
-        "tier": account["tier_limit_display"]
+        "tier": tier_display
     }
 
 
-def count_pending_offers(offers: Dict) -> Tuple[int, int]:
+def count_pending_offers(account: Dict) -> Tuple[int, int]:
     """Count pending and outgoing offers"""
-    pending_count = outgoing_count = 0
-    for offer in offers.values():
-        if offer["status"] == "PENDING":
-            if offer["isOutgoing"]:
-                outgoing_count += 1
-            else:
-                pending_count += 1
+    # pendingInData and pendingOutData are arrays from API
+    pending_count = len(account.get("pendingInData", []))
+    outgoing_count = len(account.get("pendingOutData", []))
     return pending_count, outgoing_count
 
 
@@ -82,19 +84,29 @@ def prepare_menu_options(pending_count: int, outgoing_count: int) -> Dict:
 
 def handle_dashboard_display(state_manager: Any) -> Message:
     """Display dashboard with menu options"""
-    # Let StateManager validate state
+    # Let StateManager validate through state update
     state_manager.update_state({
         "flow_data": {
             "flow_type": "dashboard",
             "step": 0,
-            "current_step": "display",
-            "data": {}
+            "current_step": "display"
         }
     })
 
-    # Trust StateManager validation
-    personal_account = state_manager.get("personal_account")
+    # Get state data (StateManager validates on access)
     channel = state_manager.get("channel")
+    accounts = state_manager.get("accounts")
+    active_id = state_manager.get("active_account_id")
+    member_data = state_manager.get("member_data")
+
+    # Get active account (StateManager validates access)
+    active_account = next(
+        account for account in accounts
+        if account["accountID"] == active_id
+    )
+
+    # Prepare display data with member tier info
+    display_data = prepare_display_data(active_account, member_data)
 
     return Message(
         recipient=MessageRecipient(
@@ -105,9 +117,9 @@ def handle_dashboard_display(state_manager: Any) -> Message:
         ),
         content=InteractiveContent(
             interactive_type=InteractiveType.LIST,
-            body=format_account(personal_account),
+            body=format_account(display_data),
             action_items=prepare_menu_options(
-                *count_pending_offers(personal_account["offerData"]["offers"])
+                *count_pending_offers(active_account)
             )
         )
     )

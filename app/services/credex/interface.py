@@ -42,7 +42,7 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
-    def validate_handle(self, handle: str) -> Tuple[bool, Dict[str, Any]]:
+    def validate_account_handle(self, handle: str) -> Tuple[bool, Dict[str, Any]]:
         """Validate a CredEx handle
 
         Args:

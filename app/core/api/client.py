@@ -1,22 +1,15 @@
 """Main API client using pure functions"""
 import logging
-from typing import Any, Dict, Callable
+from typing import Any, Callable, Dict
 
-from .auth import login as auth_login, register_member as auth_register
-from .credex import (
-    offer_credex,
-    accept_credex,
-    decline_credex,
-    cancel_credex,
-    get_credex,
-    accept_bulk_credex,
-)
-from .dashboard import (
-    get_dashboard as get_member_dashboard,
-    refresh_member_info as refresh_member,
-    validate_handle as validate_member_handle,
-    get_ledger as get_member_ledger,
-)
+from .auth import login as auth_login
+from .auth import register_member as auth_register
+from .credex import (accept_bulk_credex, accept_credex, cancel_credex,
+                     decline_credex, get_credex, offer_credex)
+from .dashboard import get_dashboard as get_member_dashboard
+from .dashboard import get_ledger as get_member_ledger
+from .dashboard import refresh_member_info as refresh_member
+from .dashboard import validate_account_handle as validate_member_handle
 from .profile import update_profile_from_response
 
 logger = logging.getLogger(__name__)
@@ -49,7 +42,7 @@ def create_api_service(state_manager: Any, channel_id: str) -> Dict[str, Callabl
             silent,
             init
         ),
-        "validate_handle": lambda handle: validate_member_handle(
+        "validate_account_handle": lambda handle: validate_member_handle(
             handle,
             state_manager.get("jwt_token")
         ),

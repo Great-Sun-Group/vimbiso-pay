@@ -4,7 +4,7 @@ from typing import Any, Dict, Union
 
 from core.utils.exceptions import StateException
 from core.utils.flow_audit import FlowAuditLogger
-from services.credex.member import validate_handle
+from services.credex.member import validate_account_handle
 
 audit = FlowAuditLogger()
 logger = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
         raise StateException("Handle cannot be empty")
 
     # Validate handle through API (raises StateException if invalid)
-    validate_handle(handle, jwt_token)
+    validate_account_handle(handle, jwt_token)
 
     return handle
 
