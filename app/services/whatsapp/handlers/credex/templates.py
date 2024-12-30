@@ -1,5 +1,5 @@
-"""Credex-specific message templates"""
-from typing import Any, Dict, Optional
+"""Credex-specific message templates enforcing SINGLE SOURCE OF TRUTH"""
+from typing import Any, Dict
 
 from core.messaging.types import (
     Message,
@@ -11,14 +11,28 @@ from core.messaging.types import (
     ChannelIdentifier,
     ChannelType
 )
+from core.utils.error_handler import error_decorator, ErrorHandler
 
 
 class CredexTemplates:
-    """Templates for credex-related messages"""
+    """Templates for credex-related messages with strict state validation"""
 
     @staticmethod
-    def create_amount_prompt(channel_id: str, member_id: str) -> Message:
-        """Create amount prompt message"""
+    @error_decorator
+    def create_amount_prompt(state_manager: Any) -> Message:
+        """Create amount prompt message using state manager"""
+        # Update state to trigger validation
+        state_manager.update_state({
+            "flow_data": {
+                "current_step": "amount",
+                "step": 1
+            }
+        })
+
+        # Get validated state
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
+
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
@@ -38,8 +52,21 @@ class CredexTemplates:
         )
 
     @staticmethod
-    def create_handle_prompt(channel_id: str, member_id: str) -> Message:
-        """Create handle prompt message"""
+    @error_decorator
+    def create_handle_prompt(state_manager: Any) -> Message:
+        """Create handle prompt message using state manager"""
+        # Update state to trigger validation
+        state_manager.update_state({
+            "flow_data": {
+                "current_step": "handle",
+                "step": 2
+            }
+        })
+
+        # Get validated state
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
+
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
@@ -54,14 +81,24 @@ class CredexTemplates:
         )
 
     @staticmethod
-    def create_pending_offers_list(
-        channel_id: str,
-        data: Dict[str, Any],
-        member_id: str
-    ) -> Message:
+    @error_decorator
+    def create_pending_offers_list(state_manager: Any, data: Dict[str, Any]) -> Message:
         """Create pending offers list message"""
-        flow_type = data.get("flow_type", "cancel")
-        current_account = data.get("current_account", {})
+        # Update state to trigger validation
+        state_manager.update_state({
+            "flow_data": {
+                "current_step": "list",
+                "step": 1,
+                "data": data
+            }
+        })
+
+        # Get validated state
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
+        flow_data = state_manager.get_flow_step_data()
+        flow_type = flow_data.get("flow_type", "cancel")
+        current_account = flow_data.get("current_account", {})
 
         # Get offers from current account
         if flow_type in ["accept", "decline"]:
@@ -127,14 +164,26 @@ class CredexTemplates:
         )
 
     @staticmethod
-    def create_offer_confirmation(
-        channel_id: str,
-        amount: str,
-        handle: str,
-        name: str,
-        member_id: str
-    ) -> Message:
+    @error_decorator
+    def create_offer_confirmation(state_manager: Any, amount: str, handle: str, name: str) -> Message:
         """Create offer confirmation message"""
+        # Update state to trigger validation
+        state_manager.update_state({
+            "flow_data": {
+                "current_step": "confirm",
+                "step": 3,
+                "data": {
+                    "amount": amount,
+                    "handle": handle,
+                    "name": name
+                }
+            }
+        })
+
+        # Get validated state
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
+
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
@@ -157,13 +206,25 @@ class CredexTemplates:
         )
 
     @staticmethod
-    def create_cancel_confirmation(
-        channel_id: str,
-        amount: str,
-        counterparty: str,
-        member_id: str
-    ) -> Message:
+    @error_decorator
+    def create_cancel_confirmation(state_manager: Any, amount: str, counterparty: str) -> Message:
         """Create cancel confirmation message"""
+        # Update state to trigger validation
+        state_manager.update_state({
+            "flow_data": {
+                "current_step": "confirm_cancel",
+                "step": 2,
+                "data": {
+                    "amount": amount,
+                    "counterparty": counterparty
+                }
+            }
+        })
+
+        # Get validated state
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
+
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
@@ -186,14 +247,26 @@ class CredexTemplates:
         )
 
     @staticmethod
-    def create_action_confirmation(
-        channel_id: str,
-        amount: str,
-        counterparty: str,
-        action: str,
-        member_id: str
-    ) -> Message:
+    @error_decorator
+    def create_action_confirmation(state_manager: Any, amount: str, counterparty: str, action: str) -> Message:
         """Create action confirmation message"""
+        # Update state to trigger validation
+        state_manager.update_state({
+            "flow_data": {
+                "current_step": "confirm_action",
+                "step": 2,
+                "data": {
+                    "amount": amount,
+                    "counterparty": counterparty,
+                    "action": action
+                }
+            }
+        })
+
+        # Get validated state
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
+
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
@@ -216,24 +289,24 @@ class CredexTemplates:
         )
 
     @staticmethod
-    def create_error_message(channel_id: str, error: str, member_id: Optional[str] = None) -> Message:
-        """Create error message"""
-        return Message(
-            recipient=MessageRecipient(
-                member_id=member_id or "pending",
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
-            content=TextContent(
-                body=f"❌ {error}"
-            )
-        )
-
-    @staticmethod
-    def create_success_message(channel_id: str, message: str, member_id: str) -> Message:
+    @error_decorator
+    def create_success_message(state_manager: Any, message: str) -> Message:
         """Create success message"""
+        # Update state to trigger validation
+        state_manager.update_state({
+            "flow_data": {
+                "current_step": "success",
+                "step": 4,
+                "data": {
+                    "message": message
+                }
+            }
+        })
+
+        # Get validated state
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
+
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
@@ -243,6 +316,38 @@ class CredexTemplates:
                 )
             ),
             content=TextContent(
-                body=f"✅ {message}"
+                body=f"{ErrorHandler.SUCCESS_PREFIX} {message}"
+            )
+        )
+
+    @staticmethod
+    @error_decorator
+    def create_error_message(state_manager: Any, error: str) -> Message:
+        """Create error message enforcing SINGLE SOURCE OF TRUTH"""
+        # Update state to trigger validation
+        state_manager.update_state({
+            "flow_data": {
+                "current_step": "error",
+                "step": 0,
+                "data": {
+                    "error": error
+                }
+            }
+        })
+
+        # Get validated state
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
+
+        return Message(
+            recipient=MessageRecipient(
+                member_id=member_id,
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
+            content=TextContent(
+                body=ErrorHandler.format_error_message(error)
             )
         )

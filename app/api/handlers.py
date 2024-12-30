@@ -5,7 +5,8 @@ Implements handlers for different webhook types with validation and error handli
 from typing import Any, Dict
 
 from .serializers import company, members, offers
-from core.utils.error_handler import APIException, handle_api_error
+from core.utils.exceptions import APIException
+from core.utils.error_handler import ErrorHandler
 
 
 class WebhookHandler:
@@ -35,7 +36,8 @@ class WebhookHandler:
             return handler(payload)
 
         except Exception as e:
-            return handle_api_error(e)
+            error_context = ErrorHandler.get_error_context(e)
+            return ErrorHandler.create_error_response(error_context)
 
     def handle_company_update(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Handle company update webhooks."""

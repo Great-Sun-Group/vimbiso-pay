@@ -1,147 +1,142 @@
-from typing import Any, Dict, List, Optional, Tuple
+"""CredEx service using pure functions with strict state validation"""
+import logging
+from typing import Any, Dict, Optional, Tuple
 
-from .auth import CredExAuthService
-from .config import CredExConfig
-from .interface import CredExServiceInterface
-from .member import CredExMemberService
-from .offers import CredExOffersService
-from .recurring import CredExRecurringService
+from core.utils.exceptions import StateException
+
+from .auth import login as auth_login
+from .auth import register_member as auth_register
+from .member import refresh_member_info as member_refresh_info
+from .member import validate_account_handle as member_validate_handle
+from .offers import get_credex, offer_credex
+
+logger = logging.getLogger(__name__)
 
 
-class CredExService(CredExServiceInterface):
-    """Main CredEx service that combines all operations"""
+def get_credex_service(state_manager: Any) -> Dict[str, Any]:
+    """Get CredEx service functions with strict state validation"""
+    # Let StateManager validate through state update
+    state_manager.update_state({
+        "flow_data": {
+            "flow_type": "credex",
+            "step": 0,
+            "current_step": "init"
+        }
+    })
 
-    def __init__(self, config: Optional[CredExConfig] = None, user: Any = None):
-        """Initialize the CredEx service with all sub-services
+    # Return service functions that need state
+    return {
+        'validate_account_handle': lambda handle: validate_member_handle(state_manager, handle),
+        'get_credex': lambda credex_id: get_credex(credex_id, state_manager.get("jwt_token")),
+        'offer_credex': lambda data: offer_credex(data, state_manager.get("jwt_token"))
+    }
 
-        Args:
-            config: Service configuration. If not provided, loads from environment.
-            user: CachedUser instance from parent service
-        """
-        self.config = config or CredExConfig.from_env()
-        self._jwt_token = None
-        self.user = user  # Store user instance from parent
 
-        # Initialize sub-services with parent reference
-        self._auth = CredExAuthService(config=self.config)
-        self._auth._parent_service = self
+def handle_registration(state_manager: Any, member_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    """Handle member registration with strict state validation"""
+    try:
+        # Let StateManager validate through state update
+        state_manager.update_state({
+            "flow_data": {
+                "registration": member_data
+            }
+        })
 
-        self._member = CredExMemberService(config=self.config)
-        self._member._parent_service = self
+        # Let StateManager validate internally
+        success, result = auth_register(member_data, state_manager.get("channel")["identifier"])
+        logger.info("Registration attempt completed")
+        return success, result
 
-        self._offers = CredExOffersService(config=self.config)
-        self._offers._parent_service = self
+    except StateException as e:
+        logger.error(f"Registration error: {str(e)}")
+        return False, {"message": str(e)}
 
-        self._recurring = CredExRecurringService(config=self.config)
-        self._recurring._parent_service = self
 
-    def login(self, phone: str) -> Tuple[bool, str]:
-        """Authenticate user with the CredEx API"""
-        success, msg = self._auth.login(phone)
-        if success:
-            # Get token from auth service
-            token = self._auth.jwt_token
-            # Update token in state and propagate to services
-            if self.user and token:
-                self.user.state.set_jwt_token(token)
-        return success, msg
+def update_member_state(state_manager: Any, result: Dict[str, Any]) -> None:
+    """Update member state from API response"""
+    data = result.get("data", {})
+    action = data.get("action", {})
+    details = action.get("details", {})
+    dashboard = data.get("dashboard", {})
 
-    def register_member(self, member_data: Dict[str, Any]) -> Tuple[bool, str]:
-        """Register a new member"""
-        success, msg = self._auth.register_member(member_data)
-        if success:
-            # Get token from auth service
-            token = self._auth.jwt_token
-            # Update token in state and propagate to services
-            if self.user and token:
-                self.user.state.set_jwt_token(token)
-        return success, msg
+    # Only update state if dashboard has data (empty for simple endpoints)
+    if dashboard.get("member") or dashboard.get("accounts"):
+        state_manager.update_state({
+            # Auth data
+            "jwt_token": details.get("token"),
+            "authenticated": True,
+            "member_id": details.get("memberID"),
+            # Member data
+            "member_data": dashboard.get("member"),
+            # Account data
+            "accounts": dashboard.get("accounts", []),
+            "active_account_id": next(
+                (account["accountID"] for account in dashboard.get("accounts", [])
+                 if account["accountType"] == "PERSONAL"),
+                None
+            )
+        })
+    # Always update token if present
+    elif details.get("token"):
+        state_manager.update_state({
+            "jwt_token": details.get("token")
+        })
 
-    def get_dashboard(self, phone: str) -> Tuple[bool, Dict[str, Any]]:
-        """Fetch member's dashboard information"""
-        return self._member.get_dashboard(phone)
 
-    def validate_handle(self, handle: str) -> Tuple[bool, Dict[str, Any]]:
-        """Validate a CredEx handle"""
-        return self._member.validate_handle(handle)
+def handle_login(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Handle login with strict state validation"""
+    try:
+        # Initial login just needs phone number
+        success, result = auth_login(state_manager.get("channel")["identifier"])
+        if not success:
+            return False, result
 
-    def offer_credex(self, offer_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
-        """Create a new CredEx offer"""
-        return self._offers.offer_credex(offer_data)
+        # Extract auth data from response
+        data = result.get("data", {})
+        action = data.get("action", {})
 
-    def confirm_credex(self, credex_id: str, issuer_account_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Confirm a CredEx offer"""
-        return self._offers.confirm_credex(credex_id, issuer_account_id)
+        # Verify login succeeded
+        if action.get("type") != "MEMBER_LOGIN":
+            return False, {
+                "message": "Invalid login response"
+            }
 
-    def accept_credex(self, offer_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Accept a CredEx offer"""
-        return self._offers.accept_credex(offer_id)
+        # Update complete member state
+        update_member_state(state_manager, result)
 
-    def accept_bulk_credex(self, offer_ids: List[str]) -> Tuple[bool, Dict[str, Any]]:
-        """Accept multiple CredEx offers"""
-        return self._offers.accept_bulk_credex(offer_ids)
+        logger.info("Login completed and state updated")
+        return True, result
 
-    def decline_credex(self, offer_id: str) -> Tuple[bool, str]:
-        """Decline a CredEx offer"""
-        return self._offers.decline_credex(offer_id)
+    except StateException as e:
+        logger.error(f"Login error: {str(e)}")
+        return False, {"message": str(e)}
 
-    def cancel_credex(self, offer_id: str) -> Tuple[bool, str]:
-        """Cancel a CredEx offer"""
-        return self._offers.cancel_credex(offer_id)
 
-    def get_credex(self, offer_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get details of a specific CredEx offer"""
-        return self._offers.get_credex(offer_id)
+def validate_member_handle(state_manager: Any, handle: str) -> Tuple[bool, Dict[str, Any]]:
+    """Validate member handle (simple endpoint, no state update needed)"""
+    try:
+        # Simple validation endpoint - just return result
+        return member_validate_handle(handle, state_manager.get("jwt_token"))
 
-    def get_ledger(self, member_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get member's ledger information"""
-        return self._offers.get_ledger(member_id)
+    except StateException as e:
+        error_msg = str(e)
+        logger.error(f"Handle validation error: {error_msg}")
+        return False, {"message": error_msg}
 
-    def refresh_member_info(
-        self, phone: str, reset: bool = True, silent: bool = True, init: bool = False
-    ) -> Optional[str]:
-        """Refresh member information"""
-        return self._member.refresh_member_info(phone, reset, silent, init)
 
-    def get_member_accounts(self, member_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get available accounts for a member"""
-        return self._member.get_member_accounts(member_id)
+def refresh_member_info(state_manager: Any) -> Optional[str]:
+    """Refresh member info with dashboard data"""
+    try:
+        # Get fresh member info
+        result = member_refresh_info(state_manager.get("channel")["identifier"])
+        if isinstance(result, str):  # Error case
+            return result
 
-    def list_transactions(
-        self,
-        filters: Dict[str, Any]
-    ) -> Tuple[bool, Dict[str, Any]]:
-        """List transactions matching the given criteria
+        # Update state with fresh dashboard data
+        update_member_state(state_manager, result)
+        return None
 
-        Args:
-            filters: Dictionary containing filter criteria:
-                - member_id: ID of the member
-                - account_id: Optional account ID to filter by
-                - status: Optional status to filter by
-                - start_date: Optional start date for filtering
-                - end_date: Optional end date for filtering
-
-        Returns:
-            Tuple of (success, response_data)
-        """
-        return self._offers.list_transactions(filters)
-
-    @property
-    def jwt_token(self) -> Optional[str]:
-        """Get the current JWT token"""
-        return self._jwt_token
-
-    @jwt_token.setter
-    def jwt_token(self, value: str):
-        """Set the JWT token"""
-        # Set token directly without triggering state update
-        self._jwt_token = value
-        # Propagate to sub-services
-        if hasattr(self, '_auth'):
-            self._auth._jwt_token = value
-        if hasattr(self, '_member'):
-            self._member._jwt_token = value
-        if hasattr(self, '_offers'):
-            self._offers._jwt_token = value
-        if hasattr(self, '_recurring'):
-            self._recurring._jwt_token = value
+    except StateException as e:
+        error_msg = str(e)
+        logger.error(f"Member refresh validation error: {error_msg}")
+        return error_msg

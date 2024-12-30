@@ -1,18 +1,18 @@
 """Cloud API webhook views"""
 import logging
 import sys
-from datetime import datetime
 
-from core.api.models import Message
-from core.config.constants import CachedUser
-from core.utils.utils import CredexWhatsappService
+from core.api.models import Message as DBMessage  # Rename to avoid confusion
+from core.config.state_manager import StateManager
+from core.messaging.types import Message as DomainMessage  # Import domain Message type
+from core.utils.utils import send_whatsapp_message
 from decouple import config
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
 from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
-from services.whatsapp.bot_service import CredexBotService
+from services.whatsapp.bot_service import process_bot_message
 
 # Configure logging with a standardized format
 logging.basicConfig(
@@ -121,25 +121,14 @@ class CredexCloudApiWebhook(APIView):
                 logger.warning("No WA ID in contact")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Initialize or get cached user - this handles all state management
-            logger.info(f"Initializing CachedUser for phone: {wa_id}")
-            user = CachedUser(wa_id)
-            state = user.state
+            # Initialize state manager with channel info (SINGLE SOURCE OF TRUTH)
+            logger.info(f"Initializing state manager for channel: {wa_id}")
+            state_manager = StateManager(f"channel:{wa_id}")
 
-            logger.info(f"Using CachedUser with state: {state.__dict__}")
+            # Let StateManager initialize state with proper structure
+            # No need to update channel info as it's handled by _initialize_state()
 
-            # Check message age
-            timestamp = message.get("timestamp")
-            if not timestamp:
-                logger.warning("No timestamp in message")
-                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-            message_stamp = datetime.fromtimestamp(int(timestamp))
-            if (datetime.now() - message_stamp).total_seconds() > 20:
-                logger.info(f"Ignoring old webhook from {message_stamp}")
-                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-            # Extract message text for logging
+            # Extract message text for processing
             message_text = ""
             if message_type == "text":
                 text = message.get("text", {})
@@ -148,7 +137,6 @@ class CredexCloudApiWebhook(APIView):
             elif message_type == "interactive":
                 interactive = message.get("interactive", {})
                 if isinstance(interactive, dict):
-                    # Log full interactive payload for debugging
                     logger.debug(f"Interactive message payload: {interactive}")
                     if "button_reply" in interactive:
                         button_reply = interactive["button_reply"]
@@ -159,35 +147,36 @@ class CredexCloudApiWebhook(APIView):
                         if isinstance(list_reply, dict):
                             message_text = list_reply.get("id", "")
                     else:
-                        # Log unhandled interactive type
                         logger.warning(f"Unhandled interactive message type: {interactive}")
                         message_text = str(interactive)
 
-            # Get flow data from state
-            flow_data = state.state.get("flow_data", {}) or {}
-            stage = flow_data.get("stage", "START")
-            option = flow_data.get("option", "NONE")
-
-            logger.info(
-                f"Credex [{stage}<|>{option}] RECEIVED -> {message_text} "
-                f"FROM {wa_id} @ {message_stamp}"
-            )
+            logger.info(f"Processing message: {message_text}")
 
             try:
-                logger.info("Creating CredexBotService...")
-                # Create bot service with cached CredEx service
-                service = CredexBotService(payload=request.data, user=user)
+                logger.info("Processing message...")
+                # Process message and get response
+                response = process_bot_message(
+                    payload={"entry": [{"changes": [{"value": payload}]}]},
+                    state_manager=state_manager
+                )
 
-                # For mock testing return the response directly
+                # Convert domain Message to transport format at boundary
+                if isinstance(response, DomainMessage):
+                    response_dict = response.to_dict()
+                else:
+                    logger.error("Invalid response type from bot service")
+                    raise ValueError("Bot service returned invalid response type")
+
+                # For mock testing return the formatted response
                 if is_mock_testing:
-                    return JsonResponse(service.response, status=status.HTTP_200_OK)
+                    return JsonResponse(response_dict, status=status.HTTP_200_OK)
 
                 # For real requests send via WhatsApp
-                response = CredexWhatsappService(
-                    payload=service.response,
+                whatsapp_response = send_whatsapp_message(
+                    payload=response_dict,
                     phone_number_id=payload["metadata"]["phone_number_id"]
-                ).send_message()
-                logger.info(f"WhatsApp API Response: {response}")
+                )
+                logger.info(f"WhatsApp API Response: {whatsapp_response}")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             except Exception as e:
@@ -216,10 +205,10 @@ class WelcomeMessage(APIView):
     @staticmethod
     def post(request):
         if request.data.get("message"):
-            if not Message.objects.all().first():
-                Message.objects.create(messsage=request.data.get("message"))
+            if not DBMessage.objects.all().first():
+                DBMessage.objects.create(messsage=request.data.get("message"))
             else:
-                obj = Message.objects.all().first()
+                obj = DBMessage.objects.all().first()
                 obj.messsage = request.data.get("message")
                 obj.save()
         return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
@@ -282,9 +271,9 @@ class CredexSendMessageWebhook(APIView):
                     }
                 }
 
-                response = CredexWhatsappService(payload=payload).notify()
-                logger.info(f"WhatsApp API Response: {response}")
-                return JsonResponse(response, status=status.HTTP_200_OK)
+                whatsapp_response = send_whatsapp_message(payload=payload)
+                logger.info(f"WhatsApp API Response: {whatsapp_response}")
+                return JsonResponse(whatsapp_response, status=status.HTTP_200_OK)
         return JsonResponse(
             {"status": "Successful", "message": "Missing API KEY"},
             status=status.HTTP_400_BAD_REQUEST

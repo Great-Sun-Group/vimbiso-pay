@@ -1,287 +1,334 @@
-import logging
-from typing import Any, Dict, List, Tuple
+"""CredEx offer operations using pure functions"""
+from typing import Any, Dict, Tuple
 
-from core.transactions.exceptions import TransactionError
+from core.utils.error_handler import error_decorator
 
-from .base import BaseCredExService
-from .config import CredExEndpoints
-
-logger = logging.getLogger(__name__)
+from .base import make_credex_request
 
 
-class CredExOffersService(BaseCredExService):
-    """Service for CredEx offer operations"""
+@error_decorator
+def offer_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Create new CredEx offer"""
+    # Update state to trigger validation
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "create_offer",
+            "step": 1,
+            "data": {
+                "credexType": "PURCHASE",
+                "OFFERSorREQUESTS": "OFFERS",
+                "securedCredex": True
+            }
+        }
+    })
 
-    def offer_credex(self, offer_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
-        """Create a new CredEx offer"""
-        logger.info("Starting credex offer creation")
-        logger.debug(f"Initial offer data: {offer_data}")
+    # Get validated data from state
+    flow_data = state_manager.get_flow_step_data()
+    offer_data = flow_data.get("offer_data", {})
 
-        if not offer_data:
-            logger.error("No offer data provided")
-            return False, {"message": "Offer data is required"}
-
-        try:
-            # Remove any full_name field if present as it's not needed
-            offer_data.pop("full_name", None)
-
-            # Convert field names to match API expectations
-            if "denomination" in offer_data:
-                offer_data["Denomination"] = offer_data.pop("denomination")
-            if "amount" in offer_data:
-                offer_data["InitialAmount"] = offer_data.pop("amount")
-
-            logger.debug(f"Processed offer data before field conversion: {offer_data}")
-
-            # Add required fields
-            offer_data["credexType"] = "PURCHASE"
-            offer_data["OFFERSorREQUESTS"] = "OFFERS"
-
-            # Ensure securedCredex is present
-            if "securedCredex" not in offer_data:
-                offer_data["securedCredex"] = True
-
-            logger.debug(f"Final offer data before API call: {offer_data}")
-            logger.info(f"Making API request to {CredExEndpoints.CREATE_CREDEX}")
-
-            response = self._make_request(
-                CredExEndpoints.CREATE_CREDEX,
-                payload=offer_data
-            )
-
-            logger.debug(f"API response status code: {response.status_code}")
-            logger.debug(f"API response content: {response.text}")
-
-            data = self._validate_response(response)
-            logger.debug(f"Validated response data: {data}")
-
-            if data.get("data", {}).get("action", {}).get("type") == "CREDEX_CREATED":
-                # Get the credexID from the response
-                credex_id = data["data"]["action"]["id"]
-                data["data"]["credexID"] = credex_id
-
-                # Add success message to action
-                if "data" not in data:
-                    data["data"] = {}
-                if "action" not in data["data"]:
-                    data["data"]["action"] = {}
-
-                data["data"]["action"]["message"] = f"CredEx offer {credex_id} created successfully"
-
-                logger.info(f"CredEx offer created successfully with ID: {credex_id}")
-                return True, data
-            else:
-                # Extract error message from response
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer creation failed with error: {error_msg}")
-                return False, {"message": error_msg}
-
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error creating offer: {error_msg}")
-            return False, {"message": error_msg}
-        except Exception as e:
-            logger.exception(f"CredEx offer creation failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
-
-    def confirm_credex(self, credex_id: str, issuer_account_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Confirm a CredEx offer"""
-        if not credex_id:
-            return False, {"message": "CredEx ID is required"}
-        if not issuer_account_id:
-            return False, {"message": "Account ID is required"}
-
-        try:
-            response = self._make_request(
-                CredExEndpoints.ACCEPT_CREDEX,
-                payload={
-                    "credexID": credex_id,
-                    "issuerAccountID": issuer_account_id
+    # Let StateManager validate through update
+    state_manager.update_state({
+        "flow_data": {
+            "data": {
+                "api_payload": {
+                    "Denomination": offer_data.get("denomination"),
+                    "InitialAmount": offer_data.get("amount"),
+                    "credexType": "PURCHASE",
+                    "OFFERSorREQUESTS": "OFFERS",
+                    "securedCredex": offer_data.get("securedCredex", True)
                 }
-            )
+            }
+        }
+    })
 
-            data = self._validate_response(response)
-            if data.get("data", {}).get("action", {}).get("type") == "CREDEX_ACCEPTED":
-                logger.info("CredEx offer confirmed successfully")
-                return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer confirmation failed: {error_msg}")
-                return False, {"message": error_msg}
+    # Get validated payload
+    flow_data = state_manager.get_flow_step_data()
+    payload = flow_data.get("api_payload", {})
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error confirming offer: {error_msg}")
-            return False, {"message": error_msg}
-        except Exception as e:
-            logger.exception(f"CredEx offer confirmation failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'credex', 'create',
+        payload=payload,
+        state_manager=state_manager
+    )
 
-    def accept_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Accept a CredEx offer"""
-        if not credex_id:
-            return False, {"message": "CredEx ID is required"}
+    # Let StateManager validate response through update
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "check_success",
+            "step": 2,
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
 
-        try:
-            response = self._make_request(
-                CredExEndpoints.ACCEPT_CREDEX,
-                payload={"credexID": credex_id}
-            )
+    # Get validated response
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
-            data = self._validate_response(response)
-            if data.get("data", {}).get("action", {}).get("type") == "CREDEX_ACCEPTED":
-                logger.info("CredEx offer accepted successfully")
-                return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer acceptance failed: {error_msg}")
-                return False, {"message": error_msg}
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error accepting offer: {error_msg}")
-            return False, {"message": error_msg}
-        except Exception as e:
-            logger.exception(f"CredEx offer acceptance failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+@error_decorator
+def confirm_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Confirm CredEx offer"""
+    # Update state to trigger validation
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "confirm_offer",
+            "step": 1
+        }
+    })
 
-    def accept_bulk_credex(self, credex_ids: List[str]) -> Tuple[bool, Dict[str, Any]]:
-        """Accept multiple CredEx offers"""
-        if not credex_ids:
-            return False, {"message": "CredEx IDs are required"}
+    # Get validated data from state
+    flow_data = state_manager.get_flow_step_data()
+    credex_id = flow_data.get("credex_id")
+    issuer_account_id = flow_data.get("issuer_account_id")
 
-        try:
-            response = self._make_request(
-                CredExEndpoints.ACCEPT_BULK_CREDEX,
-                payload={"credexIDs": credex_ids}
-            )
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'credex', 'confirm',
+        payload={"credexID": credex_id, "issuerAccountID": issuer_account_id},
+        state_manager=state_manager
+    )
 
-            data = self._validate_response(response)
-            if data.get("summary", {}).get("accepted"):
-                logger.info("Bulk CredEx offers accepted successfully")
-                return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"Bulk CredEx offer acceptance failed: {error_msg}")
-                return False, {"message": error_msg}
+    # Let StateManager validate response through update
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "check_success",
+            "step": 2,
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error accepting bulk offers: {error_msg}")
-            return False, {"message": error_msg}
-        except Exception as e:
-            logger.exception(f"Bulk CredEx offer acceptance failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+    # Get validated response
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
-    def decline_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Decline a CredEx offer"""
-        if not credex_id:
-            return False, {"message": "CredEx ID is required"}
 
-        try:
-            response = self._make_request(
-                CredExEndpoints.DECLINE_CREDEX,
-                payload={"credexID": credex_id}
-            )
+@error_decorator
+def accept_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Accept CredEx offer"""
+    # Update state to trigger validation
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "accept_offer",
+            "step": 1
+        }
+    })
 
-            data = self._validate_response(response)
-            if (data.get("message") == "Credex declined successfully" or
-                    data.get("data", {}).get("action", {}).get("type") == "CREDEX_DECLINED"):
-                logger.info("CredEx offer declined successfully")
-                return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer decline failed: {error_msg}")
-                return False, {"message": error_msg}
+    # Get validated data from state
+    flow_data = state_manager.get_flow_step_data()
+    credex_id = flow_data.get("credex_id")
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error declining offer: {error_msg}")
-            return False, {"message": error_msg}
-        except Exception as e:
-            logger.exception(f"CredEx offer decline failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'credex', 'accept',
+        payload={"credexID": credex_id},
+        state_manager=state_manager
+    )
 
-    def cancel_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Cancel a CredEx offer"""
-        if not credex_id:
-            return False, {"message": "CredEx ID is required"}
+    # Let StateManager validate response through update
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "check_success",
+            "step": 2,
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
 
-        try:
-            response = self._make_request(
-                CredExEndpoints.CANCEL_CREDEX,
-                payload={"credexID": credex_id}
-            )
+    # Get validated response
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
-            data = self._validate_response(response)
-            if data.get("message") == "Credex cancelled successfully":
-                logger.info("CredEx offer cancelled successfully")
-                return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer cancellation failed: {error_msg}")
-                return False, {"message": error_msg}
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error cancelling offer: {error_msg}")
-            return False, {"message": error_msg}
-        except Exception as e:
-            logger.exception(f"CredEx offer cancellation failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+@error_decorator
+def decline_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Decline CredEx offer"""
+    # Update state to trigger validation
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "decline_offer",
+            "step": 1
+        }
+    })
 
-    def get_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get details of a specific CredEx offer"""
-        if not credex_id:
-            return False, {"message": "CredEx ID is required"}
+    # Get validated data from state
+    flow_data = state_manager.get_flow_step_data()
+    credex_id = flow_data.get("credex_id")
 
-        try:
-            response = self._make_request(
-                CredExEndpoints.GET_CREDEX,
-                payload={"credexID": credex_id}
-            )
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'credex', 'decline',
+        payload={"credexID": credex_id},
+        state_manager=state_manager
+    )
 
-            data = self._validate_response(response)
-            if response.status_code == 200:
-                logger.info("CredEx offer details fetched successfully")
-                return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"CredEx offer details fetch failed: {error_msg}")
-                return False, {"message": error_msg}
+    # Let StateManager validate response through update
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "check_success",
+            "step": 2,
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error fetching offer: {error_msg}")
-            return False, {"message": error_msg}
-        except Exception as e:
-            logger.exception(f"CredEx offer details fetch failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+    # Get validated response
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
-    def get_ledger(self, member_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get member's ledger information"""
-        if not member_id:
-            return False, {"message": "Member ID is required"}
 
-        try:
-            response = self._make_request(
-                CredExEndpoints.GET_LEDGER,
-                payload={"memberId": member_id}
-            )
+@error_decorator
+def cancel_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Cancel CredEx offer"""
+    # Update state to trigger validation
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "cancel_offer",
+            "step": 1
+        }
+    })
 
-            data = self._validate_response(response)
-            if response.status_code == 200:
-                logger.info("Ledger fetched successfully")
-                return True, data
-            else:
-                error_msg = self._extract_error_message(response)
-                logger.error(f"Ledger fetch failed: {error_msg}")
-                return False, {"message": error_msg}
+    # Get validated data from state
+    flow_data = state_manager.get_flow_step_data()
+    credex_id = flow_data.get("credex_id")
 
-        except TransactionError as e:
-            error_msg = str(e)
-            logger.warning(f"Transaction error fetching ledger: {error_msg}")
-            return False, {"message": error_msg}
-        except Exception as e:
-            logger.exception(f"Ledger fetch failed: {str(e)}")
-            return False, {"message": "An unexpected error occurred. Please try again."}
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'credex', 'cancel',
+        payload={"credexID": credex_id},
+        state_manager=state_manager
+    )
+
+    # Let StateManager validate response through update
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "check_success",
+            "step": 2,
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
+
+    # Get validated response
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
+
+
+@error_decorator
+def get_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Get CredEx offer details"""
+    # Update state to trigger validation
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "get_offer",
+            "step": 1
+        }
+    })
+
+    # Get validated data from state
+    flow_data = state_manager.get_flow_step_data()
+    credex_id = flow_data.get("credex_id")
+
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'credex', 'get',
+        payload={"credexID": credex_id},
+        state_manager=state_manager
+    )
+
+    # Let StateManager validate response through update
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "check_success",
+            "step": 2,
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
+
+    # Get validated response
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
+
+
+@error_decorator
+def accept_bulk_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Accept multiple CredEx offers"""
+    # Update state to trigger validation
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "bulk_accept_offer",
+            "step": 1
+        }
+    })
+
+    # Get validated data from state
+    flow_data = state_manager.get_flow_step_data()
+    credex_ids = flow_data.get("credex_ids", [])
+
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'credex', 'accept_bulk',
+        payload={"credexIDs": credex_ids},
+        state_manager=state_manager
+    )
+
+    # Let StateManager validate response through update
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "check_success",
+            "step": 2,
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
+
+    # Get validated response
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
+
+
+@error_decorator
+def get_ledger(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Get member ledger"""
+    # Update state to trigger validation
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "get_ledger",
+            "step": 1
+        }
+    })
+
+    # Get validated data from state
+    member_id = state_manager.get_member_id()
+
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'credex', 'get_ledger',
+        payload={"memberId": member_id},
+        state_manager=state_manager
+    )
+
+    # Let StateManager validate response through update
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "check_success",
+            "step": 2,
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
+
+    # Get validated response
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")

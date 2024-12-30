@@ -1,249 +1,155 @@
-"""Action flows implementation for accept, decline and cancel"""
+"""Action flow implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from core.messaging.flow import Step, StepType
-from core.utils.flow_audit import FlowAuditLogger
-
-from .base import CredexFlow
+from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.exceptions import StateException
+from services.credex.service import get_member_accounts
+from ...member.dashboard import handle_dashboard_display
+from .messages import (create_list_message, create_action_confirmation,
+                       create_success_message)
 
 logger = logging.getLogger(__name__)
-audit = FlowAuditLogger()
+
+# Valid action types
+VALID_ACTIONS = {"cancel", "accept", "decline", "registration", "upgrade"}
 
 
-class ActionFlow(CredexFlow):
-    """Base class for credex action flows (accept/decline/cancel)"""
+def validate_action_input(input_type: str, value: str, action: str) -> Dict[str, Any]:
+    """Validate action input based on type"""
+    if input_type == "select":
+        if not value.startswith(f"{action}_"):
+            raise StateException("Invalid selection. Please select from the list")
 
-    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
-        # Extract flow type from state if not provided directly
-        if flow_type is None and state is not None:
-            flow_data = state.get('flow_data', {})
-            flow_type = flow_data.get('flow_type')
+        credex_id = value[len(action) + 1:]
+        if not credex_id:
+            raise StateException("Invalid selection. Please select from the list")
 
-        if flow_type is None:
-            raise ValueError("flow_type must be provided either directly or through state")
+        return {"credex_id": credex_id}
 
-        # Get member ID from top level state - SINGLE SOURCE OF TRUTH
-        member_id = state.get("member_id") if state else None
-        if not member_id:
-            raise ValueError("Missing member ID in state")
+    elif input_type == "confirm":
+        if not value or value.get("type") != "interactive":
+            raise StateException("Please use the confirmation buttons")
 
-        # Set action prefix before parent initialization
-        self.action_prefix = flow_type  # e.g. "cancel_", "accept_", "decline_"
+        interactive = value.get("interactive", {})
+        if interactive.get("type") != "button_reply":
+            raise StateException("Please use the confirmation buttons")
 
-        # Log initialization with member context
-        audit.log_flow_event(
-            f"{flow_type}_{member_id}",
-            "initialization",
-            None,
-            {
-                "flow_type": flow_type,
-                "member_id": member_id,
-                "channel": state.get("channel") if state else None,
-                **kwargs
-            },
-            "success"
-        )
+        button_id = interactive.get("button_reply", {}).get("id")
+        if button_id not in ["confirm_action", "cancel_action"]:
+            raise StateException("Invalid button selection")
 
-        super().__init__(flow_type=flow_type, state=state, **kwargs)
+        return {"confirmed": button_id == "confirm_action"}
 
-    def _create_steps(self) -> List[Step]:
-        """Create steps for action flow"""
-        return [
-            Step(
-                id="list",
-                type=StepType.LIST,
-                message=self._create_list_message,
-                validator=lambda x: x.startswith(f"{self.action_prefix}_"),
-                transformer=self._transform_selection
-            ),
-            Step(
-                id="confirm",
-                type=StepType.BUTTON,
-                message=self._create_confirmation_message,
-                validator=self._validate_button_response
+    raise StateException(f"Invalid input type: {input_type}")
+
+
+def update_action_state(state_manager: Any, step: str, data: Dict[str, Any], action: str) -> None:
+    """Update action state with validation"""
+    if action not in VALID_ACTIONS:
+        raise StateException(f"Invalid action type: {action}")
+
+    state_manager.update_state({
+        "flow_data": {
+            "step": {"select": 1, "confirm": 2}[step],
+            "current_step": step,
+            "action_type": action,
+            "data": data
+        }
+    })
+
+
+def process_action_step(state_manager: Any, step: str, action: str, input_data: Any = None) -> Dict[str, Any]:
+    """Process action step with validation"""
+    try:
+        # Get channel ID through state manager
+        state = state_manager.get("channel")
+        channel_id = state["identifier"]
+
+        # Initial prompt
+        if not input_data:
+            return create_list_message(channel_id, action)
+
+        # Validate input and update state
+        try:
+            validated = validate_action_input(step, input_data, action)
+            update_action_state(state_manager, step, validated, action)
+        except StateException as e:
+            error_context = ErrorContext(
+                error_type="input",
+                message=str(e),
+                step_id=step,
+                details={"input": input_data}
             )
-        ]
+            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
-    def _transform_selection(self, selection: str) -> Dict[str, Any]:
-        """Transform list selection into credex data"""
-        credex_id = selection[len(self.action_prefix) + 1:] if selection.startswith(f"{self.action_prefix}_") else None
-        if not credex_id:
-            return {"error": "Invalid selection"}
-
-        # Get offers from current account
-        if self.flow_type in ["accept", "decline"]:
-            pending_offers = self.data.get("current_account", {}).get("pendingInData", [])
-        else:
-            pending_offers = self.data.get("current_account", {}).get("pendingOutData", [])
-
-        if not pending_offers:
-            return {"error": "No pending offers found"}
-
-        selected_offer = next(
-            (offer for offer in pending_offers if offer["credexID"] == credex_id),
-            None
-        )
-
-        if not selected_offer:
-            return {"error": "Selected offer not found"}
-
-        result = {
-            "credex_id": credex_id,
-            "amount": selected_offer["formattedInitialAmount"],
-            "counterparty": selected_offer["counterpartyAccountName"]
-        }
-
-        # Update flow data with the transformed selection
-        self.data.update(result)
-
-        # Get member ID and channel info from top level state - SINGLE SOURCE OF TRUTH
-        current_state = self.credex_service._parent_service.user.state.state
-        member_id = current_state.get("member_id")
-        channel = current_state.get("channel")
-
-        # Log selection with member context
-        audit.log_flow_event(
-            self.id,
-            "selection_transform",
-            None,
-            {
-                "member_id": member_id,  # Get from top level state
-                "channel": channel,  # Get from top level state
-                "selection": result
-            },
-            "success"
-        )
-
-        return result
-
-    def complete(self) -> Dict[str, Any]:
-        """Complete the action flow"""
-        if self.current_step.id != "confirm":
-            return {
-                "success": False,
-                "message": "Confirmation required"
-            }
-
-        credex_id = self.data.get("credex_id")
-        if not credex_id:
-            return {
-                "success": False,
-                "message": "Missing credex ID"
-            }
-
-        # Get member ID and channel info from top level state - SINGLE SOURCE OF TRUTH
-        current_state = self.credex_service._parent_service.user.state.state
-        member_id = current_state.get("member_id")
-        if not member_id:
-            return {
-                "success": False,
-                "message": "Missing member ID in state"
-            }
-
-        channel_id = self._get_channel_identifier()
-        if not channel_id:
-            return {
-                "success": False,
-                "message": "Missing channel identifier"
-            }
-
-        # Log action attempt with member context
-        audit_context = {
-            "member_id": member_id,
-            "channel": {
-                "type": "whatsapp",
-                "identifier": channel_id
-            },
-            "credex_id": credex_id
-        }
-        audit.log_flow_event(
-            self.id,
-            f"{self.flow_type}_attempt",
-            None,
-            audit_context,
-            "in_progress"
-        )
-
-        actions = {
-            "cancel": self.credex_service.cancel_credex,
-            "accept": self.credex_service.accept_credex,
-            "decline": self.credex_service.decline_credex
-        }
-
-        # Add member context to API call
-        success, response = actions[self.flow_type]({
-            "credex_id": credex_id,
-            "member_id": member_id,
-            "channel": {
-                "type": "whatsapp",
-                "identifier": channel_id
-            }
-        })
-
-        if not success:
-            action_name = self.flow_type.replace("_credex", "")
-            error_msg = response.get("message", f"Failed to {action_name} offer")
-
-            # Log error with member context
-            audit.log_flow_event(
-                self.id,
-                f"{self.flow_type}_error",
-                None,
-                {**audit_context, "error": error_msg},
-                "failure"
+        # Handle step progression
+        if step == "select":
+            return create_action_confirmation(
+                channel_id,
+                validated["credex_id"],
+                action
             )
 
-            return {
-                "success": False,
-                "message": error_msg,
-                "response": response
-            }
+        elif step == "confirm" and validated["confirmed"]:
+            # Submit action
+            try:
+                response = get_member_accounts(state_manager)
+                handle_dashboard_display(
+                    state_manager,
+                    success_message=f"Successfully {action}ed offer"
+                )
+            except Exception as e:
+                error_context = ErrorContext(
+                    error_type="api",
+                    message=f"Failed to {action} offer",
+                    step_id=step,
+                    details={"error": str(e)}
+                )
+                raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
-        # Update dashboard with member-centric state
-        self._update_dashboard(response)
+            # Log success
+            logger.info(
+                f"Action {action} completed",
+                extra={
+                    "action": action,
+                    "channel_id": channel_id,
+                    "response": response
+                }
+            )
+            return create_success_message(channel_id)
 
-        # Log success with member context
-        audit.log_flow_event(
-            self.id,
-            f"{self.flow_type}_success",
-            None,
-            {**audit_context, "response": response},
-            "success"
+        # Re-confirm if not confirmed
+        state = state_manager.get_flow_step_data()
+        return create_action_confirmation(
+            channel_id,
+            state["credex_id"],
+            action
         )
 
-        return {
-            "success": True,
-            "message": f"Successfully {self.flow_type.replace('_credex', '')}ed credex offer",
-            "response": response
-        }
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="flow",
+            message=str(e),
+            step_id=step,
+            details={
+                "action": action,
+                "input": input_data
+            }
+        )
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
 
-class CancelFlow(ActionFlow):
-    """Flow for canceling a credex offer"""
-
-    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
-        # Default to cancel if not provided
-        if flow_type is None and (state is None or "flow_type" not in state.get("flow_data", {})):
-            flow_type = "cancel"
-        super().__init__(flow_type=flow_type, state=state, **kwargs)
+def process_cancel_step(state_manager: Any, step: str, input_data: Any = None) -> Dict[str, Any]:
+    """Process cancel step"""
+    return process_action_step(state_manager, step, "cancel", input_data)
 
 
-class AcceptFlow(ActionFlow):
-    """Flow for accepting a credex offer"""
-
-    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
-        # Default to accept if not provided
-        if flow_type is None and (state is None or "flow_type" not in state.get("flow_data", {})):
-            flow_type = "accept"
-        super().__init__(flow_type=flow_type, state=state, **kwargs)
+def process_accept_step(state_manager: Any, step: str, input_data: Any = None) -> Dict[str, Any]:
+    """Process accept step"""
+    return process_action_step(state_manager, step, "accept", input_data)
 
 
-class DeclineFlow(ActionFlow):
-    """Flow for declining a credex offer"""
-
-    def __init__(self, flow_type: str = None, state: Dict = None, **kwargs):
-        # Default to decline if not provided
-        if flow_type is None and (state is None or "flow_type" not in state.get("flow_data", {})):
-            flow_type = "decline"
-        super().__init__(flow_type=flow_type, state=state, **kwargs)
+def process_decline_step(state_manager: Any, step: str, input_data: Any = None) -> Dict[str, Any]:
+    """Process decline step"""
+    return process_action_step(state_manager, step, "decline", input_data)

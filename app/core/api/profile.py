@@ -1,270 +1,248 @@
-"""Profile and state management"""
+"""Profile and state management through validation"""
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from ..config.constants import CachedUser
-from .base import BaseAPIClient
+from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.exceptions import StateException
 
 logger = logging.getLogger(__name__)
 
 
-class ProfileManager(BaseAPIClient):
-    """Handles profile data structuring and state management"""
+def _get_action_message(action: Dict[str, Any], action_type: str) -> str:
+    """Get action message from response"""
+    # Return explicit message if present
+    if action.get("message"):
+        return action["message"]
 
-    def _get_action_message(self, action: Dict[str, Any], action_type: str) -> str:
-        """Get action message from response"""
-        # Return explicit message if present
-        if action.get("message"):
-            return action["message"]
+    # Check details for message
+    if action.get("details", {}).get("message"):
+        return action["details"]["message"]
 
-        # Check details for message
-        if action.get("details", {}).get("message"):
-            return action["details"]["message"]
+    return ""
 
-        return ""
 
-    def _structure_profile_data(
-        self,
-        api_response: dict,
-        action_type: str = "update"
-    ) -> dict:
-        """Structure API response into proper profile format"""
+def _structure_profile_data(
+    api_response: dict,
+    state_manager: Any,
+    action_type: str = "update"
+) -> Dict[str, Any]:
+    """Structure API response through state validation"""
+    try:
         data = api_response.get("data", {})
         dashboard = data.get("dashboard", {})
         action = data.get("action", {})
+
+        # Get channel through state validation
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise StateException("Invalid channel state")
 
         return {
             "action": {
                 "id": action.get("id", ""),
                 "type": action.get("type", action_type),
                 "timestamp": datetime.now().isoformat(),
-                "actor": self.bot_service.user.mobile_number,
+                "actor": channel["identifier"],
                 "details": action.get("details", {}),
-                "message": self._get_action_message(action, action_type),
+                "message": _get_action_message(action, action_type),
                 "status": action.get("status", "")
             },
             "dashboard": dashboard
         }
 
-    def _update_state_with_profile(
-        self,
-        profile_data: Dict[str, Any],
-        current_state: Dict[str, Any],
-        update_from: str
-    ) -> None:
-        """Update state with new profile data"""
-        # Validate current_state is a dictionary
-        if not isinstance(current_state, dict):
-            logger.error("Invalid current_state format")
-            current_state = {}
-
-        # Ensure profile_data is a dictionary
-        if not isinstance(profile_data, dict):
-            logger.error("Invalid profile_data format")
-            profile_data = {
-                "action": {
-                    "id": "",
-                    "type": "",
-                    "timestamp": datetime.now().isoformat(),
-                    "actor": self.bot_service.user.mobile_number,
-                    "details": {}
-                },
-                "dashboard": {}
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="state",
+            message=str(e),
+            details={
+                "operation": "structure_profile",
+                "action_type": action_type
             }
+        )
+        ErrorHandler.handle_error(e, state_manager, error_context)
+        return {}
 
-        user = CachedUser(self.bot_service.user.mobile_number)
 
-        # Update profile in state with validation
-        current_state["profile"] = profile_data
-
-        # Ensure current_account is a dictionary
-        if not isinstance(current_state.get("current_account"), dict):
-            current_state["current_account"] = {}
-
-        # Update state
-        user.state.update_state(current_state, update_from)
-        logger.info(f"State updated from {update_from}")
-
-    def _handle_account_setup(
-        self,
-        dashboard_data: Dict[str, Any],
-        current_state: Dict[str, Any]
-    ) -> None:
-        """Handle account setup in state"""
-        # Initialize current_account as empty dict if not present or invalid
-        if not isinstance(current_state.get("current_account"), dict):
-            current_state["current_account"] = {}
-
-        # Get and validate accounts data
+def _handle_account_setup(
+    dashboard_data: Dict[str, Any],
+    state_manager: Any
+) -> bool:
+    """Handle account setup through state validation"""
+    try:
+        # Extract and validate accounts
         accounts = dashboard_data.get("accounts", [])
-        if not isinstance(accounts, list):
-            logger.warning("Invalid accounts data format")
-            return
+        if not isinstance(accounts, list) or not accounts:
+            raise StateException("No valid accounts found")
 
-        try:
-            # Process accounts data
-            processed_accounts = []
-            for account in accounts:
-                if isinstance(account, dict):
-                    # Handle nested account data structure
-                    if account.get("success") and isinstance(account.get("data"), dict):
-                        processed_account = account["data"]
-                    else:
-                        processed_account = account
+        # Process accounts while maintaining structure
+        processed_accounts = []
+        required_fields = {"accountType", "accountHandle", "accountID"}
 
-                    # Ensure account has required fields
-                    if isinstance(processed_account, dict) and all(
-                        isinstance(processed_account.get(field), str)
-                        for field in ["accountType", "accountHandle"]
-                    ):
-                        processed_accounts.append(processed_account)
+        for account in accounts:
+            # Handle nested account structure
+            account_data = (
+                account.get("data") if account.get("success")
+                else account
+            )
 
-            # Find personal account with proper validation
-            personal_account = None
-            for account in processed_accounts:
-                if account["accountType"] == "PERSONAL":
-                    personal_account = account
-                    break
-                elif account["accountHandle"] == self.bot_service.user.mobile_number:
-                    personal_account = account
+            # Validate account structure
+            if not isinstance(account_data, dict):
+                continue
 
-            # Update state with validated account
-            if personal_account:
-                current_state["current_account"] = personal_account
-                logger.info(f"Successfully set default account: {personal_account['accountHandle']}")
-            else:
-                logger.warning("No valid personal account found")
+            if not all(
+                isinstance(account_data.get(field), str)
+                for field in required_fields
+            ):
+                continue
 
-        except Exception as e:
-            logger.error(f"Error in account setup: {str(e)}")
+            processed_accounts.append(account_data)
 
-    def _get_current_state(self) -> Dict[str, Any]:
-        """Get current state with validation"""
-        user = CachedUser(self.bot_service.user.mobile_number)
-        current_state = user.state.get_state(user)
+        if not processed_accounts:
+            raise StateException("No valid accounts after processing")
 
-        # Ensure we have a dictionary
-        if not isinstance(current_state, dict):
-            if hasattr(current_state, 'state') and isinstance(current_state.state, dict):
-                current_state = current_state.state
-            else:
-                logger.warning("Invalid state format, initializing new state")
-                current_state = {
-                    "profile": {
-                        "action": {
-                            "id": "",
-                            "type": "",
-                            "timestamp": "",
-                            "actor": "",
-                            "details": {}
-                        },
-                        "dashboard": {
-                            "member": {},
-                            "accounts": []
-                        }
-                    },
-                    "current_account": {},
-                    "jwt_token": None,
-                    "authenticated": False
-                }
+        # Find personal account through validation
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise StateException("Invalid channel state")
 
-        return current_state
+        # Prioritize personal account, fallback to channel match
+        personal_account = next(
+            (acc for acc in processed_accounts if acc["accountType"] == "PERSONAL"),
+            next(
+                (acc for acc in processed_accounts if acc["accountHandle"] == channel["identifier"]),
+                None
+            )
+        )
 
-    def update_profile_from_response(
-        self,
-        api_response: Dict[str, Any],
-        action_type: str,
-        update_from: str,
-        token: Optional[str] = None
-    ) -> None:
-        """Update profile and state from API response"""
-        try:
-            # Validate api_response
-            if not isinstance(api_response, dict):
-                logger.error("Invalid API response format")
-                api_response = {}
+        if not personal_account:
+            raise StateException("No valid personal account found")
 
-            # Structure profile data
-            profile_data = self._structure_profile_data(api_response, action_type)
+        # Update state through validation
+        state_update = {
+            "accounts": processed_accounts,  # Store all accounts at top level
+            "active_account_id": personal_account["accountID"]  # Reference by ID
+        }
 
-            # Get current state
-            current_state = self._get_current_state()
+        success, error = state_manager.update_state(state_update)
+        if not success:
+            raise StateException(f"Failed to update account state: {error}")
 
-            # Update token if provided
-            if token:
-                current_state["jwt_token"] = token
+        logger.info(f"Successfully set up account: {personal_account['accountHandle']}")
+        return True
 
-            # Handle account setup if dashboard data present
-            dashboard_data = api_response.get("data", {}).get("dashboard")
-            if dashboard_data:
-                self._handle_account_setup(dashboard_data, current_state)
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="state",
+            message=str(e),
+            details={"operation": "account_setup"}
+        )
+        ErrorHandler.handle_error(e, state_manager, error_context)
+        return False
 
-            # Update state with new profile
-            self._update_state_with_profile(profile_data, current_state, update_from)
 
-        except Exception as e:
-            logger.error(f"Error updating profile from response: {str(e)}")
-            raise
+def update_profile_from_response(
+    api_response: Dict[str, Any],
+    state_manager: Any,
+    action_type: str,
+    update_from: str,
+    token: Optional[str] = None
+) -> bool:
+    """Update profile through state validation"""
+    try:
+        # Validate response format
+        if not isinstance(api_response, dict):
+            raise StateException("Invalid API response format")
 
-    def handle_successful_refresh(
-        self,
-        member_info: Dict[str, Any],
-        current_state: Dict[str, Any]
-    ) -> Optional[str]:
-        """Handle successful member info refresh"""
-        try:
-            # Validate member_info structure
-            if not isinstance(member_info, dict):
-                logger.error("Invalid member_info format")
-                return "Invalid member info format"
+        # Structure profile data through validation
+        profile_data = _structure_profile_data(
+            api_response,
+            state_manager,
+            action_type
+        )
+        if not profile_data:
+            raise StateException("Failed to structure profile data")
 
-            # Extract and validate dashboard data
-            data = member_info.get("data", {})
-            dashboard_data = data.get("dashboard")
-            if not dashboard_data:
-                logger.error("Missing required dashboard data")
-                return "Missing dashboard data"
+        # Prepare state update
+        state_update = {"flow_data": {"data": profile_data}}
 
-            # Add current state's action data to member info to preserve it
-            if "data" not in member_info:
-                member_info["data"] = {}
-            if "action" not in member_info["data"]:
-                member_info["data"]["action"] = {}
+        # Add token if provided
+        if token:
+            state_update["jwt_token"] = token
 
-            # Preserve existing action data while keeping any new action data
-            current_action = current_state.get("profile", {}).get("action", {})
-            existing_action = member_info["data"]["action"]
-            member_info["data"]["action"].update({
-                "id": existing_action.get("id", current_action.get("id", "")),
-                "message": current_action.get("message", ""),  # Preserve message from current state
-                "status": current_action.get("status", ""),  # Preserve status from current state
-                "type": current_action.get("type", "refresh"),  # Preserve type from current state
-                "details": existing_action.get("details", current_action.get("details", {}))  # Keep any new details
-            })
+        # Update state through validation
+        success, error = state_manager.update_state(state_update)
+        if not success:
+            raise StateException(f"Failed to update state: {error}")
 
-            # Structure profile data
-            profile_data = self._structure_profile_data(member_info, "refresh")
-            profile_data["dashboard"] = dashboard_data
+        # Handle account setup if needed
+        dashboard_data = api_response.get("data", {}).get("dashboard")
+        if dashboard_data:
+            if not _handle_account_setup(dashboard_data, state_manager):
+                raise StateException("Failed to set up accounts")
 
-            # Validate current_state
-            if not isinstance(current_state, dict):
-                logger.warning("Invalid current_state format, initializing new state")
-                current_state = {}
+        logger.info(f"State updated from {update_from}")
+        return True
 
-            # Update state with new profile data
-            current_state["profile"] = profile_data
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="state",
+            message=str(e),
+            details={
+                "operation": "update_profile",
+                "update_from": update_from
+            }
+        )
+        ErrorHandler.handle_error(e, state_manager, error_context)
+        return False
 
-            # Handle account setup
-            self._handle_account_setup(dashboard_data, current_state)
 
-            # Update state
-            user = CachedUser(self.bot_service.user.mobile_number)
-            user.state.update_state(current_state, "refresh")
+def handle_successful_refresh(
+    member_info: Dict[str, Any],
+    state_manager: Any
+) -> Optional[str]:
+    """Handle successful refresh through state validation"""
+    try:
+        # Validate member info
+        if not isinstance(member_info, dict):
+            raise StateException("Invalid member info format")
 
-            logger.info("State updated successfully after refresh")
-            return None
+        # Extract dashboard data
+        dashboard_data = member_info.get("data", {}).get("dashboard")
+        if not dashboard_data:
+            raise StateException("Missing dashboard data")
 
-        except Exception as e:
-            logger.error(f"Error handling refresh: {str(e)}")
-            return str(e)
+        # Structure profile data through validation
+        profile_data = _structure_profile_data(
+            member_info,
+            state_manager,
+            "refresh"
+        )
+        if not profile_data:
+            raise StateException("Failed to structure profile data")
+
+        # Update profile data
+        profile_data["dashboard"] = dashboard_data
+
+        # Update state through validation
+        success, error = state_manager.update_state({
+            "flow_data": {"data": profile_data}
+        })
+        if not success:
+            raise StateException(f"Failed to update profile: {error}")
+
+        # Handle account setup
+        if not _handle_account_setup(dashboard_data, state_manager):
+            raise StateException("Failed to set up accounts")
+
+        logger.info("Successfully refreshed member info")
+        return None
+
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="state",
+            message=str(e),
+            details={"operation": "handle_refresh"}
+        )
+        ErrorHandler.handle_error(e, state_manager, error_context)
+        return str(e)

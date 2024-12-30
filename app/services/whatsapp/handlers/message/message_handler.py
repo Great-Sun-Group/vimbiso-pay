@@ -1,122 +1,146 @@
-"""WhatsApp message handling implementation using component-based architecture"""
+"""WhatsApp message handling implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any
+from typing import Any, Dict
 
-from core.utils.flow_audit import FlowAuditLogger
+from core.messaging.types import Message
+from core.utils.exceptions import StateException
+from core.utils.error_handler import ErrorHandler, ErrorContext
 
-from ...state_manager import StateManager
-from ...types import WhatsAppMessage
-from ..credex.flows import AcceptFlow, CancelFlow, DeclineFlow, OfferFlow
-from ..member.registration import RegistrationFlow
-from ..member.upgrade import UpgradeFlow
-from .flow_manager import FlowManager
-from .flow_processor import FlowProcessor
-from .input_handler import InputHandler
-from .state_handler import StateHandler
+from ... import auth_handlers as auth
+from ..member.display import handle_dashboard_display
+from .flow_manager import FLOW_HANDLERS, initialize_flow
+from .input_handler import MENU_ACTIONS, extract_input_value, get_action
 
 logger = logging.getLogger(__name__)
-audit = FlowAuditLogger()
 
 
-class MessageHandler:
-    """Handler for WhatsApp messages and flows"""
+def process_message(state_manager: Any, message_type: str, message_text: str, message: Dict[str, Any] = None) -> Message:
+    """Process incoming message enforcing SINGLE SOURCE OF TRUTH
 
-    FLOW_TYPES = {
-        "offer": ("offer", OfferFlow),
-        "accept": ("accept", AcceptFlow),
-        "decline": ("decline", DeclineFlow),
-        "cancel": ("cancel", CancelFlow),
-        "start_registration": ("registration", RegistrationFlow),
-        "upgrade_tier": ("upgrade", UpgradeFlow)
-    }
+    Returns:
+        Message: Core message type with recipient and content
+    """
+    try:
+        # Get action from input
+        action = get_action(message_text, state_manager, message_type, message)
 
-    def __init__(self, service: Any):
-        """Initialize handler with service reference and components"""
-        self.service = service
-        self.input_handler = InputHandler(service)
-        self.state_handler = StateHandler(service)
-        self.flow_manager = FlowManager(service)
-        self.flow_processor = FlowProcessor(service, self.input_handler, self.state_handler)
-
-    def process_message(self) -> WhatsAppMessage:
-        """Process incoming message"""
-        try:
-            # Log message processing start
-            audit.log_flow_event(
-                "bot_service",
-                "message_processing",
-                None,
-                {
-                    "message_type": self.service.message_type,
-                    "body": self.service.body if self.service.message_type == "text" else None
-                },
-                "in_progress"
+        # Handle menu actions that start multi-step flows
+        if action in MENU_ACTIONS:
+            # Map special flow types
+            flow_type = "registration" if action == "start_registration" else (
+                "upgrade" if action == "upgrade_tier" else action
             )
 
-            # Get action first
-            action = self.input_handler.get_action()
-            logger.info(f"Processing action: {action}")
+            # Only initialize flow if it's a multi-step flow
+            if flow_type in FLOW_HANDLERS:
+                # Let StateManager validate authentication
+                state_manager.get("authenticated")
+                return initialize_flow(state_manager, flow_type)
 
-            # Handle greeting
-            if (self.service.message_type == "text" and
-                    self.input_handler.is_greeting(self.service.body)):
-                error = self.state_handler.prepare_flow_start(is_greeting=True)
-                if error:
-                    return error
-                return self.service.auth_handler.handle_action_menu(login=True)
+            # For non-flow actions like refresh, return to dashboard
+            return handle_dashboard_display(state_manager)
 
-            # Check for menu action first
-            if action in self.FLOW_TYPES:
-                # Get flow type and class
-                flow_type, flow_class = self.FLOW_TYPES[action]
+        # If in a multi-step flow, process the step
+        current_flow = state_manager.get_flow_type()
+        if current_flow and current_flow in FLOW_HANDLERS:
+            current_step = state_manager.get_current_step()
 
-                # Log flow initialization
-                logger.info(f"Starting {flow_type} flow")
-                logger.debug(f"Flow type: {flow_type}")
-                logger.debug(f"Flow class: {flow_class.__name__}")
-
-                # Get channel info from state
-                state_data = self.service.user.state.state
-                channel_id = StateManager.get_channel_identifier(state_data)
-
-                # Prepare flow start with channel info only
-                error = self.state_handler.prepare_flow_start(
-                    flow_type=flow_type,
-                    channel_identifier=channel_id
+            if not current_step:
+                error_context = ErrorContext(
+                    error_type="flow",
+                    message="Missing flow step",
+                    step_id=None,
+                    details={"flow_type": current_flow}
                 )
-                if error:
-                    logger.error(f"Failed to prepare flow state: {error}")
-                    return error
+                error_response = ErrorHandler.handle_error(
+                    StateException("Missing flow step"),
+                    state_manager,
+                    error_context
+                )
+                return auth.create_error_message(state_manager, error_response)
 
-                # Initialize flow with channel info only
-                result = self.flow_manager.initialize_flow(
-                    flow_type=flow_type,
-                    flow_class=flow_class,
-                    kwargs={
-                        "channel": {
-                            "type": StateManager.get_channel_type(state_data),
-                            "identifier": channel_id
-                        }
+            # Get handler function
+            handler_name = FLOW_HANDLERS[current_flow]
+
+            try:
+                # Import and get handler function
+                if current_flow in ["registration", "upgrade"]:
+                    # Member-related flows
+                    handler_module = __import__(
+                        f"services.whatsapp.handlers.member.{current_flow}",
+                        fromlist=[handler_name]
+                    )
+                    handler_func = getattr(handler_module, handler_name)
+                else:
+                    # CredEx-related flows (offer, accept, decline, cancel)
+                    logger.debug(f"Getting credex flow handler: {current_flow}")
+                    from ...credex.flows import action, offer
+                    if current_flow == "offer":
+                        handler_func = offer.process_offer_step
+                    else:
+                        handler_func = getattr(action, handler_name)
+                    logger.debug(f"Got handler function: {handler_func}")
+            except Exception as e:
+                error_context = ErrorContext(
+                    error_type="flow",
+                    message=f"Failed to load flow handler: {str(e)}",
+                    step_id=current_step,
+                    details={
+                        "flow_type": current_flow,
+                        "handler": handler_name
                     }
                 )
-                logger.info(f"Flow {flow_type} initialized")
+                error_response = ErrorHandler.handle_error(
+                    e,
+                    state_manager,
+                    error_context
+                )
+                return auth.create_error_message(state_manager, error_response)
+
+            # Process step through state update
+            input_value = extract_input_value(message_text, message_type)
+            logger.debug(f"Processing flow input: '{input_value}' for step '{current_step}'")
+
+            try:
+                result = handler_func(state_manager, current_step, input_value)
+                logger.debug(f"Flow handler result: {result}")
                 return result
+            except Exception as e:
+                error_context = ErrorContext(
+                    error_type="flow",
+                    message=f"Error processing flow step: {str(e)}",
+                    step_id=current_step,
+                    details={
+                        "flow_type": current_flow,
+                        "input": input_value
+                    }
+                )
+                error_response = ErrorHandler.handle_error(
+                    e,
+                    state_manager,
+                    error_context
+                )
+                return auth.create_error_message(state_manager, error_response)
 
-            # Check for active flow if not a menu action
-            flow_data = self.state_handler.get_flow_data()
-            if flow_data:
-                return self.flow_processor.process_flow(flow_data)
+        # For greetings, refresh from API
+        if action == "hi":
+            return auth.handle_hi(state_manager)
 
-            # If no active flow and not a menu action, default to menu
-            return self.service.auth_handler.handle_action_menu()
+        # For other inputs, show dashboard
+        return auth.handle_hi(state_manager)
 
-        except Exception as e:
-            logger.error(f"Message processing error: {str(e)}")
-            audit.log_flow_event(
-                "bot_service",
-                "message_processing_error",
-                None,
-                {"error": str(e)},
-                "failure"
-            )
-            return self.state_handler.handle_error_state(str(e))
+    except StateException as e:
+        error_context = ErrorContext(
+            error_type="message",
+            message=f"Message processing error: {str(e)}",
+            details={
+                "message_type": message_type,
+                "action": action if 'action' in locals() else None
+            }
+        )
+        error_response = ErrorHandler.handle_error(
+            e,
+            state_manager,
+            error_context
+        )
+        return auth.create_error_message(state_manager, error_response)

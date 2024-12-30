@@ -1,272 +1,173 @@
-"""Member registration flow implementation"""
+"""Registration handler enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Dict, List, Any
+from typing import Any, Dict, Optional, Tuple
 
-from core.messaging.flow import Flow, Step, StepType
-from core.messaging.types import Message
-from core.utils.flow_audit import FlowAuditLogger
-from ...state_manager import StateManager
-from .templates import MemberTemplates
-from .validator import MemberFlowValidator
+from core.utils.exceptions import StateException
+from services.credex.service import register_member
 
 logger = logging.getLogger(__name__)
-audit = FlowAuditLogger()
 
 
-class RegistrationFlow(Flow):
-    """Flow for member registration"""
+def handle_registration(state_manager: Any, input_data: Dict[str, Any]) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """Handle registration enforcing SINGLE SOURCE OF TRUTH"""
+    try:
+        # Initialize registration flow with input data
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "flow_type": "registration",
+                "step": 0,
+                "current_step": "validate",
+                "data": input_data
+            }
+        })
+        if not success:
+            raise StateException(f"Failed to initialize registration: {error}")
 
-    def __init__(self, **kwargs):
-        self.validator = MemberFlowValidator()
-        steps = self._create_steps()
-        super().__init__("member_registration", steps)
-        self.credex_service = None
+        # Get channel ID for registration
+        phone = state_manager.get_channel_id()
 
-        # Log flow initialization
-        audit.log_flow_event(
-            self.id,
-            "initialization",
-            None,
-            {"flow_type": "registration", **kwargs},
-            "success"
-        )
+        # Register member
+        success, response = register_member(phone, input_data)
+        if not success:
+            raise StateException("Failed to register member")
 
-    def _create_steps(self) -> List[Step]:
-        """Create registration flow steps"""
-        return [
-            Step(
-                id="first_name",
-                type=StepType.TEXT,
-                message=self._get_first_name_prompt,
-                validator=self._validate_name,
-                transformer=lambda value: {"first_name": value.strip()}
-            ),
-            Step(
-                id="last_name",
-                type=StepType.TEXT,
-                message=self._get_last_name_prompt,
-                validator=self._validate_name,
-                transformer=lambda value: {"last_name": value.strip()}
-            ),
-            Step(
-                id="confirm",
-                type=StepType.BUTTON,
-                message=self._create_confirmation_message,
-                validator=self._validate_button_response
-            )
-        ]
+        # Get data from onboarding response
+        dashboard = response["data"]["dashboard"]
+        action = response["data"]["action"]
 
-    def _get_channel_identifier(self) -> str:
-        """Get channel identifier from state
+        # Get member data from dashboard.member
+        member = dashboard["member"]  # Member data is under member
+        member_data = {
+            "memberTier": member["memberTier"],  # Always 1 for new members
+            "remainingAvailableUSD": member.get("remainingAvailableUSD"),
+            "firstname": member["firstname"],
+            "lastname": member["lastname"],
+            "memberHandle": member["memberHandle"],  # Initially phone number
+            "defaultDenom": member["defaultDenom"]
+        }
 
-        Returns:
-            str: The channel identifier from top level state.channel
+        # Update state with member data and registration complete
+        success, error = state_manager.update_state({
+            # Core identity - SINGLE SOURCE OF TRUTH
+            "jwt_token": action["details"]["token"],
+            "authenticated": True,
+            "member_id": action["details"]["memberID"],
 
-        Note:
-            Channel info is only stored at top level state.channel
-            as the single source of truth
-        """
-        if hasattr(self.credex_service, '_parent_service'):
-            current_state = self.credex_service._parent_service.user.state.state or {}
-            return StateManager.get_channel_identifier(current_state)
-        return None
+            # Member data at top level
+            "member_data": member_data,
 
-    def _get_first_name_prompt(self, _) -> Message:
-        """Get first name prompt"""
-        return MemberTemplates.create_first_name_prompt(
-            self._get_channel_identifier()
-        )
+            # Account data at top level (single personal account)
+            "accounts": dashboard["accounts"],
+            "active_account_id": action["details"]["defaultAccountID"],
 
-    def _get_last_name_prompt(self, _) -> Message:
-        """Get last name prompt"""
-        return MemberTemplates.create_last_name_prompt(
-            self._get_channel_identifier()
-        )
+            # Flow state only for routing
+            "flow_data": {
+                "flow_type": "registration",
+                "step": 1,
+                "current_step": "complete"
+            }
+        })
+        if not success:
+            raise StateException(f"Failed to update state: {error}")
 
-    def _validate_name(self, name: str) -> bool:
-        """Validate name input"""
-        try:
-            if not name:
-                return False
-            name = name.strip()
-            is_valid = (
-                3 <= len(name) <= 50 and
-                name.replace(" ", "").isalpha()
-            )
+        return True, None
 
-            audit.log_validation_event(
-                self.id,
-                self.current_step.id,
-                name,
-                is_valid,
-                None if is_valid else "Invalid name format"
-            )
-            return is_valid
-
-        except Exception as e:
-            audit.log_validation_event(
-                self.id,
-                self.current_step.id,
-                name,
-                False,
-                str(e)
-            )
-            return False
-
-    def _validate_button_response(self, response: Dict[str, Any]) -> bool:
-        """Validate button response"""
-        try:
-            is_valid = (
-                response.get("type") == "interactive" and
-                response.get("interactive", {}).get("type") == "button_reply" and
-                response.get("interactive", {}).get("button_reply", {}).get("id") == "confirm_action"
-            )
-
-            audit.log_validation_event(
-                self.id,
-                self.current_step.id,
-                response,
-                is_valid,
-                None if is_valid else "Invalid button response"
-            )
-            return is_valid
-
-        except Exception as e:
-            audit.log_validation_event(
-                self.id,
-                self.current_step.id,
-                response,
-                False,
-                str(e)
-            )
-            return False
-
-    def _create_confirmation_message(self, state: Dict[str, Any]) -> Message:
-        """Create registration confirmation message"""
-        first_name = state["first_name"]["first_name"]
-        last_name = state["last_name"]["last_name"]
-
-        return MemberTemplates.create_registration_confirmation(
-            recipient=self._get_channel_identifier(),
-            first_name=first_name,
-            last_name=last_name
-        )
-
-    def complete(self) -> Message:
-        """Complete registration flow"""
-        try:
-            # Get registration data
-            first_name = self.data["first_name"]["first_name"]
-            last_name = self.data["last_name"]["last_name"]
-            channel_id = self._get_channel_identifier()
-
-            if not channel_id:
-                raise ValueError("Missing channel identifier")
-
-            # Log registration attempt with channel info
-            audit_context = {
-                "first_name": first_name,
-                "last_name": last_name,
-                "channel": {
-                    "type": "whatsapp",
-                    "identifier": channel_id
+    except StateException as e:
+        logger.error(f"Registration error: {str(e)}")
+        # Update state with error
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "registration",
+                "step": 0,
+                "current_step": "error",
+                "data": {
+                    "error": str(e),
+                    "input": input_data
                 }
             }
-            audit.log_flow_event(
-                self.id,
-                "registration_attempt",
-                None,
-                audit_context,
-                "in_progress"
-            )
-
-            # Register member using channel identifier
-            # Register member with channel identifier
-            member_data = {
-                "firstname": first_name,
-                "lastname": last_name,
-                "defaultDenom": "USD"
+        })
+        return False, {
+            "error": {
+                "type": "REGISTRATION_ERROR",
+                "message": str(e)
             }
-            success, response = self.credex_service._auth.register_member(
-                member_data,
-                channel_id  # Pass channel identifier separately
-            )
+        }
 
-            if not success:
-                audit.log_flow_event(
-                    self.id,
-                    "registration_error",
-                    None,
-                    response,
-                    "failure",
-                    response.get("message", "Registration failed")
-                )
-                raise ValueError(response.get("message", "Registration failed"))
 
-            # Store JWT token
-            if token := (
-                response.get("data", {})
-                .get("action", {})
-                .get("details", {})
-                .get("token")
-            ):
-                if hasattr(self.credex_service, '_parent_service'):
-                    # Get member ID from response
-                    member_id = (
-                        response.get("data", {})
-                        .get("action", {})
-                        .get("details", {})
-                        .get("memberID")
-                    )
-
-                    # Prepare member-centric state
-                    new_state = {
-                        # Core identity
-                        "member_id": member_id,  # Primary identifier
-
-                        # Channel information
-                        "channel": StateManager.create_channel_data(
-                            identifier=channel_id,
-                            channel_type="whatsapp"
-                        ),
-
-                        # Authentication
-                        "jwt_token": token,
-                        "authenticated": True,
-
-                        # Metadata
-                        "_last_updated": audit.get_current_timestamp()
+def validate_registration_input(state_manager: Any, input_data: Dict[str, Any]) -> None:
+    """Validate registration input through state update"""
+    try:
+        # Update state with validation data
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "flow_type": "registration",
+                "step": 0,
+                "current_step": "validate",
+                "data": {
+                    "validation": {
+                        "firstname": input_data.get("firstname"),
+                        "lastname": input_data.get("lastname"),
+                        "defaultDenom": input_data.get("defaultDenom")
                     }
+                }
+            }
+        })
+        if not success:
+            raise StateException(f"Failed to update validation state: {error}")
 
-                    # Validate auth state
-                    validation = self.validator.validate_flow_state(new_state)
-                    if validation.is_valid:
-                        self.credex_service._parent_service.user.state.update_state(
-                            new_state,
-                            "registration_auth"
-                        )
+        # Get validation data
+        flow_data = state_manager.get_flow_step_data()
+        validation = flow_data.get("validation", {})
 
-            audit.log_flow_event(
-                self.id,
-                "registration_complete",
-                None,
-                response,
-                "success"
-            )
+        # Validate required fields from API spec
+        firstname = validation["firstname"]
+        if not firstname or len(firstname) < 3 or len(firstname) > 50:
+            raise StateException("First name must be between 3 and 50 characters")
 
-            return MemberTemplates.create_registration_success(
-                channel_id,  # Use channel identifier
-                first_name
-            )
+        lastname = validation["lastname"]
+        if not lastname or len(lastname) < 3 or len(lastname) > 50:
+            raise StateException("Last name must be between 3 and 50 characters")
 
-        except Exception as e:
-            logger.error(f"Registration error: {str(e)}")
-            audit.log_flow_event(
-                self.id,
-                "registration_error",
-                None,
-                self.data,
-                "failure",
-                str(e)
-            )
-            raise
+        defaultDenom = validation["defaultDenom"]
+        valid_denoms = {"CXX", "CAD", "USD", "XAU", "ZWG"}
+        if not defaultDenom or defaultDenom not in valid_denoms:
+            raise StateException(f"Invalid defaultDenom. Must be one of: {', '.join(valid_denoms)}")
+
+        # Phone validation handled by channel (phone number format: ^[1-9]\d{1,14}$)
+
+        # Update state with validated data
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "flow_type": "registration",
+                "step": 0,
+                "current_step": "validated",
+                "data": {
+                    "firstname": firstname,
+                    "lastname": lastname,
+                    "defaultDenom": defaultDenom,
+                    "validation": {
+                        "success": True
+                    }
+                }
+            }
+        })
+        if not success:
+            raise StateException(f"Failed to update validated state: {error}")
+
+    except StateException as e:
+        # Update state with validation error
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "registration",
+                "step": 0,
+                "current_step": "error",
+                "data": {
+                    "error": str(e),
+                    "validation": {
+                        "success": False,
+                        "error": str(e)
+                    }
+                }
+            }
+        })
+        raise

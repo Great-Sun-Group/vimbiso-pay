@@ -7,7 +7,9 @@ from .types import (
     TextContent,
     InteractiveContent,
     InteractiveType,
-    Button
+    Button,
+    ChannelIdentifier,
+    ChannelType
 )
 
 
@@ -15,31 +17,49 @@ class ProgressiveInput:
     """Templates for progressive text input"""
 
     @staticmethod
-    def create_prompt(text: str, examples: List[str], recipient: str) -> Message:
+    def create_prompt(text: str, examples: List[str], channel_identifier: str, member_id: str) -> Message:
         """Create initial prompt with examples"""
         example_text = "\n".join([f"• {example}" for example in examples])
         return Message(
-            recipient=MessageRecipient(phone_number=recipient),
+            recipient=MessageRecipient(
+                member_id=member_id,
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_identifier
+                )
+            ),
             content=TextContent(
                 body=f"{text}\n\nExamples:\n{example_text}"
             )
         )
 
     @staticmethod
-    def create_validation_error(error: str, recipient: str) -> Message:
+    def create_validation_error(error: str, channel_identifier: str, member_id: str) -> Message:
         """Create validation error message"""
         return Message(
-            recipient=MessageRecipient(phone_number=recipient),
+            recipient=MessageRecipient(
+                member_id=member_id,
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_identifier
+                )
+            ),
             content=TextContent(
                 body=f"❌ {error}\n\nPlease try again."
             )
         )
 
     @staticmethod
-    def create_confirmation(value: Any, recipient: str) -> Message:
+    def create_confirmation(value: Any, channel_identifier: str, member_id: str) -> Message:
         """Create value confirmation message with buttons"""
         return Message(
-            recipient=MessageRecipient(phone_number=recipient),
+            recipient=MessageRecipient(
+                member_id=member_id,
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_identifier
+                )
+            ),
             content=InteractiveContent(
                 interactive_type=InteractiveType.BUTTON,
                 body=f"Confirm value: {value}",
@@ -55,7 +75,7 @@ class ListSelection:
     """Templates for list selection"""
 
     @staticmethod
-    def create_list(params: Dict[str, Any], recipient: str) -> Message:
+    def create_list(params: Dict[str, Any], channel_identifier: str, member_id: str) -> Message:
         """Create list selection message"""
         sections = []
         for section in params.get("sections", []):
@@ -93,7 +113,13 @@ class ListSelection:
             }
 
         return Message(
-            recipient=MessageRecipient(phone_number=recipient),
+            recipient=MessageRecipient(
+                member_id=member_id,
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_identifier
+                )
+            ),
             content=content
         )
 
@@ -102,7 +128,7 @@ class ButtonSelection:
     """Templates for button selection"""
 
     @staticmethod
-    def create_buttons(params: Dict[str, Any], recipient: str) -> Message:
+    def create_buttons(params: Dict[str, Any], channel_identifier: str, member_id: str) -> Message:
         """Create button selection message following WhatsApp Cloud API format"""
         # Ensure we don't exceed WhatsApp's 3 button limit
         buttons = [
@@ -110,43 +136,20 @@ class ButtonSelection:
             for button in params["buttons"][:3]  # WhatsApp limits to 3 buttons
         ]
 
-        # Create message following WhatsApp Cloud API format
-        message = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": recipient,
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "body": {
-                    "text": params["text"]
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": button.id,
-                                "title": button.title
-                            }
-                        }
-                        for button in buttons
-                    ]
-                }
-            }
-        }
-
-        # Add header if provided
-        if "header" in params:
-            message["interactive"]["header"] = {
-                "type": "text",
-                "text": params["header"]
-            }
-
-        # Add footer if provided
-        if "footer" in params:
-            message["interactive"]["footer"] = {
-                "text": params["footer"]
-            }
-
-        return message
+        # Create message with proper recipient structure
+        return Message(
+            recipient=MessageRecipient(
+                member_id=member_id,
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_identifier
+                )
+            ),
+            content=InteractiveContent(
+                interactive_type=InteractiveType.BUTTON,
+                body=params["text"],
+                header=params.get("header"),
+                footer=params.get("footer"),
+                buttons=buttons
+            )
+        )

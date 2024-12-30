@@ -1,356 +1,152 @@
-"""Offer flow implementation"""
+"""Offer flow implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from core.messaging.flow import Step, StepType
-from core.utils.flow_audit import FlowAuditLogger
-
-from ..templates import CredexTemplates
-from .base import CredexFlow
+from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.exceptions import StateException
+from services.credex.service import get_credex_service
+from .messages import (create_initial_prompt, create_handle_prompt,
+                       create_offer_confirmation, create_success_message)
 
 logger = logging.getLogger(__name__)
-audit = FlowAuditLogger()
+
+# Valid denominations
+VALID_DENOMINATIONS = {"USD", "ZWG", "XAU", "CAD"}
 
 
-class OfferFlow(CredexFlow):
-    """Flow for creating a new credex offer"""
+def validate_offer_input(input_type: str, value: str) -> Dict[str, Any]:
+    """Validate offer input based on type"""
+    if input_type == "amount":
+        parts = value.split()
+        if not value or len(parts) > 2:
+            raise StateException("Enter amount with optional denomination (e.g. 100 USD)")
 
-    def __init__(self, flow_type: str = "offer", state: Dict = None, **kwargs):
-        """Initialize offer flow"""
-        # Store flow_type for parent class
-        self.flow_type = flow_type
+        # Parse amount and denomination
+        if len(parts) == 1:
+            amount, denom = parts[0], "USD"
+        else:
+            first, second = parts
+            if first.upper() in VALID_DENOMINATIONS:
+                denom, amount = first.upper(), second
+            else:
+                amount, denom = first, second.upper()
 
-        # Initialize base state if none provided
-        if state is None:
-            state = {}
-
-        # Get member ID and channel info from top level - SINGLE SOURCE OF TRUTH
-        member_id = state.get("member_id")
-        if not member_id:
-            raise ValueError("Missing member ID")
-
-        channel_id = self._get_channel_identifier_from_state(state)
-        if not channel_id:
-            raise ValueError("Missing channel identifier")
-
-        # Initialize state structure
-        if state and isinstance(state, dict):
-            # Ensure state has required flow fields
-            if "flow_data" not in state:
-                state["flow_data"] = {}
-
-            flow_data = state["flow_data"]
-            if not isinstance(flow_data, dict):
-                flow_data = {}
-
-            # Normalize flow type and create flow ID
-            normalized_flow_type = flow_type or "offer"
-            flow_id = f"{normalized_flow_type}_{member_id}"
-
-            # Initialize validation context structure
-            validation_context = {
-                "_validation_context": {},
-                "_validation_state": {}
-            }
-
-            # Preserve existing context from both state and flow data
-            if isinstance(state.get("_validation_context"), dict):
-                validation_context["_validation_context"].update(state["_validation_context"])
-            if isinstance(state.get("_validation_state"), dict):
-                validation_context["_validation_state"].update(state["_validation_state"])
-
-            flow_data_context = flow_data.get("data", {}).get("_validation_context", {})
-            flow_data_state = flow_data.get("data", {}).get("_validation_state", {})
-            if isinstance(flow_data_context, dict):
-                validation_context["_validation_context"].update(flow_data_context)
-            if isinstance(flow_data_state, dict):
-                validation_context["_validation_state"].update(flow_data_state)
-
-            # Get required fields from state
-            account_id = state.get("account_id")
-            if not account_id:
-                raise ValueError("Missing account ID")
-
-            # Initialize data structure with proper state management
-            data = {
-                "account_id": account_id,
-                "flow_type": normalized_flow_type,
-                "_validation_context": validation_context["_validation_context"],
-                "_validation_state": validation_context["_validation_state"],
-                "amount_denom": {
-                    "amount": 0,
-                    "denomination": "USD"
-                }
-            }
-
-            # Initialize flow_data structure with required fields
-            flow_data = {
-                "id": flow_id,
-                "step": state.get("step", 0),  # Preserve step if exists
-                "data": data,
-                "flow_type": normalized_flow_type,
-                "_previous_data": state.get("_previous_data", {})
-            }
-
-            # Update state with member-centric structure
-            new_state = {
-                # Core identity at top level - SINGLE SOURCE OF TRUTH
-                "member_id": member_id,  # Primary identifier
-
-                # Channel info at top level - SINGLE SOURCE OF TRUTH
-                "channel": {
-                    "type": "whatsapp",
-                    "identifier": channel_id
-                },
-
-                # Flow and state info
-                "id": flow_id,
-                "step": flow_data["step"],
-                "data": data,
-                "flow_data": flow_data,
-                "authenticated": state.get("authenticated", False),
-                "account_id": account_id,
-
-                # Validation context
-                "_validation_context": validation_context["_validation_context"],
-                "_validation_state": validation_context["_validation_state"],
-                "_last_updated": audit.get_current_timestamp(),
-
-                # Preserve additional state fields
-                "_version": state.get("_version", 1),
-                "_stage": state.get("_stage"),
-                "_option": state.get("_option"),
-                "_direction": state.get("_direction")
-            }
-
-            # Log state preparation
-            logger.debug("[OfferFlow] Preparing new state:")
-            logger.debug("- State keys: %s", list(new_state.keys()))
-            logger.debug("- Flow data: %s", flow_data)
-            logger.debug("- Flow ID: %s", flow_id)
-            logger.debug("- Core fields: %s", {
-                "member_id": member_id,
-                "channel": new_state["channel"],
-                "account_id": account_id
-            })
-
-            # Log state transition
-            audit.log_state_transition(
-                flow_id,
-                state,
-                new_state,
-                "success"
-            )
-
-            # Update state with new structure
-            state = new_state
-
+        # Validate amount
         try:
-            # Initialize base CredexFlow class
-            super().__init__(flow_type=self.flow_type, state=state)
+            amount = float(amount)
+            if amount <= 0:
+                raise StateException("Amount must be greater than 0")
+        except ValueError:
+            raise StateException("Invalid amount value")
 
-            # Log successful initialization
-            audit.log_flow_event(
-                self.id,
-                "initialization",
-                None,
-                {
-                    "member_id": member_id,
-                    "channel": state.get("channel"),
-                    "flow_type": self.flow_type
-                },
-                "success"
-            )
+        # Validate denomination
+        if denom not in VALID_DENOMINATIONS:
+            raise StateException(f"Invalid denomination. Supported: {', '.join(sorted(VALID_DENOMINATIONS))}")
 
-        except Exception as e:
-            # Log initialization error
-            error_msg = f"Flow initialization error: {str(e)}"
-            logger.error(error_msg)
-            audit.log_flow_event(
-                flow_id if 'flow_id' in locals() else 'unknown',
-                "initialization_error",
-                None,
-                {
-                    "member_id": member_id,
-                    "channel": state.get("channel") if state else None,
-                    "error": error_msg
-                },
-                "failure"
-            )
-            raise
+        return {"amount": amount, "denomination": denom}
 
-    def _get_channel_identifier_from_state(self, state: Dict) -> str:
-        """Get channel identifier from state
+    elif input_type == "handle":
+        handle = value.strip()
+        if not handle or len(handle) < 3:
+            raise StateException("Handle must be at least 3 characters")
+        return {"handle": handle}
 
-        Args:
-            state: The state dictionary
+    elif input_type == "confirm":
+        if value.lower() not in ["yes", "no"]:
+            raise StateException("Please reply with 'yes' or 'no'")
+        return {"confirmed": value.lower() == "yes"}
 
-        Returns:
-            str: The channel identifier from top level state.channel
+    raise StateException(f"Invalid input type: {input_type}")
 
-        Note:
-            Channel info is only stored at top level state.channel
-            as the single source of truth
-        """
-        return state.get("channel", {}).get("identifier")
 
-    def _create_steps(self) -> List[Step]:
-        """Create steps for offer flow"""
-        return [
-            Step(
-                id="amount",
-                type=StepType.TEXT,
-                message=self._get_amount_prompt,
-                validator=self._validate_amount,
-                transformer=self._transform_amount
-            ),
-            Step(
-                id="handle",
-                type=StepType.TEXT,
-                message=lambda s: CredexTemplates.create_handle_prompt(
-                    self._get_channel_identifier()
-                ),
-                validator=self._validate_handle,
-                transformer=self._transform_handle
-            ),
-            Step(
-                id="confirm",
-                type=StepType.BUTTON,
-                message=self._create_confirmation_message,
-                validator=self._validate_button_response
-            )
-        ]
+def update_offer_state(state_manager: Any, step: str, data: Dict[str, Any]) -> None:
+    """Update offer state with validation"""
+    state_manager.update_state({
+        "flow_data": {
+            "step": {"amount": 1, "handle": 2, "confirm": 3}[step],
+            "current_step": step,
+            "data": data
+        }
+    })
 
-    def complete(self) -> Dict[str, Any]:
-        """Complete the offer flow by making the offer API call"""
+
+def process_offer_step(state_manager: Any, step: str, input_data: Any = None) -> Dict[str, Any]:
+    """Process offer step with validation"""
+    try:
+        # Get channel ID through state manager
+        state = state_manager.get("channel")
+        channel_id = state["identifier"]
+
+        # Initial prompt
+        if not input_data:
+            return create_initial_prompt(channel_id)
+
+        # Validate input and update state
         try:
-            # Get required data
-            amount_data = self.data.get("amount_denom", {})
-            handle_data = self.data.get("handle", {})
+            validated = validate_offer_input(step, input_data)
+            update_offer_state(state_manager, step, validated)
+        except StateException as e:
+            error_context = ErrorContext(
+                error_type="input",
+                message=str(e),
+                step_id=step,
+                details={"input": input_data}
+            )
+            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
-            if not amount_data or not handle_data:
-                error_msg = "Missing required offer data"
-                audit.log_flow_event(
-                    self.id,
-                    "completion_error",
-                    None,
-                    self.data,
-                    "failure",
-                    error_msg
-                )
-                return {
-                    "success": False,
-                    "message": error_msg
-                }
+        # Handle step progression
+        if step == "amount":
+            return create_handle_prompt(channel_id)
 
-            # Get member ID and channel info from top level state - SINGLE SOURCE OF TRUTH
-            current_state = self.credex_service._parent_service.user.state.state
-            member_id = current_state.get("member_id")
-            if not member_id:
-                raise ValueError("Missing member ID in state")
-
-            channel_id = self._get_channel_identifier()
-            if not channel_id:
-                raise ValueError("Missing channel identifier")
-
-            # Log completion attempt with member context
-            audit_context = {
-                "member_id": member_id,
-                "channel": {
-                    "type": "whatsapp",
-                    "identifier": channel_id
-                },
-                "amount": amount_data,
-                "handle": handle_data
-            }
-            audit.log_flow_event(
-                self.id,
-                "completion_start",
-                None,
-                audit_context,
-                "in_progress"
+        elif step == "handle":
+            state = state_manager.get_flow_step_data()
+            amount = state["amount"]
+            handle = validated["handle"]
+            return create_offer_confirmation(
+                channel_id,
+                amount["amount"],
+                amount["denomination"],
+                handle
             )
 
-            # Prepare offer payload with member context
-            offer_payload = {
-                "authorizer_member_id": member_id,
-                "issuerAccountID": self.data.get("account_id"),
-                "receiverAccountID": handle_data.get("account_id"),
-                "InitialAmount": amount_data.get("amount", 0),
-                "Denomination": amount_data.get("denomination", "USD"),
-                "credexType": "PURCHASE",
-                "OFFERSorREQUESTS": "OFFERS",
-                "securedCredex": True,
-                "handle": handle_data.get("handle"),
-                "metadata": {
-                    "name": handle_data.get("name"),
-                    "channel": {
-                        "type": "whatsapp",
-                        "identifier": channel_id
-                    }
-                }
-            }
-
-            # Make API call to create offer
-            success, response = self.credex_service.offer_credex(offer_payload)
-
+        elif step == "confirm" and validated["confirmed"]:
+            # Submit offer
+            credex_service = get_credex_service(state_manager)
+            success, response = credex_service["offer_credex"](
+                state_manager.get_flow_step_data()
+            )
             if not success:
-                error_msg = response.get("message", "Offer failed")
-                audit.log_flow_event(
-                    self.id,
-                    "offer_creation_error",
-                    None,
-                    {**audit_context, "error": error_msg},
-                    "failure"
-                )
-                return {
-                    "success": False,
-                    "message": error_msg,
+                raise StateException(response.get("message", "Failed to create offer"))
+
+            # Log success
+            logger.info(
+                "Offer created successfully",
+                extra={
+                    "channel_id": channel_id,
                     "response": response
                 }
-
-            # Update dashboard with member-centric state
-            self._update_dashboard(response)
-
-            # Get success message from response
-            action = response.get("data", {}).get("action", {})
-            message = (
-                action.get("message") or  # Try direct message
-                action.get("details", {}).get("message") or  # Try details.message
-                "CredEx offer created successfully"  # Default message
             )
+            return create_success_message(channel_id)
 
-            # Log successful completion
-            audit.log_flow_event(
-                self.id,
-                "completion_success",
-                None,
-                {**audit_context, "response": response},
-                "success",
-                message
-            )
+        # Re-confirm if not confirmed
+        state = state_manager.get_flow_step_data()
+        amount = state["amount"]
+        handle = state["handle"]
+        return create_offer_confirmation(
+            channel_id,
+            amount["amount"],
+            amount["denomination"],
+            handle
+        )
 
-            return {
-                "success": True,
-                "message": message,
-                "response": response
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="flow",
+            message=str(e),
+            step_id=step,
+            details={
+                "input": input_data,
+                "operation": "process_step"
             }
-
-        except Exception as e:
-            error_msg = f"Error completing offer: {str(e)}"
-            logger.error(error_msg)
-
-            # Log error with full context
-            audit.log_flow_event(
-                self.id,
-                "completion_error",
-                None,
-                self.data,
-                "failure",
-                error_msg
-            )
-
-            return {
-                "success": False,
-                "message": error_msg
-            }
+        )
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))

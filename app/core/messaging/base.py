@@ -144,8 +144,10 @@ class BaseMessagingService(MessagingServiceInterface):
 
     def _validate_recipient(self, recipient: MessageRecipient) -> None:
         """Validate recipient information"""
-        if not recipient.phone_number:
-            raise InvalidRecipientError("Recipient phone number is required")
+        if not recipient.member_id:
+            raise InvalidRecipientError("Member ID is required")
+        if not recipient.channel_id or not recipient.channel_id.value:
+            raise InvalidRecipientError("Channel identifier is required")
 
     def _validate_content(self, content: Dict[str, Any]) -> None:
         """Validate message content"""

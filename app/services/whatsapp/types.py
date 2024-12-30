@@ -1,19 +1,31 @@
-"""WhatsApp service types and interfaces"""
+"""WhatsApp service types and interfaces enforcing SINGLE SOURCE OF TRUTH"""
 import logging
 from typing import Any, Dict, Union, Optional
 
 from core.messaging.types import Message as CoreMessage
+from core.utils.exceptions import StateException
 
 logger = logging.getLogger(__name__)
 
 
 class WhatsAppMessage(Dict[str, Any]):
-    """Type for WhatsApp messages"""
+    """Type for WhatsApp messages with strict state validation"""
 
     WHATSAPP_BASE = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual"
     }
+
+    @classmethod
+    def _get_channel_identifier(cls, state_manager: Any) -> str:
+        """Get channel identifier through StateManager"""
+        try:
+            # Let StateManager handle validation
+            channel = state_manager.get("channel")
+            return channel["identifier"]
+        except StateException as e:
+            logger.error(f"Failed to get channel identifier: {str(e)}")
+            raise ValueError(str(e))
 
     @classmethod
     def create_message(
@@ -23,6 +35,9 @@ class WhatsAppMessage(Dict[str, Any]):
         **content: Any
     ) -> Dict[str, Any]:
         """Create a standardized WhatsApp message"""
+        if not to:
+            raise ValueError("Recipient (to) is required")
+
         message = {
             **cls.WHATSAPP_BASE,
             "to": to,
@@ -41,7 +56,38 @@ class WhatsAppMessage(Dict[str, Any]):
     @classmethod
     def create_text(cls, to: str, text: str) -> Dict[str, Any]:
         """Create a text message"""
+        if not to:
+            raise ValueError("Recipient (to) is required")
+        if not text:
+            text = "Error: No message content"
+
         return cls.create_message(to, "text", text=text)
+
+    @classmethod
+    def create_text_with_state(cls, state_manager: Any, text: str) -> Dict[str, Any]:
+        """Create a text message using state manager"""
+        try:
+            channel_identifier = cls._get_channel_identifier(state_manager)
+            return cls.create_message(channel_identifier, "text", text=text)
+        except ValueError as e:
+            logger.error(f"Failed to create text message: {str(e)}")
+            return cls.create_message("unknown", "text", text=f"Error: {str(e)}")
+
+    @classmethod
+    def create_button_with_state(
+        cls,
+        state_manager: Any,
+        text: str,
+        buttons: list,
+        header: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Create a button message using state manager"""
+        try:
+            channel_identifier = cls._get_channel_identifier(state_manager)
+            return cls.create_button(channel_identifier, text, buttons, header)
+        except ValueError as e:
+            logger.error(f"Failed to create button message: {str(e)}")
+            return cls.create_message("unknown", "text", text=f"Error: {str(e)}")
 
     @classmethod
     def create_button(
@@ -52,6 +98,13 @@ class WhatsAppMessage(Dict[str, Any]):
         header: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Create a button message"""
+        if not to:
+            raise ValueError("Recipient (to) is required")
+        if not text:
+            raise ValueError("Button text is required")
+        if not buttons:
+            raise ValueError("At least one button is required")
+
         interactive = {
             "type": "button",
             "body": {"text": text},
@@ -83,6 +136,15 @@ class WhatsAppMessage(Dict[str, Any]):
         header: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Create a list message"""
+        if not to:
+            raise ValueError("Recipient (to) is required")
+        if not text:
+            raise ValueError("List text is required")
+        if not button:
+            raise ValueError("List button text is required")
+        if not sections:
+            raise ValueError("At least one section is required")
+
         action_items = {
             "button": button[:20],  # WhatsApp limit
             "sections": sections
@@ -96,11 +158,7 @@ class WhatsAppMessage(Dict[str, Any]):
         if header:
             interactive["header"] = header
 
-        return cls.create_message(
-            to=to,
-            message_type="interactive",
-            interactive=interactive
-        )
+        return cls.create_message(to, "interactive", interactive=interactive)
 
     @classmethod
     def from_core_message(cls, message: Union[CoreMessage, Dict[str, Any], 'WhatsAppMessage']) -> Dict[str, Any]:
@@ -118,25 +176,40 @@ class WhatsAppMessage(Dict[str, Any]):
                         message.get("to", ""),
                         str(message.get("body", message.get("text", {}).get("body", "")))
                     )
-                return cls.create_message(
-                    message.get("to", ""),
-                    msg_type,
-                    **{msg_type: message.get(msg_type, {})}
-                )
+                if msg_type == "interactive":
+                    return cls.create_message(
+                        message.get("to", ""),
+                        msg_type,
+                        interactive=message.get("interactive", {})
+                    )
+                else:
+                    return cls.create_message(
+                        message.get("to", ""),
+                        msg_type,
+                        **{msg_type: message.get(msg_type, {})}
+                    )
 
             # Core message
             if isinstance(message, CoreMessage):
                 content_type = message.content.type.value
                 if content_type == "text":
                     return cls.create_text(
-                        message.recipient.channel_identifier,
+                        message.recipient.channel_value,
                         message.content.body
                     )
-                return cls.create_message(
-                    message.recipient.channel_identifier,
-                    content_type,
-                    **{content_type: message.content.to_dict()}
-                )
+                if content_type == "interactive":
+                    content_dict = message.content.to_dict()
+                    return cls.create_message(
+                        message.recipient.channel_value,
+                        content_type,
+                        interactive=content_dict.get("interactive", {})
+                    )
+                else:
+                    return cls.create_message(
+                        message.recipient.channel_value,
+                        content_type,
+                        **{content_type: message.content.to_dict()}
+                    )
 
             # WhatsAppMessage instance
             if isinstance(message, WhatsAppMessage):
@@ -146,11 +219,17 @@ class WhatsAppMessage(Dict[str, Any]):
 
         except Exception as e:
             logger.error(f"Message conversion error: {str(e)}")
-            return cls.create_text("", f"Error converting message: {str(e)}")
+            recipient = ""
+            if isinstance(message, CoreMessage):
+                recipient = message.recipient.channel_value
+            elif isinstance(message, dict):
+                recipient = message.get("to", "")
+
+            return cls.create_text(recipient or "unknown", f"Error converting message: {str(e)}")
 
 
 class BotServiceInterface:
-    """Interface for bot services"""
+    """Interface for bot services with strict state management"""
 
     def __init__(self, payload: Dict[str, Any], user: Any) -> None:
         """Initialize bot service"""
@@ -171,7 +250,12 @@ class BotServiceInterface:
             # Extract channel identifier from metadata
             metadata = message_data.get("metadata", {})
             if "display_phone_number" in metadata:
-                self.user.channel_identifier = metadata["display_phone_number"].lstrip("+")
+                # Let StateManager initialize channel info
+                self.user.initialize_channel(
+                    "whatsapp",
+                    metadata["display_phone_number"].lstrip("+")
+                )
+
             messages = message_data.get("messages", [{}])
             if not messages:
                 raise ValueError("No messages found in payload")
@@ -186,16 +270,7 @@ class BotServiceInterface:
                 self.body = message.get("button", {}).get("payload", "")
             elif self.message_type == "interactive":
                 interactive = message.get("interactive", {})
-                if "button_reply" in interactive:
-                    self.message_type = "button"  # Treat as button press
-                    self.body = interactive["button_reply"].get("id", "")
-                elif "list_reply" in interactive:
-                    self.message_type = "list"  # Treat as list selection
-                    self.body = interactive["list_reply"].get("id", "")
-                else:
-                    logger.warning("Unknown interactive type")
-                    self.message_type = "text"
-                    self.body = ""
+                self._parse_interactive(interactive)
             else:
                 logger.warning(f"Unsupported message type: {self.message_type}")
                 self.body = ""
@@ -209,30 +284,42 @@ class BotServiceInterface:
         """Parse interactive message content"""
         try:
             if "button_reply" in interactive:
+                self.message_type = "button"  # Treat as button press
                 self.body = interactive["button_reply"].get("id", "")
             elif "list_reply" in interactive:
+                self.message_type = "list"  # Treat as list selection
                 self.body = interactive["list_reply"].get("id", "")
             else:
+                logger.warning("Unknown interactive type")
+                self.message_type = "text"
                 self.body = ""
         except Exception as e:
             logger.error(f"Interactive parsing error: {str(e)}")
             self.body = ""
 
     def get_response_template(self, message_text: str) -> Dict[str, Any]:
-        """Get WhatsApp message template"""
-        # Check for button format
-        if "\n\n[" in message_text and "]" in message_text:
-            text, button = message_text.rsplit("\n\n", 1)
-            button_id = button[1:button.index("]")].strip()
-            button_label = button[button.index("]")+1:].strip()
-            return WhatsAppMessage.create_button(
-                self.user.channel_identifier,
-                text,
-                [{"id": button_id, "title": button_label}]
-            )
+        """Get WhatsApp message template using state manager"""
+        try:
+            # Get channel identifier through state manager
+            channel_identifier = WhatsAppMessage._get_channel_identifier(self.user.state_manager)
 
-        # Default text message
-        return WhatsAppMessage.create_text(self.user.channel_identifier, message_text)
+            # Check for button format
+            if "\n\n[" in message_text and "]" in message_text:
+                text, button = message_text.rsplit("\n\n", 1)
+                button_id = button[1:button.index("]")].strip()
+                button_label = button[button.index("]")+1:].strip()
+                return WhatsAppMessage.create_button(
+                    channel_identifier,
+                    text,
+                    [{"id": button_id, "title": button_label}]
+                )
+
+            # Default text message
+            return WhatsAppMessage.create_text(channel_identifier, message_text)
+
+        except ValueError as e:
+            logger.error(f"Failed to create response template: {str(e)}")
+            return WhatsAppMessage.create_text("unknown", f"Error: {str(e)}")
 
     def handle(self) -> Dict[str, Any]:
         """Process message and generate response"""
