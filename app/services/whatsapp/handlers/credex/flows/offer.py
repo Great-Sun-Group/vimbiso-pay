@@ -6,7 +6,6 @@ The flow maintains two step tracking fields in its state that serve distinct but
     - Required by framework for validation and progression tracking
     - Starts at 0 and increments with each step (0 -> 1 -> 2)
     - Used by StateManager to validate flow progression
-    - Enables audit logging with clear step sequence
     - Example: step: 0 for amount input, 1 for handle input, 2 for confirmation
 
 2. current_step (string):
@@ -21,11 +20,10 @@ from typing import Any, Dict
 
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
+from core.utils.error_handler import ErrorContext, ErrorHandler
 from core.utils.exceptions import StateException
-from core.utils.flow_audit import FlowAuditLogger
 
 logger = logging.getLogger(__name__)
-audit = FlowAuditLogger()
 
 
 def get_amount_prompt(state_manager: Any) -> Message:
@@ -44,9 +42,14 @@ def get_amount_prompt(state_manager: Any) -> Message:
                 body="How much would you like to offer? Your response defaults to USD unless otherwise indicated. Valid examples: `1`, `5`, `3.23`, `53.22 ZWG`, `ZWG 5384.54`, `0.04 XAU`, `CAD 5.18`"
             )
         )
-    except StateException as e:
-        logger.error(f"Amount prompt error: {str(e)}")
-        raise
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="flow",
+            message="Failed to generate amount prompt. Please try again",
+            step_id="amount",
+            details={"error": str(e)}
+        )
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
 
 def validate_amount(amount: str) -> Dict[str, Any]:
@@ -61,40 +64,75 @@ def validate_amount(amount: str) -> Dict[str, Any]:
     Raises:
         StateException: If validation fails
     """
-    # All denominations from prompt examples are valid
-    valid_denominations = {"USD", "ZWG", "XAU", "CAD"}
-
-    # Handle single number as USD
-    parts = amount.split()
-    if not amount or len(parts) > 2:
-        raise StateException("Invalid amount format. Enter amount with optional denomination (e.g. 100 or 100 USD or USD 100)")
-
-    if len(parts) == 1:
-        value = parts[0]
-        denomination = "USD"  # Default to USD
-    else:
-        # Try both denomination positions
-        first, second = parts
-        # Check if first part is a valid denomination
-        if first.upper() in valid_denominations:
-            denomination = first.upper()
-            value = second
-        else:
-            value = first
-            denomination = second.upper()
-
     try:
-        value = float(value)
-        if value <= 0:
-            raise StateException("Amount must be greater than 0")
-    except ValueError:
-        raise StateException("Invalid amount value")
+        # All denominations from prompt examples are valid
+        valid_denominations = {"USD", "ZWG", "XAU", "CAD"}
 
-    # Validate final denomination
-    if denomination not in valid_denominations:
-        raise StateException(f"Invalid denomination. Supported: {', '.join(sorted(valid_denominations))}")
+        # Handle single number as USD
+        parts = amount.split()
+        if not amount or len(parts) > 2:
+            error_context = ErrorContext(
+                error_type="input",
+                message="Invalid amount format. Please enter amount with optional denomination (e.g. 100 or 100 USD or USD 100)",
+                step_id="amount",
+                details={"input": amount}
+            )
+            raise StateException(error_context.message)
 
-    return {"amount": value, "denomination": denomination}
+        if len(parts) == 1:
+            value = parts[0]
+            denomination = "USD"  # Default to USD
+        else:
+            # Try both denomination positions
+            first, second = parts
+            # Check if first part is a valid denomination
+            if first.upper() in valid_denominations:
+                denomination = first.upper()
+                value = second
+            else:
+                value = first
+                denomination = second.upper()
+
+        try:
+            value = float(value)
+            if value <= 0:
+                error_context = ErrorContext(
+                    error_type="input",
+                    message="Amount must be greater than 0",
+                    step_id="amount",
+                    details={"input": amount, "value": value}
+                )
+                raise StateException(error_context.message)
+        except ValueError:
+            error_context = ErrorContext(
+                error_type="input",
+                message="Invalid amount value. Please enter a valid number",
+                step_id="amount",
+                details={"input": amount}
+            )
+            raise StateException(error_context.message)
+
+        # Validate final denomination
+        if denomination not in valid_denominations:
+            error_context = ErrorContext(
+                error_type="input",
+                message=f"Invalid denomination. Supported: {', '.join(sorted(valid_denominations))}",
+                step_id="amount",
+                details={"input": amount, "denomination": denomination}
+            )
+            raise StateException(error_context.message)
+
+        return {"amount": value, "denomination": denomination}
+    except StateException:
+        raise
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="input",
+            message="Failed to validate amount. Please try again",
+            step_id="amount",
+            details={"input": amount, "error": str(e)}
+        )
+        raise StateException(error_context.message)
 
 
 def store_amount(state_manager: Any, amount: str) -> bool:
@@ -110,25 +148,45 @@ def store_amount(state_manager: Any, amount: str) -> bool:
     Raises:
         StateException: If validation or storage fails
     """
-    logger.debug(f"Validating amount: {amount}")
+    try:
+        logger.debug(f"Validating amount: {amount}")
 
-    # Validate amount (raises StateException if invalid)
-    amount_data = validate_amount(amount)
-    logger.debug(f"Amount validated: {amount_data}")
+        # Validate amount (raises StateException if invalid)
+        amount_data = validate_amount(amount)
+        logger.debug(f"Amount validated: {amount_data}")
 
-    # Let StateManager validate structure and preserve flow metadata
-    success, error = state_manager.update_state({
-        "flow_data": {
-            "data": {  # Only update data
-                "amount_denom": amount_data
+        # Let StateManager validate structure and preserve flow metadata
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "data": {  # Only update data
+                    "amount_denom": amount_data
+                }
             }
-        }
-    })
-    if not success:
-        raise StateException(f"Failed to store amount: {error}")
+        })
+        if not success:
+            error_context = ErrorContext(
+                error_type="state",
+                message=f"Failed to store amount: {error}",
+                step_id="amount",
+                details={"amount": amount_data}
+            )
+            raise StateException(ErrorHandler.handle_error(
+                StateException(error),
+                state_manager,
+                error_context
+            ))
 
-    logger.debug("Amount stored successfully")
-    return True  # Indicate successful storage
+        logger.debug("Amount stored successfully")
+        return True  # Indicate successful storage
+
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="state",
+            message="Failed to store amount. Please try again",
+            step_id="amount",
+            details={"input": amount, "error": str(e)}
+        )
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
 
 def get_handle_prompt(state_manager: Any) -> Message:
@@ -147,9 +205,14 @@ def get_handle_prompt(state_manager: Any) -> Message:
                 body="Enter recipient handle:"
             )
         )
-    except StateException as e:
-        logger.error(f"Handle prompt error: {str(e)}")
-        raise
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="flow",
+            message="Failed to generate handle prompt. Please try again",
+            step_id="handle",
+            details={"error": str(e)}
+        )
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
 
 def validate_account_handle(handle: str) -> str:
@@ -164,9 +227,26 @@ def validate_account_handle(handle: str) -> str:
     Raises:
         StateException: If validation fails
     """
-    if not handle or len(handle) < 3:
-        raise StateException("Handle must be at least 3 characters")
-    return handle.strip()
+    try:
+        if not handle or len(handle) < 3:
+            error_context = ErrorContext(
+                error_type="input",
+                message="Handle must be at least 3 characters",
+                step_id="handle",
+                details={"input": handle}
+            )
+            raise StateException(error_context.message)
+        return handle.strip()
+    except StateException:
+        raise
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="input",
+            message="Failed to validate handle. Please try again",
+            step_id="handle",
+            details={"input": handle, "error": str(e)}
+        )
+        raise StateException(error_context.message)
 
 
 def store_handle(state_manager: Any, handle: str) -> bool:
@@ -182,25 +262,45 @@ def store_handle(state_manager: Any, handle: str) -> bool:
     Raises:
         StateException: If validation or storage fails
     """
-    logger.debug(f"Validating handle: {handle}")
+    try:
+        logger.debug(f"Validating handle: {handle}")
 
-    # Validate handle (raises StateException if invalid)
-    validated_handle = validate_account_handle(handle)
-    logger.debug(f"Handle validated: {validated_handle}")
+        # Validate handle (raises StateException if invalid)
+        validated_handle = validate_account_handle(handle)
+        logger.debug(f"Handle validated: {validated_handle}")
 
-    # Let StateManager validate structure and preserve flow metadata
-    success, error = state_manager.update_state({
-        "flow_data": {
-            "data": {  # Only update data
-                "handle": validated_handle
+        # Let StateManager validate structure and preserve flow metadata
+        success, error = state_manager.update_state({
+            "flow_data": {
+                "data": {  # Only update data
+                    "handle": validated_handle
+                }
             }
-        }
-    })
-    if not success:
-        raise StateException(f"Failed to store handle: {error}")
+        })
+        if not success:
+            error_context = ErrorContext(
+                error_type="state",
+                message=f"Failed to store handle: {error}",
+                step_id="handle",
+                details={"handle": validated_handle}
+            )
+            raise StateException(ErrorHandler.handle_error(
+                StateException(error),
+                state_manager,
+                error_context
+            ))
 
-    logger.debug("Handle stored successfully")
-    return True  # Indicate successful storage
+        logger.debug("Handle stored successfully")
+        return True  # Indicate successful storage
+
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="state",
+            message="Failed to store handle. Please try again",
+            step_id="handle",
+            details={"input": handle, "error": str(e)}
+        )
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
 
 def get_confirmation_message(state_manager: Any) -> Message:
@@ -230,9 +330,17 @@ def get_confirmation_message(state_manager: Any) -> Message:
             )
         )
 
-    except StateException as e:
-        logger.error(f"Confirmation message error: {str(e)}")
-        raise
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="flow",
+            message="Failed to generate confirmation message. Please try again",
+            step_id="confirm",
+            details={
+                "error": str(e),
+                "flow_data": state_manager.get("flow_data")
+            }
+        )
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
 
 def complete_offer(state_manager: Any, credex_service: Any) -> Dict[str, Any]:
@@ -248,27 +356,51 @@ def complete_offer(state_manager: Any, credex_service: Any) -> Dict[str, Any]:
     Raises:
         StateException: If offer completion fails
     """
-    # Let StateManager validate and pass state directly
-    flow_data = state_manager.get("flow_data")["data"]  # StateManager validates
-    success, response = credex_service['offer_credex'](flow_data)
-    if not success:
-        error_msg = response.get("message", "Failed to create offer")
-        logger.error(f"API call failed: {error_msg}")
-        raise StateException(error_msg)
+    try:
+        # Let StateManager validate and pass state directly
+        flow_data = state_manager.get("flow_data")["data"]  # StateManager validates
+        success, response = credex_service['offer_credex'](flow_data)
 
-    # Log success with direct state
-    audit.log_flow_event(
-        "offer_flow",
-        "completion_success",
-        None,
-        {
-            "channel_id": state_manager.get("channel")["identifier"],
-            **flow_data  # Pass state directly without transformation
-        },
-        "success"
-    )
+        if not success:
+            error_msg = response.get("message", "Failed to create offer")
+            error_context = ErrorContext(
+                error_type="api",
+                message=error_msg,
+                step_id="confirm",
+                details={
+                    "flow_data": flow_data,
+                    "response": response
+                }
+            )
+            raise StateException(ErrorHandler.handle_error(
+                StateException(error_msg),
+                state_manager,
+                error_context
+            ))
 
-    return response
+        # Log success
+        logger.info(
+            "Offer created successfully",
+            extra={
+                "channel_id": state_manager.get("channel")["identifier"],
+                "flow_data": flow_data,
+                "response": response
+            }
+        )
+
+        return response
+
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="flow",
+            message="Failed to complete offer. Please try again",
+            step_id="confirm",
+            details={
+                "error": str(e),
+                "flow_data": flow_data if 'flow_data' in locals() else None
+            }
+        )
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
 
 def process_offer_step(
@@ -305,7 +437,17 @@ def process_offer_step(
                     }
                 })
                 if not success:
-                    raise StateException(f"Failed to advance flow: {error}")
+                    error_context = ErrorContext(
+                        error_type="flow",
+                        message=f"Failed to advance flow: {error}",
+                        step_id="amount",
+                        details={"flow_data": flow_data}
+                    )
+                    raise StateException(ErrorHandler.handle_error(
+                        StateException(error),
+                        state_manager,
+                        error_context
+                    ))
                 logger.debug("Flow state updated, getting handle prompt")
 
                 return get_handle_prompt(state_manager)
@@ -328,7 +470,17 @@ def process_offer_step(
                     }
                 })
                 if not success:
-                    raise StateException(f"Failed to advance flow: {error}")
+                    error_context = ErrorContext(
+                        error_type="flow",
+                        message=f"Failed to advance flow: {error}",
+                        step_id="handle",
+                        details={"flow_data": flow_data}
+                    )
+                    raise StateException(ErrorHandler.handle_error(
+                        StateException(error),
+                        state_manager,
+                        error_context
+                    ))
                 logger.debug("Flow state updated, getting confirmation message")
 
                 return get_confirmation_message(state_manager)
@@ -356,18 +508,37 @@ def process_offer_step(
             return get_confirmation_message(state_manager)
 
         else:
-            raise StateException(f"Invalid offer step: {step}")
+            error_context = ErrorContext(
+                error_type="flow",
+                message=f"Invalid offer step: {step}",
+                step_id=step,
+                details={"input": input_data}
+            )
+            raise StateException(ErrorHandler.handle_error(
+                StateException(f"Invalid step: {step}"),
+                state_manager,
+                error_context
+            ))
 
-    except StateException as e:
-        channel = state_manager.get("channel")
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="flow",
+            message=str(e),
+            step_id=step,
+            details={
+                "input": input_data,
+                "error": str(e)
+            }
+        )
+        error_response = ErrorHandler.handle_error(e, state_manager, error_context)
         return Message(
             recipient=MessageRecipient(
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    value=state_manager.get("channel")["identifier"]
                 )
             ),
             content=TextContent(
-                body=f"Error: {str(e)}"
+                body=f"❌ {error_response['data']['action']['details']['message']}"
             )
         )

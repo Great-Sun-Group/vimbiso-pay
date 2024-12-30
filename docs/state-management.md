@@ -30,6 +30,7 @@ VimbisoPay uses a centralized state management system that strictly enforces SIN
    - StateManager: Validates all updates
    - StateValidator: Defines valid structure
    - StateUtils: Provides core structure
+   - ErrorHandler: Manages all errors
    - NO mixed concerns
    - NO manual validation
    - NO error handling
@@ -184,41 +185,36 @@ class StateManager:
             raise StateException(f"Failed to update state: {error}")
 ```
 
-### 3. State Validator
+### 3. Error Handling
 ```python
-class StateValidator:
-    """Validates state through updates"""
+# Handle state error with context
+error_context = ErrorContext(
+    error_type="state",
+    message=str(error),
+    details={
+        "update_type": "account_state",
+        "fields": ["active_account_id", "accounts"]
+    }
+)
+error_response = ErrorHandler.handle_error(
+    error,
+    state_manager,
+    error_context
+)
 
-    @classmethod
-    def validate_state(cls, updates: Dict[str, Any]) -> None:
-        """Validate state through update structure
-
-        Args:
-            updates: State updates to validate
-
-        Raises:
-            StateException: If validation fails
-        """
-        # Validate member_id at top level
-        if "member_id" in updates and not isinstance(updates["member_id"], (str, type(None))):
-            raise StateException("member_id must be string or None")
-
-        # Validate channel at top level
-        if "channel" in updates:
-            if not isinstance(updates["channel"], dict):
-                raise StateException("channel must be dictionary")
-            if "type" not in updates["channel"]:
-                raise StateException("channel missing type")
-            if "identifier" not in updates["channel"]:
-                raise StateException("channel missing identifier")
-
-        # Validate jwt_token in state
-        if "jwt_token" in updates and not isinstance(updates["jwt_token"], (str, type(None))):
-            raise StateException("jwt_token must be string or None")
-
-        # Validate flow_data structure
-        if "flow_data" in updates and not isinstance(updates["flow_data"], (dict, type(None))):
-            raise StateException("flow_data must be dictionary or None")
+# Create error message
+return Message(
+    recipient=MessageRecipient(
+        channel_id=ChannelIdentifier(
+            channel=ChannelType.WHATSAPP,
+            value=state_manager.get("channel")["identifier"]
+        )
+    ),
+    content=TextContent(
+        body=f"❌ Error: {error_response['data']['action']['details']['message']}"
+    ),
+    metadata=error_response["data"]["action"]["details"]
+)
 ```
 
 ## Best Practices
@@ -248,11 +244,12 @@ class StateValidator:
    - NO error recovery
 
 4. **Error Handling**
-   - Let StateManager validate
+   - Use ErrorHandler for all errors
+   - Provide clear error context
+   - Include relevant details
    - NO manual validation
    - NO error recovery
    - NO state fixing
-   - NO cleanup code
    - Clear error messages
 
 For more details on:

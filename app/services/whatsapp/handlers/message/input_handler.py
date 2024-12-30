@@ -5,11 +5,10 @@ from typing import Any, Dict, Union
 from core.config.config import GREETINGS
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
+from core.utils.error_handler import ErrorContext, ErrorHandler
 from core.utils.exceptions import StateException
-from core.utils.flow_audit import FlowAuditLogger
 
 logger = logging.getLogger(__name__)
-audit = FlowAuditLogger()
 
 BUTTON_ACTIONS = {"confirm_action"}
 MENU_ACTIONS = {
@@ -62,19 +61,38 @@ def get_action(message_body: str, state_manager: Any = None, message_type: str =
             return text
 
         # Finally check if we're in an active flow
-        flow_data = state_manager.get("flow_data") if state_manager else None
-        if flow_data and flow_data.get("current_step"):
-            # In a flow - return empty string to let flow handler process it
-            logger.debug(f"In flow '{flow_data.get('flow_type')}' at step '{flow_data.get('current_step')}' - passing input to flow")
-            return ""
+        try:
+            flow_data = state_manager.get("flow_data") if state_manager else None
+            if flow_data and flow_data.get("current_step"):
+                # In a flow - return empty string to let flow handler process it
+                logger.debug(f"In flow '{flow_data.get('flow_type')}' at step '{flow_data.get('current_step')}' - passing input to flow")
+                return ""
+        except Exception as e:
+            error_context = ErrorContext(
+                error_type="state",
+                message="Failed to check flow state. Please try again",
+                details={
+                    "message_type": message_type,
+                    "error": str(e)
+                }
+            )
+            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
         # Not a greeting, flow input, or menu action - return empty string
         logger.debug(f"No action recognized for text: '{text}'")
         return ""
 
-    except StateException as e:
-        logger.error(f"Action extraction error: {str(e)}")
-        raise  # Let caller handle error
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="input",
+            message="Failed to process input. Please try again",
+            details={
+                "message_type": message_type,
+                "message_body": message_body,
+                "error": str(e)
+            }
+        )
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
 
 def extract_input_value(message_body: str, message_type: str = "text",
@@ -92,29 +110,42 @@ def extract_input_value(message_body: str, message_type: str = "text",
     Raises:
         StateException: If input extraction fails
     """
-    # Handle interactive messages
-    if message_type == "interactive":
-        interactive = message.get("interactive", {}) if message else {}
-        interactive_type = interactive.get("type")
+    try:
+        # Handle interactive messages
+        if message_type == "interactive":
+            interactive = message.get("interactive", {}) if message else {}
+            interactive_type = interactive.get("type")
 
-        if interactive_type == "list_reply":
-            return interactive.get("list_reply", {}).get("id", "")
-        elif interactive_type == "button_reply":
-            return interactive.get("button_reply", {})
+            if interactive_type == "list_reply":
+                return interactive.get("list_reply", {}).get("id", "")
+            elif interactive_type == "button_reply":
+                return interactive.get("button_reply", {})
 
-    # Handle text messages
-    value = str(message_body).strip()
+        # Handle text messages
+        value = str(message_body).strip()
 
-    # Log input processing (only log type)
-    audit.log_flow_event(
-        "bot_service",
-        "input_processing",
-        None,
-        {"type": message_type},  # Only log message type
-        "success"
-    )
+        # Log input processing
+        logger.info(
+            "Input processed successfully",
+            extra={
+                "message_type": message_type,
+                "value_type": type(value).__name__
+            }
+        )
 
-    return value
+        return value
+
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="input",
+            message="Failed to extract input value. Please try again",
+            details={
+                "message_type": message_type,
+                "message_body": message_body,
+                "error": str(e)
+            }
+        )
+        raise StateException(error_context.message)
 
 
 def is_greeting(text: str) -> bool:
@@ -141,15 +172,24 @@ def handle_invalid_input(state_manager: Any, flow_step_id: str = None) -> Messag
     """
     try:
         # Get channel (StateManager validates)
-        channel = state_manager.get("channel")
+        try:
+            channel = state_manager.get("channel")
+        except Exception as e:
+            error_context = ErrorContext(
+                error_type="state",
+                message="Failed to get channel information. Please try again",
+                step_id=flow_step_id,
+                details={"error": str(e)}
+            )
+            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
-        # Log invalid input (only log step)
-        audit.log_flow_event(
-            "bot_service",
-            "invalid_input",
-            flow_step_id,
-            {"step": flow_step_id} if flow_step_id else {},  # Only log step if present
-            "failure"
+        # Log invalid input
+        logger.warning(
+            "Invalid input received",
+            extra={
+                "step_id": flow_step_id,
+                "channel_id": channel["identifier"]
+            }
         )
 
         # Return appropriate error message
@@ -174,7 +214,11 @@ def handle_invalid_input(state_manager: Any, flow_step_id: str = None) -> Messag
             )
         )
 
-    except StateException as e:
-        logger.error(f"Failed to handle invalid input: {str(e)}")
-        # Let caller handle error response
-        raise
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="input",
+            message="Failed to handle invalid input. Please try again",
+            step_id=flow_step_id,
+            details={"error": str(e)}
+        )
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))

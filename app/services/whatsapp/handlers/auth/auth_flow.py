@@ -6,7 +6,7 @@ from core.messaging.types import (ChannelIdentifier, ChannelType,
                                   InteractiveContent, InteractiveType, Message,
                                   MessageRecipient, TextContent)
 from core.utils.exceptions import StateException
-from core.utils.error_handler import handle_flow_error
+from core.utils.error_handler import ErrorHandler, ErrorContext
 from services.credex.service import handle_login
 
 logger = logging.getLogger(__name__)
@@ -51,12 +51,16 @@ def handle_registration(state_manager: Any) -> Message:
         )
 
     except StateException as e:
-        # Use central error handler
-        _, error_response = handle_flow_error(
-            state_manager,
+        # Use ErrorHandler with context
+        error_response = ErrorHandler.handle_error(
             e,
-            flow_type="registration",
-            step_id="welcome"
+            state_manager,
+            ErrorContext(
+                error_type="registration",
+                message="Unable to process registration. Please try again.",
+                step_id="welcome",
+                details={"flow_type": "registration"}
+            )
         )
 
         # Convert error response to Message
@@ -68,7 +72,7 @@ def handle_registration(state_manager: Any) -> Message:
                 )
             ),
             content=TextContent(
-                body="❌ Error: Unable to process registration. Please try again."
+                body=f"❌ Error: {error_response['data']['action']['details']['message']}"
             ),
             metadata=error_response["data"]["action"]["details"]
         )
@@ -80,12 +84,18 @@ def attempt_login(state_manager: Any) -> Tuple[bool, Optional[Dict[str, Any]]]:
         # Attempt login
         success, response = handle_login(state_manager)
         if not success:
-            return handle_flow_error(
-                state_manager,
-                Exception(response.get("message", "Login failed")),
-                flow_type="auth",
-                step_id="login"
+            error_context = ErrorContext(
+                error_type="auth",
+                message=response.get("message", "Login failed"),
+                step_id="login",
+                details={"flow_type": "auth"}
             )
+            error_response = ErrorHandler.handle_error(
+                Exception(error_context.message),
+                state_manager,
+                error_context
+            )
+            return False, error_response
 
         # Service layer handled member state updates including account data
         # Update flow state to show dashboard
@@ -99,20 +109,32 @@ def attempt_login(state_manager: Any) -> Tuple[bool, Optional[Dict[str, Any]]]:
         })
 
         if not success:
-            return handle_flow_error(
-                state_manager,
-                Exception(error),
-                flow_type="dashboard",
-                step_id="display"
+            error_context = ErrorContext(
+                error_type="dashboard",
+                message=str(error),
+                step_id="display",
+                details={"flow_type": "dashboard"}
             )
+            error_response = ErrorHandler.handle_error(
+                Exception(error_context.message),
+                state_manager,
+                error_context
+            )
+            return False, error_response
 
         # All data is in state, no need to return response
         return True, None
 
     except (StateException, KeyError) as e:
-        return handle_flow_error(
-            state_manager,
-            e,
-            flow_type="auth",
-            step_id="login"
+        error_context = ErrorContext(
+            error_type="auth",
+            message=str(e),
+            step_id="login",
+            details={"flow_type": "auth"}
         )
+        error_response = ErrorHandler.handle_error(
+            e,
+            state_manager,
+            error_context
+        )
+        return False, error_response

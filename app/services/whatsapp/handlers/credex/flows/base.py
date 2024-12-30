@@ -2,11 +2,10 @@
 import logging
 from typing import Any, Dict
 
+from core.utils.error_handler import ErrorContext, ErrorHandler
 from core.utils.exceptions import StateException
-from core.utils.flow_audit import FlowAuditLogger
 
 logger = logging.getLogger(__name__)
-audit = FlowAuditLogger()
 
 
 def process_flow_step(
@@ -33,24 +32,77 @@ def process_flow_step(
     """
     try:
         # Let StateManager validate state
-        state_manager.get("channel")  # Validates channel exists
-        flow_data = state_manager.get("flow_data")  # Validates flow data exists
+        try:
+            state_manager.get("channel")  # Validates channel exists
+        except Exception as e:
+            error_context = ErrorContext(
+                error_type="state",
+                message="Channel information not found. Please restart the flow",
+                step_id=step,
+                details={
+                    "flow_id": flow_id,
+                    "error": str(e)
+                }
+            )
+            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+
+        try:
+            flow_data = state_manager.get("flow_data")  # Validates flow data exists
+        except Exception as e:
+            error_context = ErrorContext(
+                error_type="state",
+                message="Flow data not found. Please restart the flow",
+                step_id=step,
+                details={
+                    "flow_id": flow_id,
+                    "error": str(e)
+                }
+            )
+            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
         # Let StateManager validate service through state update
         if credex_service:
-            state_manager.update_state({
-                "flow_data": {
-                    "service": credex_service  # StateManager validates service structure
-                }
-            })
+            try:
+                success, error = state_manager.update_state({
+                    "flow_data": {
+                        "service": credex_service  # StateManager validates service structure
+                    }
+                })
+                if not success:
+                    error_context = ErrorContext(
+                        error_type="state",
+                        message="Failed to validate service. Please try again",
+                        step_id=step,
+                        details={
+                            "flow_id": flow_id,
+                            "error": error
+                        }
+                    )
+                    raise StateException(ErrorHandler.handle_error(
+                        StateException(error),
+                        state_manager,
+                        error_context
+                    ))
+            except Exception as e:
+                error_context = ErrorContext(
+                    error_type="state",
+                    message="Failed to update service state. Please try again",
+                    step_id=step,
+                    details={
+                        "flow_id": flow_id,
+                        "error": str(e)
+                    }
+                )
+                raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
-        # Log validation (using state_manager for channel id)
-        audit.log_flow_event(
-            flow_id,
-            "state_validation",
-            None,
-            {"channel_id": state_manager.get("channel")["identifier"]},  # StateManager validates
-            "success"
+        # Log validation success
+        logger.info(
+            "Flow step validation successful",
+            extra={
+                "flow_id": flow_id,
+                "step": step,
+                "channel_id": state_manager.get("channel")["identifier"]
+            }
         )
 
         # Return step data for handler
@@ -62,6 +114,15 @@ def process_flow_step(
             "credex_service": credex_service
         }
 
-    except StateException as e:
-        logger.error(f"Flow step processing error: {str(e)}")
-        raise  # Let caller handle error
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="flow",
+            message="Failed to process flow step. Please try again",
+            step_id=step,
+            details={
+                "flow_id": flow_id,
+                "error": str(e),
+                "input_data": input_data
+            }
+        )
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))

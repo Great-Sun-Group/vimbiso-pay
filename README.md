@@ -3,10 +3,11 @@
 A server that facilitates financial transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in secure WhatsApp and SMS chats.
 
 ## Documentation
+- [Standardization](docs/standardization.md) - Summary of centralized solution for state, flow, and error management.
+- [State Management](docs/state-management.md) - Conversation and session management
 - [Flow Framework](docs/flow-framework.md) - Progressive interaction framework
 - [WhatsApp Integration](docs/whatsapp.md) - WhatsApp bot implementation
 - [API Integration](docs/api-integration.md) - Integration with credex-core API
-- [State Management](docs/state-management.md) - Conversation and session management
 - [Testing Guide](docs/testing.md) - Testing infrastructure and tools
 - [Security](docs/security.md) - Security measures and best practices
 - [Docker](docs/docker.md) - Docker configuration and services

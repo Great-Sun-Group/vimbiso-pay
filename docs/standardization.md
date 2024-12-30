@@ -194,12 +194,62 @@ def verify_amount(state_manager: Any) -> None:
 
 ## 5. Error Handling
 
-- Fix ROOT CAUSES only
-- NO symptom fixes
-- NO partial fixes
-- NO error hiding
-- Clear error messages
-- Fail fast and clearly
+### Core Principles
+- Use ErrorHandler for ALL errors
+- Provide clear error context
+- Include relevant details
+- NO manual error handling
+- NO error recovery
+- NO state fixing
+
+### Error Context Rules
+- ALWAYS include error type
+- ALWAYS include clear message
+- ALWAYS include relevant details
+- NO generic error messages
+- NO missing context
+- NO manual error formatting
+
+### Examples
+```python
+# CORRECT - Error handling with context
+error_context = ErrorContext(
+    error_type="flow",
+    message=str(error),
+    step_id="current_step",
+    details={
+        "flow_type": "current_flow",
+        "input": input_data
+    }
+)
+error_response = ErrorHandler.handle_error(
+    error,
+    state_manager,
+    error_context
+)
+
+# WRONG - Manual error handling
+if not validate_input(input_data):  # NO manual validation!
+    return {
+        "error": "Invalid input",  # NO manual error messages!
+        "details": {}  # NO missing context!
+    }
+```
+
+### Error Types
+- flow: Flow-specific errors
+- state: State validation errors
+- input: User input validation
+- api: External API errors
+- system: Internal system errors
+
+### Error Details
+- ALWAYS include error type
+- ALWAYS include step ID for flows
+- ALWAYS include input data
+- ALWAYS include flow type
+- ALWAYS include relevant context
+- NO missing information
 
 ## Pre-Change Checklist
 
@@ -235,10 +285,12 @@ STOP and verify before ANY code change:
    - [ ] NO cleanup code?
 
 6. Error Handling
-   - [ ] Fixing root cause?
-   - [ ] NO symptom fixes?
-   - [ ] Clear error messages?
-
+   - [ ] Using ErrorHandler?
+   - [ ] Clear error context?
+   - [ ] Relevant details?
+   - [ ] NO manual handling?
+   - [ ] NO error recovery?
+   - [ ] NO state fixing?
 
 ## Enforcement
 

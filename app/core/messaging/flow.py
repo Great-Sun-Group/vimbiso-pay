@@ -5,11 +5,10 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from core.utils.exceptions import StateException
-from core.utils.flow_audit import FlowAuditLogger
+from core.utils.error_handler import ErrorHandler, ErrorContext
 from core.utils.state_validator import StateValidator
 
 logger = logging.getLogger(__name__)
-audit = FlowAuditLogger()
 
 
 class StepType(Enum):
@@ -47,15 +46,18 @@ def validate_step(step: Step, input_data: Any) -> bool:
         try:
             return step.validator(input_data)
         except Exception as validation_error:
-            logger.error(
-                f"Validation failed in step {step.id}",
-                extra={
-                    "step_id": step.id,
-                    "validator": step.validator.__name__ if hasattr(step.validator, '__name__') else str(step.validator),
-                    "input": input_data,
-                    "error": str(validation_error)
-                },
-                exc_info=True
+            # Log validation error through error handler
+            ErrorHandler.handle_error(
+                validation_error,
+                ErrorContext(
+                    error_type="validation",
+                    message=str(validation_error),
+                    step_id=step.id,
+                    details={
+                        "validator": step.validator.__name__ if hasattr(step.validator, '__name__') else str(step.validator),
+                        "input": input_data
+                    }
+                )
             )
             raise ValueError(f"Validation error in step {step.id}: {str(validation_error)}")
 
@@ -163,32 +165,13 @@ def process_flow_input(
         return None
 
     try:
-        # Update validation state
+        # Update flow state with input
         initialize_flow_state(
             state_manager,
             state_manager.get("flow_data", {}).get("flow_type", "unknown"),
             state_manager.get("flow_data", {}).get("step", 0),
             step.id,
-            {
-                "validation": {
-                    "step_id": step.id,
-                    "step_index": state_manager.get("flow_data", {}).get("current_step", 0),
-                    "input": input_data,
-                    "timestamp": audit.get_current_timestamp()
-                }
-            }
-        )
-
-        # Get current flow data for logging
-        current_flow_data = state_manager.get("flow_data", {})
-
-        # Log flow event
-        audit.log_flow_event(
-            flow_id,
-            "step_start",
-            step.id,
-            current_flow_data,
-            "in_progress"
+            {"input": input_data}
         )
 
         # Validate input
@@ -196,121 +179,60 @@ def process_flow_input(
         logger.debug(f"Input validation result: {validation_result}")
 
         if not validation_result:
-            # Update validation state with error
-            initialize_flow_state(
-                state_manager,
-                current_flow_data["flow_type"],
-                current_flow_data["step"],
-                step.id,
-                {
-                    "validation": {
-                        "success": False,
-                        "error": "Invalid input"
-                    }
-                }
+            # Handle validation error through error handler
+            ErrorHandler.handle_error(
+                ValueError("Invalid input"),
+                ErrorContext(
+                    error_type="validation",
+                    message="Invalid input",
+                    step_id=step.id,
+                    details={"input": input_data}
+                )
             )
-
-            # Log validation failure
-            audit.log_flow_event(
-                flow_id,
-                "validation_error",
-                step.id,
-                current_flow_data,
-                "failure",
-                "Invalid input"
-            )
-
             raise ValueError("Invalid input")
 
         # Transform input
         transformed_data = transform_step_input(step, input_data)
 
         # Store transformed input data
-        next_step = steps[current_flow_data.get("step", 0) + 1] if current_flow_data.get("step", 0) + 1 < len(steps) else None
+        next_step = steps[state_manager.get("flow_data", {}).get("step", 0) + 1] if state_manager.get("flow_data", {}).get("step", 0) + 1 < len(steps) else None
         initialize_flow_state(
             state_manager,
-            current_flow_data["flow_type"],
-            current_flow_data["step"] + 1,
+            state_manager.get("flow_data", {}).get("flow_type", "unknown"),
+            state_manager.get("flow_data", {}).get("step", 0) + 1,
             next_step.id if next_step else "complete",
-            {
-                step.id if step.id != "amount" else "amount_denom": transformed_data,
-                "validation": {
-                    "success": True,
-                    "transformed": transformed_data
-                }
-            }
-        )
-
-        # Get updated flow data for logging and completion check
-        current_flow_data = state_manager.get("flow_data", {})
-
-        # Log successful state transition
-        audit.log_flow_event(
-            flow_id,
-            "step_complete",
-            step.id,
-            current_flow_data,
-            "success"
+            {step.id if step.id != "amount" else "amount_denom": transformed_data}
         )
 
         # Complete or get next message
-        if current_flow_data.get("step", 0) >= len(steps):
-            # Get final flow data for completion logging
-            final_flow_data = state_manager.get("flow_data", {})
-
-            # Log flow completion
-            audit.log_flow_event(
-                flow_id,
-                "complete",
-                None,
-                final_flow_data,
-                "success"
-            )
+        if state_manager.get("flow_data", {}).get("step", 0) >= len(steps):
             return complete_handler(state_manager) if complete_handler else None
 
         next_step = get_current_step(state_manager, steps)
         return get_step_message(next_step, state_manager) if next_step else None
 
     except ValueError as validation_error:
-        # Update validation state with error
-        current_flow_data = state_manager.get("flow_data", {})
-        initialize_flow_state(
-            state_manager,
-            current_flow_data["flow_type"],
-            current_flow_data["step"],
-            step.id,
-            {
-                "validation": {
-                    "success": False,
-                    "error": str(validation_error)
-                }
-            }
+        # Handle validation error through error handler
+        ErrorHandler.handle_error(
+            validation_error,
+            ErrorContext(
+                error_type="validation",
+                message=str(validation_error),
+                step_id=step.id,
+                details={"input": input_data}
+            )
         )
-
-        # Log validation error
-        audit.log_flow_event(
-            flow_id,
-            "validation_error",
-            step.id,
-            current_flow_data,
-            "failure",
-            str(validation_error)
-        )
-
         raise
 
     except Exception as e:
-        error_msg = f"Process error in {step.id}: {str(e)}"
-        logger.error(error_msg)
-
-        # Log error event
-        audit.log_flow_event(
-            flow_id,
-            "process_error",
-            step.id,
-            state_manager.get("flow_data", {}),
-            "failure",
-            error_msg
+        # Handle flow error through error handler
+        ErrorHandler.handle_error(
+            e,
+            ErrorContext(
+                error_type="flow",
+                message=f"Process error in {step.id}: {str(e)}",
+                step_id=step.id,
+                details={"input": input_data}
+            )
         )
-
         raise ValueError(str(e))

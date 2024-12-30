@@ -4,11 +4,10 @@ from typing import Any, Dict
 
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
+from core.utils.error_handler import ErrorContext, ErrorHandler
 from core.utils.exceptions import StateException
-from core.utils.flow_audit import FlowAuditLogger
 
 logger = logging.getLogger(__name__)
-audit = FlowAuditLogger()
 
 # Flow type to handler function mapping for multi-step flows
 FLOW_HANDLERS: Dict[str, Any] = {
@@ -33,11 +32,28 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
     """
     try:
         # Let StateManager validate channel access
-        state_manager.get("channel")
+        try:
+            state_manager.get("channel")
+        except Exception as e:
+            error_context = ErrorContext(
+                error_type="state",
+                message="Failed to get channel information. Please try again",
+                details={"error": str(e)}
+            )
+            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
         # Validate flow type through state update
         if flow_type not in FLOW_HANDLERS:
-            raise StateException(f"Unknown flow type: {flow_type}")
+            error_context = ErrorContext(
+                error_type="flow",
+                message=f"Unknown flow type: {flow_type}. Please select a valid option",
+                details={"flow_type": flow_type}
+            )
+            raise StateException(ErrorHandler.handle_error(
+                StateException("Invalid flow type"),
+                state_manager,
+                error_context
+            ))
 
         # Initialize flow state through state update
         state_update = {
@@ -53,15 +69,27 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
         success, error = state_manager.update_state(state_update)
         logger.debug(f"Flow state initialization result - success: {success}, error: {error}")
         if not success:
-            raise StateException(f"Failed to initialize flow state: {error}")
+            error_context = ErrorContext(
+                error_type="state",
+                message="Failed to initialize flow. Please try again",
+                details={
+                    "flow_type": flow_type,
+                    "error": error
+                }
+            )
+            raise StateException(ErrorHandler.handle_error(
+                StateException(error),
+                state_manager,
+                error_context
+            ))
 
         # Log flow start attempt
-        audit.log_flow_event(
-            "bot_service",
-            "flow_start_attempt",
-            None,
-            {"flow_type": flow_type},  # Only log flow type
-            "in_progress"
+        logger.info(
+            "Starting flow",
+            extra={
+                "flow_type": flow_type,
+                "initial_step": state_update["flow_data"]["current_step"]
+            }
         )
 
         # Get handler name and import function
@@ -86,56 +114,122 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
                     handler_func = getattr(action, handler_name)
                 logger.debug(f"Got handler function: {handler_func}")
         except Exception as e:
-            logger.error(f"Failed to import handler: {str(e)}")
-            raise StateException(f"Failed to load flow handler: {str(e)}")
-
-        # Initialize flow through state update with correct step
-        current_step = state_manager.get("flow_data")["current_step"]
-        result = handler_func(state_manager, current_step, None)
-        if not result:
-            raise StateException("Failed to get initial flow message")
-
-        # Log success
-        audit.log_flow_event(
-            "bot_service",
-            "flow_start_success",
-            None,
-            {"flow_type": flow_type},  # Only log flow type
-            "success"
-        )
-
-        return result
-
-    except StateException as e:
-        logger.error(f"Flow initialization error: {str(e)}")
-        channel = state_manager.get("channel")
-        return Message(
-            recipient=MessageRecipient(
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
-                )
-            ),
-            content=TextContent(
-                body="Error: Unable to start flow. Please try again."
+            error_context = ErrorContext(
+                error_type="system",
+                message="Failed to load flow handler. Please try again",
+                details={
+                    "flow_type": flow_type,
+                    "handler": handler_name,
+                    "error": str(e)
+                }
             )
+            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+
+        try:
+            # Initialize flow through state update with correct step
+            current_step = state_manager.get("flow_data")["current_step"]
+            result = handler_func(state_manager, current_step, None)
+            if not result:
+                error_context = ErrorContext(
+                    error_type="flow",
+                    message="Failed to start flow. Please try again",
+                    details={
+                        "flow_type": flow_type,
+                        "step": current_step
+                    }
+                )
+                raise StateException(ErrorHandler.handle_error(
+                    StateException("No initial message"),
+                    state_manager,
+                    error_context
+                ))
+
+            # Log success
+            logger.info(
+                "Flow started successfully",
+                extra={
+                    "flow_type": flow_type,
+                    "step": current_step
+                }
+            )
+
+            return result
+
+        except Exception as e:
+            error_context = ErrorContext(
+                error_type="flow",
+                message="Failed to initialize flow. Please try again",
+                details={
+                    "flow_type": flow_type,
+                    "step": current_step if 'current_step' in locals() else None,
+                    "error": str(e)
+                }
+            )
+            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="flow",
+            message="Unable to start flow. Please try again",
+            details={
+                "flow_type": flow_type,
+                "error": str(e)
+            }
         )
+        error_response = ErrorHandler.handle_error(e, state_manager, error_context)
+
+        try:
+            channel = state_manager.get("channel")
+            return Message(
+                recipient=MessageRecipient(
+                    channel_id=ChannelIdentifier(
+                        channel=ChannelType.WHATSAPP,
+                        value=channel["identifier"]
+                    )
+                ),
+                content=TextContent(
+                    body=f"❌ {error_response['data']['action']['details']['message']}"
+                )
+            )
+        except Exception:
+            # Fallback error message if we can't get channel info
+            return Message(
+                recipient=MessageRecipient(
+                    channel_id=ChannelIdentifier(
+                        channel=ChannelType.WHATSAPP,
+                        value="unknown"
+                    )
+                ),
+                content=TextContent(
+                    body="❌ System error. Please try again later."
+                )
+            )
 
 
 def check_pending_offers(state_manager: Any) -> bool:
     """Check for pending offers enforcing SINGLE SOURCE OF TRUTH"""
     try:
         # Log check
-        audit.log_flow_event(
-            "bot_service",
-            "check_pending_offers",
-            None,
-            {"status": "checking"},  # Only log status
-            "success"
+        logger.info(
+            "Checking pending offers",
+            extra={
+                "channel_id": state_manager.get("channel")["identifier"]
+            }
         )
 
         return True
 
-    except StateException as e:
-        logger.error(f"Error checking pending offers: {str(e)}")
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="state",
+            message="Failed to check pending offers",
+            details={"error": str(e)}
+        )
+        logger.error(
+            "Error checking pending offers",
+            extra={
+                "error": str(e),
+                "error_context": error_context.__dict__
+            }
+        )
         return False
