@@ -260,6 +260,44 @@ def get_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
 
 
 @error_decorator
+def accept_bulk_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Accept multiple CredEx offers"""
+    # Update state to trigger validation
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "bulk_accept_offer",
+            "step": 1
+        }
+    })
+
+    # Get validated data from state
+    flow_data = state_manager.get_flow_step_data()
+    credex_ids = flow_data.get("credex_ids", [])
+
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'credex', 'accept_bulk',
+        payload={"credexIDs": credex_ids},
+        state_manager=state_manager
+    )
+
+    # Let StateManager validate response through update
+    state_manager.update_state({
+        "flow_data": {
+            "current_step": "check_success",
+            "step": 2,
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
+
+    # Get validated response
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
+
+
+@error_decorator
 def get_ledger(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Get member ledger"""
     # Update state to trigger validation

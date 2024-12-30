@@ -4,9 +4,8 @@ This package provides a comprehensive interface for interacting with the CredEx 
 It handles authentication, member management, and CredEx offer operations.
 """
 
-from .auth import login, refresh_token, register_member, validate_member_data
-from .base import (extract_error_message, handle_error_response,
-                   make_credex_request, validate_response)
+from .auth import login, refresh_token, register_member
+from .base import make_credex_request
 from .config import CredExConfig, CredExEndpoints
 from .exceptions import (APIError, AuthenticationError, ConfigurationError,
                          CredExServiceError, InvalidCredExOfferError,
@@ -23,13 +22,9 @@ __all__ = [
     'login',
     'register_member',
     'refresh_token',
-    'validate_member_data',
 
     # Base functions
     'make_credex_request',
-    'validate_response',
-    'handle_error_response',
-    'extract_error_message',
 
     # Member functions
     'validate_account_handle',

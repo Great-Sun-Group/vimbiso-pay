@@ -21,6 +21,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple, Union
 
+from rest_framework import status
+from rest_framework.response import Response
+
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
 
@@ -410,6 +413,34 @@ class ErrorHandler:
                 )
 
             return False, cls.create_error_response(context)
+
+
+def handle_api_error(error: Exception) -> Response:
+    """Handle API errors consistently returning REST framework Response
+
+    Args:
+        error: The exception to handle
+
+    Returns:
+        Response: Django REST framework response with error details
+    """
+    # Get error context
+    error_context = ErrorHandler.get_error_context(error)
+    error_response = ErrorHandler.create_error_response(error_context)
+
+    # Map error types to status codes
+    status_codes = {
+        'input': status.HTTP_400_BAD_REQUEST,
+        'api': status.HTTP_502_BAD_GATEWAY,
+        'state': status.HTTP_409_CONFLICT,
+        'flow': status.HTTP_400_BAD_REQUEST,
+        'system': status.HTTP_500_INTERNAL_SERVER_ERROR
+    }
+
+    return Response(
+        error_response,
+        status=status_codes.get(error_context.error_type, status.HTTP_500_INTERNAL_SERVER_ERROR)
+    )
 
 
 def error_decorator(f):
