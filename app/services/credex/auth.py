@@ -1,130 +1,188 @@
 """CredEx authentication service using pure functions"""
-import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
+
+from core.utils.error_handler import error_decorator
 
 from .base import make_credex_request
-from .exceptions import ValidationError
-
-logger = logging.getLogger(__name__)
 
 
-def validate_member_data(member_data: Dict[str, Any]) -> None:
-    """Validate member registration business rules"""
-    # Only validate business rules
-    valid_denoms = {"CXX", "CAD", "USD", "XAU", "ZWG"}
-    denom = member_data.get("defaultDenom")
-    if denom not in valid_denoms:
-        raise ValidationError(f"Invalid defaultDenom. Must be one of: {', '.join(valid_denoms)}")
-
-    # Validate name lengths (business rule)
-    for field in ["firstname", "lastname"]:
-        length = len(str(member_data.get(field, "")).strip())
-        if not (3 <= length <= 50):
-            raise ValidationError(f"{field.title()} must be between 3 and 50 characters")
-
-
-def login(channel_identifier: str, jwt_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+@error_decorator
+def login(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Authenticate user enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Log login attempt
-        logger.info(f"Attempting login for channel {channel_identifier}")
+    # Let StateManager validate through flow state update
+    state_manager.update_state({
+        "flow_data": {
+            "flow_type": "auth",  # Not an authenticated flow
+            "step": 1,
+            "current_step": "login",
+            "data": {
+                "channel": state_manager.get("channel")  # StateManager validates
+            }
+        }
+    })
 
-        # Make API request
-        response = make_credex_request(
-            'auth', 'login',
-            payload={"phone": channel_identifier},
-            jwt_token=jwt_token
-        )
+    # Get validated channel info
+    flow_data = state_manager.get("flow_data")
+    channel = flow_data["data"]["channel"]
 
-        if not response.ok:
-            return False, {"message": f"Login request failed: {response.status_code}"}
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'auth', 'login',
+        payload={"phone": channel["identifier"]},
+        state_manager=state_manager
+    )
 
-        try:
-            return True, response.json()
-        except ValueError:
-            return False, {"message": "Invalid response format"}
+    # Let StateManager validate through flow advance
+    state_manager.update_state({
+        "flow_data": {
+            "next_step": "complete",
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
 
-    except Exception as e:
-        logger.error(f"Login error: {str(e)}")
-        return False, {"message": "Login failed due to system error"}
+    # Get validated response
+    flow_data = state_manager.get("flow_data")
+    return True, flow_data["data"]["response"]
 
 
-def register_member(member_data: Dict[str, Any], channel_identifier: str, jwt_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+@error_decorator
+def register_member(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Register new member enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Validate business rules only
-        validate_member_data(member_data)
+    # Let StateManager validate through flow state update
+    state_manager.update_state({
+        "flow_data": {
+            "flow_type": "auth",  # Not an authenticated flow
+            "step": 1,
+            "current_step": "register",
+            "data": {
+                "validation": {
+                    "valid_denoms": {"CXX", "CAD", "USD", "XAU", "ZWG"},
+                    "name_min_length": 3,
+                    "name_max_length": 50
+                }
+            }
+        }
+    })
 
-        # Log registration attempt
-        logger.info(f"Attempting registration for channel {channel_identifier}")
+    # Let StateManager validate member data
+    state_manager.update_state({
+        "flow_data": {
+            "next_step": "validate",
+            "data": {
+                "member_data": {
+                    "defaultDenom": "USD",  # Default value
+                    "firstname": "",  # StateManager validates
+                    "lastname": ""  # StateManager validates
+                }
+            }
+        }
+    })
 
-        # Make API request
-        response = make_credex_request(
-            'auth', 'register',
-            payload=member_data,
-            jwt_token=jwt_token
-        )
+    # Get validated member data
+    flow_data = state_manager.get("flow_data")
+    member_data = flow_data["data"]["member_data"]
 
-        if not response.ok:
-            return False, {"message": f"Registration request failed: {response.status_code}"}
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'auth', 'register',
+        payload=member_data,
+        state_manager=state_manager
+    )
 
-        try:
-            return True, response.json()
-        except ValueError:
-            return False, {"message": "Invalid response format"}
+    # Let StateManager validate through flow advance
+    state_manager.update_state({
+        "flow_data": {
+            "next_step": "complete",
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
 
-    except ValidationError as e:
-        logger.error(f"Registration validation error: {str(e)}")
-        return False, {"message": str(e)}
-    except Exception as e:
-        logger.error(f"Registration error: {str(e)}")
-        return False, {"message": "Registration failed due to system error"}
+    # Get validated response
+    flow_data = state_manager.get("flow_data")
+    return True, flow_data["data"]["response"]
 
 
-def refresh_token(channel_identifier: str, jwt_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+@error_decorator
+def refresh_token(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Refresh authentication token enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Log refresh attempt
-        logger.info(f"Attempting token refresh for channel {channel_identifier}")
+    # Let StateManager validate through flow state update
+    state_manager.update_state({
+        "flow_data": {
+            "flow_type": "auth",  # Not an authenticated flow
+            "step": 1,
+            "current_step": "refresh",
+            "data": {
+                "channel": state_manager.get("channel")  # StateManager validates
+            }
+        }
+    })
 
-        # Make API request
-        response = make_credex_request(
-            'auth', 'login',
-            payload={"phone": channel_identifier},
-            jwt_token=jwt_token
-        )
+    # Get validated channel info
+    flow_data = state_manager.get("flow_data")
+    channel = flow_data["data"]["channel"]
 
-        if not response.ok:
-            return False, {"message": f"Token refresh failed: {response.status_code}"}
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'auth', 'login',
+        payload={"phone": channel["identifier"]},
+        state_manager=state_manager
+    )
 
-        try:
-            return True, response.json()
-        except ValueError:
-            return False, {"message": "Invalid response format"}
+    # Let StateManager validate through flow advance
+    state_manager.update_state({
+        "flow_data": {
+            "next_step": "complete",
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
 
-    except Exception as e:
-        logger.error(f"Token refresh error: {str(e)}")
-        return False, {"message": "Token refresh failed due to system error"}
+    # Get validated response
+    flow_data = state_manager.get("flow_data")
+    return True, flow_data["data"]["response"]
 
 
-def get_dashboard(channel_identifier: str, jwt_token: str) -> Tuple[bool, Dict[str, Any]]:
+@error_decorator
+def get_dashboard(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Get dashboard data from login response enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Make API request (reuse login endpoint)
-        response = make_credex_request(
-            'auth', 'login',
-            payload={"phone": channel_identifier},
-            jwt_token=jwt_token
-        )
+    # Let StateManager validate through flow state update
+    state_manager.update_state({
+        "flow_data": {
+            "flow_type": "dashboard",  # Requires authentication
+            "step": 1,
+            "current_step": "get",
+            "data": {
+                "channel": state_manager.get("channel")  # StateManager validates
+            }
+        }
+    })
 
-        if not response.ok:
-            return False, {"message": f"Dashboard request failed: {response.status_code}"}
+    # Get validated channel info
+    flow_data = state_manager.get("flow_data")
+    channel = flow_data["data"]["channel"]
 
-        try:
-            return True, response.json()
-        except ValueError:
-            return False, {"message": "Invalid response format"}
+    # Make API request (ErrorHandler handles any errors)
+    response = make_credex_request(
+        'auth', 'login',
+        payload={"phone": channel["identifier"]},
+        state_manager=state_manager
+    )
 
-    except Exception as e:
-        logger.error(f"Dashboard error: {str(e)}")
-        return False, {"message": "Failed to get dashboard data"}
+    # Let StateManager validate through flow advance
+    state_manager.update_state({
+        "flow_data": {
+            "next_step": "complete",
+            "data": {
+                "response": response.json()
+            }
+        }
+    })
+
+    # Get validated response
+    flow_data = state_manager.get("flow_data")
+    return True, flow_data["data"]["response"]

@@ -31,69 +31,33 @@ def process_flow_step(
         StateException: If state validation fails
     """
     try:
-        # Let StateManager validate state
-        try:
-            state_manager.get("channel")  # Validates channel exists
-        except Exception as e:
-            error_context = ErrorContext(
-                error_type="state",
-                message="Channel information not found. Please restart the flow",
-                step_id=step,
-                details={
+        # Validate required state through single update
+        state_update = {
+            "flow_data": {
+                "step_validation": {
                     "flow_id": flow_id,
-                    "error": str(e)
+                    "current_step": step
                 }
-            )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+            }
+        }
 
-        try:
-            flow_data = state_manager.get("flow_data")  # Validates flow data exists
-        except Exception as e:
-            error_context = ErrorContext(
-                error_type="state",
-                message="Flow data not found. Please restart the flow",
-                step_id=step,
-                details={
-                    "flow_id": flow_id,
-                    "error": str(e)
-                }
-            )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
-
-        # Let StateManager validate service through state update
+        # Add service if provided
         if credex_service:
-            try:
-                success, error = state_manager.update_state({
-                    "flow_data": {
-                        "service": credex_service  # StateManager validates service structure
-                    }
-                })
-                if not success:
-                    error_context = ErrorContext(
-                        error_type="state",
-                        message="Failed to validate service. Please try again",
-                        step_id=step,
-                        details={
-                            "flow_id": flow_id,
-                            "error": error
-                        }
-                    )
-                    raise StateException(ErrorHandler.handle_error(
-                        StateException(error),
-                        state_manager,
-                        error_context
-                    ))
-            except Exception as e:
-                error_context = ErrorContext(
-                    error_type="state",
-                    message="Failed to update service state. Please try again",
-                    step_id=step,
-                    details={
-                        "flow_id": flow_id,
-                        "error": str(e)
-                    }
-                )
-                raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+            state_update["flow_data"]["service"] = credex_service
+
+        # Let StateManager validate all required fields
+        success, error = state_manager.update_state(state_update)
+        if not success:
+            raise StateException(f"Failed to validate flow state: {error}")
+
+        # Get validated state data
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise StateException("Invalid channel state")
+
+        flow_data = state_manager.get("flow_data")
+        if not flow_data:
+            raise StateException("Missing flow data")
 
         # Log validation success
         logger.info(
@@ -101,11 +65,11 @@ def process_flow_step(
             extra={
                 "flow_id": flow_id,
                 "step": step,
-                "channel_id": state_manager.get("channel")["identifier"]
+                "channel_id": channel["identifier"]
             }
         )
 
-        # Return step data for handler
+        # Return validated step data
         return {
             "flow_id": flow_id,
             "step": step,
@@ -117,12 +81,14 @@ def process_flow_step(
     except Exception as e:
         error_context = ErrorContext(
             error_type="flow",
-            message="Failed to process flow step. Please try again",
+            message=str(e),
             step_id=step,
             details={
                 "flow_id": flow_id,
-                "error": str(e),
-                "input_data": input_data
+                "operation": "process_flow_step",
+                "has_input": bool(input_data),
+                "has_service": bool(credex_service)
             }
         )
-        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+        ErrorHandler.handle_error(e, state_manager, error_context)
+        raise StateException(f"Flow step processing failed: {str(e)}")

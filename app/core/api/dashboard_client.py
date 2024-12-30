@@ -1,8 +1,11 @@
 """Dashboard-related API operations using pure functions"""
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 from decouple import config
+
+from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.exceptions import StateException
 
 from .base import BASE_URL, handle_error_response, make_api_request
 
@@ -96,72 +99,134 @@ def get_ledger(payload: Dict[str, Any], jwt_token: str) -> Tuple[bool, Dict[str,
         return False, {"error": f"Ledger fetch failed: {str(e)}"}
 
 
-def setup_default_account(current_state: Dict[str, Any], dashboard_data: Dict[str, Any]) -> None:
-    """Setup default account for the user if eligible"""
-    member_tier = (
-        dashboard_data.get("memberTier", {}).get("low", 1)
-        if isinstance(dashboard_data.get("memberTier"), dict)
-        else 1
-    )
+def setup_default_account(state_manager: Any, dashboard_data: Dict[str, Any]) -> bool:
+    """Setup default account through state manager validation
 
-    accounts = dashboard_data.get("accounts", [])
-    if member_tier < 2 and accounts and isinstance(accounts, list) and accounts:
-        try:
-            first_account = accounts[0]
-            if (
-                isinstance(first_account, dict)
-                and first_account.get("success")
-                and isinstance(first_account.get("data"), dict)
-            ):
-                current_state["current_account"] = first_account["data"]
-                logger.info("Successfully set default account")
-            else:
-                logger.error("Invalid account data structure")
-                current_state["current_account"] = {}
-        except Exception as e:
-            logger.error(f"Error setting default account: {str(e)}")
-            current_state["current_account"] = {}
-    else:
-        current_state["current_account"] = {}
-        logger.info("No eligible account found or member tier too high")
+    Args:
+        state_manager: StateManager instance for validation
+        dashboard_data: Dashboard response data
+
+    Returns:
+        bool: True if setup succeeded, False otherwise
+
+    Raises:
+        StateException: If state validation fails
+    """
+    try:
+        # Extract account data
+        member_tier = (
+            dashboard_data.get("memberTier", {}).get("low", 1)
+            if isinstance(dashboard_data.get("memberTier"), dict)
+            else 1
+        )
+
+        accounts = dashboard_data.get("accounts", [])
+        if not isinstance(accounts, list) or not accounts:
+            raise ValueError("No accounts found in dashboard data")
+
+        # Find eligible account
+        if member_tier >= 2:
+            raise ValueError("Member tier too high for default account")
+
+        first_account = accounts[0]
+        if not (
+            isinstance(first_account, dict)
+            and first_account.get("success")
+            and isinstance(first_account.get("data"), dict)
+        ):
+            raise ValueError("Invalid account data structure")
+
+        # Update state through StateManager validation
+        account_update = {
+            "accounts": accounts,  # Store all accounts at top level
+            "active_account_id": first_account["data"]["accountID"]  # Reference account by ID
+        }
+
+        # Let StateManager validate and update
+        success, error = state_manager.update_state(account_update)
+        if not success:
+            raise StateException(f"Failed to update account state: {error}")
+
+        logger.info("Successfully set up default account")
+        return True
+
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="state",
+            message=str(e),
+            details={
+                "operation": "setup_default_account",
+                "error_message": str(e)
+            }
+        )
+        ErrorHandler.handle_error(e, state_manager, error_context)
+        return False
 
 
 def process_dashboard_response(
-    current_state: Dict[str, Any],
+    state_manager: Any,
     member_info: Dict[str, Any]
-) -> Optional[Dict[str, Any]]:
-    """Process and update dashboard response data"""
+) -> bool:
+    """Process dashboard response through state manager validation
+
+    Args:
+        state_manager: StateManager instance for validation
+        member_info: Dashboard response data
+
+    Returns:
+        bool: True if processing succeeded, False otherwise
+
+    Raises:
+        StateException: If state validation fails
+    """
     logger.info("Processing dashboard response")
 
-    if not isinstance(member_info, dict):
-        logger.error("Invalid member_info format")
-        return None
+    try:
+        # Validate response format
+        if not isinstance(member_info, dict):
+            raise ValueError("Invalid member_info format")
 
-    dashboard_data = member_info.get("data", {}).get("dashboard")
-    member_details = member_info.get("data", {}).get("action", {}).get("details", {})
+        dashboard_data = member_info.get("data", {}).get("dashboard")
+        member_details = member_info.get("data", {}).get("action", {}).get("details", {})
 
-    if not dashboard_data or not member_details:
-        logger.error("Missing required dashboard data")
-        return None
+        if not dashboard_data or not member_details:
+            raise ValueError("Missing required dashboard data")
 
-    member_id = member_details.get("memberId")
-    if not member_id:
-        logger.error("Missing member ID in dashboard response")
-        return None
+        member_id = member_details.get("memberId")
+        if not member_id:
+            raise ValueError("Missing member ID in dashboard response")
 
-    member_info = {
-        "member": member_details,
-        "memberDashboard": dashboard_data,
-    }
+        # Update state through StateManager validation
+        state_update = {
+            "member_id": member_id,  # SINGLE SOURCE OF TRUTH
+            "flow_data": {
+                "data": {
+                    "dashboard": dashboard_data,
+                    "member": member_details
+                }
+            }
+        }
 
-    jwt_token = current_state.get("jwt_token")
-    if jwt_token:
-        member_info["jwt_token"] = jwt_token
+        # Let StateManager validate and update
+        success, error = state_manager.update_state(state_update)
+        if not success:
+            raise StateException(f"Failed to update state: {error}")
 
-    current_state["profile"] = member_info
-    current_state["member_id"] = member_id
+        # Setup default account if needed
+        if not state_manager.get("active_account_id"):
+            setup_default_account(state_manager, dashboard_data)
 
-    if not current_state.get("current_account", {}):
-        setup_default_account(current_state, dashboard_data)
+        logger.info("Successfully processed dashboard response")
+        return True
 
-    return current_state
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="state",
+            message=str(e),
+            details={
+                "operation": "process_dashboard",
+                "error_message": str(e)
+            }
+        )
+        ErrorHandler.handle_error(e, state_manager, error_context)
+        return False

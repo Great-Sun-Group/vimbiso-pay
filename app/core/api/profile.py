@@ -1,9 +1,10 @@
-"""Profile and state management"""
+"""Profile and state management through validation"""
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from core.utils.state_validator import StateValidator
+from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.exceptions import StateException
 
 logger = logging.getLogger(__name__)
 
@@ -25,89 +26,119 @@ def _structure_profile_data(
     api_response: dict,
     state_manager: Any,
     action_type: str = "update"
-) -> dict:
-    """Structure API response into proper profile format"""
-    data = api_response.get("data", {})
-    dashboard = data.get("dashboard", {})
-    action = data.get("action", {})
+) -> Dict[str, Any]:
+    """Structure API response through state validation"""
+    try:
+        data = api_response.get("data", {})
+        dashboard = data.get("dashboard", {})
+        action = data.get("action", {})
 
-    # Validate channel info at boundary
-    validation = StateValidator.validate_before_access(
-        {"channel": state_manager.get("channel")},
-        {"channel"}
-    )
-    if not validation.is_valid:
-        logger.error(f"Invalid state: {validation.error_message}")
+        # Get channel through state validation
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise StateException("Invalid channel state")
+
+        return {
+            "action": {
+                "id": action.get("id", ""),
+                "type": action.get("type", action_type),
+                "timestamp": datetime.now().isoformat(),
+                "actor": channel["identifier"],
+                "details": action.get("details", {}),
+                "message": _get_action_message(action, action_type),
+                "status": action.get("status", "")
+            },
+            "dashboard": dashboard
+        }
+
+    except Exception as e:
+        error_context = ErrorContext(
+            error_type="state",
+            message=str(e),
+            details={
+                "operation": "structure_profile",
+                "action_type": action_type
+            }
+        )
+        ErrorHandler.handle_error(e, state_manager, error_context)
         return {}
-
-    channel = state_manager.get("channel", {})
-
-    return {
-        "action": {
-            "id": action.get("id", ""),
-            "type": action.get("type", action_type),
-            "timestamp": datetime.now().isoformat(),
-            "actor": channel.get("identifier"),
-            "details": action.get("details", {}),
-            "message": _get_action_message(action, action_type),
-            "status": action.get("status", "")
-        },
-        "dashboard": dashboard
-    }
 
 
 def _handle_account_setup(
     dashboard_data: Dict[str, Any],
     state_manager: Any
-) -> None:
-    """Handle account setup in state"""
-    # Get and validate accounts data
-    accounts = dashboard_data.get("accounts", [])
-    if not isinstance(accounts, list):
-        logger.warning("Invalid accounts data format")
-        return
-
+) -> bool:
+    """Handle account setup through state validation"""
     try:
-        # Process accounts data
+        # Extract and validate accounts
+        accounts = dashboard_data.get("accounts", [])
+        if not isinstance(accounts, list) or not accounts:
+            raise StateException("No valid accounts found")
+
+        # Process accounts while maintaining structure
         processed_accounts = []
+        required_fields = {"accountType", "accountHandle", "accountID"}
+
         for account in accounts:
-            if isinstance(account, dict):
-                # Handle nested account data structure
-                if account.get("success") and isinstance(account.get("data"), dict):
-                    processed_account = account["data"]
-                else:
-                    processed_account = account
+            # Handle nested account structure
+            account_data = (
+                account.get("data") if account.get("success")
+                else account
+            )
 
-                # Ensure account has required fields
-                if isinstance(processed_account, dict) and all(
-                    isinstance(processed_account.get(field), str)
-                    for field in ["accountType", "accountHandle"]
-                ):
-                    processed_accounts.append(processed_account)
+            # Validate account structure
+            if not isinstance(account_data, dict):
+                continue
 
-        # Find personal account with proper validation
-        personal_account = None
-        channel = state_manager.get("channel", {})
-        channel_identifier = channel.get("identifier")
+            if not all(
+                isinstance(account_data.get(field), str)
+                for field in required_fields
+            ):
+                continue
 
-        for account in processed_accounts:
-            if account["accountType"] == "PERSONAL":
-                personal_account = account
-                break
-            elif account["accountHandle"] == channel_identifier:
-                personal_account = account
+            processed_accounts.append(account_data)
 
-        # Update state with validated account
-        if personal_account:
-            success, error = state_manager.update_state({"current_account": personal_account})
-            if not success:
-                raise ValueError(f"Failed to update current account: {error}")
-            logger.info(f"Successfully set default account: {personal_account['accountHandle']}")
-        else:
-            logger.warning("No valid personal account found")
+        if not processed_accounts:
+            raise StateException("No valid accounts after processing")
+
+        # Find personal account through validation
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise StateException("Invalid channel state")
+
+        # Prioritize personal account, fallback to channel match
+        personal_account = next(
+            (acc for acc in processed_accounts if acc["accountType"] == "PERSONAL"),
+            next(
+                (acc for acc in processed_accounts if acc["accountHandle"] == channel["identifier"]),
+                None
+            )
+        )
+
+        if not personal_account:
+            raise StateException("No valid personal account found")
+
+        # Update state through validation
+        state_update = {
+            "accounts": processed_accounts,  # Store all accounts at top level
+            "active_account_id": personal_account["accountID"]  # Reference by ID
+        }
+
+        success, error = state_manager.update_state(state_update)
+        if not success:
+            raise StateException(f"Failed to update account state: {error}")
+
+        logger.info(f"Successfully set up account: {personal_account['accountHandle']}")
+        return True
 
     except Exception as e:
-        logger.error(f"Error in account setup: {str(e)}")
+        error_context = ErrorContext(
+            error_type="state",
+            message=str(e),
+            details={"operation": "account_setup"}
+        )
+        ErrorHandler.handle_error(e, state_manager, error_context)
+        return False
 
 
 def update_profile_from_response(
@@ -116,115 +147,102 @@ def update_profile_from_response(
     action_type: str,
     update_from: str,
     token: Optional[str] = None
-) -> None:
-    """Update profile and state from API response"""
+) -> bool:
+    """Update profile through state validation"""
     try:
-        # Validate api_response
+        # Validate response format
         if not isinstance(api_response, dict):
-            logger.error("Invalid API response format")
-            api_response = {}
+            raise StateException("Invalid API response format")
 
-        # Structure profile data
-        profile_data = _structure_profile_data(api_response, state_manager, action_type)
-
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {
-                "profile": state_manager.get("profile"),
-                "current_account": state_manager.get("current_account")
-            },
-            {"profile", "current_account"}
+        # Structure profile data through validation
+        profile_data = _structure_profile_data(
+            api_response,
+            state_manager,
+            action_type
         )
-        if not validation.is_valid:
-            logger.error(f"Invalid state: {validation.error_message}")
-            return
+        if not profile_data:
+            raise StateException("Failed to structure profile data")
 
-        # Update state
-        updates = {"profile": profile_data}
+        # Prepare state update
+        state_update = {"flow_data": {"data": profile_data}}
 
         # Add token if provided
         if token:
-            updates["jwt_token"] = token
+            state_update["jwt_token"] = token
 
-        # Update state with new profile
-        success, error = state_manager.update_state(updates)
+        # Update state through validation
+        success, error = state_manager.update_state(state_update)
         if not success:
-            raise ValueError(f"Failed to update state: {error}")
+            raise StateException(f"Failed to update state: {error}")
 
-        # Handle account setup if dashboard data present
+        # Handle account setup if needed
         dashboard_data = api_response.get("data", {}).get("dashboard")
         if dashboard_data:
-            _handle_account_setup(dashboard_data, state_manager)
+            if not _handle_account_setup(dashboard_data, state_manager):
+                raise StateException("Failed to set up accounts")
 
         logger.info(f"State updated from {update_from}")
+        return True
 
     except Exception as e:
-        logger.error(f"Error updating profile from response: {str(e)}")
-        raise
+        error_context = ErrorContext(
+            error_type="state",
+            message=str(e),
+            details={
+                "operation": "update_profile",
+                "update_from": update_from
+            }
+        )
+        ErrorHandler.handle_error(e, state_manager, error_context)
+        return False
 
 
 def handle_successful_refresh(
     member_info: Dict[str, Any],
     state_manager: Any
 ) -> Optional[str]:
-    """Handle successful member info refresh"""
+    """Handle successful refresh through state validation"""
     try:
-        # Validate member_info structure
+        # Validate member info
         if not isinstance(member_info, dict):
-            logger.error("Invalid member_info format")
-            return "Invalid member info format"
+            raise StateException("Invalid member info format")
 
-        # Extract and validate dashboard data
-        data = member_info.get("data", {})
-        dashboard_data = data.get("dashboard")
+        # Extract dashboard data
+        dashboard_data = member_info.get("data", {}).get("dashboard")
         if not dashboard_data:
-            logger.error("Missing required dashboard data")
-            return "Missing dashboard data"
+            raise StateException("Missing dashboard data")
 
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {"profile": state_manager.get("profile")},
-            {"profile"}
+        # Structure profile data through validation
+        profile_data = _structure_profile_data(
+            member_info,
+            state_manager,
+            "refresh"
         )
-        if not validation.is_valid:
-            logger.error(f"Invalid state: {validation.error_message}")
-            return validation.error_message
+        if not profile_data:
+            raise StateException("Failed to structure profile data")
 
-        # Get current profile action
-        current_profile = state_manager.get("profile", {})
-        current_action = current_profile.get("action", {})
-
-        # Add current state's action data to member info to preserve it
-        if "data" not in member_info:
-            member_info["data"] = {}
-        if "action" not in member_info["data"]:
-            member_info["data"]["action"] = {}
-
-        # Preserve existing action data while keeping any new action data
-        existing_action = member_info["data"]["action"]
-        member_info["data"]["action"].update({
-            "id": existing_action.get("id", current_action.get("id", "")),
-            "message": current_action.get("message", ""),
-            "status": current_action.get("status", ""),
-            "type": current_action.get("type", "refresh"),
-            "details": existing_action.get("details", current_action.get("details", {}))
-        })
-
-        # Structure profile data
-        profile_data = _structure_profile_data(member_info, state_manager, "refresh")
+        # Update profile data
         profile_data["dashboard"] = dashboard_data
 
-        # Update state with new profile data
-        success, error = state_manager.update_state({"profile": profile_data})
+        # Update state through validation
+        success, error = state_manager.update_state({
+            "flow_data": {"data": profile_data}
+        })
         if not success:
-            raise ValueError(f"Failed to update profile: {error}")
+            raise StateException(f"Failed to update profile: {error}")
 
         # Handle account setup
-        _handle_account_setup(dashboard_data, state_manager)
+        if not _handle_account_setup(dashboard_data, state_manager):
+            raise StateException("Failed to set up accounts")
 
-        logger.info("State updated successfully after refresh")
+        logger.info("Successfully refreshed member info")
         return None
 
     except Exception as e:
-        logger.error(f"Error handling refresh: {str(e)}")
+        error_context = ErrorContext(
+            error_type="state",
+            message=str(e),
+            details={"operation": "handle_refresh"}
+        )
+        ErrorHandler.handle_error(e, state_manager, error_context)
         return str(e)
