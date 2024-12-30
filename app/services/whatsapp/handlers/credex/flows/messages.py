@@ -1,197 +1,138 @@
 """Message creation and formatting for credex flows"""
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from services.whatsapp.types import WhatsAppMessage
-from core.utils.exceptions import StateException
+from core.utils.error_handler import ErrorHandler
 
 
-def create_initial_prompt_with_state(state_manager: Any) -> Dict[str, Any]:
-    """Create initial welcome message enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get channel (StateManager validates)
-        channel = state_manager.get("channel")
-        return WhatsAppMessage.create_text(
-            channel["identifier"],
-            "Welcome! Please enter amount:"
-        )
-    except StateException as e:
-        raise ValueError(str(e))
+def create_initial_prompt(channel_id: str) -> Dict[str, Any]:
+    """Create initial welcome message"""
+    return WhatsAppMessage.create_text(
+        channel_id,
+        "Welcome! Please enter amount:"
+    )
 
 
-def create_handle_prompt_with_state(state_manager: Any) -> Dict[str, Any]:
-    """Create handle input prompt enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get channel (StateManager validates)
-        channel = state_manager.get("channel")
-        return WhatsAppMessage.create_text(
-            channel["identifier"],
-            "Please enter handle:"
-        )
-    except StateException as e:
-        raise ValueError(str(e))
+def create_handle_prompt(channel_id: str) -> Dict[str, Any]:
+    """Create handle input prompt"""
+    return WhatsAppMessage.create_text(
+        channel_id,
+        "Please enter handle:"
+    )
 
 
-def create_confirmation_prompt_with_state(state_manager: Any) -> Dict[str, Any]:
-    """Create confirmation prompt enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get channel (StateManager validates)
-        channel = state_manager.get("channel")
-        return WhatsAppMessage.create_text(
-            channel["identifier"],
-            "Please confirm (yes/no):"
-        )
-    except StateException as e:
-        raise ValueError(str(e))
+def create_confirmation_prompt(channel_id: str) -> Dict[str, Any]:
+    """Create confirmation prompt"""
+    return WhatsAppMessage.create_text(
+        channel_id,
+        "Please confirm (yes/no):"
+    )
 
 
-def create_success_message_with_state(state_manager: Any) -> Dict[str, Any]:
-    """Create success message enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get channel (StateManager validates)
-        channel = state_manager.get("channel")
-        return WhatsAppMessage.create_text(
-            channel["identifier"],
-            "Thank you! Your request has been processed."
-        )
-    except StateException as e:
-        raise ValueError(str(e))
+def create_success_message(channel_id: str) -> Dict[str, Any]:
+    """Create success message"""
+    return WhatsAppMessage.create_text(
+        channel_id,
+        f"{ErrorHandler.SUCCESS_PREFIX} Your request has been processed."
+    )
 
 
-def create_cancel_message_with_state(state_manager: Any) -> Dict[str, Any]:
-    """Create cancellation message enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get channel (StateManager validates)
-        channel = state_manager.get("channel")
-        return WhatsAppMessage.create_text(
-            channel["identifier"],
-            "Request cancelled."
-        )
-    except StateException as e:
-        raise ValueError(str(e))
+def create_cancel_message(channel_id: str) -> Dict[str, Any]:
+    """Create cancellation message"""
+    return WhatsAppMessage.create_text(
+        channel_id,
+        "Request cancelled."
+    )
 
 
-def create_error_message_with_state(state_manager: Any, error: str) -> Dict[str, Any]:
-    """Create error message enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get channel (StateManager validates)
-        channel = state_manager.get("channel")
-        return WhatsAppMessage.create_text(
-            channel["identifier"],
-            str(error)
-        )
-    except StateException as e:
-        raise ValueError(str(e))
+def create_error_message(channel_id: str, error: str) -> Dict[str, Any]:
+    """Create error message"""
+    return WhatsAppMessage.create_text(
+        channel_id,
+        ErrorHandler.format_error_message(str(error))
+    )
 
 
-def create_offer_confirmation_with_state(state_manager: Any) -> Dict[str, Any]:
-    """Create offer confirmation message enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get required data (StateManager validates)
-        channel = state_manager.get("channel")
-        flow_data = state_manager.get("flow_data")
-
-        if not flow_data or not flow_data.get("data"):
-            raise StateException("Missing flow data")
-
-        # Get offer details from flow data
-        data = flow_data["data"]
-        amount_denom = data.get("amount_denom")
-        handle = data.get("handle")
-
-        if not amount_denom or not handle:
-            raise StateException("Missing offer details")
-
-        formatted_amount = f"{amount_denom['amount']} {amount_denom['denomination']}".strip()
-        return WhatsAppMessage.create_text(
-            channel["identifier"],
-            f"Confirm offer:\n"
-            f"Amount: {formatted_amount}\n"
-            f"To: {handle}\n\n"
-            "Please confirm (yes/no):"
-        )
-    except StateException as e:
-        raise ValueError(str(e))
-
-
-def create_action_confirmation_with_state(
-    state_manager: Any,
-    action: str
+def create_offer_confirmation(
+    channel_id: str,
+    amount: float,
+    denomination: str,
+    handle: str
 ) -> Dict[str, Any]:
-    """Create action confirmation message enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get required data (StateManager validates)
-        channel = state_manager.get("channel")
-        flow_data = state_manager.get("flow_data")
-
-        if not flow_data or not flow_data.get("data"):
-            raise StateException("Missing flow data")
-
-        # Get action details from flow data
-        data = flow_data["data"]
-        amount = data.get("amount")
-        counterparty = data.get("counterparty")
-
-        if not amount or not counterparty:
-            raise StateException("Missing action details")
-
-        return WhatsAppMessage.create_text(
-            channel["identifier"],
-            f"Confirm {action}:\n"
-            f"Amount: {amount}\n"
-            f"With: {counterparty}\n\n"
-            "Please confirm (yes/no):"
-        )
-    except StateException as e:
-        raise ValueError(str(e))
+    """Create offer confirmation message"""
+    formatted_amount = f"{amount} {denomination}".strip()
+    return WhatsAppMessage.create_text(
+        channel_id,
+        f"Confirm offer:\n"
+        f"Amount: {formatted_amount}\n"
+        f"To: {handle}\n\n"
+        "Please confirm (yes/no):"
+    )
 
 
-def create_cancel_confirmation_with_state(state_manager: Any) -> Dict[str, Any]:
-    """Create cancel confirmation message enforcing SINGLE SOURCE OF TRUTH"""
-    return create_action_confirmation_with_state(state_manager, "cancel")
-
-
-def create_accept_confirmation_with_state(state_manager: Any) -> Dict[str, Any]:
-    """Create accept confirmation message enforcing SINGLE SOURCE OF TRUTH"""
-    return create_action_confirmation_with_state(state_manager, "accept")
-
-
-def create_decline_confirmation_with_state(state_manager: Any) -> Dict[str, Any]:
-    """Create decline confirmation message enforcing SINGLE SOURCE OF TRUTH"""
-    return create_action_confirmation_with_state(state_manager, "decline")
-
-
-def create_list_message_with_state(
-    state_manager: Any,
+def create_action_confirmation(
+    channel_id: str,
     action: str,
+    amount: str,
+    counterparty: str
+) -> Dict[str, Any]:
+    """Create action confirmation message"""
+    return WhatsAppMessage.create_text(
+        channel_id,
+        f"Confirm {action}:\n"
+        f"Amount: {amount}\n"
+        f"With: {counterparty}\n\n"
+        "Please confirm (yes/no):"
+    )
+
+
+def create_cancel_confirmation(
+    channel_id: str,
+    amount: str,
+    counterparty: str
+) -> Dict[str, Any]:
+    """Create cancel confirmation message"""
+    return create_action_confirmation(channel_id, "cancel", amount, counterparty)
+
+
+def create_accept_confirmation(
+    channel_id: str,
+    amount: str,
+    counterparty: str
+) -> Dict[str, Any]:
+    """Create accept confirmation message"""
+    return create_action_confirmation(channel_id, "accept", amount, counterparty)
+
+
+def create_decline_confirmation(
+    channel_id: str,
+    amount: str,
+    counterparty: str
+) -> Dict[str, Any]:
+    """Create decline confirmation message"""
+    return create_action_confirmation(channel_id, "decline", amount, counterparty)
+
+
+def create_list_message(
+    channel_id: str,
+    action: str,
+    items: List[Dict[str, Any]],
     empty_message: str = None
 ) -> Dict[str, Any]:
-    """Create list selection message enforcing SINGLE SOURCE OF TRUTH"""
-    try:
-        # Get required data (StateManager validates)
-        channel = state_manager.get("channel")
-        flow_data = state_manager.get("flow_data")
-
-        if not flow_data or not flow_data.get("data"):
-            raise StateException("Missing flow data")
-
-        # Get items from flow data
-        items = flow_data["data"].get("items", [])
-
-        if not items:
-            return WhatsAppMessage.create_text(
-                channel["identifier"],
-                empty_message or f"No {action} offers available"
-            )
-
-        message = f"Select offer to {action}:\n\n"
-        for i, item in enumerate(items, 1):
-            amount = item.get("formattedInitialAmount", "Unknown amount")
-            counterparty = item.get("counterpartyAccountName", "Unknown")
-            message += f"{i}. {amount} with {counterparty}\n"
-
+    """Create list selection message"""
+    if not items:
         return WhatsAppMessage.create_text(
-            channel["identifier"],
-            message
+            channel_id,
+            empty_message or f"No {action} offers available"
         )
-    except StateException as e:
-        raise ValueError(str(e))
+
+    message_parts = [f"Select offer to {action}:\n"]
+    for i, item in enumerate(items, 1):
+        amount = item.get("formattedInitialAmount", "Unknown amount")
+        counterparty = item.get("counterpartyAccountName", "Unknown")
+        message_parts.append(f"{i}. {amount} with {counterparty}")
+
+    return WhatsAppMessage.create_text(
+        channel_id,
+        "\n".join(message_parts)
+    )

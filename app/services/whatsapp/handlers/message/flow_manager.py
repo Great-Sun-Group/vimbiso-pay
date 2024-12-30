@@ -33,7 +33,7 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
     try:
         # Let StateManager validate channel access
         try:
-            state_manager.get("channel")
+            channel_id = state_manager.get_channel_id()
         except Exception as e:
             error_context = ErrorContext(
                 error_type="state",
@@ -127,7 +127,7 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
 
         try:
             # Initialize flow through state update with correct step
-            current_step = state_manager.get("flow_data")["current_step"]
+            current_step = state_manager.get_current_step()
             result = handler_func(state_manager, current_step, None)
             if not result:
                 error_context = ErrorContext(
@@ -179,16 +179,18 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
         error_response = ErrorHandler.handle_error(e, state_manager, error_context)
 
         try:
-            channel = state_manager.get("channel")
+            channel_id = state_manager.get_channel_id()
             return Message(
                 recipient=MessageRecipient(
                     channel_id=ChannelIdentifier(
                         channel=ChannelType.WHATSAPP,
-                        value=channel["identifier"]
+                        value=channel_id
                     )
                 ),
                 content=TextContent(
-                    body=f"❌ {error_response['data']['action']['details']['message']}"
+                    body=ErrorHandler.format_error_message(
+                        error_response['data']['action']['details']['message']
+                    )
                 )
             )
         except Exception:
@@ -201,7 +203,9 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
                     )
                 ),
                 content=TextContent(
-                    body="❌ System error. Please try again later."
+                    body=ErrorHandler.format_error_message(
+                        "System error. Please try again later."
+                    )
                 )
             )
 
@@ -213,7 +217,7 @@ def check_pending_offers(state_manager: Any) -> bool:
         logger.info(
             "Checking pending offers",
             extra={
-                "channel_id": state_manager.get("channel")["identifier"]
+                "channel_id": state_manager.get_channel_id()
             }
         )
 

@@ -35,15 +35,21 @@ class ErrorContext:
     Components should NOT create error messages directly.
 
     Fields:
-        error_type: Type of error (flow, state, input, api, system)
+        error_type: Type of error (must be one of: flow, state, input, api, system)
         message: Clear user-facing message
         step_id: Only required for flow errors, should be None for other types
-        details: Additional context (optional)
+        details: Additional context (required for debugging)
 
-    Note:
-        step_id is ONLY required when error_type is "flow"
-        For all other error types, step_id should be None
+    Rules:
+        1. error_type must be one of the standard types
+        2. step_id is ONLY required when error_type is "flow"
+        3. For all other error types, step_id must be None
+        4. details must include relevant debugging information
+        5. message must be user-friendly and actionable
     """
+
+    # Standard error types
+    VALID_ERROR_TYPES = {"flow", "state", "input", "api", "system"}
     error_type: str
     message: str
     step_id: Optional[str] = None
@@ -51,10 +57,25 @@ class ErrorContext:
 
     def __post_init__(self):
         """Validate error context requirements"""
+        # Validate error type
+        if self.error_type not in self.VALID_ERROR_TYPES:
+            raise ValueError(f"error_type must be one of: {', '.join(self.VALID_ERROR_TYPES)}")
+
+        # Validate step_id requirements
         if self.error_type == "flow" and not self.step_id:
             raise ValueError("step_id is required for flow errors")
         if self.error_type != "flow" and self.step_id:
             raise ValueError("step_id should only be set for flow errors")
+
+        # Validate message
+        if not self.message or not isinstance(self.message, str):
+            raise ValueError("message must be a non-empty string")
+
+        # Validate details
+        if not self.details:
+            raise ValueError("details are required for debugging context")
+        if not isinstance(self.details, dict):
+            raise ValueError("details must be a dictionary")
 
 
 class ErrorHandler:
@@ -68,37 +89,37 @@ class ErrorHandler:
     4. NOT create error messages
     """
 
-    # Standard error messages - Components should NOT create messages
+    # Standard error messages with placeholders - Components should NOT create messages
     ERROR_MESSAGES = {
         "flow": {
-            "validation": "Invalid input for this step. Please try again.",
-            "routing": "Unable to process that action right now. Please try again.",
-            "state": "Flow state is invalid. Please start over.",
-            "generic": "An error occurred in the current flow. Please try again."
+            "validation": "The {field} you entered is not valid. Please check and try again.",
+            "routing": "Cannot process {action} at this time. Please try again.",
+            "state": "There was a problem with your current step. Please start over.",
+            "generic": "An error occurred while processing your request. Please try again."
         },
         "state": {
-            "validation": "Invalid state structure detected.",
-            "access": "Unable to access required state data.",
-            "update": "Failed to update state properly.",
-            "generic": "There was an issue with your current session. Please start over."
+            "validation": "The system detected an invalid state. Please start over.",
+            "access": "Unable to access your current session data. Please try again.",
+            "update": "Failed to save your progress. Please try again.",
+            "generic": "There was a problem with your session. Please start over."
         },
         "input": {
-            "format": "Input format is invalid. Please check and try again.",
-            "validation": "Input validation failed. Please try again.",
-            "missing": "Required input is missing. Please provide all required information.",
-            "generic": "Sorry, I couldn't understand your input. Please try again."
+            "format": "The format of {field} is incorrect. Example: {example}",
+            "validation": "The {field} you provided is not valid. {reason}",
+            "missing": "Please provide {field}.",
+            "generic": "I couldn't understand your input. Please try again."
         },
         "api": {
-            "connection": "Unable to connect to external service.",
-            "response": "Received invalid response from external service.",
-            "timeout": "Request timed out. Please try again.",
-            "generic": "We're experiencing some technical difficulties. Please try again later."
+            "connection": "Unable to connect to our services. Please try again in a moment.",
+            "response": "We received an unexpected response. Please try again.",
+            "timeout": "The request took too long. Please try again.",
+            "generic": "We're having technical difficulties. Please try again shortly."
         },
         "system": {
-            "config": "System configuration error detected.",
-            "runtime": "Unexpected runtime error occurred.",
-            "resource": "Required system resource unavailable.",
-            "generic": "I apologize, but something went wrong. Please try again later."
+            "config": "There's a configuration issue. Our team has been notified.",
+            "runtime": "An unexpected error occurred. Our team has been notified.",
+            "resource": "A required service is unavailable. Please try again shortly.",
+            "generic": "Something went wrong on our end. Please try again later."
         }
     }
 
@@ -169,6 +190,16 @@ class ErrorHandler:
             }
         )
 
+    # Standard message prefixes
+    ERROR_PREFIX = "❌"
+    SUCCESS_PREFIX = "✅"
+    MENU_PREFIX = "🏡"
+
+    @classmethod
+    def format_error_message(cls, message: str) -> str:
+        """Format error message with standard prefix"""
+        return f"{cls.ERROR_PREFIX} {message}"
+
     @classmethod
     def create_error_response(cls, context: ErrorContext) -> Dict[str, Any]:
         """Create standardized error response with full context
@@ -187,7 +218,7 @@ class ErrorHandler:
                     "type": "ERROR",
                     "details": {
                         "code": f"{context.error_type.upper()}_ERROR",
-                        "message": context.message,
+                        "message": cls.format_error_message(context.message),
                         "error_type": context.error_type
                     }
                 }
@@ -338,7 +369,7 @@ class ErrorHandler:
                         )
                     ),
                     content=TextContent(
-                        body=f"❌ {context.message}"
+                        body=cls.format_error_message(context.message)
                     ),
                     metadata=error_response["data"]["action"]["details"]
                 )
@@ -373,7 +404,7 @@ class ErrorHandler:
                         )
                     ),
                     content=TextContent(
-                        body=f"❌ {context.message}"
+                        body=cls.format_error_message(context.message)
                     ),
                     metadata={"error": "system_error"}
                 )
@@ -419,7 +450,7 @@ def error_decorator(f):
                 return ErrorHandler.create_error_response(
                     ErrorContext(
                         "system",
-                        cls.ERROR_MESSAGES["system"]["generic"],
+                        ErrorHandler.ERROR_MESSAGES["system"]["generic"],
                         details={"missing_state_manager": True}
                     )
                 )

@@ -24,9 +24,6 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
         # Get action from input
         action = get_action(message_text, state_manager, message_type, message)
 
-        # Get current state
-        flow_data = state_manager.get("flow_data")
-
         # Handle menu actions that start multi-step flows
         if action in MENU_ACTIONS:
             # Map special flow types
@@ -44,9 +41,9 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
             return handle_dashboard_display(state_manager)
 
         # If in a multi-step flow, process the step
-        if flow_data and flow_data.get("flow_type") in FLOW_HANDLERS:
-            current_flow = flow_data["flow_type"]
-            current_step = flow_data.get("current_step")
+        current_flow = state_manager.get_flow_type()
+        if current_flow and current_flow in FLOW_HANDLERS:
+            current_step = state_manager.get_current_step()
 
             if not current_step:
                 error_context = ErrorContext(

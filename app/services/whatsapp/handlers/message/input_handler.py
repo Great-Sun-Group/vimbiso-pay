@@ -62,10 +62,11 @@ def get_action(message_body: str, state_manager: Any = None, message_type: str =
 
         # Finally check if we're in an active flow
         try:
-            flow_data = state_manager.get("flow_data") if state_manager else None
-            if flow_data and flow_data.get("current_step"):
+            current_step = state_manager.get_current_step() if state_manager else None
+            if current_step:
                 # In a flow - return empty string to let flow handler process it
-                logger.debug(f"In flow '{flow_data.get('flow_type')}' at step '{flow_data.get('current_step')}' - passing input to flow")
+                flow_type = state_manager.get_flow_type()
+                logger.debug(f"In flow '{flow_type}' at step '{current_step}' - passing input to flow")
                 return ""
         except Exception as e:
             error_context = ErrorContext(
@@ -171,9 +172,9 @@ def handle_invalid_input(state_manager: Any, flow_step_id: str = None) -> Messag
         Error message response
     """
     try:
-        # Get channel (StateManager validates)
+        # Get channel ID (StateManager validates)
         try:
-            channel = state_manager.get("channel")
+            channel_id = state_manager.get_channel_id()
         except Exception as e:
             error_context = ErrorContext(
                 error_type="state",
@@ -188,29 +189,45 @@ def handle_invalid_input(state_manager: Any, flow_step_id: str = None) -> Messag
             "Invalid input received",
             extra={
                 "step_id": flow_step_id,
-                "channel_id": channel["identifier"]
+                "channel_id": channel_id
             }
         )
 
-        # Return appropriate error message
-        error_message = (
-            "Invalid amount format. Examples:\n"
-            "100     (USD)\n"
-            "USD 100\n"
-            "ZWG 100\n"
-            "XAU 1\n\n"
-            "Please ensure you enter a valid number with an optional currency code."
-        ) if flow_step_id == "amount" else "Invalid input. Please try again with a valid option."
+        # Create appropriate error context
+        if flow_step_id == "amount":
+            error_context = ErrorContext(
+                error_type="input",
+                message="Invalid amount format",
+                step_id=flow_step_id,
+                details={
+                    "example": "100 USD, USD 100, ZWG 100, XAU 1",
+                    "field": "amount"
+                }
+            )
+        else:
+            error_context = ErrorContext(
+                error_type="input",
+                message="Invalid input. Please try again with a valid option.",
+                step_id=flow_step_id,
+                details={"field": flow_step_id}
+            )
+
+        # Get error response through ErrorHandler
+        error_response = ErrorHandler.handle_error(
+            StateException(error_context.message),
+            state_manager,
+            error_context
+        )
 
         return Message(
             recipient=MessageRecipient(
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    value=channel_id
                 )
             ),
             content=TextContent(
-                body=f"❌ {error_message}"
+                body=error_response['data']['action']['details']['message']
             )
         )
 

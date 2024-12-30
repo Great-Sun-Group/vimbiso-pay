@@ -11,7 +11,7 @@ from core.messaging.types import (
     ChannelIdentifier,
     ChannelType
 )
-from core.utils.error_handler import error_decorator
+from core.utils.error_handler import error_decorator, ErrorHandler
 
 
 class CredexTemplates:
@@ -30,15 +30,15 @@ class CredexTemplates:
         })
 
         # Get validated state
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
 
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    value=channel_id
                 )
             ),
             content=TextContent(
@@ -64,15 +64,15 @@ class CredexTemplates:
         })
 
         # Get validated state
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
 
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    value=channel_id
                 )
             ),
             content=TextContent(
@@ -94,11 +94,11 @@ class CredexTemplates:
         })
 
         # Get validated state
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
-        flow_data = state_manager.get("flow_data")
-        flow_type = flow_data["data"].get("flow_type", "cancel")
-        current_account = flow_data["data"].get("current_account", {})
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
+        flow_data = state_manager.get_flow_step_data()
+        flow_type = flow_data.get("flow_type", "cancel")
+        current_account = flow_data.get("current_account", {})
 
         # Get offers from current account
         if flow_type in ["accept", "decline"]:
@@ -116,7 +116,7 @@ class CredexTemplates:
                     member_id=member_id,
                     channel_id=ChannelIdentifier(
                         channel=ChannelType.WHATSAPP,
-                        value=channel["identifier"]
+                        value=channel_id
                     )
                 ),
                 content=TextContent(
@@ -150,7 +150,7 @@ class CredexTemplates:
                 member_id=member_id,
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    value=channel_id
                 )
             ),
             content=InteractiveContent(
@@ -181,15 +181,15 @@ class CredexTemplates:
         })
 
         # Get validated state
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
 
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    value=channel_id
                 )
             ),
             content=InteractiveContent(
@@ -222,15 +222,15 @@ class CredexTemplates:
         })
 
         # Get validated state
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
 
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    value=channel_id
                 )
             ),
             content=InteractiveContent(
@@ -264,15 +264,15 @@ class CredexTemplates:
         })
 
         # Get validated state
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
 
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    value=channel_id
                 )
             ),
             content=InteractiveContent(
@@ -304,19 +304,19 @@ class CredexTemplates:
         })
 
         # Get validated state
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
 
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    value=channel_id
                 )
             ),
             content=TextContent(
-                body=f"✅ {message}"
+                body=f"{ErrorHandler.SUCCESS_PREFIX} {message}"
             )
         )
 
@@ -336,18 +336,18 @@ class CredexTemplates:
         })
 
         # Get validated state
-        channel = state_manager.get("channel")
-        member_id = state_manager.get("member_id")
+        channel_id = state_manager.get_channel_id()
+        member_id = state_manager.get_member_id()
 
         return Message(
             recipient=MessageRecipient(
                 member_id=member_id,
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    value=channel_id
                 )
             ),
             content=TextContent(
-                body=f"❌ {error}"
+                body=ErrorHandler.format_error_message(error)
             )
         )

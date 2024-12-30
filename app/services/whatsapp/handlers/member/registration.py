@@ -23,9 +23,8 @@ def handle_registration(state_manager: Any, input_data: Dict[str, Any]) -> Tuple
         if not success:
             raise StateException(f"Failed to initialize registration: {error}")
 
-        # Get channel for registration
-        channel = state_manager.get("channel")
-        phone = channel["identifier"]
+        # Get channel ID for registration
+        phone = state_manager.get_channel_id()
 
         # Register member
         success, response = register_member(phone, input_data)
@@ -117,8 +116,8 @@ def validate_registration_input(state_manager: Any, input_data: Dict[str, Any]) 
             raise StateException(f"Failed to update validation state: {error}")
 
         # Get validation data
-        flow_data = state_manager.get("flow_data")
-        validation = flow_data["data"]["validation"]
+        flow_data = state_manager.get_flow_step_data()
+        validation = flow_data.get("validation", {})
 
         # Validate required fields from API spec
         firstname = validation["firstname"]

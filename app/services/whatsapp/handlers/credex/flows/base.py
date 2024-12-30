@@ -8,6 +8,23 @@ from core.utils.exceptions import StateException
 logger = logging.getLogger(__name__)
 
 
+def validate_flow_state(state_manager: Any, flow_id: str, step: str) -> None:
+    """Validate flow state through state manager"""
+    state_manager.update_state({
+        "flow_data": {
+            "step": 0,  # Base validation always starts at 0
+            "current_step": step,
+            "flow_id": flow_id,
+            "validation": {
+                "required_fields": {
+                    "channel": True,
+                    "flow_data": True
+                }
+            }
+        }
+    })
+
+
 def process_flow_step(
     state_manager: Any,
     flow_id: str,
@@ -15,49 +32,21 @@ def process_flow_step(
     input_data: Any = None,
     credex_service: Any = None
 ) -> Dict[str, Any]:
-    """Process a flow step enforcing SINGLE SOURCE OF TRUTH
-
-    Args:
-        state_manager: State manager instance
-        flow_id: Flow identifier
-        step: Current step name
-        input_data: Optional input data
-        credex_service: Optional CredEx service instance
-
-    Returns:
-        Dict containing flow step data
-
-    Raises:
-        StateException: If state validation fails
-    """
+    """Process a flow step enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Validate required state through single update
-        state_update = {
-            "flow_data": {
-                "step_validation": {
-                    "flow_id": flow_id,
-                    "current_step": step
-                }
-            }
-        }
+        # Validate flow state through state manager
+        validate_flow_state(state_manager, flow_id, step)
 
-        # Add service if provided
+        # Update state with service if provided
         if credex_service:
-            state_update["flow_data"]["service"] = credex_service
+            state_manager.update_state({
+                "flow_data": {
+                    "service": credex_service
+                }
+            })
 
-        # Let StateManager validate all required fields
-        success, error = state_manager.update_state(state_update)
-        if not success:
-            raise StateException(f"Failed to validate flow state: {error}")
-
-        # Get validated state data
-        channel = state_manager.get("channel")
-        if not channel or not channel.get("identifier"):
-            raise StateException("Invalid channel state")
-
-        flow_data = state_manager.get("flow_data")
-        if not flow_data:
-            raise StateException("Missing flow data")
+        # Get validated state
+        flow_data = state_manager.get_flow_step_data()
 
         # Log validation success
         logger.info(
@@ -65,11 +54,10 @@ def process_flow_step(
             extra={
                 "flow_id": flow_id,
                 "step": step,
-                "channel_id": channel["identifier"]
+                "channel_id": state_manager.get("channel")["identifier"]
             }
         )
 
-        # Return validated step data
         return {
             "flow_id": flow_id,
             "step": step,
@@ -81,14 +69,13 @@ def process_flow_step(
     except Exception as e:
         error_context = ErrorContext(
             error_type="flow",
-            message=str(e),
+            message="Failed to process flow step",
             step_id=step,
             details={
                 "flow_id": flow_id,
-                "operation": "process_flow_step",
                 "has_input": bool(input_data),
-                "has_service": bool(credex_service)
+                "has_service": bool(credex_service),
+                "error": str(e)
             }
         )
-        ErrorHandler.handle_error(e, state_manager, error_context)
-        raise StateException(f"Flow step processing failed: {str(e)}")
+        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))

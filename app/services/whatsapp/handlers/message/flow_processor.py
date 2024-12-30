@@ -27,11 +27,11 @@ def process_flow(
 ) -> WhatsAppMessage:
     """Process flow continuation enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Get channel (StateManager validates)
-        channel = state_manager.get("channel")
+        # Get channel ID (StateManager validates)
+        channel_id = state_manager.get_channel_id()
 
         # Get handler function
-        flow_type = flow_data["flow_type"]  # StateManager validates flow_data structure
+        flow_type = state_manager.get_flow_type()  # StateManager validates flow_data structure
         handler_name = FLOW_HANDLERS.get(flow_type)
         if not handler_name:
             error_context = ErrorContext(
@@ -45,8 +45,8 @@ def process_flow(
                 error_context
             )
             return WhatsAppMessage.create_text(
-                channel["identifier"],
-                f"❌ Error: {error_response['data']['action']['details']['message']}"
+                channel_id,
+                error_response['data']['action']['details']['message']
             )
 
         handler_module = __import__(
@@ -56,7 +56,8 @@ def process_flow(
         handler_func = getattr(handler_module, handler_name)
 
         # Process step (StateManager validates current_step exists)
-        result = handler_func(state_manager, flow_data["current_step"], input_value)
+        current_step = state_manager.get_current_step()
+        result = handler_func(state_manager, current_step, input_value)
         if not result:
             # Clear flow state and return to default display
             success, error = state_manager.update_state({
@@ -78,8 +79,8 @@ def process_flow(
                     error_context
                 )
                 return WhatsAppMessage.create_text(
-                    channel["identifier"],
-                    f"❌ Error: {error_response['data']['action']['details']['message']}"
+                    channel_id,
+                    error_response['data']['action']['details']['message']
                 )
 
             # Show default dashboard display
@@ -92,8 +93,8 @@ def process_flow(
             error_type="flow",
             message=f"Flow processing error: {str(e)}",
             details={
-                "flow_type": flow_data.get("flow_type"),
-                "step": flow_data.get("current_step"),
+                "flow_type": state_manager.get_flow_type(),
+                "step": state_manager.get_current_step(),
                 "input": input_value
             }
         )
@@ -103,16 +104,16 @@ def process_flow(
             error_context
         )
         return WhatsAppMessage.create_text(
-            state_manager.get("channel")["identifier"],
-            f"❌ Error: {error_response['data']['action']['details']['message']}"
+            state_manager.get_channel_id(),
+            error_response['data']['action']['details']['message']
         )
 
 
 def handle_flow_completion(state_manager: Any, success_message: Optional[str] = None) -> WhatsAppMessage:
     """Handle flow completion enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Get channel (StateManager validates)
-        channel = state_manager.get("channel")
+        # Get channel ID (StateManager validates)
+        channel_id = state_manager.get_channel_id()
 
         # Clear flow state and return to default display
         success, error = state_manager.update_state({
@@ -126,7 +127,7 @@ def handle_flow_completion(state_manager: Any, success_message: Optional[str] = 
             error_context = ErrorContext(
                 error_type="flow",
                 message=f"Failed to clear flow state: {error}",
-                details={"channel_id": channel["identifier"]}
+                details={"channel_id": channel_id}
             )
             error_response = ErrorHandler.handle_error(
                 StateException(error_context.message),
@@ -134,8 +135,8 @@ def handle_flow_completion(state_manager: Any, success_message: Optional[str] = 
                 error_context
             )
             return WhatsAppMessage.create_text(
-                channel["identifier"],
-                f"❌ Error: {error_response['data']['action']['details']['message']}"
+                channel_id,
+                error_response['data']['action']['details']['message']
             )
 
         # Show dashboard
@@ -145,7 +146,7 @@ def handle_flow_completion(state_manager: Any, success_message: Optional[str] = 
         error_context = ErrorContext(
             error_type="flow",
             message=f"Flow completion error: {str(e)}",
-            details={"channel_id": state_manager.get("channel")["identifier"]}
+            details={"channel_id": state_manager.get_channel_id()}
         )
         error_response = ErrorHandler.handle_error(
             e,
@@ -153,6 +154,6 @@ def handle_flow_completion(state_manager: Any, success_message: Optional[str] = 
             error_context
         )
         return WhatsAppMessage.create_text(
-            state_manager.get("channel")["identifier"],
-            f"❌ Error: {error_response['data']['action']['details']['message']}"
+            state_manager.get_channel_id(),
+            error_response['data']['action']['details']['message']
         )

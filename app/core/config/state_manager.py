@@ -196,3 +196,47 @@ class StateManager:
         except StateException as e:
             logger.error(f"State access error: {str(e)}")
             raise
+
+    def get_flow_data(self) -> Dict[str, Any]:
+        """Get flow data with validation"""
+        flow_data = self.get("flow_data")
+        if not flow_data:
+            return {}
+        return flow_data
+
+    def get_flow_type(self) -> Optional[str]:
+        """Get current flow type"""
+        flow_data = self.get_flow_data()
+        return flow_data.get("flow_type")
+
+    def get_current_step(self) -> Optional[str]:
+        """Get current flow step"""
+        flow_data = self.get_flow_data()
+        return flow_data.get("current_step")
+
+    def get_flow_step_data(self) -> Dict[str, Any]:
+        """Get flow step data"""
+        flow_data = self.get_flow_data()
+        return flow_data.get("data", {})
+
+    def get_channel_id(self) -> str:
+        """Get channel identifier enforcing SINGLE SOURCE OF TRUTH"""
+        channel = self.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise StateException("Channel identifier not found")
+        return channel["identifier"]
+
+    def get_member_id(self) -> Optional[str]:
+        """Get member ID enforcing SINGLE SOURCE OF TRUTH"""
+        return self.get("member_id")
+
+    def get_active_account(self) -> Optional[Dict[str, Any]]:
+        """Get active account enforcing SINGLE SOURCE OF TRUTH"""
+        accounts = self.get("accounts")
+        active_id = self.get("active_account_id")
+        if not accounts or not active_id:
+            return None
+        return next(
+            (account for account in accounts if account["accountID"] == active_id),
+            None
+        )

@@ -22,8 +22,8 @@ def login(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated channel info
-    flow_data = state_manager.get("flow_data")
-    channel = flow_data["data"]["channel"]
+    flow_data = state_manager.get_flow_step_data()
+    channel = flow_data.get("channel")
 
     # Make API request (ErrorHandler handles any errors)
     response = make_credex_request(
@@ -43,8 +43,8 @@ def login(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated response
-    flow_data = state_manager.get("flow_data")
-    return True, flow_data["data"]["response"]
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
 
 @error_decorator
@@ -81,8 +81,8 @@ def register_member(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated member data
-    flow_data = state_manager.get("flow_data")
-    member_data = flow_data["data"]["member_data"]
+    flow_data = state_manager.get_flow_step_data()
+    member_data = flow_data.get("member_data")
 
     # Make API request (ErrorHandler handles any errors)
     response = make_credex_request(
@@ -102,8 +102,8 @@ def register_member(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated response
-    flow_data = state_manager.get("flow_data")
-    return True, flow_data["data"]["response"]
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
 
 @error_decorator
@@ -122,8 +122,8 @@ def refresh_token(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated channel info
-    flow_data = state_manager.get("flow_data")
-    channel = flow_data["data"]["channel"]
+    flow_data = state_manager.get_flow_step_data()
+    channel = flow_data.get("channel")
 
     # Make API request (ErrorHandler handles any errors)
     response = make_credex_request(
@@ -143,8 +143,8 @@ def refresh_token(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated response
-    flow_data = state_manager.get("flow_data")
-    return True, flow_data["data"]["response"]
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
 
 @error_decorator
@@ -163,8 +163,8 @@ def get_dashboard(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated channel info
-    flow_data = state_manager.get("flow_data")
-    channel = flow_data["data"]["channel"]
+    flow_data = state_manager.get_flow_step_data()
+    channel = flow_data.get("channel")
 
     # Make API request (ErrorHandler handles any errors)
     response = make_credex_request(
@@ -184,5 +184,5 @@ def get_dashboard(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated response
-    flow_data = state_manager.get("flow_data")
-    return True, flow_data["data"]["response"]
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")

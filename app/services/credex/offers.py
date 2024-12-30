@@ -23,16 +23,16 @@ def offer_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated data from state
-    flow_data = state_manager.get("flow_data")
-    offer_data = flow_data["data"]["offer_data"]
+    flow_data = state_manager.get_flow_step_data()
+    offer_data = flow_data.get("offer_data", {})
 
     # Let StateManager validate through update
     state_manager.update_state({
         "flow_data": {
             "data": {
                 "api_payload": {
-                    "Denomination": offer_data["denomination"],
-                    "InitialAmount": offer_data["amount"],
+                    "Denomination": offer_data.get("denomination"),
+                    "InitialAmount": offer_data.get("amount"),
                     "credexType": "PURCHASE",
                     "OFFERSorREQUESTS": "OFFERS",
                     "securedCredex": offer_data.get("securedCredex", True)
@@ -42,8 +42,8 @@ def offer_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated payload
-    flow_data = state_manager.get("flow_data")
-    payload = flow_data["data"]["api_payload"]
+    flow_data = state_manager.get_flow_step_data()
+    payload = flow_data.get("api_payload", {})
 
     # Make API request (ErrorHandler handles any errors)
     response = make_credex_request(
@@ -64,8 +64,8 @@ def offer_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated response
-    flow_data = state_manager.get("flow_data")
-    return True, flow_data["data"]["response"]
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
 
 @error_decorator
@@ -80,9 +80,9 @@ def confirm_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated data from state
-    flow_data = state_manager.get("flow_data")
-    credex_id = flow_data["data"]["credex_id"]
-    issuer_account_id = flow_data["data"]["issuer_account_id"]
+    flow_data = state_manager.get_flow_step_data()
+    credex_id = flow_data.get("credex_id")
+    issuer_account_id = flow_data.get("issuer_account_id")
 
     # Make API request (ErrorHandler handles any errors)
     response = make_credex_request(
@@ -103,8 +103,8 @@ def confirm_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated response
-    flow_data = state_manager.get("flow_data")
-    return True, flow_data["data"]["response"]
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
 
 @error_decorator
@@ -119,8 +119,8 @@ def accept_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated data from state
-    flow_data = state_manager.get("flow_data")
-    credex_id = flow_data["data"]["credex_id"]
+    flow_data = state_manager.get_flow_step_data()
+    credex_id = flow_data.get("credex_id")
 
     # Make API request (ErrorHandler handles any errors)
     response = make_credex_request(
@@ -141,8 +141,8 @@ def accept_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated response
-    flow_data = state_manager.get("flow_data")
-    return True, flow_data["data"]["response"]
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
 
 @error_decorator
@@ -157,8 +157,8 @@ def decline_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated data from state
-    flow_data = state_manager.get("flow_data")
-    credex_id = flow_data["data"]["credex_id"]
+    flow_data = state_manager.get_flow_step_data()
+    credex_id = flow_data.get("credex_id")
 
     # Make API request (ErrorHandler handles any errors)
     response = make_credex_request(
@@ -179,8 +179,8 @@ def decline_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated response
-    flow_data = state_manager.get("flow_data")
-    return True, flow_data["data"]["response"]
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
 
 @error_decorator
@@ -195,8 +195,8 @@ def cancel_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated data from state
-    flow_data = state_manager.get("flow_data")
-    credex_id = flow_data["data"]["credex_id"]
+    flow_data = state_manager.get_flow_step_data()
+    credex_id = flow_data.get("credex_id")
 
     # Make API request (ErrorHandler handles any errors)
     response = make_credex_request(
@@ -217,8 +217,8 @@ def cancel_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated response
-    flow_data = state_manager.get("flow_data")
-    return True, flow_data["data"]["response"]
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
 
 @error_decorator
@@ -233,8 +233,8 @@ def get_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated data from state
-    flow_data = state_manager.get("flow_data")
-    credex_id = flow_data["data"]["credex_id"]
+    flow_data = state_manager.get_flow_step_data()
+    credex_id = flow_data.get("credex_id")
 
     # Make API request (ErrorHandler handles any errors)
     response = make_credex_request(
@@ -255,8 +255,8 @@ def get_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated response
-    flow_data = state_manager.get("flow_data")
-    return True, flow_data["data"]["response"]
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
 
 
 @error_decorator
@@ -271,7 +271,7 @@ def get_ledger(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated data from state
-    member_id = state_manager.get("member_id")
+    member_id = state_manager.get_member_id()
 
     # Make API request (ErrorHandler handles any errors)
     response = make_credex_request(
@@ -292,5 +292,5 @@ def get_ledger(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     })
 
     # Get validated response
-    flow_data = state_manager.get("flow_data")
-    return True, flow_data["data"]["response"]
+    flow_data = state_manager.get_flow_step_data()
+    return True, flow_data.get("response")
