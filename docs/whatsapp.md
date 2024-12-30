@@ -99,20 +99,37 @@ The service uses standardized message types from `core.messaging.types`:
 
 2. **Flow Integration**
    ```python
-   class MemberFlow(Flow):
-       def _get_first_name_prompt(self, _) -> Message:
-           # Note: member_id is accessed from top level state, not flow data
-           return MemberTemplates.create_first_name_prompt(
-               self.state.get("mobile_number")
-           )
+   def process_registration(state_manager: Any) -> Message:
+       """Process registration through state updates
 
-       def _create_registration_confirmation(self, state: Dict[str, Any]) -> Message:
-           # Note: member_id is accessed from top level state, not flow data
-           return MemberTemplates.create_registration_confirmation(
-               recipient=self.state.get("mobile_number"),
-               first_name=state["first_name"]["first_name"],
-               last_name=state["last_name"]["last_name"]
-           )
+       Args:
+           state_manager: State manager instance
+
+       Returns:
+           Message to send
+
+       Raises:
+           StateException: If validation fails
+       """
+       # Let StateManager validate state
+       mobile = state_manager.get("channel")["identifier"]  # ONLY at top level
+
+       # Let StateManager validate registration data
+       state_manager.update_state({
+           "flow_data": {
+               "registration": {
+                   "first_name": state_manager.get("flow_data")["input"]["first_name"],
+                   "last_name": state_manager.get("flow_data")["input"]["last_name"]
+               }
+           }
+       })
+
+       # Create message with validated data
+       return MemberTemplates.create_registration_confirmation(
+           recipient=mobile,
+           first_name=state_manager.get("flow_data")["registration"]["first_name"],
+           last_name=state_manager.get("flow_data")["registration"]["last_name"]
+       )
    ```
 
 ### WhatsApp Service
@@ -121,92 +138,110 @@ The WhatsAppMessagingService handles all WhatsApp API interactions:
 
 ```python
 class WhatsAppMessagingService:
-    async def _send_message(self, message: Message) -> Dict[str, Any]:
-        """Send a message via WhatsApp Cloud API"""
-        try:
-            # Convert core message to WhatsApp format
-            whatsapp_message = WhatsAppMessage.from_core_message(message)
+    async def send_message(self, message: Message) -> None:
+        """Send a message via WhatsApp Cloud API
 
-            # Send via API client
-            return await self.api_client.send_message(whatsapp_message)
-        except Exception as e:
-            logger.error(f"Error sending message: {str(e)}")
-            raise
+        Args:
+            message: Message to send
+
+        Raises:
+            StateException: If sending fails
+        """
+        # Convert core message to WhatsApp format
+        whatsapp_message = WhatsAppMessage.from_core_message(message)
+
+        # Send via API client (raises StateException if fails)
+        await self.api_client.send_message(whatsapp_message)
 
     async def send_template(
         self,
-        recipient: str,
+        state_manager: Any,
         template_name: str,
         language: str,
         components: Optional[List[Dict[str, Any]]] = None
-    ) -> Dict[str, Any]:
-        """Send a template message"""
-        try:
-            message = {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": recipient,
-                "type": "template",
-                "template": {
-                    "name": template_name,
-                    "language": {"code": language}
-                }
+    ) -> None:
+        """Send a template message
+
+        Args:
+            state_manager: State manager instance
+            template_name: Name of template
+            language: Language code
+            components: Optional template components
+
+        Raises:
+            StateException: If sending fails
+        """
+        # Let StateManager validate recipient
+        recipient = state_manager.get("channel")["identifier"]
+
+        # Create template message
+        message = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": recipient,
+            "type": "template",
+            "template": {
+                "name": template_name,
+                "language": {"code": language}
             }
-            if components:
-                message["template"]["components"] = components
-            return await self.api_client.send_message(message)
-        except Exception as e:
-            logger.error(f"Error sending template: {str(e)}")
-            raise
+        }
+        if components:
+            message["template"]["components"] = components
+
+        # Send message (raises StateException if fails)
+        await self.api_client.send_message(message)
 ```
 
 ## Best Practices
 
 1. **Message Creation**
-   - Use domain-specific template classes
-   - Return Message objects consistently
-   - Follow WhatsApp Cloud API limits
-   - Handle errors gracefully
+   - Let StateManager validate all data
+   - NO manual validation
+   - NO error recovery
+   - NO state transformation
 
 2. **Template Organization**
    - Group related templates in domain classes
    - Use static methods for template creation
    - Keep templates focused and reusable
-   - Document template parameters
+   - Let StateManager validate data
 
 3. **Flow Implementation**
-   - Use template methods directly
-   - Keep flow logic separate from templates
-   - Handle state updates consistently
-   - Access member_id ONLY from top level state
-   - Provide clear error messages
+   - Let StateManager validate through updates
+   - NO manual validation
+   - NO error recovery
+   - NO state transformation
+   - NO state passing
 
 4. **Error Handling**
    ```python
-   def complete(self) -> Message:
-       try:
-           # Note: mobile_number accessed from top level state
-           mobile_number = self.state.get("mobile_number")
+   def process_completion(state_manager: Any) -> Message:
+       """Process completion through state updates
 
-           if not self.validate_state():
-               return Templates.create_error_message(
-                   mobile_number,
-                   "Invalid state"
-               )
+       Args:
+           state_manager: State manager instance
 
-           result = self._process_completion()
-           self._update_state(result)
+       Returns:
+           Message to send
 
-           return Templates.create_success_message(
-               mobile_number,
-               "Operation completed successfully"
-           )
-       except Exception as e:
-           logger.error(f"Flow completion error: {str(e)}")
-           return Templates.create_error_message(
-               self.state.get("mobile_number"),
-               str(e)
-           )
+       Raises:
+           StateException: If validation fails
+       """
+       # Let StateManager validate state
+       mobile = state_manager.get("channel")["identifier"]  # ONLY at top level
+
+       # Let StateManager validate completion
+       state_manager.update_state({
+           "flow_data": {
+               "status": "complete"
+           }
+       })
+
+       # Return success message
+       return Templates.create_success_message(
+           recipient=mobile,
+           message="Operation completed successfully"
+       )
    ```
 
 ## Mock Implementation

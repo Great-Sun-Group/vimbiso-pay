@@ -2,228 +2,257 @@
 
 ## Overview
 
-VimbisoPay uses a state management system built on Redis that strictly enforces SINGLE SOURCE OF TRUTH:
-- Member ID exists ONLY at top level state
-- Channel info exists ONLY at top level state
-- No duplication of data in flow_data
-- All components access data from single source
+VimbisoPay uses a centralized state management system that strictly enforces SINGLE SOURCE OF TRUTH:
+- Member ID exists ONLY at top level
+- Channel info exists ONLY at top level
+- JWT token exists ONLY in state
+- Minimal metadata and nesting
 
-Core features:
-- Atomic state operations
-- Stateful conversations
-- Multi-step form handling
-- Error recovery
-- Comprehensive audit logging
+## Core Principles
 
-## Architecture
+1. **SINGLE SOURCE OF TRUTH**
+   - Member ID ONLY at top level
+   - Channel info ONLY at top level
+   - JWT token ONLY in state
+   - NO duplication anywhere
+   - NO state passing
+   - NO state transformation
 
-### 1. Core Components
+2. **Validation Through State**
+   - ALL validation through state updates
+   - NO manual validation
+   - NO validation helpers
+   - NO validation state
+   - NO error recovery
+   - NO state fixing
 
-- **AtomicStateManager** (redis_atomic.py)
-  - Handles atomic Redis operations
-  - Manages version tracking
-  - Handles concurrent modifications
-  - Manages TTL and cleanup
+3. **Clear Responsibilities**
+   - StateManager: Validates all updates
+   - StateValidator: Defines valid structure
+   - StateUtils: Provides core structure
+   - ErrorHandler: Manages all errors
+   - NO mixed concerns
+   - NO manual validation
+   - NO error handling
 
-- **StateValidator** (state_validator.py)
-  - Validates member and channel structure
-  - Validates state structure
-  - Checks field types
-  - Ensures critical field preservation
-  - Provides validation results
+4. **Simple Updates**
+   - Update state to validate
+   - Let StateManager validate
+   - NO manual validation
+   - NO cleanup code
+   - NO error recovery
+   - NO state fixing
 
-- **FlowStateManager** (flow_state.py)
-  - Manages flow state transitions
-  - Accesses member_id from top level state
-  - Accesses channel info from top level state
-  - Handles validation state
-  - Provides rollback mechanisms
-  - Preserves context during transitions
-
-- **FlowAuditLogger** (flow_audit.py)
-  - Logs flow events with member context
-  - Tracks state transitions
-  - Records validation results
-  - Provides error context
-  - Enables state recovery
-
-### 2. State Structure
+## State Structure
 
 Core state includes:
 ```python
 {
-    # Core identity - SINGLE SOURCE OF TRUTH
-    "member_id": "unique_member_id",  # Primary identifier, ONLY AND ALWAYS at top level
+    # Core identity (SINGLE SOURCE OF TRUTH)
+    "member_id": "unique_member_id",
 
-    # Channel information
+    # Channel information (SINGLE SOURCE OF TRUTH)
     "channel": {
         "type": "whatsapp",
-        "identifier": "channel_specific_id"
+        "identifier": "channel_id"
     },
 
-    # Authentication
-    "jwt_token": "token",  # 5-minute expiry
-    "authenticated": true,
+    # Authentication (SINGLE SOURCE OF TRUTH)
+    "jwt_token": "token",
+    "authenticated": True,
 
-    # Profile and accounts
-    "profile": { ... },
-    "current_account": { ... },
+    # Account state (SINGLE SOURCE OF TRUTH)
+    "accounts": [  # All available accounts
+        {
+            "accountID": "account_id",
+            "accountName": "Account Name",
+            "accountHandle": "@handle",
+            "accountType": "PERSONAL",  # or other types
+            "balances": {...},
+            "offerData": {...}
+        }
+    ],
+    "active_account_id": "current_account_id",  # Currently active account
 
     # Flow state
     "flow_data": {
-        "id": "flow_id",
-        "step": current_step,
-        "data": {
-            "flow_type": "flow_type",
-            "_validation_context": {},
-            "_validation_state": {}
-        }
-    },
+        # Framework-level step tracking (required for validation)
+        "step": 0,  # Integer for progression tracking
 
-    # Version and audit
-    "_version": 1,
-    "_last_updated": timestamp
+        # Flow-specific routing
+        "current_step": "amount",  # String for step identification
+
+        # Flow type identifier
+        "flow_type": "flow_type"
+    }
 }
 ```
 
-Flow state includes:
-- Current step and data
-- Flow type information
-- Minimal validation state in flow_data.data
-- Previous state for rollback
-- Version information
-- Smart recovery paths
+### Account State Rules
 
-Note: Member ID and channel info are ONLY stored at top level as SINGLE SOURCE OF TRUTH
+1. **Registration**
+- Creates single personal account
+- Sets as active account
+- Stores in accounts array
+- NO manual account access
 
-### 3. Key Features
+2. **Login**
+- May return multiple accounts
+- Sets personal account as active
+- Stores all accounts
+- NO manual account access
 
-1. **Member Management**
-   - Member ID as SINGLE SOURCE OF TRUTH at top level
-   - No duplication of member info in flow_data
-   - Access member_id only from top level state
-   - Member-specific validation at top level
-   - Cross-channel state through top level identifiers
+3. **Account Access**
+- Use active_account_id to find current account
+- Get accounts from top level state
+- Let StateManager validate account existence
+- NO manual account validation
 
-2. **Channel Handling**
-   - Channel info as SINGLE SOURCE OF TRUTH at top level
-   - No duplication of channel info in flow_data
-   - Access channel info only from top level state
-   - Channel validation at top level
-   - Cross-channel support through top level abstraction
+Note: This is the COMPLETE structure. If you need more fields, question why.
 
-3. **Version Management**
-   - Incremental version tracking
-   - Conflict detection
-   - Automatic retries
-   - Version preservation
+## Implementation
 
-4. **TTL Management**
-   - 5-minute session timeout
-   - Aligned TTLs for related data
-   - Automatic cleanup
-   - Core field preservation
+### 1. State Utils
+```python
+def create_initial_state() -> Dict[str, Any]:
+    """Create minimal initial state"""
+    return {
+        "member_id": None,  # ONLY at top level
+        "channel": {        # ONLY at top level
+            "type": "whatsapp",
+            "identifier": None
+        },
+        "jwt_token": None,  # ONLY in state
+        "flow_data": None   # NO validation state
+    }
 
-5. **Smart Recovery**
-   - Member context preservation
-   - Channel state recovery
-   - Multi-step recovery paths
-   - Last valid state restoration
-   - Clear error messages
-   - Recovery attempt logging
+def prepare_state_update(state_manager: Any, updates: Dict[str, Any]) -> Dict[str, Any]:
+    """Update state through StateManager validation
 
-6. **Audit Logging**
-   - Member-centric event tracking
-   - Channel context logging
-   - State transition history
-   - Validation result logging
-   - Error scenario documentation
-   - Recovery attempt tracking
+    Args:
+        state_manager: State manager instance
+        updates: State updates to validate
 
-## Redis Configuration
+    Returns:
+        Validated state data
 
-Uses dedicated Redis instance with:
-- Atomic operations support
-- Persistence enabled
-- Memory limits
-- Independent scaling
+    Raises:
+        StateException: If validation fails
+    """
+    # Let StateManager validate updates
+    state_manager.update_state(updates)
+
+    # Get validated state
+    return state_manager.get("flow_data")
+```
+
+### 2. State Manager
+```python
+class StateManager:
+    """Manages state while enforcing SINGLE SOURCE OF TRUTH"""
+
+    def __init__(self, key_prefix: str):
+        """Initialize state manager
+
+        Args:
+            key_prefix: Redis key prefix
+
+        Raises:
+            StateException: If initialization fails
+        """
+        self.key_prefix = key_prefix
+        self._initialize_state()  # Raises StateException if invalid
+
+    def update_state(self, updates: Dict[str, Any]) -> None:
+        """Update state through validation
+
+        Args:
+            updates: State updates to validate
+
+        Raises:
+            StateException: If validation fails
+        """
+        # Let StateValidator validate updates
+        StateValidator.validate_state(updates)
+
+        # Store validated state (raises StateException if fails)
+        success, error = atomic_state.atomic_update(
+            self.key_prefix,
+            updates,
+            ACTIVITY_TTL
+        )
+        if not success:
+            raise StateException(f"Failed to update state: {error}")
+```
+
+### 3. Error Handling
+```python
+# Handle state error with context
+error_context = ErrorContext(
+    error_type="state",
+    message=str(error),
+    details={
+        "update_type": "account_state",
+        "fields": ["active_account_id", "accounts"]
+    }
+)
+error_response = ErrorHandler.handle_error(
+    error,
+    state_manager,
+    error_context
+)
+
+# Create error message
+return Message(
+    recipient=MessageRecipient(
+        channel_id=ChannelIdentifier(
+            channel=ChannelType.WHATSAPP,
+            value=state_manager.get("channel")["identifier"]
+        )
+    ),
+    content=TextContent(
+        body=f"❌ Error: {error_response['data']['action']['details']['message']}"
+    ),
+    metadata=error_response["data"]["action"]["details"]
+)
+```
 
 ## Best Practices
 
-1. **Member-Centric Design**
-   - Keep member_id ONLY at top level state
-   - Never duplicate member info in flow_data
-   - Always access member_id from top level
-   - Validate member info at top level only
-   - Maintain SINGLE SOURCE OF TRUTH
+1. **State Access**
+   - Member ID ONLY at top level
+   - Channel info ONLY at top level
+   - JWT token ONLY in state
+   - NO state duplication
+   - NO state passing
+   - NO state transformation
 
-2. **Channel Management**
-   - Keep channel info ONLY at top level state
-   - Never duplicate channel info in flow_data
-   - Always access channel info from top level
-   - Validate channel info at top level only
-   - Maintain SINGLE SOURCE OF TRUTH
+2. **State Updates**
+   - Let StateManager validate
+   - NO manual validation
+   - NO state duplication
+   - NO error recovery
+   - NO state fixing
+   - NO cleanup code
 
-3. **State Updates**
-   - Use atomic operations
-   - Validate member and channel
-   - Keep validation minimal
-   - Handle concurrent access
-   - Log key transitions
+3. **Flow Integration**
+   - Access through StateManager
+   - NO validation state
+   - NO state duplication
+   - NO state passing
+   - NO state transformation
+   - NO error recovery
 
-4. **Flow Integration**
-   - Use FlowStateManager
-   - Access member_id from top level state
-   - Access channel info from top level state
-   - Keep validation in flow_data.data
-   - Handle transitions efficiently
-   - Implement smart recovery
-   - Focus audit trail
-
-5. **Error Handling**
-   - Preserve member context
-   - Handle channel errors
-   - Use structured errors
-   - Log error details
-   - Clean up properly
-   - Enable automatic recovery
-
-6. **Audit Trail**
-   - Include member context
-   - Log channel information
-   - Track state transitions
-   - Record validation results
-   - Document error scenarios
-   - Monitor recovery attempts
-   - Maintain debugging context
-
-## Migration Considerations
-
-1. **State Structure**
-   - Move member_id to SINGLE SOURCE OF TRUTH at top level
-   - Move channel info to SINGLE SOURCE OF TRUTH at top level
-   - Remove any duplicated data from flow_data
-   - Convert mobile_number to channel identifier at top level
-
-2. **Flow Updates**
-   - Update flows to access member_id from top level only
-   - Update flows to access channel info from top level only
-   - Remove any duplicated data access
-   - Enforce SINGLE SOURCE OF TRUTH in all flows
-
-3. **Data Migration**
-   - Consolidate member info to top level
-   - Consolidate channel info to top level
-   - Clean up duplicated data in flow_data
-   - Maintain SINGLE SOURCE OF TRUTH during migration
-
-4. **Validation**
-   - Validate member_id at top level only
-   - Validate channel info at top level only
-   - Remove duplicate validation checks
-   - Enforce SINGLE SOURCE OF TRUTH in validators
+4. **Error Handling**
+   - Use ErrorHandler for all errors
+   - Provide clear error context
+   - Include relevant details
+   - NO manual validation
+   - NO error recovery
+   - NO state fixing
+   - Clear error messages
 
 For more details on:
-- Flow Framework: [Flow Framework](flow-framework.md)
-- Redis Management: [Redis Memory Management](redis-memory-management.md)
-- Security: [Security](security.md)
+- Service architecture: [Service Architecture](service-architecture.md)
+- Flow framework: [Flow Framework](flow-framework.md)
+- API integration: [API Integration](api-integration.md)

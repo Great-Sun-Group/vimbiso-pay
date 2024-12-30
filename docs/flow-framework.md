@@ -3,47 +3,40 @@
 ## Overview
 
 The Flow Framework provides a progressive interaction system for handling complex, multi-step conversations in WhatsApp, extendable to other channels. It enables:
-- Member-centric state management
+- Member-centric state management (SINGLE SOURCE OF TRUTH)
 - Multi-channel support
 - Structured data collection
-- Input validation
-- Error recovery
-- Comprehensive audit logging
+- Validation through state updates
+- Clear error handling through ErrorHandler
+- Consistent error context
 
 ## Core Components
 
 ### 1. Flow Management
 
-The framework consists of four main components:
+The framework consists of three main components:
 
 - **Flow Base Class**
   - Manages member-centric state
   - Handles channel abstraction
   - Manages step progression
-  - Handles data collection
+  - Processes input through state updates
   - Integrates with state management
-  - Provides error recovery
-  - Maintains audit trail
+  - Handles errors through ErrorHandler
+  - Maintains error context
 
 - **FlowStateManager**
-  - Validates member and channel state
+  - Validates all state updates
   - Manages state transitions
-  - Handles rollbacks
-  - Preserves validation context
+  - Raises StateException for invalid state
+  - Enforces SINGLE SOURCE OF TRUTH
   - Manages channel information
 
 - **Step Definition**
   - Defines interaction type
-  - Provides validation rules
-  - Handles data transformation
+  - Updates state for validation
+  - Processes input through state
   - Generates channel-aware messages
-
-- **FlowAuditLogger**
-  - Logs flow events with member context
-  - Tracks state transitions
-  - Records validation results
-  - Enables state recovery
-  - Provides debugging context
 
 ### 2. Step Types
 
@@ -55,14 +48,19 @@ Supports three interaction types:
 ### 3. State Integration
 
 Each flow maintains:
-- Member ID as primary identifier
-- Channel information
-- Current step index
+- Member ID as primary identifier (ONLY at top level)
+- Channel information (ONLY at top level)
+- Step tracking (dual representation):
+  - step (integer): Framework-level progression tracking (0,1,2...)
+  - current_step (string): Flow-specific routing ("amount","handle"...)
 - Collected data
-- Minimal validation state in flow_data.data
-- Previous state for rollback
-- Audit trail data
-- Smart recovery paths
+- NO validation state
+- NO previous state
+- NO recovery paths
+
+The dual step tracking serves distinct purposes:
+- Integer step: Required by framework for validation
+- String current_step: Used by flows for routing and message handling
 
 ## Implementation
 
@@ -82,80 +80,87 @@ class CredexFlow(Flow):
 ### Step Definition
 
 ```python
+# WRONG - Using validator and transformer functions
 Step(
     id="amount",
     type=StepType.TEXT,
     message=self._get_amount_prompt,
-    validator=self._validate_amount,
+    validator=self._validate_amount,  # NO manual validation!
     transformer=self._transform_amount
 )
+
+# CORRECT - Let StateManager validate through state updates
+Step(
+    id="amount",
+    type=StepType.TEXT,
+    message=self._get_amount_prompt,
+    process_input=self._process_amount  # Updates state for validation
+)
+
+def _process_amount(self, state_manager: Any, input_data: str) -> None:
+    """Process amount input through state update"""
+    state_manager.update_state({
+        "flow_data": {
+            "input": {
+                "amount": input_data  # StateManager validates
+            }
+        }
+    })
 ```
 
 ### State Structure
 
 ```python
-new_state = {
-    # Core identity - SINGLE SOURCE OF TRUTH
-    "member_id": member_id,  # Primary identifier, ONLY AND ALWAYS at top level
+# Core identity - SINGLE SOURCE OF TRUTH
+state_manager.update_state({
+    # Member ID - ONLY at top level
+    "member_id": member_id,
 
-    # Channel information
+    # Channel info - ONLY at top level
     "channel": {
         "type": "whatsapp",
         "identifier": channel_id
     },
 
-    # Flow and state info
+    # Flow state - NO validation state
     "flow_data": {
-        "id": flow_id,
         "step": current_step,
-        "data": {
-            "flow_type": flow_type,
-            "channel": {
-                "type": "whatsapp",
-                "identifier": channel_id
-            }
-        }
+        "flow_type": flow_type
     }
-}
+})
 ```
 
-### Audit Logging
+### Error Handling
 
 ```python
-# Log flow event with member context
-audit.log_flow_event(
-    flow_id=f"credex_offer_{member_id}",
-    event_type="step_start",
-    step_id="amount",
-    state={
-        "member_id": member_id,
-        "channel": {
-            "type": "whatsapp",
-            "identifier": channel_id
-        },
-        **current_state
-    },
-    status="in_progress"
+# Handle flow error with context
+error_context = ErrorContext(
+    error_type="flow",
+    message=f"Error in step {step_id}: {str(error)}",
+    step_id=step_id,
+    details={
+        "flow_type": flow_type,
+        "input": input_data
+    }
+)
+error_response = ErrorHandler.handle_error(
+    error,
+    state_manager,
+    error_context
 )
 
-# Log validation with member context
-audit.log_validation_event(
-    flow_id=f"credex_offer_{member_id}",
-    step_id="amount",
-    input_data={
-        "member_id": member_id,
-        "channel": channel_info,
-        "data": input_data
-    },
-    validation_result=result
-)
-
-# Log state transition with member context
-audit.log_state_transition(
-    flow_id=f"credex_offer_{member_id}",
-    from_state=old_state,
-    to_state=new_state,
-    status="success"
+# Create error message
+return Message(
+    recipient=MessageRecipient(
+        channel_id=ChannelIdentifier(
+            channel=ChannelType.WHATSAPP,
+            value=state_manager.get("channel")["identifier"]
+        )
+    ),
+    content=TextContent(
+        body=f"❌ Error: {error_response['data']['action']['details']['message']}"
+    ),
+    metadata=error_response["data"]["action"]["details"]
 )
 ```
 
@@ -178,43 +183,46 @@ audit.log_state_transition(
 ## Best Practices
 
 1. **State Management**
-   - Use member_id as primary identifier
-   - Maintain proper channel abstraction
-   - Keep validation context in flow_data.data
-   - Use minimal required validations
-   - Implement smart state recovery
-   - Focus on critical data integrity
-   - Maintain focused audit trail
+   - Member ID ONLY at top level
+   - Channel info ONLY at top level
+   - NO validation state
+   - NO state duplication
+   - NO state transformation
+   - NO state passing
+   - NO error recovery
 
 2. **Flow Implementation**
    - Keep flows focused and single-purpose
-   - Validate member and channel info
+   - Let StateManager validate through updates
    - Handle channel-specific requirements
-   - Validate input properly
-   - Handle errors gracefully
-   - Log state transitions
-   - Enable automatic recovery
+   - Process input through state updates
+   - Handle errors through ErrorHandler
+   - Use clear error context
+   - NO manual validation
 
 3. **Template Usage**
    - Use member-centric templates
    - Handle channel-specific formatting
    - Keep templates reusable
    - Follow channel limits
-   - Handle errors properly
+   - Let StateManager validate templates
 
-4. **Error Recovery**
-   - Validate member and channel state
-   - Preserve context during errors
-   - Implement proper rollback
-   - Provide clear error messages
-   - Log recovery attempts
+4. **Error Handling**
+   - Use ErrorHandler for all errors
+   - Provide clear error context
+   - Include step information
+   - Add relevant details
+   - NO manual validation
+   - NO error recovery
+   - NO state fixing
+   - Clear error messages
 
-5. **Audit Logging**
-   - Include member context in logs
-   - Log channel information
-   - Track state transitions
-   - Record validation results
-   - Document error scenarios
+5. **Error Context**
+   - Include flow type
+   - Include step ID
+   - Add input data
+   - Provide clear messages
+   - Include relevant details
    - Enable debugging
 
 ## Integration
@@ -224,7 +232,7 @@ The Flow Framework integrates with:
 - Redis state management
 - API services
 - User authentication
-- Audit logging system
+- Error handling system
 
 For more details on:
 - State Management: [State Management](state-management.md)

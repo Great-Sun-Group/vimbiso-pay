@@ -55,63 +55,143 @@ def validate_webhook(request):
 - Health checks
 
 ### Flow Framework Security
-- Focused input validation
-- State isolation in flow_data.data
-- Minimal validation context
-- Smart state recovery
-- Clear error boundaries
-- Efficient timeout handling
+- Validation through state updates
+- Member ID ONLY at top level
+- Channel info ONLY at top level
+- NO validation state
+- NO state duplication
+- NO error recovery
 
 ### State Management
-- User state isolation
-- 5-minute session timeout
-- Core field validation
-- Smart state recovery
-- Efficient cleanup
-- Dedicated Redis instance
+- Member ID ONLY at top level
+- Channel info ONLY at top level
+- JWT token ONLY in state
+- NO state duplication
+- NO state transformation
+- NO state passing
 
 ### Sensitive Data
 - Data minimization
 - TLS encryption
 - Secure storage
-- No sensitive logs
+- NO sensitive logs
+- NO state duplication
+- NO validation state
 
 ## API Security
 
 ### Request Validation
 ```python
-# Input validation
-validate_phone_number(phone)
-validate_amount(amount)
-validate_handle(handle)
+def process_request(state_manager: Any) -> None:
+    """Process request through state validation
 
-# Headers
-validate_content_type(headers)
-validate_api_key(headers)
-validate_token(headers)
+    Args:
+        state_manager: State manager instance
+
+    Raises:
+        StateException: If validation fails
+    """
+    # Let StateManager validate request data
+    state_manager.update_state({
+        "flow_data": {
+            "request": {
+                "phone": state_manager.get("channel")["identifier"],  # ONLY at top level
+                "amount": state_manager.get("flow_data")["input"]["amount"],
+                "handle": state_manager.get("flow_data")["input"]["handle"]
+            }
+        }
+    })
+
+    # Let StateManager validate headers
+    state_manager.update_state({
+        "flow_data": {
+            "headers": {
+                "content_type": "application/json",
+                "api_key": state_manager.get("api_key"),  # ONLY in state
+                "token": state_manager.get("jwt_token")   # ONLY in state
+            }
+        }
+    })
 ```
 
 ### Rate Limiting
-- 100 requests/day anonymous
-- 1000 requests/day authenticated
-- Per-user tracking
+```python
+def check_rate_limit(state_manager: Any) -> None:
+    """Check rate limit through state validation
+
+    Args:
+        state_manager: State manager instance
+
+    Raises:
+        StateException: If rate limit exceeded
+    """
+    # Let StateManager validate rate limit
+    state_manager.update_state({
+        "flow_data": {
+            "rate_limit": {
+                "user_id": state_manager.get("member_id"),  # ONLY at top level
+                "limit": 1000 if state_manager.get("authenticated") else 100,
+                "period": "daily"
+            }
+        }
+    })
+```
 
 ## Error Handling
 
 ### Secure Responses
 ```python
-{
-    "error": "Error description",
-    "details": {
-        "field": "Error details"
+def handle_error(state_manager: Any, error: StateException) -> Dict[str, Any]:
+    """Handle error through state validation
+
+    Args:
+        state_manager: State manager instance
+        error: StateException instance
+
+    Returns:
+        Error response dict
+    """
+    # Let StateManager validate error response
+    state_manager.update_state({
+        "flow_data": {
+            "error": {
+                "message": str(error),
+                "code": error.code,
+                "details": error.details
+            }
+        }
+    })
+
+    return {
+        "error": state_manager.get("flow_data")["error"]["message"],
+        "details": state_manager.get("flow_data")["error"]["details"]
     }
-}
 ```
 
 ### Logging
 ```python
-logger.info(f"Action: {sanitize_log_message(action)}")
-logger.error(f"Error: {sanitize_error_message(error)}")
+def log_event(state_manager: Any, event_type: str, data: Dict[str, Any]) -> None:
+    """Log event through state validation
+
+    Args:
+        state_manager: State manager instance
+        event_type: Type of event
+        data: Event data
+
+    Raises:
+        StateException: If validation fails
+    """
+    # Let StateManager validate log data
+    state_manager.update_state({
+        "flow_data": {
+            "log": {
+                "type": event_type,
+                "member_id": state_manager.get("member_id"),  # ONLY at top level
+                "channel": state_manager.get("channel"),      # ONLY at top level
+                "data": data
+            }
+        }
+    })
 ```
 
 ## Environment Security
@@ -159,29 +239,33 @@ SECURE_HSTS_PRELOAD = True
 ## Best Practices
 
 1. **Authentication**
-   - Strong JWT config
-   - Secure sessions
-   - Token validation
-   - API key protection
+   - JWT token ONLY in state
+   - NO token duplication
+   - NO manual validation
+   - NO error recovery
+   - Let StateManager validate
 
 2. **Data Protection**
-   - Minimal collection
-   - Proper encryption
-   - Regular cleanup
-   - Redis persistence
+   - Member ID ONLY at top level
+   - Channel info ONLY at top level
+   - NO state duplication
+   - NO validation state
+   - NO sensitive logs
 
-3. **Input Validation**
-   - Flow framework validation
-   - Sanitize all input
-   - Validate formats
-   - Secure responses
+3. **State Validation**
+   - ALL validation through state updates
+   - NO manual validation
+   - NO validation helpers
+   - NO error recovery
+   - Let StateManager validate
 
 4. **Monitoring**
-   - Security logging
-   - Error tracking
-   - Access monitoring
-   - Regular audits
-   - Redis monitoring
+   - Log through state updates
+   - NO manual validation
+   - NO error recovery
+   - NO state fixing
+   - Clear error messages
+   - Let StateManager validate
 
 For more details on:
 - WhatsApp security: [WhatsApp](whatsapp.md)
