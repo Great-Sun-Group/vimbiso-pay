@@ -18,67 +18,18 @@ Error Context Requirements:
 """
 
 import logging
-from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple, Union
 
 from rest_framework import status
 from rest_framework.response import Response
 
+from core.config.state_manager import StateManager
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
+from core.utils.error_types import ErrorContext
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ErrorContext:
-    """Error context for state updates
-
-    Required for ALL errors to ensure consistent handling.
-    Components should NOT create error messages directly.
-
-    Fields:
-        error_type: Type of error (must be one of: flow, state, input, api, system)
-        message: Clear user-facing message
-        step_id: Only required for flow errors, should be None for other types
-        details: Additional context (required for debugging)
-
-    Rules:
-        1. error_type must be one of the standard types
-        2. step_id is ONLY required when error_type is "flow"
-        3. For all other error types, step_id must be None
-        4. details must include relevant debugging information
-        5. message must be user-friendly and actionable
-    """
-
-    # Standard error types
-    VALID_ERROR_TYPES = {"flow", "state", "input", "api", "system"}
-    error_type: str
-    message: str
-    step_id: Optional[str] = None
-    details: Optional[Dict[str, Any]] = None
-
-    def __post_init__(self):
-        """Validate error context requirements"""
-        # Validate error type
-        if self.error_type not in self.VALID_ERROR_TYPES:
-            raise ValueError(f"error_type must be one of: {', '.join(self.VALID_ERROR_TYPES)}")
-
-        # Validate step_id requirements
-        if self.error_type == "flow" and not self.step_id:
-            raise ValueError("step_id is required for flow errors")
-        if self.error_type != "flow" and self.step_id:
-            raise ValueError("step_id should only be set for flow errors")
-
-        # Validate message
-        if not self.message or not isinstance(self.message, str):
-            raise ValueError("message must be a non-empty string")
-
-        # Validate details
-        if not self.details:
-            raise ValueError("details are required for debugging context")
-        if not isinstance(self.details, dict):
-            raise ValueError("details must be a dictionary")
 
 
 class ErrorHandler:
@@ -142,30 +93,15 @@ class ErrorHandler:
             For other error types, step_id is ignored
         """
         from .exceptions import (APIException, ConfigurationException,
-                                 FlowException, InvalidInputException,
-                                 StateException)
+                                 InvalidInputException, StateException)
 
-        # Map error to type and subtype
-        if isinstance(error, FlowException):
-            # Flow errors require step_id
-            if not step_id:
-                raise ValueError("step_id is required for flow errors")
+        # Map exception types to error types
+        # Determine error type from exception
+        if step_id:
+            # If step_id is provided, this is a flow error
             error_type = "flow"
-            subtype = error.subtype if hasattr(error, 'subtype') else "generic"
-            # Build flow error context with required step_id
-            return ErrorContext(
-                error_type=error_type,
-                message=cls.ERROR_MESSAGES[error_type][subtype],
-                step_id=step_id,  # Required for flow
-                details={
-                    "error_class": error.__class__.__name__,
-                    "error_message": str(error),
-                    "subtype": subtype
-                }
-            )
-
-        # Handle non-flow errors (step_id should be None)
-        if isinstance(error, InvalidInputException):
+            subtype = "generic"
+        elif isinstance(error, InvalidInputException):
             error_type = "input"
             subtype = error.subtype if hasattr(error, 'subtype') else "generic"
         elif isinstance(error, APIException):
@@ -256,7 +192,7 @@ class ErrorHandler:
                     "error": {
                         "type": context.error_type,
                         "message": context.message,
-                        "timestamp": state_manager.get_timestamp()
+                        "timestamp": datetime.utcnow().isoformat()
                     }
                 }
             }
@@ -458,15 +394,11 @@ def error_decorator(f):
             # Get state manager from arguments
             state_manager = None
 
-            # Try service instance
-            if args and hasattr(args[0], "state_manager"):
+            # Get state_manager - either passed directly or through service instance
+            if args and isinstance(args[0], StateManager):
+                state_manager = args[0]
+            elif args and hasattr(args[0], "state_manager"):
                 state_manager = args[0].state_manager
-
-            # Try user object
-            if not state_manager and args and hasattr(args[0], "user"):
-                user = args[0].user
-                if hasattr(user, "state_manager"):
-                    state_manager = user.state_manager
 
             # Handle missing state manager
             if not state_manager:
@@ -475,7 +407,7 @@ def error_decorator(f):
                     extra={
                         "function": f.__name__,
                         "error": str(e),
-                        "args": str(args)
+                        "func_args": str(args)
                     }
                 )
                 return ErrorHandler.create_error_response(

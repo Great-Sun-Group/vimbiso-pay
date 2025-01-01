@@ -3,7 +3,8 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 
 logger = logging.getLogger(__name__)

@@ -2,11 +2,13 @@
 import logging
 from typing import Any, Dict
 
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 from services.credex.service import get_member_accounts
+
 from ...member.dashboard import handle_dashboard_display
-from .messages import (create_list_message, create_action_confirmation,
+from .messages import (create_action_confirmation, create_list_message,
                        create_success_message)
 
 logger = logging.getLogger(__name__)

@@ -20,11 +20,9 @@ def prepare_display_data(account: Dict, member_data: Dict) -> Dict:
     return {
         "account": account["accountName"],
         "handle": account["accountHandle"],
-        "balances": {
-            "secured": "\n".join(account["balanceData"]["securedNetBalancesByDenom"]),
-            "total": account["balanceData"]["netCredexAssetsInDefaultDenom"]
-        },
-        "tier": tier_display
+        "securedNetBalancesByDenom": "\n".join(account["balanceData"]["securedNetBalancesByDenom"]),
+        "netCredexAssetsInDefaultDenom": account["balanceData"]["netCredexAssetsInDefaultDenom"],
+        "tier_limit_display": tier_display
     }
 
 
@@ -96,16 +94,7 @@ def handle_dashboard_display(state_manager: Any) -> Message:
         if account["accountID"] == active_id
     )
 
-    # Update flow state after getting data
-    state_manager.update_state({
-        "flow_data": {
-            "flow_type": "dashboard",
-            "step": 0,
-            "current_step": "display"
-        }
-    })
-
-    # Prepare display data with member tier info
+    # Prepare display data with member tier info (flow state already set by update_member_state)
     display_data = prepare_display_data(active_account, member_data)
 
     return Message(

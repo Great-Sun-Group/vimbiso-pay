@@ -3,6 +3,7 @@ from typing import Any, Dict
 
 import requests
 from core.utils.error_handler import error_decorator
+from core.utils.exceptions import APIException, ConfigurationException
 
 from .config import CredExConfig, CredExEndpoints
 
@@ -39,26 +40,41 @@ def make_credex_request(
     url = config.get_url(path)
     headers = config.get_headers()
 
-    # Add token from validated state
+    # Add token from validated state if available
     jwt_token = state_manager.get("jwt_token")
     if jwt_token:
         headers["Authorization"] = f"Bearer {jwt_token}"
 
-    # Make request
-    response = requests.request(method, url, headers=headers, json=payload)
+    # For auth endpoints, ensure phone number is taken from state
+    if group == 'auth' and action == 'login':
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise ConfigurationException("Missing channel identifier in state")
+        # Override payload with phone from state
+        payload = {"phone": channel["identifier"]}
 
-    # Let StateManager validate through flow advance
-    state_manager.update_state({
-        "flow_data": {
-            "next_step": "complete",
-            "data": {
-                "response": {
+    try:
+        # Make request
+        response = requests.request(method, url, headers=headers, json=payload)
+
+        # Handle API errors
+        if not response.ok:
+            raise APIException(
+                subtype="response",
+                message=f"API request failed: {response.status_code}",
+                details={
                     "status_code": response.status_code,
-                    "content_type": response.headers.get("Content-Type"),
-                    "body": response.text
+                    "response": response.text
                 }
-            }
-        }
-    })
+            )
 
-    return response
+        # Return successful response
+        return response.json()
+
+    except requests.exceptions.RequestException as e:
+        # Handle network errors
+        raise APIException(
+            subtype="connection",
+            message=str(e),
+            details={"url": url}
+        )

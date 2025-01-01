@@ -6,43 +6,44 @@ class CredExServiceInterface(ABC):
     """Interface defining CredEx service operations"""
 
     @abstractmethod
-    def login(self, phone: str) -> Tuple[bool, str]:
+    def login(self, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Authenticate user with the CredEx API
 
         Args:
-            phone: User's phone number
+            state_manager: State manager instance containing channel info
 
         Returns:
-            Tuple of (success: bool, message: str)
+            Tuple of (success: bool, response: Dict[str, Any])
         """
         pass
 
     @abstractmethod
-    def register_member(self, member_data: Dict[str, Any]) -> Tuple[bool, str]:
+    def register_member(self, member_data: Dict[str, Any], state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Register a new member
 
         Args:
             member_data: Member registration information
+            state_manager: State manager instance containing channel info
 
         Returns:
-            Tuple of (success: bool, message: str)
+            Tuple of (success: bool, response: Dict[str, Any])
         """
         pass
 
     @abstractmethod
-    def get_dashboard(self, phone: str) -> Tuple[bool, Dict[str, Any]]:
+    def get_dashboard(self, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Fetch member's dashboard information
 
         Args:
-            phone: Member's phone number
+            state_manager: State manager instance containing member info
 
         Returns:
-            Tuple of (success: bool, dashboard_data: Dict)
+            Tuple of (success: bool, dashboard_data: Dict[str, Any])
         """
         pass
 
     @abstractmethod
-    def validate_account_handle(self, handle: str) -> Tuple[bool, Dict[str, Any]]:
+    def validate_account_handle(self, handle: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Validate a CredEx handle
 
         Args:
@@ -54,7 +55,7 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
-    def offer_credex(self, offer_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    def offer_credex(self, offer_data: Dict[str, Any], state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Create a new CredEx offer
 
         Args:
@@ -66,7 +67,7 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
-    def confirm_credex(self, credex_id: str, issuer_account_id: str) -> Tuple[bool, Dict[str, Any]]:
+    def confirm_credex(self, credex_id: str, issuer_account_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Confirm a CredEx offer
 
         Args:
@@ -79,7 +80,7 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
-    def accept_credex(self, offer_id: str) -> Tuple[bool, Dict[str, Any]]:
+    def accept_credex(self, offer_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Accept a CredEx offer
 
         Args:
@@ -91,7 +92,7 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
-    def accept_bulk_credex(self, offer_ids: list[str]) -> Tuple[bool, Dict[str, Any]]:
+    def accept_bulk_credex(self, offer_ids: list[str], state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Accept multiple CredEx offers
 
         Args:
@@ -103,7 +104,7 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
-    def decline_credex(self, offer_id: str) -> Tuple[bool, str]:
+    def decline_credex(self, offer_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Decline a CredEx offer
 
         Args:
@@ -115,7 +116,7 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
-    def cancel_credex(self, offer_id: str) -> Tuple[bool, str]:
+    def cancel_credex(self, offer_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Cancel a CredEx offer
 
         Args:
@@ -127,7 +128,7 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
-    def get_credex(self, offer_id: str) -> Tuple[bool, Dict[str, Any]]:
+    def get_credex(self, offer_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Get details of a specific CredEx offer
 
         Args:
@@ -139,7 +140,7 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
-    def get_ledger(self, member_id: str) -> Tuple[bool, Dict[str, Any]]:
+    def get_ledger(self, member_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Get member's ledger information
 
         Args:
@@ -151,16 +152,11 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
-    def refresh_member_info(
-        self, phone: str, reset: bool = True, silent: bool = True, init: bool = False
-    ) -> Optional[str]:
+    def refresh_member_info(self, state_manager: Any) -> Optional[str]:
         """Refresh member information
 
         Args:
-            phone: Member's phone number
-            reset: Whether to reset state
-            silent: Whether to suppress notifications
-            init: Whether this is initial refresh
+            state_manager: State manager instance containing member info
 
         Returns:
             Optional error message if refresh fails
@@ -168,7 +164,7 @@ class CredExServiceInterface(ABC):
         pass
 
     @abstractmethod
-    def get_member_accounts(self, member_id: str) -> Tuple[bool, Dict[str, Any]]:
+    def get_member_accounts(self, member_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Get available accounts for a member
 
         Args:
@@ -185,7 +181,7 @@ class CredExRecurringInterface(ABC):
     """Interface defining recurring payment operations"""
 
     @abstractmethod
-    def create_recurring(self, payment_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    def create_recurring(self, payment_data: Dict[str, Any], state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Create a recurring payment
 
         Args:
@@ -205,7 +201,7 @@ class CredExRecurringInterface(ABC):
         pass
 
     @abstractmethod
-    def accept_recurring(self, payment_id: str) -> Tuple[bool, Dict[str, Any]]:
+    def accept_recurring(self, payment_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Accept a recurring payment
 
         Args:
@@ -217,7 +213,7 @@ class CredExRecurringInterface(ABC):
         pass
 
     @abstractmethod
-    def cancel_recurring(self, payment_id: str) -> Tuple[bool, Dict[str, Any]]:
+    def cancel_recurring(self, payment_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Cancel a recurring payment
 
         Args:
@@ -229,7 +225,7 @@ class CredExRecurringInterface(ABC):
         pass
 
     @abstractmethod
-    def get_recurring(self, payment_id: str) -> Tuple[bool, Dict[str, Any]]:
+    def get_recurring(self, payment_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Get details of a recurring payment
 
         Args:

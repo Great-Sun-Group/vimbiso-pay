@@ -3,7 +3,8 @@ import logging
 from typing import Any, Dict, Tuple
 
 from core.config.state_manager import StateManager as CoreStateManager
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 
 logger = logging.getLogger(__name__)

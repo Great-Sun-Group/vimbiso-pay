@@ -2,7 +2,8 @@
 import logging
 from typing import Any
 
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 from core.utils.state_validator import StateValidator
 from core.utils.utils import wrap_text

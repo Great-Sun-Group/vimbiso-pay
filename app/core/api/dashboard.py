@@ -2,13 +2,13 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 
 from .auth import login
-from .base import (BASE_URL, get_headers,
-                   handle_reset_and_init, make_api_request,
-                   process_api_response)
+from .base import (BASE_URL, get_headers, handle_reset_and_init,
+                   make_api_request, process_api_response)
 from .profile import (_structure_profile_data, handle_successful_refresh,
                       update_profile_from_response)
 

@@ -2,6 +2,33 @@
 
 A server that facilitates financial transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in secure WhatsApp and SMS chats.
 
+## Core Architecture
+
+The system follows these key principles:
+
+1. **State-Based Design**
+- All operations go through state_manager
+- Credentials exist ONLY in state
+- No direct passing of sensitive data
+- State validation through updates
+
+2. **Pure Functions**
+- Services use stateless functions
+- No stored instance variables
+- No service-level state
+- Clear input/output contracts
+
+3. **Single Source of Truth**
+- Member ID ONLY at top level
+- Channel info ONLY at top level
+- JWT token ONLY in state
+- No credential duplication
+
+For detailed implementation patterns, see:
+- [Service Architecture](docs/service-architecture.md) - Core service patterns and best practices
+- [API Integration](docs/api-integration.md) - API interaction patterns and state management
+- [State Management](docs/state-management.md) - State validation and flow control
+
 ## Documentation
 - [Standardization](docs/standardization.md) - Summary of centralized solution for state, flow, and error management.
 - [State Management](docs/state-management.md) - Conversation and session management
@@ -72,6 +99,13 @@ Usage:
 
 ## Core Features
 
+### Service Layer
+- State-based service architecture
+- Pure function implementation
+- Single source of truth enforcement
+- Consistent error handling
+- Clear service boundaries
+
 ### WhatsApp Interface
 - Interactive menus and buttons
 - Form-based data collection
@@ -82,6 +116,10 @@ Usage:
 - Custom message templates
 
 ### Financial Operations
+- State-validated transactions
+- Credential management through state
+- Flow-based operation handling
+- Consistent error handling
 - Secured credex transactions with immediate settlement
 - Unsecured credex with configurable due dates
 - Multi-tier account system:
@@ -93,6 +131,10 @@ Usage:
 - Pending offers management
 
 ### API & Integration
+- State-based API integration
+- Credential extraction only when needed
+- Flow state management
+- Consistent error handling
 - Direct integration with CredEx core API
 - Webhook support for real-time updates:
   - Company updates
@@ -106,6 +148,10 @@ Usage:
 - Type-safe request/response handling
 
 ### Security
+- State-based credential management
+- No credential duplication
+- Flow state validation
+- Consistent error handling
 - JWT authentication
 - Rate limiting
 - Input validation
@@ -114,6 +160,29 @@ Usage:
 - Request payload validation
 
 ## Development Tools
+
+### Core Patterns
+```python
+# CORRECT - Extract credentials only when needed
+jwt_token = state_manager.get("jwt_token")
+if jwt_token:
+    headers["Authorization"] = f"Bearer {jwt_token}"
+
+# WRONG - Store credentials in variables
+token = state_manager.get("jwt_token")  # Don't store!
+make_request(token)  # Don't pass credentials!
+
+# CORRECT - Update through state_manager
+state_manager.update_state({
+    "flow_data": {
+        "data": response.json()
+    }
+})
+
+# WRONG - Transform state manually
+data = transform_response(response)  # Don't transform!
+state_manager.update_state({"data": data})
+```
 
 ### Mock WhatsApp Interface
 Test the WhatsApp bot without real WhatsApp credentials:

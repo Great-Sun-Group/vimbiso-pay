@@ -4,7 +4,8 @@ from typing import Any, Dict
 
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 
 logger = logging.getLogger(__name__)
@@ -107,7 +108,7 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
             else:
                 # CredEx-related flows (offer, accept, decline, cancel)
                 logger.debug(f"Getting credex flow handler: {flow_type}")
-                from ...handlers.credex.flows import offer, action
+                from ...handlers.credex.flows import action, offer
                 if flow_type == "offer":
                     handler_func = offer.process_offer_step
                 else:

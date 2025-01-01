@@ -3,7 +3,8 @@ import logging
 from typing import Any, Dict, Optional
 
 from core.utils.exceptions import StateException
-from core.utils.error_handler import ErrorHandler, ErrorContext
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from ...types import WhatsAppMessage
 from ..member.dashboard import handle_dashboard_display
 

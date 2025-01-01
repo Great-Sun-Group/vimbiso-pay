@@ -2,10 +2,12 @@
 import logging
 from typing import Any, Dict, Optional
 
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
-from .messages import (create_initial_prompt, create_handle_prompt,
-                       create_confirmation_prompt)
+
+from .messages import (create_confirmation_prompt, create_handle_prompt,
+                       create_initial_prompt)
 from .transformers import transform_amount, transform_handle
 
 logger = logging.getLogger(__name__)

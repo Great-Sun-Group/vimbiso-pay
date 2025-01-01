@@ -5,7 +5,8 @@ from typing import Any, Dict, Union
 from core.config.config import GREETINGS
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 
 logger = logging.getLogger(__name__)

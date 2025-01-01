@@ -1,269 +1,276 @@
 # API Integration
 
-## Overview
+## Core Principles
 
-VimbisoPay integrates with external APIs using a simplified service architecture that emphasizes:
-- Clear service boundaries
-- Minimal complexity
-- Consistent patterns
-- Easy maintenance
+1. **State-Based Integration**
+- All API calls go through state_manager
+- Credentials exist ONLY in state
+- Extract credentials only when needed
+- Validate through state updates
 
-## Core Services
+2. **Single Source of Truth**
+- Member ID ONLY at top level
+- Channel info ONLY at top level
+- JWT token ONLY in state
+- No credential duplication
 
-### Base Configuration
+3. **Pure Functions**
+- Stateless service functions
+- No stored credentials
+- No instance variables
+- Clear contracts
+
+## Implementation
+
+### 1. Base Request Handler
 ```python
-@dataclass
-class CredExConfig:
-    """Configuration for CredEx service"""
-    base_url: str
-    client_api_key: str
-    default_headers: dict
+def make_credex_request(
+    group: str,
+    action: str,
+    method: str = "POST",
+    payload: Dict[str, Any] = None,
+    state_manager: Any = None
+) -> requests.Response:
+    """Make API request through state validation"""
+    # Get endpoint info
+    path = CredExEndpoints.get_path(group, action)
 
-    @classmethod
-    def from_env(cls) -> "CredExConfig":
-        """Create from environment"""
-        return cls(
-            base_url=config("MYCREDEX_APP_URL"),
-            client_api_key=config("CLIENT_API_KEY"),
-            default_headers={
-                "Content-Type": "application/json",
-                "x-client-api-key": config("CLIENT_API_KEY")
+    # Let StateManager validate through flow state update
+    state_manager.update_state({
+        "flow_data": {
+            "flow_type": group,
+            "step": 1,
+            "current_step": action,
+            "data": {
+                "request": {
+                    "method": method,
+                    "payload": payload
+                }
             }
-        )
-```
-
-### Endpoint Management
-```python
-class CredExEndpoints:
-    """CredEx API endpoints with logical grouping"""
-
-    ENDPOINTS = {
-        'auth': {
-            'login': {'path': 'login', 'requires_auth': False},
-            'register': {'path': 'onboardMember', 'requires_auth': False}
-        },
-        'member': {
-            'validate_account_handle': {'path': 'getAccountByHandle'},
-            'get_dashboard': {'path': 'getDashboard'}
-        },
-        'credex': {
-            'create': {'path': 'createCredex'},
-            'accept': {'path': 'acceptCredex'},
-            'decline': {'path': 'declineCredex'},
-            'get': {'path': 'getCredex'}
         }
-    }
+    })
 
-    @classmethod
-    def get_path(cls, group: str, action: str) -> str:
-        """Get endpoint path"""
-        if group in cls.ENDPOINTS and action in cls.ENDPOINTS[group]:
-            return cls.ENDPOINTS[group][action]['path']
-        raise ValueError(f"Invalid endpoint: {group}/{action}")
+    # Extract credentials from state ONLY when needed
+    jwt_token = state_manager.get("jwt_token")
+    if jwt_token:
+        headers["Authorization"] = f"Bearer {jwt_token}"
 
-    @classmethod
-    def requires_auth(cls, group: str, action: str) -> bool:
-        """Check if endpoint requires authentication"""
-        if group in cls.ENDPOINTS and action in cls.ENDPOINTS[group]:
-            return cls.ENDPOINTS[group][action].get('requires_auth', True)
-        raise ValueError(f"Invalid endpoint: {group}/{action}")
+    # For auth endpoints, ensure phone from state
+    if group == 'auth' and action == 'login':
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise ConfigurationException("Missing channel identifier")
+        payload = {"phone": channel["identifier"]}
+
+    # Make request
+    return requests.request(method, url, headers=headers, json=payload)
 ```
 
-### Base Service
+### 2. Service Implementation
 ```python
-class BaseCredExService:
-    """Base service with core functionality"""
+def handle_login(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Handle login through state validation"""
+    try:
+        # Initial login just needs phone number
+        success, result = auth_login(state_manager)
+        if not success:
+            return False, result
 
-    def _make_request(
-        self,
-        group: str,
-        action: str,
-        payload: Optional[Dict] = None
-    ) -> requests.Response:
-        """Make API request using endpoint groups"""
-        path = CredExEndpoints.get_path(group, action)
-        requires_auth = CredExEndpoints.requires_auth(group, action)
+        # Extract auth data from response
+        data = result.get("data", {})
+        action = data.get("action", {})
 
-        url = self.config.get_url(path)
-        headers = self.config.get_headers(
-            self._jwt_token if requires_auth else None
-        )
-
-        return requests.request("POST", url, headers=headers, json=payload)
-```
-
-## Service Implementation
-
-### 1. Authentication Service
-```python
-class CredExAuthService(BaseCredExService):
-    """Authentication through state validation"""
-
-    def login(self, state_manager: Any) -> None:
-        """Authenticate user through state update
-
-        Args:
-            state_manager: State manager instance
-
-        Raises:
-            StateException: If authentication fails
-        """
-        # Let StateManager validate channel
-        channel_id = state_manager.get("channel")["identifier"]  # ONLY at top level
-
-        # Make API request (raises StateException if fails)
-        response = self._make_request(
-            'auth', 'login',
-            payload={"phone": channel_id}
-        )
-
-        # Let StateManager validate and store token
-        state_manager.update_state({
-            "jwt_token": response.json()["token"]  # ONLY in state
-        })
-```
-
-### 2. Member Service
-```python
-class CredExMemberService(BaseCredExService):
-    """Member operations through state validation"""
-
-    def get_dashboard(self, state_manager: Any) -> None:
-        """Get dashboard data through state update
-
-        Args:
-            state_manager: State manager instance
-
-        Raises:
-            StateException: If dashboard fetch fails
-        """
-        # Let StateManager validate channel
-        channel_id = state_manager.get("channel")["identifier"]  # ONLY at top level
-
-        # Make API request (raises StateException if fails)
-        response = self._make_request(
-            'member', 'get_dashboard',
-            payload={"phone": channel_id}
-        )
-
-        # Let StateManager validate and store dashboard
-        state_manager.update_state({
-            "flow_data": {
-                "dashboard": response.json()["data"]["dashboard"]
+        # Verify login succeeded
+        if action.get("type") != "MEMBER_LOGIN":
+            return False, {
+                "message": "Invalid login response"
             }
+
+        # Update complete member state
+        update_member_state(state_manager, result)
+
+        return True, result
+
+    except StateException as e:
+        logger.error(f"Login error: {str(e)}")
+        return False, {"message": str(e)}
+```
+
+### 3. State Updates
+```python
+def update_member_state(state_manager: Any, result: Dict[str, Any]) -> None:
+    """Update member state from API response"""
+    data = result.get("data", {})
+    action = data.get("action", {})
+    details = action.get("details", {})
+    dashboard = data.get("dashboard", {})
+
+    # Update complete state
+    if dashboard.get("member") or dashboard.get("accounts"):
+        state_manager.update_state({
+            # Auth data
+            "jwt_token": details.get("token"),
+            "authenticated": True,
+            "member_id": details.get("memberID"),
+            # Member data
+            "member_data": dashboard.get("member"),
+            # Account data
+            "accounts": dashboard.get("accounts", []),
+            "active_account_id": next(
+                (account["accountID"] for account in dashboard.get("accounts", [])
+                 if account["accountType"] == "PERSONAL"),
+                None
+            )
         })
 ```
 
-### 3. Offers Service
+## Common Patterns
+
+### 1. Credential Access
 ```python
-class CredExOffersService(BaseCredExService):
-    """Offer operations through state validation"""
+# CORRECT - Extract from state only when needed
+def make_api_call(state_manager: Any) -> None:
+    """Make API call through state validation"""
+    # Let StateManager validate through update
+    state_manager.update_state({
+        "flow_data": {
+            "step": "api_call"
+        }
+    })
 
-    def offer_credex(self, state_manager: Any) -> None:
-        """Create offer through state update
+    # Extract token ONLY when needed
+    jwt_token = state_manager.get("jwt_token")
+    if jwt_token:
+        headers["Authorization"] = f"Bearer {jwt_token}"
 
-        Args:
-            state_manager: State manager instance
+    # Make request with validated token
+    response = requests.post(url, headers=headers)
 
-        Raises:
-            StateException: If offer creation fails
-        """
-        # Let StateManager validate offer data
-        offer_data = state_manager.get("flow_data")["input"]["offer"]
+# WRONG - Store credentials in variables
+def make_api_call(state_manager: Any) -> None:
+    token = state_manager.get("jwt_token")  # Don't store!
+    make_request(token)  # Don't pass credentials!
+```
 
-        # Make API request (raises StateException if fails)
-        response = self._make_request(
-            'credex', 'create',
-            payload=offer_data
-        )
+### 2. Phone Number Access
+```python
+# CORRECT - Extract from state only when needed
+def handle_auth(state_manager: Any) -> None:
+    """Handle auth through state validation"""
+    # Let StateManager validate channel
+    channel = state_manager.get("channel")
+    if not channel or not channel.get("identifier"):
+        raise ConfigurationException("Missing channel identifier")
 
-        # Let StateManager validate and store response
-        state_manager.update_state({
-            "flow_data": {
-                "offer": response.json()["data"]["offer"]
-            }
-        })
+    # Use phone ONLY for this request
+    payload = {"phone": channel["identifier"]}
+    response = make_request(payload)
+
+# WRONG - Store phone in variables
+def handle_auth(state_manager: Any) -> None:
+    phone = state_manager.get("channel")["identifier"]  # Don't store!
+    make_auth_call(phone)  # Don't pass phone!
+```
+
+### 3. Response Handling
+```python
+# CORRECT - Update state with response
+def handle_response(state_manager: Any, response: Dict[str, Any]) -> None:
+    """Handle response through state validation"""
+    # Let StateManager validate response data
+    state_manager.update_state({
+        "flow_data": {
+            "response": response
+        }
+    })
+
+# WRONG - Transform response manually
+def handle_response(state_manager: Any, response: Dict[str, Any]) -> None:
+    data = transform_response(response)  # Don't transform!
+    state_manager.update_state({"data": data})
 ```
 
 ## Error Handling
 
-### 1. Response Format
+### 1. API Errors
 ```python
-{
-    "error": "Error description",
-    "details": {
-        "field": "Error details"
-    }
-}
+try:
+    # Make API request through state
+    response = make_credex_request(
+        'credex', 'create',
+        payload=payload,
+        state_manager=state_manager
+    )
+except Exception as e:
+    # Create error context
+    error_context = ErrorContext(
+        error_type="api",
+        message=str(e),
+        details={
+            "operation": "create_credex",
+            "payload": payload
+        }
+    )
+    # Let ErrorHandler handle error
+    return ErrorHandler.handle_error(
+        e,
+        state_manager,
+        error_context
+    )
 ```
 
-### 2. Error Handling
+### 2. State Errors
 ```python
-def make_request(self, group: str, action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Make API request with state validation
-
-    Args:
-        group: Endpoint group
-        action: Endpoint action
-        payload: Request payload
-
-    Returns:
-        API response data
-
-    Raises:
-        StateException: If request fails
-    """
-    # Make request (raises StateException if fails)
-    response = self._make_request(group, action, payload)
-
-    # Parse response (raises StateException if invalid)
-    data = response.json()
-    if not data.get("success"):
-        raise StateException(f"API error: {data.get('message')}")
-
-    return data
+try:
+    # Update state with response
+    state_manager.update_state({
+        "flow_data": {
+            "response": response.json()
+        }
+    })
+except Exception as e:
+    # Create error context
+    error_context = ErrorContext(
+        error_type="state",
+        message=str(e),
+        details={
+            "operation": "update_response",
+            "response": response.json()
+        }
+    )
+    # Let ErrorHandler handle error
+    return ErrorHandler.handle_error(
+        e,
+        state_manager,
+        error_context
+    )
 ```
 
 ## Best Practices
 
-1. **Service Design**
-   - Let StateManager validate
-   - NO manual validation
-   - NO error recovery
-   - NO state transformation
+1. **Credential Management**
+- Extract credentials only when needed
+- No storing credentials in variables
+- No passing credentials between functions
+- Let state_manager handle all credentials
 
-2. **Token Management**
-   - JWT token ONLY in state
-   - NO token duplication
-   - NO manual validation
-   - NO error recovery
+2. **State Updates**
+- Update state before API calls
+- Update state with responses
+- No manual state transformation
+- Let state_manager validate all updates
 
 3. **Error Handling**
-   - Let StateManager validate
-   - NO manual validation
-   - NO error recovery
-   - NO state fixing
-   - Clear error messages
-   - Log errors only
+- Use ErrorHandler for all errors
+- Provide clear error context
+- Include operation details
+- Let state_manager validate errors
 
-4. **State Integration**
-   - Member ID ONLY at top level
-   - Channel info ONLY at top level
-   - NO state duplication
-   - NO state transformation
-   - NO state passing
-   - NO manual validation
-
-## Environment Setup
-```bash
-# Core API Configuration
-MYCREDEX_APP_URL=https://api.example.com
-CLIENT_API_KEY=your-api-key
-
-# Redis Configuration
-REDIS_URL=redis://redis-cache:6379/0
-REDIS_STATE_URL=redis://redis-state:6379/0
-```
+4. **Response Processing**
+- Update state with raw responses
+- No manual response transformation
+- Let state_manager validate responses
+- Handle errors through ErrorHandler
 
 For more details on:
 - Service architecture: [Service Architecture](service-architecture.md)

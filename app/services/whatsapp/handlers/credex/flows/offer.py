@@ -2,10 +2,12 @@
 import logging
 from typing import Any, Dict
 
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 from services.credex.service import get_credex_service
-from .messages import (create_initial_prompt, create_handle_prompt,
+
+from .messages import (create_handle_prompt, create_initial_prompt,
                        create_offer_confirmation, create_success_message)
 
 logger = logging.getLogger(__name__)

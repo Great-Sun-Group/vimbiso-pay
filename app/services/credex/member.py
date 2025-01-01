@@ -56,7 +56,7 @@ def validate_account_handle(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         response = make_credex_request(
             'member', 'validate_account_handle',
             payload={"accountHandle": state_manager.get("handle")},
-            jwt_token=state_manager.get("jwt_token")
+            state_manager=state_manager
         )
 
         # Let StateManager validate response through update
@@ -93,7 +93,7 @@ def refresh_member_info(state_manager: Any) -> None:
         # Make API request (StateManager validates channel)
         response = make_credex_request(
             'auth', 'login',
-            payload={"phone": state_manager.get("channel")["identifier"]}
+            state_manager=state_manager
         )
 
         # Let StateManager validate response through update

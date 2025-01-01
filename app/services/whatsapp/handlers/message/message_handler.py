@@ -4,7 +4,8 @@ from typing import Any, Dict
 
 from core.messaging.types import Message
 from core.utils.exceptions import StateException
-from core.utils.error_handler import ErrorHandler, ErrorContext
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 
 from ... import auth_handlers as auth
 from ..member.display import handle_dashboard_display
