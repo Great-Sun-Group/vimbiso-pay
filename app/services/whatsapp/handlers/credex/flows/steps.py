@@ -105,6 +105,7 @@ def validate_step_input(state_manager: Any, step: str, input_data: Any, action: 
         # Store with standard structure and advance step
         success, error = state_manager.update_state({
             "flow_data": {
+                "flow_type": "offer",  # Set initial flow type
                 "step": 1,  # Advance to next step
                 "current_step": "handle",  # Move to handle step
                 "data": result
@@ -158,6 +159,7 @@ def validate_step_input(state_manager: Any, step: str, input_data: Any, action: 
         clean_data = cleanup_step_data(state_manager, "handle", {"handle": validated})
         success, error = state_manager.update_state({
             "flow_data": {
+                "flow_type": "offer",  # Ensure flow type stays as offer
                 "step": 2,  # Advance to next step
                 "current_step": "confirm",  # Move to confirm step
                 "data": clean_data
@@ -186,32 +188,37 @@ def validate_step_input(state_manager: Any, step: str, input_data: Any, action: 
         if not flow_data_dict.get("handle"):
             raise StateException("missing_handle")
 
-        # Transform and validate button input
-        button_id = transform_button_input(input_data, state_manager)
-        if not button_id or button_id not in ["confirm", "cancel"]:
-            raise StateException("invalid_button")
-        confirmed = button_id == "confirm"
+        # Only validate button input if provided
+        if input_data:
+            button_id = transform_button_input(input_data, state_manager)
+            if not button_id or button_id not in ["confirm", "cancel"]:
+                raise StateException("invalid_button")
+            confirmed = button_id == "confirm"
 
-        # Clean and update state
-        clean_data = cleanup_step_data(state_manager, "confirm", {"confirmed": confirmed})
-        success, error = state_manager.update_state({
-            "flow_data": {
-                "step": 2,
-                "current_step": "confirm" if not confirmed else "complete",
-                "data": clean_data
-            }
-        })
-        if not success:
-            logger.error(
-                "Failed to update flow state",
-                extra={
-                    "error": error,
-                    "confirmed": confirmed,
-                    "step": "confirm"
+            # Clean and update state
+            clean_data = cleanup_step_data(state_manager, "confirm", {"confirmed": confirmed})
+            success, error = state_manager.update_state({
+                "flow_data": {
+                    "flow_type": "offer",  # Ensure flow type stays as offer
+                    "step": 2,  # Keep at confirm step if not confirmed
+                    "current_step": "confirm" if not confirmed else "complete",
+                    "data": clean_data
                 }
-            )
-            raise StateException(f"Failed to update flow state: {error}")
-        return {"confirmed": confirmed}
+            })
+            if not success:
+                logger.error(
+                    "Failed to update flow state",
+                    extra={
+                        "error": error,
+                        "confirmed": confirmed,
+                        "step": "confirm"
+                    }
+                )
+                raise StateException(f"Failed to update flow state: {error}")
+            return {"confirmed": confirmed}
+        else:
+            # No input yet, just validate required data exists
+            return None
 
     elif step == "select" and action:
         if not input_data.startswith(f"{action}_"):

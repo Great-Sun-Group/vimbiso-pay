@@ -43,7 +43,7 @@ def transform_button_input(input_data: Union[str, Dict[str, Any]], state_manager
             step_id=current_step,
             details={
                 "input": input_data,
-                "flow_type": "offer",
+                "flow_type": flow_data.get("flow_type", "offer"),
                 "validation_type": "button",
                 "flow_data": flow_data
             }
@@ -66,7 +66,7 @@ def transform_button_input(input_data: Union[str, Dict[str, Any]], state_manager
             details={
                 "input": input_data,
                 "error": str(e),
-                "flow_type": "offer",
+                "flow_type": flow_data.get("flow_type", "offer"),
                 "validation_type": "button",
                 "flow_data": flow_data
             }
@@ -104,7 +104,7 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
                     step_id=current_step,
                     details={
                         "input": handle,
-                        "flow_type": "offer",
+                        "flow_type": flow_data.get("flow_type", "offer"),
                         "validation_type": "handle_format",
                         "flow_data": flow_data
                     }
@@ -127,7 +127,7 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
                 step_id=current_step,
                 details={
                     "input": handle,
-                    "flow_type": "offer",
+                    "flow_type": flow_data.get("flow_type", "offer"),
                     "validation_type": "handle_empty",
                     "flow_data": flow_data
                 }
@@ -152,7 +152,7 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
             details={
                 "input": handle,
                 "error": str(e),
-                "flow_type": "offer",
+                "flow_type": flow_data.get("flow_type", "offer"),
                 "validation_type": "handle",
                 "flow_data": flow_data
             }

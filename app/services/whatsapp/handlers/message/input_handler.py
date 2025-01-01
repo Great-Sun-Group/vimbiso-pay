@@ -37,6 +37,26 @@ def get_action(message_body: str, state_manager: Any = None, message_type: str =
             interactive = message.get("interactive", {}) if message else {}
             interactive_type = interactive.get("type")
 
+            # Check if we're in a flow first
+            try:
+                current_step = state_manager.get_current_step() if state_manager else None
+                if current_step:
+                    # In a flow - return empty string to let flow handler process it
+                    flow_type = state_manager.get_flow_type()
+                    logger.debug(f"In flow '{flow_type}' at step '{current_step}' - passing interactive input to flow")
+                    return ""
+            except Exception as e:
+                error_context = ErrorContext(
+                    error_type="state",
+                    message="Failed to check flow state. Please try again",
+                    details={
+                        "message_type": message_type,
+                        "error": str(e)
+                    }
+                )
+                raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+
+            # Not in a flow - handle as menu action
             if interactive_type == "list_reply":
                 return interactive.get("list_reply", {}).get("id", "").lower()
             elif interactive_type == "button_reply":
@@ -98,13 +118,15 @@ def get_action(message_body: str, state_manager: Any = None, message_type: str =
 
 
 def extract_input_value(message_body: str, message_type: str = "text",
-                        message: Dict[str, Any] = None) -> Union[str, Dict[str, Any]]:
+                        message: Dict[str, Any] = None,
+                        state_manager: Any = None) -> Union[str, Dict[str, Any]]:
     """Extract input value from message
 
     Args:
         message_body: Raw message body text
         message_type: Type of message (text, interactive, etc)
         message: Full message data for interactive messages
+        state_manager: Optional state manager instance for flow state access
 
     Returns:
         Extracted input value
@@ -118,6 +140,26 @@ def extract_input_value(message_body: str, message_type: str = "text",
             interactive = message.get("interactive", {}) if message else {}
             interactive_type = interactive.get("type")
 
+            # Check if we're in a flow first
+            try:
+                current_step = state_manager.get_current_step() if state_manager else None
+                if current_step:
+                    # In a flow - pass through the full interactive data
+                    flow_type = state_manager.get_flow_type()
+                    logger.debug(f"In flow '{flow_type}' at step '{current_step}' - passing interactive data")
+                    return message.get("interactive", {})
+            except Exception as e:
+                error_context = ErrorContext(
+                    error_type="state",
+                    message="Failed to check flow state. Please try again",
+                    details={
+                        "message_type": message_type,
+                        "error": str(e)
+                    }
+                )
+                raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+
+            # Not in a flow - extract menu action
             if interactive_type == "list_reply":
                 return interactive.get("list_reply", {}).get("id", "")
             elif interactive_type == "button_reply":

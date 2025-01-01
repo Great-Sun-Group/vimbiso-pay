@@ -209,8 +209,8 @@ class StateValidator:
                 "value": float,
                 "denomination": str
             },
-            "handle": str,
-            "confirmed": bool
+            "handle": str
+            # confirmed field only required after button input
         },
         "select": {
             "credex_id": str,

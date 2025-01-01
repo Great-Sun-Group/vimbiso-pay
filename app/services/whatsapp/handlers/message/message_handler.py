@@ -28,7 +28,7 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
             # Check if we have a valid flow
             if current_flow in FLOW_HANDLERS:
                 # Extract input value and process step
-                input_value = extract_input_value(message_text, message_type, message)
+                input_value = extract_input_value(message_text, message_type, message, state_manager)
                 logger.debug(f"Processing flow input: '{input_value}' for step '{current_step}'")
 
                 try:

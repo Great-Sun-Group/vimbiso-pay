@@ -111,19 +111,29 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
             if not input_data:
                 return create_message(channel_id, "Enter account 💳 handle:")
 
+            # Handle error message result
+            if isinstance(result, Message):
+                return result
+
             # Validate handle based on business rules
             validate_offer_handle(result["handle"], state_manager)
 
-            # Show confirmation with amount and handle using standard structure
+            # Show confirmation with amount and account details
             state = state_manager.get_flow_step_data()
+            accounts = state_manager.get("accounts") or []
+            target_account = next(
+                (acc for acc in accounts if acc["accountHandle"] == result["handle"]),
+                None
+            )
+            if not target_account:
+                raise StateException("account_not_found")
             amount_data = state.get("amount", {})
-            handle = result["handle"]
             formatted_amount = f"{amount_data.get('value')} {amount_data.get('denomination')}".strip()
             return create_message(
                 channel_id,
-                f"📝 Review your offer:\n"
+                f"*📝 Review your offer:*\n"
                 f"💸 Amount: {formatted_amount}\n"
-                f"💳 To: {handle}",
+                f"💳 To: {target_account['accountName']} ({target_account['accountHandle']})",
                 buttons=[
                     {"id": "confirm", "text": "✅ Confirm"},
                     {"id": "cancel", "text": "❌ Cancel"}
@@ -132,25 +142,35 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
 
         elif step == "confirm":
             if not input_data:
-                # Re-show confirmation with current data using standard structure
+                # Re-show confirmation with current data
                 state = state_manager.get_flow_step_data()
-                amount_data = state.get("amount", {})
+                accounts = state_manager.get("accounts") or []
                 handle = state.get("handle")
+                target_account = next(
+                    (acc for acc in accounts if acc["accountHandle"] == handle),
+                    None
+                )
+                if not target_account:
+                    raise StateException("account_not_found")
+                amount_data = state.get("amount", {})
                 formatted_amount = f"{amount_data.get('value')} {amount_data.get('denomination')}".strip()
-                # Re-show confirmation with buttons
                 return create_message(
                     channel_id,
-                    f"📝 Review your offer:\n"
+                    f"*📝 Review your offer:*\n"
                     f"💸 Amount: {formatted_amount}\n"
-                    f"💳 To: {handle}",
+                    f"💳 To: {target_account['accountName']} ({target_account['accountHandle']})",
                     buttons=[
                         {"id": "confirm", "text": "✅ Confirm"},
                         {"id": "cancel", "text": "❌ Cancel"}
                     ]
                 )
 
+            # Handle error message result
+            if isinstance(result, Message):
+                return result
+
             # Process confirmation result
-            if result["confirmed"]:
+            if result and result.get("confirmed"):
                 # Submit offer through credex service
                 credex_service = get_credex_service(state_manager)
                 success, response = credex_service["offer_credex"](state_manager)
@@ -164,7 +184,8 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
                 })
                 success, error = state_manager.update_state({
                     "flow_data": {
-                        "step": 3,
+                        "flow_type": "offer",  # Ensure flow type stays as offer
+                        "step": 3,  # Move to complete step
                         "current_step": "complete",
                         "data": clean_data
                     }
@@ -181,17 +202,23 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
 
                 return create_message(channel_id, "✅ Your request has been processed.")
 
-            # Not confirmed - show confirmation again using standard structure
+            # Not confirmed - show confirmation again
             state = state_manager.get_flow_step_data()
-            amount_data = state.get("amount", {})
+            accounts = state_manager.get("accounts") or []
             handle = state.get("handle")
+            target_account = next(
+                (acc for acc in accounts if acc["accountHandle"] == handle),
+                None
+            )
+            if not target_account:
+                raise StateException("account_not_found")
+            amount_data = state.get("amount", {})
             formatted_amount = f"{amount_data.get('value')} {amount_data.get('denomination')}".strip()
-            # Show confirmation with buttons again
             return create_message(
                 channel_id,
-                f"📝 Review your offer:\n"
+                f"*📝 Review your offer:*\n"
                 f"💸 Amount: {formatted_amount}\n"
-                f"💳 To: {handle}",
+                f"💳 To: {target_account['accountName']} ({target_account['accountHandle']})",
                 buttons=[
                     {"id": "confirm", "text": "✅ Confirm"},
                     {"id": "cancel", "text": "❌ Cancel"}
