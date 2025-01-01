@@ -140,6 +140,10 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
                 ]
             )
 
+        elif step == "complete":
+            # Just return success message for complete step
+            return create_message(channel_id, "✅ Your offer has been sent.")
+
         elif step == "confirm":
             if not input_data:
                 # Re-show confirmation with current data
@@ -171,9 +175,20 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
 
             # Process confirmation result
             if result and result.get("confirmed"):
-                # Submit offer through credex service
+                # Get offer data from flow state
+                flow_data = state_manager.get_flow_step_data()
+                if not flow_data or not flow_data.get("data"):
+                    raise StateException("missing_flow_data")
+
+                # Extract offer data
+                offer_data = {
+                    "amount": flow_data["data"]["amount"],
+                    "handle": flow_data["data"]["handle"]
+                }
+
+                # Submit through service layer
                 credex_service = get_credex_service(state_manager)
-                success, response = credex_service["offer_credex"](state_manager)
+                success, response = credex_service["offer_credex"](offer_data)
                 if not success:
                     raise StateException("offer_creation_failed")
 

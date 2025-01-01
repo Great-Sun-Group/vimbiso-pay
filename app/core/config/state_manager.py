@@ -134,54 +134,46 @@ class StateManager:
                 # Get current flow data
                 current_flow = self.get("flow_data") or {}
 
+                # Start with current flow state
+                new_flow = current_flow.copy()
+
                 # Handle empty flow_data
                 if not flow_data:
                     new_flow = {}
                 else:
-                    new_flow = {}
-                    # Get current flow type
-                    flow_type = flow_data.get("flow_type", current_flow.get("flow_type"))
-                    if not flow_type:
+                    # Update flow type if provided
+                    if "flow_type" in flow_data:
+                        new_flow["flow_type"] = flow_data["flow_type"]
+                    elif not new_flow.get("flow_type"):
                         raise StateException("flow_type is required")
 
-                    # Get step info
-                    step = flow_data.get("step")
-                    current_step = flow_data.get("current_step")
+                    # Update step info if provided
+                    if "step" in flow_data:
+                        new_flow["step"] = flow_data["step"]
+                    if "current_step" in flow_data:
+                        new_flow["current_step"] = flow_data["current_step"]
 
-                    # If step or current_step changes, clean old data
-                    if (step is not None and step != current_flow.get("step")) or \
-                       (current_step is not None and current_step != current_flow.get("current_step")):
-                        # New step - only keep required previous data
-                        new_flow["flow_type"] = flow_type
-                        new_flow["step"] = step if step is not None else current_flow.get("step", 0)
-                        new_flow["current_step"] = current_step if current_step is not None else current_flow.get("current_step", "")
-
-                        # Clean data based on step requirements
-                        if current_step in StateValidator.STEP_DATA_FIELDS:
-                            required_fields = StateValidator.STEP_DATA_FIELDS[current_step]
-                            old_data = current_flow.get("data", {})
-                            new_data = {}
-                            # Keep only required fields from previous step
-                            for field in required_fields:
-                                if field in old_data:
-                                    new_data[field] = old_data[field]
-                            new_flow["data"] = new_data
-                    else:
-                        # Same step - preserve current flow state
-                        new_flow["flow_type"] = flow_type
-                        new_flow["step"] = current_flow.get("step", 0)
-                        new_flow["current_step"] = current_flow.get("current_step", "")
-                        if current_flow.get("data"):
-                            new_flow["data"] = current_flow["data"]
-
-                    # Update with new data if provided
+                    # Update data if provided
                     if "data" in flow_data:
                         if not isinstance(flow_data["data"], dict):
                             raise StateException("flow_data.data must be a dictionary")
+                        # Merge new data with existing
                         new_flow["data"] = {
                             **(new_flow.get("data", {})),
                             **flow_data["data"]
                         }
+
+                    # Clean data based on step requirements if step changed
+                    if ("step" in flow_data or "current_step" in flow_data) and \
+                       new_flow.get("current_step") in StateValidator.STEP_DATA_FIELDS:
+                        required_fields = StateValidator.STEP_DATA_FIELDS[new_flow["current_step"]]
+                        old_data = new_flow.get("data", {})
+                        clean_data = {}
+                        # Keep only required fields
+                        for field in required_fields:
+                            if field in old_data:
+                                clean_data[field] = old_data[field]
+                        new_flow["data"] = clean_data
 
                 # Validate flow data structure
                 validation = StateValidator._validate_flow_data(new_flow, self._state)

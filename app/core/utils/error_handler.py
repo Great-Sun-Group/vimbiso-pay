@@ -344,28 +344,61 @@ class ErrorHandler:
                 }
             )
 
-            # Return system error response
-            context = ErrorContext(
+            # Create system error context
+            system_context = ErrorContext(
                 "system",
                 cls.ERROR_MESSAGES["system"]["generic"],
-                details={"handler_error": str(e)}
+                details={
+                    "flow_type": "offer",
+                    "error": str(e)
+                }
             )
 
-            if return_message:
-                return Message(
-                    recipient=MessageRecipient(
-                        channel_id=ChannelIdentifier(
-                            channel=ChannelType.WHATSAPP,
-                            value=state_manager.get("channel")["identifier"]
-                        )
-                    ),
-                    content=TextContent(
-                        body=cls.format_error_message(context.message)
-                    ),
-                    metadata={"error": "system_error"}
-                )
+            try:
+                # Update error state
+                cls.update_error_state(state_manager, system_context)
 
-            return False, cls.create_error_response(context)
+                if return_message:
+                    return Message(
+                        recipient=MessageRecipient(
+                            channel_id=ChannelIdentifier(
+                                channel=ChannelType.WHATSAPP,
+                                value=state_manager.get("channel")["identifier"]
+                            )
+                        ),
+                        content=TextContent(
+                            body=cls.format_error_message("Unable to start flow. Please try again")
+                        ),
+                        metadata={"error": "system_error"}
+                    )
+
+                return False, cls.create_error_response(system_context)
+
+            except Exception:
+                # Last resort - return basic error message when state update fails
+                if return_message:
+                    return Message(
+                        recipient=MessageRecipient(
+                            channel_id=ChannelIdentifier(
+                                channel=ChannelType.WHATSAPP,
+                                value=state_manager.get("channel")["identifier"]
+                            )
+                        ),
+                        content=TextContent(
+                            body=cls.format_error_message("❌ Unable to start flow. Please try again")
+                        )
+                    )
+
+                return False, {
+                    "data": {
+                        "action": {
+                            "type": "ERROR",
+                            "details": {
+                                "message": "Unable to start flow. Please try again"
+                            }
+                        }
+                    }
+                }
 
 
 def handle_api_error(error: Exception) -> Response:

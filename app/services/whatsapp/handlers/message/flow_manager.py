@@ -62,7 +62,7 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
         state_update = {
             "flow_data": {
                 "flow_type": flow_type,
-                "step": 0,  # Must be int for validation
+                "step": 1,  # Steps start at 1 to match validation
                 "current_step": "amount" if flow_type == "offer" else "start",
                 "data": {}
             }

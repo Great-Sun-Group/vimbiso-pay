@@ -20,16 +20,22 @@ def validate_step_sequence(state_manager: Any, step: str) -> None:
     if not flow_data:
         raise StateException("missing_flow_data")
 
-    # Define valid sequence
-    STEPS = ["amount", "handle", "confirm"]
+    # Define valid sequence including complete
+    STEPS = ["amount", "handle", "confirm", "complete"]
     current_step = flow_data.get("current_step")
     step_num = flow_data.get("step", 0)
 
-    # Validate step matches sequence
-    if step_num >= len(STEPS) or STEPS[step_num] != step:
+    # Special handling for complete step
+    if current_step == "complete":
+        if step != "complete" or step_num != 3:
+            raise StateException("invalid_complete_step")
+        return
+
+    # Validate step matches sequence for non-complete steps
+    if step_num >= len(STEPS) - 1 or STEPS[step_num] != step:  # -1 to exclude complete
         raise StateException("invalid_step_sequence")
 
-    # Validate current step matches
+    # Validate current step matches for non-complete steps
     if current_step != step:
         raise StateException("invalid_current_step")
 
@@ -197,11 +203,15 @@ def validate_step_input(state_manager: Any, step: str, input_data: Any, action: 
 
             # Clean and update state
             clean_data = cleanup_step_data(state_manager, "confirm", {"confirmed": confirmed})
+            # Update step number based on confirmation
+            next_step = 2 if not confirmed else 3  # Advance to step 3 for complete
+            next_step_name = "confirm" if not confirmed else "complete"
+
             success, error = state_manager.update_state({
                 "flow_data": {
                     "flow_type": "offer",  # Ensure flow type stays as offer
-                    "step": 2,  # Keep at confirm step if not confirmed
-                    "current_step": "confirm" if not confirmed else "complete",
+                    "step": next_step,  # Advance step number with current_step
+                    "current_step": next_step_name,
                     "data": clean_data
                 }
             })

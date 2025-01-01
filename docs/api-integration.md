@@ -34,21 +34,9 @@ def make_credex_request(
     """Make API request through state validation"""
     # Get endpoint info
     path = CredExEndpoints.get_path(group, action)
-
-    # Let StateManager validate through flow state update
-    state_manager.update_state({
-        "flow_data": {
-            "flow_type": group,
-            "step": 1,
-            "current_step": action,
-            "data": {
-                "request": {
-                    "method": method,
-                    "payload": payload
-                }
-            }
-        }
-    })
+    config = CredExConfig.from_env()
+    url = config.get_url(path)
+    headers = config.get_headers()
 
     # Extract credentials from state ONLY when needed
     jwt_token = state_manager.get("jwt_token")
@@ -62,37 +50,39 @@ def make_credex_request(
             raise ConfigurationException("Missing channel identifier")
         payload = {"phone": channel["identifier"]}
 
-    # Make request
+    # Make request (implementation details stay in service layer)
     return requests.request(method, url, headers=headers, json=payload)
 ```
 
 ### 2. Service Implementation
 ```python
-def handle_login(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Handle login through state validation"""
+def handle_offer(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    """Handle offer creation through state validation"""
     try:
-        # Initial login just needs phone number
-        success, result = auth_login(state_manager)
+        # Get validated business data from flow state
+        flow_data = state_manager.get_flow_step_data()
+        amount_data = flow_data.get("amount", {})
+        handle = flow_data.get("handle")
+
+        # Make API call (service layer handles implementation details)
+        success, result = create_credex_offer(state_manager, amount_data, handle)
         if not success:
             return False, result
 
-        # Extract auth data from response
-        data = result.get("data", {})
-        action = data.get("action", {})
-
-        # Verify login succeeded
-        if action.get("type") != "MEMBER_LOGIN":
-            return False, {
-                "message": "Invalid login response"
+        # Update flow state with business response data
+        state_manager.update_state({
+            "flow_data": {
+                "step": "complete",
+                "data": {
+                    "offer_id": result.get("data", {}).get("offer", {}).get("id")
+                }
             }
-
-        # Update complete member state
-        update_member_state(state_manager, result)
+        })
 
         return True, result
 
     except StateException as e:
-        logger.error(f"Login error: {str(e)}")
+        logger.error(f"Offer error: {str(e)}")
         return False, {"message": str(e)}
 ```
 
@@ -174,20 +164,29 @@ def handle_auth(state_manager: Any) -> None:
 
 ### 3. Response Handling
 ```python
-# CORRECT - Update state with response
-def handle_response(state_manager: Any, response: Dict[str, Any]) -> None:
-    """Handle response through state validation"""
-    # Let StateManager validate response data
+# CORRECT - Update flow state with business data
+def handle_offer_response(state_manager: Any, response: Dict[str, Any]) -> None:
+    """Handle offer response through state validation"""
+    # Extract business data from response
+    offer_data = response.get("data", {}).get("offer", {})
+
+    # Update flow state with business data only
     state_manager.update_state({
         "flow_data": {
-            "response": response
+            "data": {
+                "offer_id": offer_data.get("id"),
+                "status": offer_data.get("status")
+            }
         }
     })
 
-# WRONG - Transform response manually
-def handle_response(state_manager: Any, response: Dict[str, Any]) -> None:
-    data = transform_response(response)  # Don't transform!
-    state_manager.update_state({"data": data})
+# WRONG - Store raw response in flow state
+def handle_offer_response(state_manager: Any, response: Dict[str, Any]) -> None:
+    state_manager.update_state({
+        "flow_data": {
+            "response": response  # Don't store raw response!
+        }
+    })
 ```
 
 ## Error Handling
@@ -222,20 +221,26 @@ except Exception as e:
 ### 2. State Errors
 ```python
 try:
-    # Update state with response
+    # Extract business data from response
+    offer_data = response.json().get("data", {}).get("offer", {})
+
+    # Update flow state with business data only
     state_manager.update_state({
         "flow_data": {
-            "response": response.json()
+            "data": {
+                "offer_id": offer_data.get("id"),
+                "status": offer_data.get("status")
+            }
         }
     })
 except Exception as e:
-    # Create error context
+    # Create error context with business data
     error_context = ErrorContext(
         error_type="state",
         message=str(e),
         details={
-            "operation": "update_response",
-            "response": response.json()
+            "operation": "update_offer_state",
+            "offer_id": offer_data.get("id")  # Only business data
         }
     )
     # Let ErrorHandler handle error
@@ -267,9 +272,9 @@ except Exception as e:
 - Let state_manager validate errors
 
 4. **Response Processing**
-- Update state with raw responses
-- No manual response transformation
-- Let state_manager validate responses
+- Extract business data from responses
+- Store only business data in flow state
+- Keep implementation details in service layer
 - Handle errors through ErrorHandler
 
 For more details on:

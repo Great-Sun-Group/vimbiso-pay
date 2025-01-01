@@ -212,6 +212,15 @@ class StateValidator:
             "handle": str
             # confirmed field only required after button input
         },
+        "complete": {
+            "amount": {
+                "value": float,
+                "denomination": str
+            },
+            "handle": str,
+            "confirmed": bool,
+            "offer_id": str  # Required after successful creation
+        },
         "select": {
             "credex_id": str,
             "action_type": str
@@ -291,12 +300,17 @@ class StateValidator:
                         error_message=f"Invalid step '{current_step}' for flow type '{flow_type}'"
                     )
 
-                # Validate step number matches sequence
+                # Special case: Allow step 0 for initialization
+                if step_num == 0 and current_step == valid_steps[0]:
+                    return ValidationResult(is_valid=True)
+
+                # For non-zero steps, validate step number matches position
                 step_index = valid_steps.index(current_step)
-                if step_num != step_index:
+                expected_step = step_index + 1  # Steps start at 1
+                if step_num != expected_step:
                     return ValidationResult(
                         is_valid=False,
-                        error_message=f"Step number {step_num} does not match current step '{current_step}'"
+                        error_message=f"Step number {step_num} does not match current step '{current_step}' (expected {expected_step})"
                     )
 
         # Validate data field if present

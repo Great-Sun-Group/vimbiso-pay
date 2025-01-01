@@ -19,22 +19,6 @@ def make_credex_request(
     """Make an HTTP request to the CredEx API using endpoint groups"""
     # Get endpoint info
     path = CredExEndpoints.get_path(group, action)
-
-    # Let StateManager validate through flow state update
-    state_manager.update_state({
-        "flow_data": {
-            "flow_type": group,  # StateManager validates auth requirements
-            "step": 1,
-            "current_step": action,
-            "data": {
-                "request": {
-                    "method": method,
-                    "payload": payload
-                }
-            }
-        }
-    })
-
     # Build request
     config = CredExConfig.from_env()
     url = config.get_url(path)
@@ -45,12 +29,12 @@ def make_credex_request(
     if jwt_token:
         headers["Authorization"] = f"Bearer {jwt_token}"
 
-    # For auth endpoints, ensure phone number is taken from state
+    # For auth endpoints, get phone directly from state
     if group == 'auth' and action == 'login':
         channel = state_manager.get("channel")
         if not channel or not channel.get("identifier"):
             raise ConfigurationException("Missing channel identifier in state")
-        # Override payload with phone from state
+        # Use phone directly from state
         payload = {"phone": channel["identifier"]}
 
     try:
