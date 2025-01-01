@@ -36,7 +36,7 @@ def handle_error(state_manager: Any, operation: str, error: Exception) -> Messag
         error_context = ErrorContext(
             error_type="flow",
             message=f"{operation} failed: {str(error)}",
-            step_id=current_step,
+            step_id=current_step or "login",  # Default to login if no current step
             details={
                 "flow_type": flow_type or "auth",
                 "operation": operation,
@@ -66,13 +66,15 @@ def handle_error(state_manager: Any, operation: str, error: Exception) -> Messag
         return handle_registration(state_manager)
 
     except Exception as e:
+        # System errors should not have step_id
         error_context = ErrorContext(
             error_type="system",
             message="Failed to handle error",
             details={
                 "operation": operation,
                 "original_error": str(error),
-                "handler_error": str(e)
+                "handler_error": str(e),
+                "flow_type": state_manager.get_flow_type()  # Add flow context for debugging
             }
         )
         logger.error(
@@ -170,7 +172,7 @@ def handle_hi(state_manager: Any) -> Message:
         error_context = ErrorContext(
             error_type="flow",
             message=str(e),
-            step_id=state_manager.get_current_step(),
+            step_id="login",  # Default to login step for auth errors
             details={
                 "flow_type": "auth",
                 "operation": "greeting",
@@ -183,7 +185,7 @@ def handle_hi(state_manager: Any) -> Message:
         error_context = ErrorContext(
             error_type="flow",
             message="Failed to handle greeting",
-            step_id=state_manager.get_current_step(),
+            step_id="login",  # Default to login step for auth errors
             details={
                 "flow_type": "auth",
                 "operation": "greeting",

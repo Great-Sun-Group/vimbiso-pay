@@ -72,20 +72,25 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
         success, error = state_manager.update_state(state_update)
         logger.debug(f"Flow state initialization result - success: {success}, error: {error}")
         if not success:
+            # Get current step for error context
+            current_step = state_update["flow_data"]["current_step"]
             error_context = ErrorContext(
-                error_type="state",
-                message="Failed to initialize flow. Please try again",
+                error_type="flow",  # Use flow type for validation errors
+                message=str(error),  # Use actual validation error
+                step_id=current_step,  # Include step_id
                 details={
                     "flow_type": flow_type,
+                    "step": current_step,
                     "error": error
                 }
             )
-            error_response = ErrorHandler.handle_error(
+            # Use flow error handler for proper message
+            return ErrorHandler.handle_flow_error(
                 StateException(error),
                 state_manager,
-                error_context
+                error_context,
+                return_message=True
             )
-            raise StateException(error_response["data"]["action"]["details"]["message"])
 
         # Log flow start attempt
         logger.info(
@@ -118,37 +123,50 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
                 handler_func = getattr(handler_module, handler_name)
                 logger.debug(f"Got handler function: {handler_func}")
         except Exception as e:
+            # Get current step for error context
+            current_step = state_update["flow_data"]["current_step"]
             error_context = ErrorContext(
-                error_type="system",  # Use system type for import errors
+                error_type="flow",  # Use flow type for all flow-related errors
                 message="Failed to load flow handler. Please try again",
+                step_id=current_step,  # Include step_id
                 details={
                     "flow_type": flow_type,
                     "handler": handler_name,
+                    "step": current_step,
                     "error": str(e)
                 }
             )
-            error_response = ErrorHandler.handle_error(e, state_manager, error_context)
-            raise StateException(error_response["data"]["action"]["details"]["message"])
+            # Use flow error handler for proper message
+            return ErrorHandler.handle_flow_error(
+                e,
+                state_manager,
+                error_context,
+                return_message=True
+            )
 
         try:
             # Initialize flow with first step
             result = handler_func(state_manager, state_update["flow_data"]["current_step"], None)
             if not result:
+                # Get current step for error context
+                current_step = state_update["flow_data"]["current_step"]
                 error_context = ErrorContext(
-                    error_type="system",  # Use system type for initialization errors
+                    error_type="flow",  # Use flow type for all flow-related errors
                     message="Failed to start flow. Please try again",
+                    step_id=current_step,  # Include step_id
                     details={
                         "flow_type": flow_type,
-                        "step": state_update["flow_data"]["current_step"],
+                        "step": current_step,
                         "error": "No initial message"
                     }
                 )
-                error_response = ErrorHandler.handle_error(
+                # Use flow error handler for proper message
+                return ErrorHandler.handle_flow_error(
                     StateException("No initial message"),
                     state_manager,
-                    error_context
+                    error_context,
+                    return_message=True
                 )
-                raise StateException(error_response["data"]["action"]["details"]["message"])
 
             # Log success
             logger.info(

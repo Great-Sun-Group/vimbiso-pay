@@ -33,10 +33,20 @@ def transform_button_input(input_data: Union[str, Dict[str, Any]], state_manager
         elif isinstance(input_data, str):
             return input_data.strip()
 
+        # Get current flow data
+        flow_data = state_manager.get("flow_data") or {}
+        current_step = flow_data.get("current_step", "confirm")
+
         error_context = ErrorContext(
-            error_type="input",
+            error_type="flow",
             message="Invalid button selection",
-            details={"input": input_data}
+            step_id=current_step,
+            details={
+                "input": input_data,
+                "flow_type": "offer",
+                "validation_type": "button",
+                "flow_data": flow_data
+            }
         )
         raise StateException(ErrorHandler.handle_error(
             StateException("Invalid button input"),
@@ -45,12 +55,20 @@ def transform_button_input(input_data: Union[str, Dict[str, Any]], state_manager
         ))
 
     except Exception as e:
+        # Get current flow data
+        flow_data = state_manager.get("flow_data") or {}
+        current_step = flow_data.get("current_step", "confirm")
+
         error_context = ErrorContext(
-            error_type="input",
+            error_type="flow",
             message="Invalid button selection",
+            step_id=current_step,
             details={
                 "input": input_data,
-                "error": str(e)
+                "error": str(e),
+                "flow_type": "offer",
+                "validation_type": "button",
+                "flow_data": flow_data
             }
         )
         raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
@@ -76,10 +94,20 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
             if interactive.get("type") == "text":
                 handle = interactive.get("text", {}).get("body", "")
             else:
+                # Get current flow data
+                flow_data = state_manager.get("flow_data") or {}
+                current_step = flow_data.get("current_step", "handle")
+
                 error_context = ErrorContext(
-                    error_type="input",
+                    error_type="flow",
                     message="Invalid handle format. Please provide a valid account handle",
-                    details={"input": handle}
+                    step_id=current_step,
+                    details={
+                        "input": handle,
+                        "flow_type": "offer",
+                        "validation_type": "handle_format",
+                        "flow_data": flow_data
+                    }
                 )
                 raise StateException(ErrorHandler.handle_error(
                     StateException("Invalid handle format"),
@@ -89,10 +117,20 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
 
         handle = handle.strip()
         if not handle:
+            # Get current flow data
+            flow_data = state_manager.get("flow_data") or {}
+            current_step = flow_data.get("current_step", "handle")
+
             error_context = ErrorContext(
-                error_type="input",
+                error_type="flow",
                 message="Handle cannot be empty. Please provide a valid account handle",
-                details={"input": handle}
+                step_id=current_step,
+                details={
+                    "input": handle,
+                    "flow_type": "offer",
+                    "validation_type": "handle_empty",
+                    "flow_data": flow_data
+                }
             )
             raise StateException(ErrorHandler.handle_error(
                 StateException("Empty handle"),
@@ -103,12 +141,20 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
         return handle
 
     except Exception as e:
+        # Get current flow data
+        flow_data = state_manager.get("flow_data") or {}
+        current_step = flow_data.get("current_step", "handle")
+
         error_context = ErrorContext(
-            error_type="input",
+            error_type="flow",
             message="Invalid account handle. Please provide a valid handle",
+            step_id=current_step,
             details={
                 "input": handle,
-                "error": str(e)
+                "error": str(e),
+                "flow_type": "offer",
+                "validation_type": "handle",
+                "flow_data": flow_data
             }
         )
         raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
@@ -155,12 +201,20 @@ def store_dashboard_data(state_manager: Any, response: Dict[str, Any]) -> None:
         logger.info(f"Successfully stored dashboard data for channel {state_manager.get('channel')['identifier']}")
 
     except Exception as e:
+        # Get current flow data
+        flow_data = state_manager.get("flow_data") or {}
+        current_step = flow_data.get("current_step", "complete")
+
         error_context = ErrorContext(
-            error_type="state",
+            error_type="flow",
             message="Failed to store dashboard data. Please try again",
+            step_id=current_step,
             details={
                 "response": response,
-                "error": str(e)
+                "error": str(e),
+                "flow_type": "offer",
+                "validation_type": "dashboard",
+                "flow_data": flow_data
             }
         )
         raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))

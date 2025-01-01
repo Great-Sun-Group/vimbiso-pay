@@ -32,9 +32,15 @@ def get_member_accounts(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             }
         }
 
-    except StateException:
-        # Re-raise StateException for proper error propagation
-        raise
+    except StateException as e:
+        # Re-raise with additional context
+        raise StateException(
+            str(e),
+            details={
+                "operation": "get_member_accounts",
+                "state": state_manager.get("flow_data")
+            }
+        )
 
 
 def validate_account_handle(handle: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
@@ -42,16 +48,23 @@ def validate_account_handle(handle: str, state_manager: Any) -> Tuple[bool, Dict
     try:
         # Make API request (StateManager validates jwt_token)
         response_data = make_credex_request(
-            'member', 'validate_account_handle',
+            'account', 'validate_account_handle',
             payload={"accountHandle": handle},
             state_manager=state_manager
         )
 
         return True, response_data
 
-    except StateException:
-        # Re-raise StateException for proper error propagation
-        raise
+    except StateException as e:
+        # Re-raise with additional context
+        raise StateException(
+            str(e),
+            details={
+                "operation": "validate_account_handle",
+                "handle": handle,
+                "state": state_manager.get("flow_data")
+            }
+        )
 
 
 def refresh_member_info(state_manager: Any) -> None:
@@ -86,6 +99,12 @@ def refresh_member_info(state_manager: Any) -> None:
 
         return None
 
-    except StateException:
-        # Re-raise StateException for proper error propagation
-        raise
+    except StateException as e:
+        # Re-raise with additional context
+        raise StateException(
+            str(e),
+            details={
+                "operation": "refresh_member_info",
+                "state": state_manager.get("flow_data")
+            }
+        )

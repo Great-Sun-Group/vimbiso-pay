@@ -6,12 +6,7 @@ from core.utils.exceptions import StateException
 from core.utils.state_validator import StateValidator
 
 from .config import atomic_state
-from .state_utils import (
-    _update_state_core,
-    update_flow_state,
-    update_flow_data,
-    advance_flow
-)
+from .state_utils import _update_state_core
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +70,9 @@ class StateManager:
                 logger.info("Validating existing state")
                 validation = StateValidator.validate_state(state_data)
                 if not validation.is_valid:
+                    # Only reset flow data on validation failure
                     logger.warning(f"Invalid state structure: {validation.error_message}")
-                    state_data = initial_state
+                    state_data["flow_data"] = {}
 
             logger.info(f"Successfully loaded state for channel {channel_id}: {state_data}")
             return state_data
@@ -129,7 +125,73 @@ class StateManager:
             if not isinstance(updates, dict):
                 raise StateException("Updates must be a dictionary")
 
-            # Create merged state for validation
+            # Handle flow data updates first
+            if "flow_data" in updates:
+                flow_data = updates["flow_data"]
+                if not isinstance(flow_data, dict):
+                    raise StateException("flow_data must be a dictionary")
+
+                # Get current flow data
+                current_flow = self.get("flow_data") or {}
+
+                # Handle empty flow_data
+                if not flow_data:
+                    new_flow = {}
+                else:
+                    new_flow = {}
+                    # Get current flow type
+                    flow_type = flow_data.get("flow_type", current_flow.get("flow_type"))
+                    if not flow_type:
+                        raise StateException("flow_type is required")
+
+                    # Get step info
+                    step = flow_data.get("step")
+                    current_step = flow_data.get("current_step")
+
+                    # If step or current_step changes, clean old data
+                    if (step is not None and step != current_flow.get("step")) or \
+                       (current_step is not None and current_step != current_flow.get("current_step")):
+                        # New step - only keep required previous data
+                        new_flow["flow_type"] = flow_type
+                        new_flow["step"] = step if step is not None else current_flow.get("step", 0)
+                        new_flow["current_step"] = current_step if current_step is not None else current_flow.get("current_step", "")
+
+                        # Clean data based on step requirements
+                        if current_step in StateValidator.STEP_DATA_FIELDS:
+                            required_fields = StateValidator.STEP_DATA_FIELDS[current_step]
+                            old_data = current_flow.get("data", {})
+                            new_data = {}
+                            # Keep only required fields from previous step
+                            for field in required_fields:
+                                if field in old_data:
+                                    new_data[field] = old_data[field]
+                            new_flow["data"] = new_data
+                    else:
+                        # Same step - preserve current flow state
+                        new_flow["flow_type"] = flow_type
+                        new_flow["step"] = current_flow.get("step", 0)
+                        new_flow["current_step"] = current_flow.get("current_step", "")
+                        if current_flow.get("data"):
+                            new_flow["data"] = current_flow["data"]
+
+                    # Update with new data if provided
+                    if "data" in flow_data:
+                        if not isinstance(flow_data["data"], dict):
+                            raise StateException("flow_data.data must be a dictionary")
+                        new_flow["data"] = {
+                            **(new_flow.get("data", {})),
+                            **flow_data["data"]
+                        }
+
+                # Validate flow data structure
+                validation = StateValidator._validate_flow_data(new_flow, self._state)
+                if not validation.is_valid:
+                    raise StateException(f"Invalid flow data: {validation.error_message}")
+
+                # Update atomically
+                return _update_state_core(self, {"flow_data": new_flow})
+
+            # Create merged state for direct updates
             merged_state = self._state.copy()
             for key, value in updates.items():
                 if isinstance(value, dict) and isinstance(merged_state.get(key), dict):
@@ -137,40 +199,12 @@ class StateManager:
                 else:
                     merged_state[key] = value
 
-            # Validate merged state
+            # Validate complete state
             validation = StateValidator.validate_state(merged_state)
             if not validation.is_valid:
-                raise StateException(f"Invalid update: {validation.error_message}")
+                raise StateException(f"Invalid state after update: {validation.error_message}")
 
-            # Validate critical fields are not being modified
-            if "channel" in updates:
-                raise StateException("Cannot modify channel - must only exist at top level")
-
-            # Detect update type and route to appropriate function
-            if "flow_data" in updates:
-                flow_data = updates["flow_data"]
-                if not isinstance(flow_data, dict):
-                    raise StateException("flow_data must be a dictionary")
-
-                # Check for flow state update
-                if all(k in flow_data for k in ["flow_type", "step", "current_step"]):
-                    return update_flow_state(
-                        self,
-                        flow_data["flow_type"],
-                        flow_data["step"],
-                        flow_data["current_step"]
-                    )
-
-                # Check for flow data update
-                elif "data" in flow_data and isinstance(flow_data["data"], dict):
-                    return update_flow_data(self, flow_data["data"])
-
-                # Check for flow advance
-                elif "next_step" in flow_data:
-                    data_updates = flow_data.get("data", {})
-                    return advance_flow(self, flow_data["next_step"], data_updates)
-
-            # Default to direct state update
+            # Update atomically
             return _update_state_core(self, updates)
 
         except StateException as e:

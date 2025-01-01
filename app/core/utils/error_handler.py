@@ -210,15 +210,23 @@ class ErrorHandler:
         state_manager.update_state(error_state)
 
     @classmethod
-    def handle_error(cls, error: Exception, state_manager: Any, step_id: Optional[str] = None) -> Dict[str, Any]:
+    def handle_error(cls, error: Exception, state_manager: Any, error_context: Optional[Union[ErrorContext, str]] = None) -> Dict[str, Any]:
         """Central error handling through state management
 
         This is the ONLY place errors should be handled.
         Components should let errors propagate up to here.
+
+        Args:
+            error: The exception to handle
+            state_manager: State manager instance
+            error_context: Either ErrorContext object or step_id string
         """
         try:
             # Get standardized error context
-            context = cls.get_error_context(error, step_id)
+            if isinstance(error_context, ErrorContext):
+                context = error_context
+            else:
+                context = cls.get_error_context(error, error_context)  # error_context is step_id string
 
             # Update error state through StateManager
             cls.update_error_state(state_manager, context)
@@ -230,7 +238,7 @@ class ErrorHandler:
                     "error_type": context.error_type,
                     "error_class": error.__class__.__name__,
                     "error_message": str(error),
-                    "step_id": step_id,
+                    "step_id": context.step_id,
                     "state": state_manager.get("flow_data"),
                     "details": context.details
                 }
@@ -264,32 +272,41 @@ class ErrorHandler:
         cls,
         state_manager: Any,
         error: Exception,
-        step_id: Optional[str] = None,
+        error_context: Optional[Union[ErrorContext, str]] = None,
         return_message: bool = False
     ) -> Union[Tuple[bool, Dict[str, Any]], Message]:
         """Handle flow-specific errors through state management
 
         Special handling for flow errors to support message responses.
         Components should still let errors propagate up.
+
+        Args:
+            state_manager: State manager instance
+            error: The exception to handle
+            error_context: Either ErrorContext object or step_id string
+            return_message: Whether to return Message object
         """
         try:
             # Get flow-specific error context
-            context = cls.get_error_context(error, step_id)
-            if context.error_type != "flow":
-                context.error_type = "flow"
-                context.message = cls.ERROR_MESSAGES["flow"]["generic"]
+            if isinstance(error_context, ErrorContext):
+                context = error_context
+            else:
+                context = cls.get_error_context(error, error_context)  # error_context is step_id string
+                if context.error_type != "flow":
+                    context.error_type = "flow"
+                    context.message = cls.ERROR_MESSAGES["flow"]["generic"]
 
             # Update error state
             cls.update_error_state(state_manager, context)
 
             # Log flow error with full context
             logger.error(
-                f"Flow error in step {step_id or 'unknown'}",
+                f"Flow error in step {context.step_id or 'unknown'}",
                 extra={
                     "error_type": "flow",
                     "error_class": error.__class__.__name__,
                     "error_message": str(error),
-                    "step_id": step_id,
+                    "step_id": context.step_id,
                     "state": state_manager.get("flow_data"),
                     "details": context.details
                 }
@@ -323,7 +340,7 @@ class ErrorHandler:
                 extra={
                     "handler_error": str(e),
                     "original_error": str(error),
-                    "step_id": step_id
+                    "step_id": context.step_id
                 }
             )
 

@@ -180,6 +180,44 @@ class StateValidator:
         "upgrade"      # Requires member to upgrade tier
     }
 
+    # Valid step sequences for each flow type
+    FLOW_STEPS = {
+        "offer": ["amount", "handle", "confirm", "complete"],
+        "accept": ["select", "confirm", "complete"],
+        "decline": ["select", "confirm", "complete"],
+        "cancel": ["select", "confirm", "complete"],
+        "upgrade": ["confirm", "complete"]
+    }
+
+    # Required data fields for each step
+    STEP_DATA_FIELDS = {
+        "amount": {
+            "amount": {
+                "value": float,
+                "denomination": str
+            }
+        },
+        "handle": {
+            "amount": {
+                "value": float,
+                "denomination": str
+            },
+            "handle": str
+        },
+        "confirm": {
+            "amount": {
+                "value": float,
+                "denomination": str
+            },
+            "handle": str,
+            "confirmed": bool
+        },
+        "select": {
+            "credex_id": str,
+            "action_type": str
+        }
+    }
+
     @classmethod
     def _validate_flow_data(cls, flow_data: Any, state: Dict[str, Any]) -> ValidationResult:
         """Validate flow data structure"""
@@ -240,6 +278,27 @@ class StateValidator:
                     error_message="current_step must be string"
                 )
 
+            # Validate step sequence
+            if flow_type in cls.FLOW_STEPS:
+                valid_steps = cls.FLOW_STEPS[flow_type]
+                current_step = flow_data["current_step"]
+                step_num = flow_data["step"]
+
+                # Validate step exists in sequence
+                if current_step not in valid_steps:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"Invalid step '{current_step}' for flow type '{flow_type}'"
+                    )
+
+                # Validate step number matches sequence
+                step_index = valid_steps.index(current_step)
+                if step_num != step_index:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"Step number {step_num} does not match current step '{current_step}'"
+                    )
+
         # Validate data field if present
         if "data" in flow_data:
             if not isinstance(flow_data["data"], dict):
@@ -247,6 +306,58 @@ class StateValidator:
                     is_valid=False,
                     error_message="flow_data.data must be a dictionary"
                 )
+
+            # Get current step for data validation
+            current_step = flow_data.get("current_step")
+            if current_step in cls.STEP_DATA_FIELDS:
+                required_fields = cls.STEP_DATA_FIELDS[current_step]
+                data = flow_data["data"]
+
+                # Skip validation for:
+                # 1. Initial step state (empty data at step 0)
+                # 2. Initial prompt (no data yet for current step)
+                # 3. State reset (flow_type change)
+                if (not data and flow_data.get("step", 0) == 0) or \
+                   flow_data.get("flow_type") != state.get("flow_data", {}).get("flow_type"):
+                    return ValidationResult(is_valid=True)
+
+                # Validate required fields and types
+                for field, field_spec in required_fields.items():
+                    # Skip validation for fields that belong to current step
+                    if field == current_step:
+                        continue
+
+                    if field not in data:
+                        return ValidationResult(
+                            is_valid=False,
+                            error_message=f"Missing required field '{field}' for step '{current_step}'"
+                        )
+
+                    # Validate nested structure
+                    if isinstance(field_spec, dict):
+                        if not isinstance(data[field], dict):
+                            return ValidationResult(
+                                is_valid=False,
+                                error_message=f"Field '{field}' must be a dictionary"
+                            )
+                        for sub_field, field_type in field_spec.items():
+                            if sub_field not in data[field]:
+                                return ValidationResult(
+                                    is_valid=False,
+                                    error_message=f"Missing required sub-field '{sub_field}' in '{field}'"
+                                )
+                            if not isinstance(data[field][sub_field], field_type):
+                                return ValidationResult(
+                                    is_valid=False,
+                                    error_message=f"Field '{field}.{sub_field}' must be {field_type.__name__}"
+                                )
+                    else:
+                        # Direct type validation
+                        if not isinstance(data[field], field_spec):
+                            return ValidationResult(
+                                is_valid=False,
+                                error_message=f"Field '{field}' must be {field_spec.__name__}"
+                            )
 
             # Validate login response structure
             data = flow_data["data"]

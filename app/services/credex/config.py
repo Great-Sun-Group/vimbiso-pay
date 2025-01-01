@@ -23,15 +23,15 @@ class CredExConfig:
         base_url = config("MYCREDEX_APP_URL")
         if not base_url:
             raise ConfigurationException(
-                subtype="missing",
-                message="MYCREDEX_APP_URL environment variable is not set"
+                "MYCREDEX_APP_URL environment variable is not set",
+                "missing"
             )
 
         client_api_key = config("CLIENT_API_KEY")
         if not client_api_key:
             raise ConfigurationException(
-                subtype="missing",
-                message="CLIENT_API_KEY environment variable is not set"
+                "CLIENT_API_KEY environment variable is not set",
+                "missing"
             )
 
         # Create and validate headers
@@ -51,8 +51,8 @@ class CredExConfig:
         """Get full URL for endpoint"""
         if not endpoint:
             raise ConfigurationException(
-                subtype="validation",
-                message="Endpoint is required"
+                "Endpoint is required",
+                "validation"
             )
 
         return urljoin(self.base_url, endpoint)
@@ -72,7 +72,7 @@ class CredExEndpoints:
             'register': {'path': 'onboardMember', 'requires_auth': False}
         },
         'member': {
-            # placeholder until more member-level endpoints added
+            # placeholder for future endpoints
         },
         'account': {
             'validate_account_handle': {'path': 'getAccountByHandle'}
@@ -101,19 +101,19 @@ class CredExEndpoints:
         """Get endpoint path"""
         if not group or not action:
             raise ConfigurationException(
-                subtype="validation",
-                message="Group and action are required"
+                "Group and action are required",
+                "validation"
             )
 
         if group not in cls.ENDPOINTS:
             raise ConfigurationException(
-                subtype="validation",
-                message=f"Invalid endpoint group: {group}"
+                f"Invalid endpoint group: {group}",
+                "validation"
             )
         if action not in cls.ENDPOINTS[group]:
             raise ConfigurationException(
-                subtype="validation",
-                message=f"Invalid action '{action}' for group '{group}'"
+                f"Invalid action '{action}' for group '{group}'",
+                "validation"
             )
 
         return cls.ENDPOINTS[group][action]['path']
@@ -124,19 +124,19 @@ class CredExEndpoints:
         """Check if endpoint requires authentication"""
         if not group or not action:
             raise ConfigurationException(
-                subtype="validation",
-                message="Group and action are required"
+                "Group and action are required",
+                "validation"
             )
 
         if group not in cls.ENDPOINTS:
             raise ConfigurationException(
-                subtype="validation",
-                message=f"Invalid endpoint group: {group}"
+                f"Invalid endpoint group: {group}",
+                "validation"
             )
         if action not in cls.ENDPOINTS[group]:
             raise ConfigurationException(
-                subtype="validation",
-                message=f"Invalid action '{action}' for group '{group}'"
+                f"Invalid action '{action}' for group '{group}'",
+                "validation"
             )
 
         return cls.ENDPOINTS[group][action].get('requires_auth', True)

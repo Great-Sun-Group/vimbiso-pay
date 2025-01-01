@@ -5,8 +5,6 @@ from typing import Any, Dict, Optional, Tuple
 
 from redis import Redis, WatchError
 
-from .state_validator import StateValidator
-
 logger = logging.getLogger(__name__)
 
 
@@ -36,13 +34,7 @@ class AtomicStateManager:
                     # Start transaction
                     pipe.multi()
 
-                    # Validate state before storage
-                    validation = StateValidator.validate_state(state)
-                    if not validation.is_valid:
-                        logger.error(f"Invalid state before Redis set: {validation.error_message}")
-                        return False, f"Invalid state structure: {validation.error_message}"
-
-                    # Store validated state with TTL
+                    # Store state with TTL (already validated by state_manager)
                     state_json = json.dumps(state)
                     logger.debug(f"Storing validated state with TTL {ttl}")
                     pipe.setex(key_prefix, ttl, state_json)
@@ -94,14 +86,11 @@ class AtomicStateManager:
                     return None, None
 
                 try:
+                    # Parse state (validation handled by state_manager)
                     state = json.loads(result[0])
-                    # Validate state after deserialization
-                    validation = StateValidator.validate_state(state)
-                    if not validation.is_valid:
-                        logger.error(f"Invalid state after Redis get: {validation.error_message}")
-                        return None, f"Invalid state structure: {validation.error_message}"
                     return state, None
                 except json.JSONDecodeError:
+                    logger.error("Failed to parse state data from Redis")
                     return None, "Invalid state data format"
 
             except WatchError:
