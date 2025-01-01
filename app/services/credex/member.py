@@ -21,14 +21,21 @@ def get_member_accounts(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             }
         })
 
-        # Get accounts from state (StateManager validates)
-        accounts = state_manager.get("accounts")
-        active_id = state_manager.get("active_account_id")
+        # Let StateManager validate accounts through update
+        state_manager.update_state({
+            "validation": {
+                "type": "accounts",
+                "required": True
+            }
+        })
+
+        # Get validated account data
+        account_data = state_manager.get_account_data()
 
         return True, {
             "data": {
-                "accounts": accounts,
-                "active_account_id": active_id
+                "accounts": account_data["accounts"],
+                "active_account_id": account_data["active_id"]
             }
         }
 
@@ -38,7 +45,7 @@ def get_member_accounts(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             str(e),
             details={
                 "operation": "get_member_accounts",
-                "state": state_manager.get("flow_data")
+                "state": state_manager.get_flow_step_data()
             }
         )
 
@@ -62,7 +69,7 @@ def validate_account_handle(handle: str, state_manager: Any) -> Tuple[bool, Dict
             details={
                 "operation": "validate_account_handle",
                 "handle": handle,
-                "state": state_manager.get("flow_data")
+                "state": state_manager.get_flow_step_data()
             }
         )
 
@@ -105,6 +112,6 @@ def refresh_member_info(state_manager: Any) -> None:
             str(e),
             details={
                 "operation": "refresh_member_info",
-                "state": state_manager.get("flow_data")
+                "state": state_manager.get_flow_step_data()
             }
         )

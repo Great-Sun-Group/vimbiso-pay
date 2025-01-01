@@ -24,76 +24,71 @@ def get_credex_service(state_manager: Any) -> Dict[str, Any]:
 
 
 def prepare_offer_credex(data: Dict[str, Any], state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Prepare state for offer creation"""
-    # Get current flow data to preserve metadata
-    flow_data = state_manager.get("flow_data")
-    if not flow_data:
-        raise StateException("missing_flow_data")
-
-    # Update data while preserving flow metadata
-    flow_data["data"]["offer_data"] = data
+    """Prepare state for offer creation through validation"""
+    # Let StateManager validate through update
     state_manager.update_state({
-        "flow_data": flow_data
+        "flow_data": {
+            "api": {
+                "type": "offer_credex",
+                "data": data
+            }
+        }
     })
     return offer_credex(state_manager)
 
 
 def prepare_get_credex(credex_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Prepare state for get credex"""
-    # Get current flow data to preserve metadata
-    flow_data = state_manager.get("flow_data")
-    if not flow_data:
-        raise StateException("missing_flow_data")
-
-    # Update data while preserving flow metadata
-    flow_data["data"]["credex_id"] = credex_id
+    """Prepare state for get credex through validation"""
+    # Let StateManager validate through update
     state_manager.update_state({
-        "flow_data": flow_data
+        "flow_data": {
+            "api": {
+                "type": "get_credex",
+                "credex_id": credex_id
+            }
+        }
     })
     return get_credex(state_manager)
 
 
 def prepare_accept_credex(credex_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Prepare state for accept credex"""
-    # Get current flow data to preserve metadata
-    flow_data = state_manager.get("flow_data")
-    if not flow_data:
-        raise StateException("missing_flow_data")
-
-    # Update data while preserving flow metadata
-    flow_data["data"]["credex_id"] = credex_id
+    """Prepare state for accept credex through validation"""
+    # Let StateManager validate through update
     state_manager.update_state({
-        "flow_data": flow_data
+        "flow_data": {
+            "api": {
+                "type": "accept_credex",
+                "credex_id": credex_id
+            }
+        }
     })
     return accept_credex(state_manager)
 
 
 def prepare_decline_credex(credex_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Prepare state for decline credex"""
-    # Get current flow data to preserve metadata
-    flow_data = state_manager.get("flow_data")
-    if not flow_data:
-        raise StateException("missing_flow_data")
-
-    # Update data while preserving flow metadata
-    flow_data["data"]["credex_id"] = credex_id
+    """Prepare state for decline credex through validation"""
+    # Let StateManager validate through update
     state_manager.update_state({
-        "flow_data": flow_data
+        "flow_data": {
+            "api": {
+                "type": "decline_credex",
+                "credex_id": credex_id
+            }
+        }
     })
     return decline_credex(state_manager)
 
 
 def prepare_cancel_credex(credex_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Prepare state for cancel credex"""
-    # Get current flow data to preserve metadata
-    flow_data = state_manager.get("flow_data")
-    if not flow_data:
-        raise StateException("missing_flow_data")
-
-    # Update data while preserving flow metadata
-    flow_data["data"]["credex_id"] = credex_id
+    """Prepare state for cancel credex through validation"""
+    # Let StateManager validate through update
     state_manager.update_state({
-        "flow_data": flow_data
+        "flow_data": {
+            "api": {
+                "type": "cancel_credex",
+                "credex_id": credex_id
+            }
+        }
     })
     return cancel_credex(state_manager)
 

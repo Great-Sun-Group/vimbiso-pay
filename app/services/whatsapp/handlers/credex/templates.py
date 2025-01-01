@@ -1,268 +1,144 @@
-"""Credex-specific message templates enforcing SINGLE SOURCE OF TRUTH"""
-from typing import Any, Dict
+"""Message templates enforcing SINGLE SOURCE OF TRUTH"""
+from typing import Any, Dict, List, Optional
 
-from core.messaging.types import (
-    Message,
-    MessageRecipient,
-    TextContent,
-    InteractiveContent,
-    InteractiveType,
-    Button,
-    ChannelIdentifier,
-    ChannelType
-)
-from core.utils.error_handler import error_decorator, ErrorHandler
+from core.messaging.types import (Button, ChannelIdentifier, ChannelType,
+                                  InteractiveContent, InteractiveType, Message,
+                                  MessageRecipient, TextContent)
 
 
-class CredexTemplates:
-    """Templates for credex-related messages with strict state validation"""
+def create_message(state_manager: Any, text: str, buttons: Optional[List[Dict[str, str]]] = None) -> Message:
+    """Create message with proper state validation"""
+    # Let StateManager validate channel and member
+    state_manager.update_state({
+        "validation": {
+            "type": "message_context",
+            "required": ["channel", "member"]
+        }
+    })
 
-    @staticmethod
-    @error_decorator
-    def create_amount_prompt(state_manager: Any) -> Message:
-        """Create amount prompt message using state manager"""
-        # Get state without modifying
-        channel_id = state_manager.get_channel_id()
-        member_id = state_manager.get_member_id()
+    # Get validated data
+    channel_id = state_manager.get_channel_id()
 
-        return Message(
-            recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
-            content=TextContent(
-                body="Enter amount:\n\n"
-                "Examples:\n"
-                "100     (USD)\n"
-                "USD 100\n"
-                "ZWG 100\n"
-                "XAU 1"
-            )
+    recipient = MessageRecipient(
+        channel_id=ChannelIdentifier(
+            channel=ChannelType.WHATSAPP,
+            value=channel_id
         )
+    )
 
-    @staticmethod
-    @error_decorator
-    def create_handle_prompt(state_manager: Any) -> Message:
-        """Create handle prompt message using state manager"""
-        # Get state without modifying
-        channel_id = state_manager.get_channel_id()
-        member_id = state_manager.get_member_id()
-
+    if buttons:
+        # Convert button dicts to Button objects
+        button_objects = [
+            Button(id=btn["id"], title=btn["text"])
+            for btn in buttons
+        ]
         return Message(
-            recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
-            content=TextContent(
-                body="Enter recipient handle:"
-            )
-        )
-
-    @staticmethod
-    @error_decorator
-    def create_pending_offers_list(state_manager: Any, data: Dict[str, Any]) -> Message:
-        """Create pending offers list message"""
-        # Get state without modifying
-        channel_id = state_manager.get_channel_id()
-        member_id = state_manager.get_member_id()
-        flow_data = state_manager.get_flow_step_data()
-        flow_type = flow_data.get("flow_type", "cancel")
-        current_account = flow_data.get("current_account", {})
-
-        # Get offers from current account
-        if flow_type in ["accept", "decline"]:
-            offers = current_account.get("pendingInData", [])
-            action_text = "accept" if flow_type == "accept" else "decline"
-            title = "Incoming Offers"
-        else:
-            offers = current_account.get("pendingOutData", [])
-            action_text = "cancel"
-            title = "Outgoing Offers"
-
-        if not offers:
-            return Message(
-                recipient=MessageRecipient(
-                    member_id=member_id,
-                    channel_id=ChannelIdentifier(
-                        channel=ChannelType.WHATSAPP,
-                        value=channel_id
-                    )
-                ),
-                content=TextContent(
-                    body=f"No {title.lower()} available"
-                )
-            )
-
-        rows = []
-        for offer in offers:
-            # Remove negative sign from amount for display
-            amount = offer['formattedInitialAmount'].lstrip('-')
-            rows.append({
-                "id": f"{flow_type}_{offer['credexID']}",
-                "title": f"{amount} {action_text == 'cancel' and 'to' or 'from'} {offer['counterpartyAccountName']}"
-            })
-
-        # Ensure sections are properly structured
-        sections = [{
-            "title": title,
-            "rows": [
-                {
-                    "id": row["id"],
-                    "title": row["title"]
-                }
-                for row in rows
-            ]
-        }]
-
-        return Message(
-            recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
-            content=InteractiveContent(
-                interactive_type=InteractiveType.LIST,
-                body=f"Select an offer to {action_text}:",
-                action_items={
-                    "button": "🕹️ Options",
-                    "sections": sections
-                }
-            )
-        )
-
-    @staticmethod
-    @error_decorator
-    def create_offer_confirmation(state_manager: Any, amount: str, handle: str, name: str) -> Message:
-        """Create offer confirmation message"""
-        # Get state without modifying
-        channel_id = state_manager.get_channel_id()
-        member_id = state_manager.get_member_id()
-
-        return Message(
-            recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
+            recipient=recipient,
             content=InteractiveContent(
                 interactive_type=InteractiveType.BUTTON,
-                body=(
-                    f"Confirm transaction:\n\n"
-                    f"Amount: {amount}\n"
-                    f"To: {name} ({handle})"
-                ),
-                buttons=[
-                    Button(id="confirm_action", title="Confirm")
-                ]
+                body=text,
+                buttons=button_objects
             )
         )
 
-    @staticmethod
-    @error_decorator
-    def create_cancel_confirmation(state_manager: Any, amount: str, counterparty: str) -> Message:
-        """Create cancel confirmation message"""
-        # Get state without modifying
-        channel_id = state_manager.get_channel_id()
-        member_id = state_manager.get_member_id()
+    return Message(
+        recipient=recipient,
+        content=TextContent(body=text)
+    )
 
-        return Message(
-            recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
-            content=InteractiveContent(
-                interactive_type=InteractiveType.BUTTON,
-                body=(
-                    f"Cancel Credex Offer\n\n"
-                    f"Amount: {amount}\n"
-                    f"To: {counterparty}"
-                ),
-                buttons=[
-                    Button(id="confirm_action", title="Cancel Offer")
-                ]
-            )
+
+def create_list_message(state_manager: Any, items: List[Dict[str, Any]] = None) -> Message:
+    """Create list selection message with proper state validation"""
+    # Let StateManager validate channel and member
+    state_manager.update_state({
+        "validation": {
+            "type": "message_context",
+            "required": ["channel", "member"]
+        }
+    })
+
+    # Let StateManager validate flow state
+    state_manager.update_state({
+        "validation": {
+            "type": "flow_state"
+        }
+    })
+
+    # Get validated flow state
+    flow_state = state_manager.get_flow_state()
+    flow_type = flow_state.get("flow_type", "offer")
+
+    if not items:
+        return create_message(
+            state_manager,
+            f"No {flow_type} items available"
         )
 
-    @staticmethod
-    @error_decorator
-    def create_action_confirmation(state_manager: Any, amount: str, counterparty: str, action: str) -> Message:
-        """Create action confirmation message"""
-        # Get state without modifying
-        channel_id = state_manager.get_channel_id()
-        member_id = state_manager.get_member_id()
+    message_parts = [f"Select {flow_type} item:\n"]
+    for i, item in enumerate(items, 1):
+        amount = item.get("formattedAmount", "Unknown amount")
+        counterparty = item.get("counterpartyName", "Unknown")
+        message_parts.append(f"{i}. {amount} with {counterparty}")
 
-        return Message(
-            recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
-            content=InteractiveContent(
-                interactive_type=InteractiveType.BUTTON,
-                body=(
-                    f"{action} credex offer\n\n"
-                    f"Amount: {amount}\n"
-                    f"From: {counterparty}"
-                ),
-                buttons=[
-                    Button(id="confirm_action", title="Confirm")
-                ]
-            )
-        )
+    return create_message(state_manager, "\n".join(message_parts))
 
-    @staticmethod
-    @error_decorator
-    def create_success_message(state_manager: Any, message: str) -> Message:
-        """Create success message"""
-        # Get state without modifying
-        channel_id = state_manager.get_channel_id()
-        member_id = state_manager.get_member_id()
 
-        return Message(
-            recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
-            content=TextContent(
-                body=f"{ErrorHandler.SUCCESS_PREFIX} {message}"
-            )
-        )
+def create_confirmation_message(state_manager: Any, item_id: str) -> Message:
+    """Create confirmation message with proper state validation"""
+    # Let StateManager validate channel and member
+    state_manager.update_state({
+        "validation": {
+            "type": "message_context",
+            "required": ["channel", "member"]
+        }
+    })
 
-    @staticmethod
-    @error_decorator
-    def create_error_message(state_manager: Any, error: str) -> Message:
-        """Create error message enforcing SINGLE SOURCE OF TRUTH"""
-        # Get state without modifying
-        channel_id = state_manager.get_channel_id()
-        member_id = state_manager.get_member_id()
+    # Let StateManager validate flow state
+    state_manager.update_state({
+        "validation": {
+            "type": "flow_state"
+        }
+    })
 
-        return Message(
-            recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
-            content=TextContent(
-                body=ErrorHandler.format_error_message(error)
-            )
-        )
+    # Get validated flow state
+    flow_state = state_manager.get_flow_state()
+    flow_type = flow_state.get("flow_type", "offer")
+
+    return create_message(
+        state_manager,
+        f"Confirm {flow_type}:\n"
+        f"Item ID: {item_id}\n\n"
+        "Please confirm (yes/no):"
+    )
+
+
+def create_error_message(state_manager: Any, error_msg: str) -> Message:
+    """Create error message with proper state validation"""
+    # Let StateManager validate channel and member
+    state_manager.update_state({
+        "validation": {
+            "type": "message_context",
+            "required": ["channel", "member"]
+        }
+    })
+
+    return create_message(
+        state_manager,
+        f"❌ Error: {error_msg}"
+    )
+
+
+def create_success_message(state_manager: Any, success_msg: str) -> Message:
+    """Create success message with proper state validation"""
+    # Let StateManager validate channel and member
+    state_manager.update_state({
+        "validation": {
+            "type": "message_context",
+            "required": ["channel", "member"]
+        }
+    })
+
+    return create_message(
+        state_manager,
+        f"✅ {success_msg}"
+    )

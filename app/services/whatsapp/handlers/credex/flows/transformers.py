@@ -34,8 +34,17 @@ def transform_button_input(input_data: Union[str, Dict[str, Any]], state_manager
             return input_data.strip()
 
         # Get current flow data
-        flow_data = state_manager.get("flow_data") or {}
-        current_step = flow_data.get("current_step", "confirm")
+        # Let StateManager validate flow state
+        state_manager.update_state({
+            "validation": {
+                "type": "flow_state",
+                "step": "confirm"
+            }
+        })
+
+        # Get validated flow state
+        flow_state = state_manager.get_flow_state()
+        current_step = flow_state.get("current_step")
 
         error_context = ErrorContext(
             error_type="flow",
@@ -43,9 +52,9 @@ def transform_button_input(input_data: Union[str, Dict[str, Any]], state_manager
             step_id=current_step,
             details={
                 "input": input_data,
-                "flow_type": flow_data.get("flow_type", "offer"),
+                "flow_type": flow_state.get("flow_type", "offer"),
                 "validation_type": "button",
-                "flow_data": flow_data
+                "flow_data": flow_state
             }
         )
         raise StateException(ErrorHandler.handle_error(
@@ -56,8 +65,17 @@ def transform_button_input(input_data: Union[str, Dict[str, Any]], state_manager
 
     except Exception as e:
         # Get current flow data
-        flow_data = state_manager.get("flow_data") or {}
-        current_step = flow_data.get("current_step", "confirm")
+        # Let StateManager validate flow state
+        state_manager.update_state({
+            "validation": {
+                "type": "flow_state",
+                "step": "confirm"
+            }
+        })
+
+        # Get validated flow state
+        flow_state = state_manager.get_flow_state()
+        current_step = flow_state.get("current_step")
 
         error_context = ErrorContext(
             error_type="flow",
@@ -66,9 +84,9 @@ def transform_button_input(input_data: Union[str, Dict[str, Any]], state_manager
             details={
                 "input": input_data,
                 "error": str(e),
-                "flow_type": flow_data.get("flow_type", "offer"),
-                "validation_type": "button",
-                "flow_data": flow_data
+                "flow_type": flow_state.get("flow_type", "offer"),
+                "validation_type": "dashboard",
+                "flow_data": flow_state
             }
         )
         raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
@@ -94,9 +112,17 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
             if interactive.get("type") == "text":
                 handle = interactive.get("text", {}).get("body", "")
             else:
-                # Get current flow data
-                flow_data = state_manager.get("flow_data") or {}
-                current_step = flow_data.get("current_step", "handle")
+                # Let StateManager validate flow state
+                state_manager.update_state({
+                    "validation": {
+                        "type": "flow_state",
+                        "step": "handle"
+                    }
+                })
+
+                # Get validated flow state
+                flow_state = state_manager.get_flow_state()
+                current_step = flow_state.get("current_step")
 
                 error_context = ErrorContext(
                     error_type="flow",
@@ -104,9 +130,9 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
                     step_id=current_step,
                     details={
                         "input": handle,
-                        "flow_type": flow_data.get("flow_type", "offer"),
+                        "flow_type": flow_state.get("flow_type", "offer"),
                         "validation_type": "handle_format",
-                        "flow_data": flow_data
+                        "flow_data": flow_state
                     }
                 )
                 raise StateException(ErrorHandler.handle_error(
@@ -117,9 +143,17 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
 
         handle = handle.strip()
         if not handle:
-            # Get current flow data
-            flow_data = state_manager.get("flow_data") or {}
-            current_step = flow_data.get("current_step", "handle")
+            # Let StateManager validate flow state
+            state_manager.update_state({
+                "validation": {
+                    "type": "flow_state",
+                    "step": "handle"
+                }
+            })
+
+            # Get validated flow state
+            flow_state = state_manager.get_flow_state()
+            current_step = flow_state.get("current_step")
 
             error_context = ErrorContext(
                 error_type="flow",
@@ -127,9 +161,9 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
                 step_id=current_step,
                 details={
                     "input": handle,
-                    "flow_type": flow_data.get("flow_type", "offer"),
+                    "flow_type": flow_state.get("flow_type", "offer"),
                     "validation_type": "handle_empty",
-                    "flow_data": flow_data
+                    "flow_data": flow_state
                 }
             )
             raise StateException(ErrorHandler.handle_error(
@@ -141,9 +175,17 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
         return handle
 
     except Exception as e:
-        # Get current flow data
-        flow_data = state_manager.get("flow_data") or {}
-        current_step = flow_data.get("current_step", "handle")
+        # Let StateManager validate flow state
+        state_manager.update_state({
+            "validation": {
+                "type": "flow_state",
+                "step": "handle"
+            }
+        })
+
+        # Get validated flow state
+        flow_state = state_manager.get_flow_state()
+        current_step = flow_state.get("current_step")
 
         error_context = ErrorContext(
             error_type="flow",
@@ -152,9 +194,9 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
             details={
                 "input": handle,
                 "error": str(e),
-                "flow_type": flow_data.get("flow_type", "offer"),
+                "flow_type": flow_state.get("flow_type", "offer"),
                 "validation_type": "handle",
-                "flow_data": flow_data
+                "flow_data": flow_state
             }
         )
         raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
@@ -198,12 +240,21 @@ def store_dashboard_data(state_manager: Any, response: Dict[str, Any]) -> None:
             })
 
         # Log success
-        logger.info(f"Successfully stored dashboard data for channel {state_manager.get('channel')['identifier']}")
+        logger.info(f"Successfully stored dashboard data for channel {state_manager.get_channel_id()}")
 
     except Exception as e:
         # Get current flow data
-        flow_data = state_manager.get("flow_data") or {}
-        current_step = flow_data.get("current_step", "complete")
+        # Let StateManager validate flow state
+        state_manager.update_state({
+            "validation": {
+                "type": "flow_state",
+                "step": "complete"
+            }
+        })
+
+        # Get validated flow state
+        flow_state = state_manager.get_flow_state()
+        current_step = flow_state.get("current_step")
 
         error_context = ErrorContext(
             error_type="flow",
@@ -212,9 +263,9 @@ def store_dashboard_data(state_manager: Any, response: Dict[str, Any]) -> None:
             details={
                 "response": response,
                 "error": str(e),
-                "flow_type": "offer",
+                "flow_type": flow_state.get("flow_type", "offer"),
                 "validation_type": "dashboard",
-                "flow_data": flow_data
+                "flow_data": flow_state
             }
         )
         raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))

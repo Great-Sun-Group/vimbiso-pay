@@ -1,71 +1,45 @@
 """Flow step processing with state validation through StateManager"""
-from typing import Any, Optional
-
-from .constants import VALID_DENOMINATIONS
+from typing import Any, Dict, Optional
 
 
-def process_step(state_manager: Any, step: str, input_data: Optional[Any] = None) -> None:
+def process_step(state_manager: Any, step: str, input_data: Optional[Any] = None, action: Optional[str] = None) -> Dict[str, Any]:
     """Process flow step input with validation through state updates
 
     Args:
         state_manager: Manages state validation and updates
         step: Current step name
         input_data: Step input to validate
+        action: Optional action type for action flows
+
+    Returns:
+        Validated step data
     """
     # Skip empty input - let flow handle initial prompts
     if not input_data:
-        return
+        return {}
 
-    # Build state update matching validator structure
-    if step == "amount":
-        # Parse amount and denomination
-        amount_str = str(input_data).strip()
-        parts = amount_str.split()
-
-        # Handle different formats (e.g. "100 USD" or "USD 100")
-        if len(parts) == 2:
-            value, denom = (float(parts[0]), parts[1]) if parts[1] in VALID_DENOMINATIONS else (float(parts[1]), parts[0])
-        else:
-            value, denom = float(amount_str), "USD"  # Default to USD
-
-        state_update = {
-            "flow_data": {
-                "data": {
-                    "amount": {
-                        "value": value,
-                        "denomination": denom
-                    }
-                }
-            }
+    # Let StateManager validate step input
+    state_manager.update_state({
+        "validation": {
+            "type": "step_input",
+            "step": step,
+            "input": input_data,
+            "action": action
         }
+    })
 
-    elif step == "handle":
-        state_update = {
-            "flow_data": {
-                "data": {
-                    "handle": str(input_data)
-                }
-            }
+    # Get validated step data
+    step_data = state_manager.get_step_data()
+
+    # Let StateManager validate step state
+    state_manager.update_state({
+        "validation": {
+            "type": "step_state",
+            "step": step,
+            "data": step_data,
+            "action": action
         }
+    })
 
-    elif step == "confirm":
-        state_update = {
-            "flow_data": {
-                "data": {
-                    "confirmed": input_data == "confirm"
-                }
-            }
-        }
-
-    else:
-        # For other steps, just store the input
-        state_update = {
-            "flow_data": {
-                "data": {
-                    step: str(input_data)
-                }
-            }
-        }
-
-    # Update state - validation handled by StateManager
-    state_manager.update_state(state_update)
+    # Return validated step data
+    return state_manager.get_step_data()

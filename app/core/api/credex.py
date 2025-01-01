@@ -4,48 +4,46 @@ from typing import Any, Dict, Tuple
 
 from .base import (BASE_URL, get_headers, handle_error_response,
                    make_api_request)
-from .profile import update_profile_from_response
 
 logger = logging.getLogger(__name__)
 
 
 def offer_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Create a new CredEx offer"""
+    """Create a new CredEx offer through state validation"""
     logger.info("Attempting to offer CredEx")
     url = f"{BASE_URL}/createCredex"
     logger.info(f"Offer URL: {url}")
 
-    flow_data = state_manager.get_flow_step_data()
+    # Let StateManager validate API request
+    state_manager.update_state({
+        "api_request": {
+            "type": "credex_offer",
+            "url": url,
+            "method": "POST"
+        }
+    })
+
+    # Get validated request data
     headers = get_headers(state_manager)
+    payload = state_manager.get_api_payload()
+
     try:
-        response = make_api_request(url, headers, flow_data, state_manager=state_manager)
+        response = make_api_request(url, headers, payload, state_manager=state_manager)
         if response.status_code == 200:
             response_data = response.json()
 
-            if (
-                response_data.get("data", {}).get("action", {}).get("type")
-                == "CREDEX_CREATED"
-            ):
-                # Add success message and status to response
-                if "data" not in response_data:
-                    response_data["data"] = {}
-                if "action" not in response_data["data"]:
-                    response_data["data"]["action"] = {}
-                response_data["data"]["action"].update({
-                    "message": "CredEx offer created successfully",
-                    "status": "success"
-                })
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_offer",
+                    "data": response_data
+                }
+            })
 
-                # Update profile and state
-                update_profile_from_response(
-                    response_data,
-                    state_manager,
-                    "credex_offer",
-                    "credex_offer"
-                )
-
-                # Return success response with message
-                return True, response_data
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
+                return True, validated_response
             else:
                 logger.error("Offer failed")
                 return False, {"error": response_data.get("error")}
@@ -63,32 +61,41 @@ def offer_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
 
 
 def accept_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Accept a CredEx offer"""
+    """Accept a CredEx offer through state validation"""
     logger.info("Attempting to accept CredEx")
     url = f"{BASE_URL}/acceptCredex"
     logger.info(f"Accept URL: {url}")
 
-    flow_data = state_manager.get_flow_step_data()
-    payload = {"credexID": flow_data.get("credexID")}
+    # Let StateManager validate API request
+    state_manager.update_state({
+        "api_request": {
+            "type": "credex_accept",
+            "url": url,
+            "method": "POST"
+        }
+    })
+
+    # Get validated request data
     headers = get_headers(state_manager)
+    payload = state_manager.get_api_payload()
 
     try:
         response = make_api_request(url, headers, payload, state_manager=state_manager)
         if response.status_code == 200:
             response_data = response.json()
-            if (
-                response_data.get("data", {}).get("action", {}).get("type")
-                == "CREDEX_ACCEPTED"
-            ):
-                # Update profile and state
-                update_profile_from_response(
-                    response_data,
-                    state_manager,
-                    "credex_accept",
-                    "credex_accept"
-                )
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_accept",
+                    "data": response_data
+                }
+            })
+
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
                 logger.info("Accept successful")
-                return True, response_data
+                return True, validated_response
             else:
                 logger.error("Accept failed")
                 return False, {"error": response_data.get("error")}
@@ -106,29 +113,41 @@ def accept_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
 
 
 def decline_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Decline a CredEx offer"""
+    """Decline a CredEx offer through state validation"""
     logger.info("Attempting to decline CredEx")
     url = f"{BASE_URL}/declineCredex"
     logger.info(f"Decline URL: {url}")
 
-    flow_data = state_manager.get_flow_step_data()
-    payload = {"credexID": flow_data.get("credexID")}
+    # Let StateManager validate API request
+    state_manager.update_state({
+        "api_request": {
+            "type": "credex_decline",
+            "url": url,
+            "method": "POST"
+        }
+    })
+
+    # Get validated request data
     headers = get_headers(state_manager)
+    payload = state_manager.get_api_payload()
 
     try:
         response = make_api_request(url, headers, payload, state_manager=state_manager)
         if response.status_code == 200:
             response_data = response.json()
-            if response_data.get("status") == "success":
-                # Update profile and state
-                update_profile_from_response(
-                    response_data,
-                    state_manager,
-                    "credex_decline",
-                    "credex_decline"
-                )
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_decline",
+                    "data": response_data
+                }
+            })
+
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
                 logger.info("Decline successful")
-                return True, {"message": "Decline successful"}
+                return True, validated_response
             else:
                 logger.error("Decline failed")
                 return False, {"error": response_data.get("error")}
@@ -146,29 +165,41 @@ def decline_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
 
 
 def cancel_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Cancel a CredEx offer"""
+    """Cancel a CredEx offer through state validation"""
     logger.info("Attempting to cancel CredEx")
     url = f"{BASE_URL}/cancelCredex"
     logger.info(f"Cancel URL: {url}")
 
-    flow_data = state_manager.get_flow_step_data()
-    payload = {"credexID": flow_data.get("credexID")}
+    # Let StateManager validate API request
+    state_manager.update_state({
+        "api_request": {
+            "type": "credex_cancel",
+            "url": url,
+            "method": "POST"
+        }
+    })
+
+    # Get validated request data
     headers = get_headers(state_manager)
+    payload = state_manager.get_api_payload()
 
     try:
         response = make_api_request(url, headers, payload, state_manager=state_manager)
         if response.status_code == 200:
             response_data = response.json()
-            if response_data.get("message") == "Credex cancelled successfully":
-                # Update profile and state
-                update_profile_from_response(
-                    response_data,
-                    state_manager,
-                    "credex_cancel",
-                    "credex_cancel"
-                )
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_cancel",
+                    "data": response_data
+                }
+            })
+
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
                 logger.info("Cancel successful")
-                return True, {"message": "Credex cancelled successfully"}
+                return True, validated_response
             else:
                 logger.error("Cancel failed")
                 return False, {"error": response_data.get("error")}
@@ -186,28 +217,41 @@ def cancel_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
 
 
 def get_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Get details of a specific CredEx"""
+    """Get details of a specific CredEx through state validation"""
     logger.info("Fetching credex details")
     url = f"{BASE_URL}/getCredex"
     logger.info(f"Credex URL: {url}")
 
-    flow_data = state_manager.get_flow_step_data()
-    payload = {"credexID": flow_data.get("credexID")}
+    # Let StateManager validate API request
+    state_manager.update_state({
+        "api_request": {
+            "type": "credex_get",
+            "url": url,
+            "method": "GET"
+        }
+    })
+
+    # Get validated request data
     headers = get_headers(state_manager)
+    payload = state_manager.get_api_payload()
 
     try:
         response = make_api_request(url, headers, payload, state_manager=state_manager)
         if response.status_code == 200:
             response_data = response.json()
-            # Update profile and state
-            update_profile_from_response(
-                    response_data,
-                    state_manager,
-                    "credex_fetch",
-                    "credex_fetch"
-                )
-            logger.info("Credex fetched successfully")
-            return True, response_data
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_get",
+                    "data": response_data
+                }
+            })
+
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
+                logger.info("Credex fetched successfully")
+                return True, validated_response
 
         else:
             return handle_error_response(
@@ -222,29 +266,41 @@ def get_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
 
 
 def accept_bulk_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Accept multiple CredEx offers"""
+    """Accept multiple CredEx offers through state validation"""
     logger.info("Attempting to accept multiple CredEx offers")
     url = f"{BASE_URL}/acceptCredexBulk"
     logger.info(f"Accept URL: {url}")
 
-    flow_data = state_manager.get_flow_step_data()
-    payload = {"credexIDs": flow_data.get("credexIDs")}
+    # Let StateManager validate API request
+    state_manager.update_state({
+        "api_request": {
+            "type": "credex_bulk_accept",
+            "url": url,
+            "method": "POST"
+        }
+    })
+
+    # Get validated request data
     headers = get_headers(state_manager)
+    payload = state_manager.get_api_payload()
 
     try:
         response = make_api_request(url, headers, payload, state_manager=state_manager)
         if response.status_code == 200:
             response_data = response.json()
-            if response_data.get("summary", {}).get("accepted"):
-                # Update profile and state
-                update_profile_from_response(
-                    response_data,
-                    state_manager,
-                    "credex_bulk_accept",
-                    "credex_bulk_accept"
-                )
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_bulk_accept",
+                    "data": response_data
+                }
+            })
+
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
                 logger.info("Bulk accept successful")
-                return True, response_data
+                return True, validated_response
             else:
                 logger.error("Bulk accept failed")
                 return False, {"error": response_data.get("error")}
@@ -262,26 +318,41 @@ def accept_bulk_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
 
 
 def get_ledger(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Get user's CredEx ledger"""
+    """Get user's CredEx ledger through state validation"""
     logger.info("Fetching CredEx ledger")
     url = f"{BASE_URL}/getLedger"
     logger.info(f"Ledger URL: {url}")
 
+    # Let StateManager validate API request
+    state_manager.update_state({
+        "api_request": {
+            "type": "credex_ledger",
+            "url": url,
+            "method": "GET"
+        }
+    })
+
+    # Get validated request data
     headers = get_headers(state_manager)
+    payload = state_manager.get_api_payload()
 
     try:
-        response = make_api_request(url, headers, {}, state_manager=state_manager)
+        response = make_api_request(url, headers, payload, state_manager=state_manager)
         if response.status_code == 200:
             response_data = response.json()
-            # Update profile and state
-            update_profile_from_response(
-                response_data,
-                state_manager,
-                "credex_ledger",
-                "credex_ledger"
-            )
-            logger.info("Ledger fetched successfully")
-            return True, response_data
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_ledger",
+                    "data": response_data
+                }
+            })
+
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
+                logger.info("Ledger fetched successfully")
+                return True, validated_response
 
         else:
             return handle_error_response(

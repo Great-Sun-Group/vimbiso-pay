@@ -3,7 +3,7 @@ from typing import Any, Dict
 
 import requests
 from core.utils.error_handler import error_decorator
-from core.utils.exceptions import APIException, ConfigurationException
+from core.utils.exceptions import APIException
 
 from .config import CredExConfig, CredExEndpoints
 
@@ -24,18 +24,31 @@ def make_credex_request(
     url = config.get_url(path)
     headers = config.get_headers()
 
-    # Add token from validated state if available
-    jwt_token = state_manager.get("jwt_token")
-    if jwt_token:
-        headers["Authorization"] = f"Bearer {jwt_token}"
+    # Let StateManager validate auth through update
+    state_manager.update_state({
+        "validation": {
+            "type": "auth",
+            "group": group,
+            "action": action
+        }
+    })
 
-    # For auth endpoints, get phone directly from state
+    # Get validated auth data
+    auth_data = state_manager.get_auth_data()
+    if auth_data.get("token"):
+        headers["Authorization"] = f"Bearer {auth_data['token']}"
+
+    # For auth endpoints, let StateManager validate channel
     if group == 'auth' and action == 'login':
-        channel = state_manager.get("channel")
-        if not channel or not channel.get("identifier"):
-            raise ConfigurationException("Missing channel identifier in state")
-        # Use phone directly from state
-        payload = {"phone": channel["identifier"]}
+        state_manager.update_state({
+            "validation": {
+                "type": "channel",
+                "required": True
+            }
+        })
+        # Get validated channel data
+        channel_data = state_manager.get_channel_data()
+        payload = {"phone": channel_data["identifier"]}
 
     try:
         # Make request

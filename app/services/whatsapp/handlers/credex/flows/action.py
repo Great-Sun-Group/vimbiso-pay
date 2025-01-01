@@ -57,8 +57,16 @@ def create_action_confirmation(channel_id: str, credex_id: str, action: str) -> 
 def process_action_step(state_manager: Any, step: str, action: str, input_data: Any = None) -> Message:
     """Process action step with validation"""
     try:
-        # Get channel ID through state manager
-        channel_id = state_manager.get("channel")["identifier"]
+        # Let StateManager validate channel
+        state_manager.update_state({
+            "validation": {
+                "type": "channel",
+                "required": True
+            }
+        })
+
+        # Get validated channel data
+        channel_id = state_manager.get_channel_id()
 
         # Process step input through generic step processor
         result = process_step(state_manager, step, input_data, action)
@@ -77,21 +85,37 @@ def process_action_step(state_manager: Any, step: str, action: str, input_data: 
 
         elif step == "confirm":
             if not input_data:
-                # Re-show confirmation with current data
-                state = state_manager.get_flow_step_data()
+                # Let StateManager validate flow state
+                state_manager.update_state({
+                    "validation": {
+                        "type": "flow_state",
+                        "step": "confirm",
+                        "action": action
+                    }
+                })
+
+                # Get validated flow state
+                flow_state = state_manager.get_flow_state()
                 return create_action_confirmation(
                     channel_id,
-                    state["credex_id"],
+                    flow_state["credex_id"],
                     action
                 )
 
             # Process confirmation result
             if result["confirmed"]:
+                # Let StateManager validate action request
+                state_manager.update_state({
+                    "validation": {
+                        "type": "action_request",
+                        "action": action
+                    }
+                })
+
                 # Submit action through credex service
                 credex_service = get_credex_service(state_manager)
-                success, response = credex_service[f"{action}_credex"](
-                    state_manager.get_flow_step_data()
-                )
+                success, response = credex_service[f"{action}_credex"](state_manager)
+
                 if not success:
                     raise StateException(response.get("message", "Failed to create offer"))
 
@@ -105,11 +129,20 @@ def process_action_step(state_manager: Any, step: str, action: str, input_data: 
                 )
                 return create_message(channel_id, "✅ Your request has been processed.")
 
-            # Not confirmed - show confirmation again
-            state = state_manager.get_flow_step_data()
+            # Not confirmed - let StateManager validate flow state
+            state_manager.update_state({
+                "validation": {
+                    "type": "flow_state",
+                    "step": "confirm",
+                    "action": action
+                }
+            })
+
+            # Get validated flow state
+            flow_state = state_manager.get_flow_state()
             return create_action_confirmation(
                 channel_id,
-                state["credex_id"],
+                flow_state["credex_id"],
                 action
             )
 
