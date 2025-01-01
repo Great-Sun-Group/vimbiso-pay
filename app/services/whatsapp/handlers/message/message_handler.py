@@ -25,27 +25,17 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
         # Get action from input
         action = get_action(message_text, state_manager, message_type, message)
 
-        # Handle menu actions that start multi-step flows
-        if action in MENU_ACTIONS:
-            # Map special flow types
-            flow_type = "registration" if action == "start_registration" else (
-                "upgrade" if action == "upgrade_tier" else action
-            )
-
-            # Only initialize flow if it's a multi-step flow
-            if flow_type in FLOW_HANDLERS:
-                # Let StateManager validate authentication
-                state_manager.get("authenticated")
-                return initialize_flow(state_manager, flow_type)
-
-            # For non-flow actions like refresh, return to dashboard
-            return handle_dashboard_display(state_manager)
-
-        # If in a multi-step flow, process the step
+        # First check if we're in a multi-step flow
         current_flow = state_manager.get_flow_type()
         if current_flow and current_flow in FLOW_HANDLERS:
+            # Always handle hi/greeting first to allow refresh at any time
+            if action == "hi":
+                return auth.handle_hi(state_manager)
+
+            # Process the flow step
             current_step = state_manager.get_current_step()
 
+            current_step = state_manager.get_current_step()
             if not current_step:
                 error_context = ErrorContext(
                     error_type="flow",
@@ -60,10 +50,14 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
                 )
                 return auth.create_error_message(state_manager, error_response)
 
-            # Get handler function
-            handler_name = FLOW_HANDLERS[current_flow]
+            # Extract input value and process step
+            input_value = extract_input_value(message_text, message_type, message)
+            logger.debug(f"Processing flow input: '{input_value}' for step '{current_step}'")
 
             try:
+                # Get handler function
+                handler_name = FLOW_HANDLERS[current_flow]
+
                 # Import and get handler function
                 if current_flow in ["registration", "upgrade"]:
                     # Member-related flows
@@ -81,31 +75,12 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
                     else:
                         handler_func = getattr(action, handler_name)
                     logger.debug(f"Got handler function: {handler_func}")
-            except Exception as e:
-                error_context = ErrorContext(
-                    error_type="flow",
-                    message=f"Failed to load flow handler: {str(e)}",
-                    step_id=current_step,
-                    details={
-                        "flow_type": current_flow,
-                        "handler": handler_name
-                    }
-                )
-                error_response = ErrorHandler.handle_error(
-                    e,
-                    state_manager,
-                    error_context
-                )
-                return auth.create_error_message(state_manager, error_response)
 
-            # Process step through state update
-            input_value = extract_input_value(message_text, message_type)
-            logger.debug(f"Processing flow input: '{input_value}' for step '{current_step}'")
-
-            try:
+                # Process step and return result
                 result = handler_func(state_manager, current_step, input_value)
                 logger.debug(f"Flow handler result: {result}")
                 return result
+
             except Exception as e:
                 error_context = ErrorContext(
                     error_type="flow",
@@ -123,12 +98,29 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
                 )
                 return auth.create_error_message(state_manager, error_response)
 
-        # For greetings, refresh from API
-        if action == "hi":
-            return auth.handle_hi(state_manager)
+        # Not in a flow - handle menu actions
+        if action in MENU_ACTIONS:
+            # Map special flow types
+            flow_type = "registration" if action == "start_registration" else (
+                "upgrade" if action == "upgrade_tier" else action
+            )
 
-        # For other inputs, show dashboard
-        return auth.handle_hi(state_manager)
+            # Only initialize flow if it's a multi-step flow
+            if flow_type in FLOW_HANDLERS:
+                # Let StateManager validate authentication
+                state_manager.get("authenticated")
+                return initialize_flow(state_manager, flow_type)
+
+            # For non-flow actions like refresh, return to dashboard
+            return handle_dashboard_display(state_manager)
+
+        # Handle other actions
+        if action == "hi":
+            # For greetings, refresh from API
+            return auth.handle_hi(state_manager)
+        else:
+            # For unrecognized inputs, show dashboard
+            return handle_dashboard_display(state_manager)
 
     except StateException as e:
         error_context = ErrorContext(

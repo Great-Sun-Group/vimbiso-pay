@@ -5,7 +5,8 @@ from typing import Any, Dict, Tuple
 from core.utils.exceptions import StateException
 
 from .member import validate_account_handle as member_validate_handle
-from .offers import get_credex, offer_credex
+from .offers import (accept_credex, cancel_credex, decline_credex, get_credex,
+                     offer_credex)
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,10 @@ def get_credex_service(state_manager: Any) -> Dict[str, Any]:
     return {
         'validate_account_handle': lambda handle: validate_member_handle(state_manager, handle),
         'get_credex': lambda credex_id: get_credex(credex_id, state_manager),
-        'offer_credex': lambda data: offer_credex(data, state_manager)
+        'offer_credex': lambda data: offer_credex(data, state_manager),
+        'accept_credex': lambda data: accept_credex(data, state_manager),
+        'decline_credex': lambda data: decline_credex(data, state_manager),
+        'cancel_credex': lambda data: cancel_credex(data, state_manager)
     }
 
 

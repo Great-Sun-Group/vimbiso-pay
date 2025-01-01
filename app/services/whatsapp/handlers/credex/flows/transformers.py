@@ -1,7 +1,7 @@
 """Data transformation logic for credex flows enforcing SINGLE SOURCE OF TRUTH"""
 import logging
 from datetime import datetime
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 from core.utils.error_handler import ErrorHandler
 from core.utils.error_types import ErrorContext
@@ -11,39 +11,47 @@ from services.credex.member import validate_account_handle
 logger = logging.getLogger(__name__)
 
 
-def transform_amount(amount_str: str, state_manager: Any) -> Dict[str, Any]:
-    """Transform amount input to standardized format
+def transform_button_input(input_data: Union[str, Dict[str, Any]], state_manager: Any) -> Optional[str]:
+    """Transform button input to standardized format
 
     Args:
-        amount_str: Raw amount string
+        input_data: Raw button input
         state_manager: State manager instance
 
     Returns:
-        Dict with amount and denomination
+        Button ID string or None if invalid
 
     Raises:
         StateException: If validation fails
     """
     try:
-        # Let StateManager validate amount through state update
-        state_manager.update_state({
-            "flow_data": {
-                "input": {
-                    "amount": str(amount_str).strip().upper()
-                }
-            }
-        })
+        # Extract button ID from interactive or text
+        if isinstance(input_data, dict):
+            interactive = input_data.get("interactive", {})
+            if interactive.get("type") == "button_reply":
+                return interactive.get("button_reply", {}).get("id")
 
-        # Get validated amount from state
-        amount_data = state_manager.get("flow_data")["input"]["amount"]
-        return amount_data
+        # Handle direct button ID string
+        elif isinstance(input_data, str):
+            return input_data.strip()
+
+        error_context = ErrorContext(
+            error_type="input",
+            message="Invalid button selection",
+            details={"input": input_data}
+        )
+        raise StateException(ErrorHandler.handle_error(
+            StateException("Invalid button input"),
+            state_manager,
+            error_context
+        ))
 
     except Exception as e:
         error_context = ErrorContext(
             error_type="input",
-            message="Invalid amount format. Please enter a valid number with optional denomination (e.g. 100 USD)",
+            message="Invalid button selection",
             details={
-                "input": amount_str,
+                "input": input_data,
                 "error": str(e)
             }
         )

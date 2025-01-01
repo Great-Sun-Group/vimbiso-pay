@@ -40,20 +40,20 @@ def prepare_menu_options(pending_count: int, outgoing_count: int) -> Dict:
         "button": "Options",
         "sections": [{
             "rows": [
-                # Credex offer first
+                # Offer secured first
                 {
-                    "id": "credex_offer",
+                    "id": "offer",
                     "title": "💰 Offer Secured Credex"
                 },
 
                 # Pending offer options if any
                 *([] if pending_count == 0 else [
                     {
-                        "id": "credex_accept",
+                        "id": "accept",
                         "title": f"✅ Accept Offers ({pending_count})"
                     },
                     {
-                        "id": "credex_decline",
+                        "id": "decline",
                         "title": f"❌ Decline Offers ({pending_count})"
                     }
                 ]),
@@ -61,7 +61,7 @@ def prepare_menu_options(pending_count: int, outgoing_count: int) -> Dict:
                 # Outgoing offer option if any
                 *([] if outgoing_count == 0 else [
                     {
-                        "id": "credex_cancel",
+                        "id": "cancel",
                         "title": f"🚫 Cancel Outgoing Offers ({outgoing_count})"
                     }
                 ]),

@@ -21,15 +21,7 @@ class CredexTemplates:
     @error_decorator
     def create_amount_prompt(state_manager: Any) -> Message:
         """Create amount prompt message using state manager"""
-        # Update state to trigger validation
-        state_manager.update_state({
-            "flow_data": {
-                "current_step": "amount",
-                "step": 1
-            }
-        })
-
-        # Get validated state
+        # Get state without modifying
         channel_id = state_manager.get_channel_id()
         member_id = state_manager.get_member_id()
 
@@ -55,15 +47,7 @@ class CredexTemplates:
     @error_decorator
     def create_handle_prompt(state_manager: Any) -> Message:
         """Create handle prompt message using state manager"""
-        # Update state to trigger validation
-        state_manager.update_state({
-            "flow_data": {
-                "current_step": "handle",
-                "step": 2
-            }
-        })
-
-        # Get validated state
+        # Get state without modifying
         channel_id = state_manager.get_channel_id()
         member_id = state_manager.get_member_id()
 
@@ -84,16 +68,7 @@ class CredexTemplates:
     @error_decorator
     def create_pending_offers_list(state_manager: Any, data: Dict[str, Any]) -> Message:
         """Create pending offers list message"""
-        # Update state to trigger validation
-        state_manager.update_state({
-            "flow_data": {
-                "current_step": "list",
-                "step": 1,
-                "data": data
-            }
-        })
-
-        # Get validated state
+        # Get state without modifying
         channel_id = state_manager.get_channel_id()
         member_id = state_manager.get_member_id()
         flow_data = state_manager.get_flow_step_data()
@@ -167,20 +142,7 @@ class CredexTemplates:
     @error_decorator
     def create_offer_confirmation(state_manager: Any, amount: str, handle: str, name: str) -> Message:
         """Create offer confirmation message"""
-        # Update state to trigger validation
-        state_manager.update_state({
-            "flow_data": {
-                "current_step": "confirm",
-                "step": 3,
-                "data": {
-                    "amount": amount,
-                    "handle": handle,
-                    "name": name
-                }
-            }
-        })
-
-        # Get validated state
+        # Get state without modifying
         channel_id = state_manager.get_channel_id()
         member_id = state_manager.get_member_id()
 
@@ -209,19 +171,7 @@ class CredexTemplates:
     @error_decorator
     def create_cancel_confirmation(state_manager: Any, amount: str, counterparty: str) -> Message:
         """Create cancel confirmation message"""
-        # Update state to trigger validation
-        state_manager.update_state({
-            "flow_data": {
-                "current_step": "confirm_cancel",
-                "step": 2,
-                "data": {
-                    "amount": amount,
-                    "counterparty": counterparty
-                }
-            }
-        })
-
-        # Get validated state
+        # Get state without modifying
         channel_id = state_manager.get_channel_id()
         member_id = state_manager.get_member_id()
 
@@ -250,20 +200,7 @@ class CredexTemplates:
     @error_decorator
     def create_action_confirmation(state_manager: Any, amount: str, counterparty: str, action: str) -> Message:
         """Create action confirmation message"""
-        # Update state to trigger validation
-        state_manager.update_state({
-            "flow_data": {
-                "current_step": "confirm_action",
-                "step": 2,
-                "data": {
-                    "amount": amount,
-                    "counterparty": counterparty,
-                    "action": action
-                }
-            }
-        })
-
-        # Get validated state
+        # Get state without modifying
         channel_id = state_manager.get_channel_id()
         member_id = state_manager.get_member_id()
 
@@ -292,18 +229,7 @@ class CredexTemplates:
     @error_decorator
     def create_success_message(state_manager: Any, message: str) -> Message:
         """Create success message"""
-        # Update state to trigger validation
-        state_manager.update_state({
-            "flow_data": {
-                "current_step": "success",
-                "step": 4,
-                "data": {
-                    "message": message
-                }
-            }
-        })
-
-        # Get validated state
+        # Get state without modifying
         channel_id = state_manager.get_channel_id()
         member_id = state_manager.get_member_id()
 
@@ -324,18 +250,7 @@ class CredexTemplates:
     @error_decorator
     def create_error_message(state_manager: Any, error: str) -> Message:
         """Create error message enforcing SINGLE SOURCE OF TRUTH"""
-        # Update state to trigger validation
-        state_manager.update_state({
-            "flow_data": {
-                "current_step": "error",
-                "step": 0,
-                "data": {
-                    "error": error
-                }
-            }
-        })
-
-        # Get validated state
+        # Get state without modifying
         channel_id = state_manager.get_channel_id()
         member_id = state_manager.get_member_id()
 
