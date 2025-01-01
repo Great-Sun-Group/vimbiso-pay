@@ -37,41 +37,17 @@ def get_member_accounts(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         raise
 
 
-def validate_account_handle(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+def validate_account_handle(handle: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Validate CredEx handle enforcing SINGLE SOURCE OF TRUTH"""
     try:
-        # Let StateManager validate through update
-        state_manager.update_state({
-            "flow_data": {
-                "flow_type": "handle_validation",
-                "step": 0,
-                "current_step": "validate",
-                "data": {
-                    "handle": state_manager.get("handle")
-                }
-            }
-        })
-
         # Make API request (StateManager validates jwt_token)
-        response = make_credex_request(
+        response_data = make_credex_request(
             'member', 'validate_account_handle',
-            payload={"accountHandle": state_manager.get("handle")},
+            payload={"accountHandle": handle},
             state_manager=state_manager
         )
 
-        # Let StateManager validate response through update
-        state_manager.update_state({
-            "flow_data": {
-                "flow_type": "handle_validation",
-                "step": 1,
-                "current_step": "complete",
-                "data": {
-                    "validation": response.json()
-                }
-            }
-        })
-
-        return True, response.json()
+        return True, response_data
 
     except StateException:
         # Re-raise StateException for proper error propagation
@@ -91,7 +67,7 @@ def refresh_member_info(state_manager: Any) -> None:
         })
 
         # Make API request (StateManager validates channel)
-        response = make_credex_request(
+        response_data = make_credex_request(
             'auth', 'login',
             state_manager=state_manager
         )
@@ -103,7 +79,7 @@ def refresh_member_info(state_manager: Any) -> None:
                 "step": 1,
                 "current_step": "complete",
                 "data": {
-                    "refresh": response.json()
+                    "refresh": response_data
                 }
             }
         })

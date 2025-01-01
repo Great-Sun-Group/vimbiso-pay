@@ -4,8 +4,6 @@ from typing import Any, Dict, List, Optional
 
 from core.messaging.types import (Button, ChannelIdentifier, ChannelType, InteractiveContent,
                                   InteractiveType, Message, MessageRecipient, TextContent)
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 from services.credex.service import get_credex_service
 
@@ -61,20 +59,33 @@ def validate_offer_handle(handle: str, state_manager: Any) -> None:
     if 50 < len(handle) < 3:
         raise StateException("Handle must be between 3 and 50 characters")
 
-    # Check if handle exists
-    credex_service = get_credex_service(state_manager)
-    success, response = credex_service["validate_account_handle"](handle)
-    if not success:
-        raise StateException(response.get("message", "Sorry, no account found with that handle. Please try again."))
+    try:
+        # Check if handle exists
+        credex_service = get_credex_service(state_manager)
+        success, response = credex_service["validate_account_handle"](handle)
+        if not success:
+            error_msg = response.get("message") if isinstance(response, dict) else str(response)
+            raise StateException(error_msg or "Sorry, no account found with that handle. Please try again.")
 
-    # Get active account
-    active_account = state_manager.get_active_account()
-    if not active_account:
-        raise StateException("No active account found")
+        # Get active account
+        active_account = state_manager.get_active_account()
+        if not active_account:
+            raise StateException("No active account found")
 
-    # Cannot send offer to self
-    if handle == active_account["accountHandle"]:
-        raise StateException("Cannot send offer to originating account")
+        # Cannot send offer to self
+        if handle == active_account["accountHandle"]:
+            raise StateException("Cannot send offer to originating account")
+
+    except Exception as e:
+        logger.error(
+            "Error validating offer handle",
+            extra={
+                "error": str(e),
+                "handle": handle,
+                "state": state_manager.get("flow_data")
+            }
+        )
+        raise StateException(str(e))
 
 
 def process_offer_step(state_manager: Any, step: str, input_data: Any = None) -> Message:
@@ -217,13 +228,13 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
         raise StateException(f"Invalid step: {step}")
 
     except Exception as e:
-        error_context = ErrorContext(
-            error_type="flow",
-            message=str(e),
-            step_id=step,
-            details={
-                "input": input_data,
-                "operation": "process_step"
+        # Add error context and let it propagate up
+        logger.error(
+            "Error in offer flow",
+            extra={
+                "error": str(e),
+                "step": step,
+                "flow_data": state_manager.get("flow_data")
             }
         )
-        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+        raise StateException(str(e))

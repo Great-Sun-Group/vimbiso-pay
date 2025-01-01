@@ -41,7 +41,8 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
                 message="Failed to get channel information. Please try again",
                 details={"error": str(e)}
             )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+            error_response = ErrorHandler.handle_error(e, state_manager, error_context)
+            raise StateException(error_response["data"]["action"]["details"]["message"])
 
         # Validate flow type through state update
         if flow_type not in FLOW_HANDLERS:
@@ -50,11 +51,12 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
                 message=f"Unknown flow type: {flow_type}. Please select a valid option",
                 details={"flow_type": flow_type}
             )
-            raise StateException(ErrorHandler.handle_error(
+            error_response = ErrorHandler.handle_error(
                 StateException("Invalid flow type"),
                 state_manager,
                 error_context
-            ))
+            )
+            raise StateException(error_response["data"]["action"]["details"]["message"])
 
         # Initialize flow state through state update
         state_update = {
@@ -78,11 +80,12 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
                     "error": error
                 }
             )
-            raise StateException(ErrorHandler.handle_error(
+            error_response = ErrorHandler.handle_error(
                 StateException(error),
                 state_manager,
                 error_context
-            ))
+            )
+            raise StateException(error_response["data"]["action"]["details"]["message"])
 
         # Log flow start attempt
         logger.info(
@@ -124,34 +127,35 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
                     "error": str(e)
                 }
             )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+            error_response = ErrorHandler.handle_error(e, state_manager, error_context)
+            raise StateException(error_response["data"]["action"]["details"]["message"])
 
         try:
-            # Initialize flow through state update with correct step
-            current_step = state_manager.get_current_step()
-            result = handler_func(state_manager, current_step, None)
+            # Initialize flow with first step
+            result = handler_func(state_manager, state_update["flow_data"]["current_step"], None)
             if not result:
                 error_context = ErrorContext(
                     error_type="system",  # Use system type for initialization errors
                     message="Failed to start flow. Please try again",
                     details={
                         "flow_type": flow_type,
-                        "step": current_step,
+                        "step": state_update["flow_data"]["current_step"],
                         "error": "No initial message"
                     }
                 )
-                raise StateException(ErrorHandler.handle_error(
+                error_response = ErrorHandler.handle_error(
                     StateException("No initial message"),
                     state_manager,
                     error_context
-                ))
+                )
+                raise StateException(error_response["data"]["action"]["details"]["message"])
 
             # Log success
             logger.info(
                 "Flow started successfully",
                 extra={
                     "flow_type": flow_type,
-                    "step": current_step
+                    "step": state_update["flow_data"]["current_step"]
                 }
             )
 
@@ -163,11 +167,12 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
                 message="Failed to initialize flow. Please try again",
                 details={
                     "flow_type": flow_type,
-                    "step": current_step if 'current_step' in locals() else None,
+                    "step": state_update["flow_data"]["current_step"],
                     "error": str(e)
                 }
             )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+            error_response = ErrorHandler.handle_error(e, state_manager, error_context)
+            raise StateException(error_response["data"]["action"]["details"]["message"])
 
     except Exception as e:
         error_context = ErrorContext(

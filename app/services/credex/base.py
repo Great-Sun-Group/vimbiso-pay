@@ -12,10 +12,10 @@ from .config import CredExConfig, CredExEndpoints
 def make_credex_request(
     group: str,
     action: str,
-    method: str = "POST",
     payload: Dict[str, Any] = None,
-    state_manager: Any = None
-) -> requests.Response:
+    state_manager: Any = None,
+    method: str = "POST"
+) -> Dict[str, Any]:
     """Make an HTTP request to the CredEx API using endpoint groups"""
     # Get endpoint info
     path = CredExEndpoints.get_path(group, action)
@@ -59,22 +59,28 @@ def make_credex_request(
 
         # Handle API errors
         if not response.ok:
-            raise APIException(
-                subtype="response",
-                message=f"API request failed: {response.status_code}",
-                details={
+            try:
+                error_data = {
+                    "status_code": response.status_code,
+                    "response": response.json()
+                }
+            except ValueError:
+                error_data = {
                     "status_code": response.status_code,
                     "response": response.text
                 }
+            raise APIException(
+                f"API request failed: {response.status_code}",
+                error_data
             )
 
-        # Return successful response
+        # Return response data
         return response.json()
 
     except requests.exceptions.RequestException as e:
         # Handle network errors
+        error_data = {"url": url, "error": str(e)}
         raise APIException(
-            subtype="connection",
-            message=str(e),
-            details={"url": url}
+            f"Connection error: {str(e)}",
+            error_data
         )

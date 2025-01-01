@@ -2,8 +2,6 @@
 import logging
 from typing import Any, Dict, Optional
 
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 
 from .transformers import transform_button_input, transform_handle
@@ -77,7 +75,7 @@ def validate_step_input(state_manager: Any, step: str, input_data: Any, action: 
         return result
 
     elif step == "handle":
-        validated = transform_handle(input_data)
+        validated = transform_handle(input_data, state_manager)
         # Get current flow data
         flow_data = state_manager.get("flow_data") or {}
         current_step = flow_data.get("step", 0)
@@ -95,7 +93,7 @@ def validate_step_input(state_manager: Any, step: str, input_data: Any, action: 
                 }
             }
         })
-        return validated
+        return {"handle": validated}
 
     elif step == "confirm":
         # Transform and validate button input
@@ -162,34 +160,11 @@ def process_step(state_manager: Any, step: str, input_data: Any = None, action: 
 
         # Validate action if provided
         if action and action not in VALID_ACTIONS:
-            error_context = ErrorContext(
-                error_type="input",
-                message=f"Invalid action type: {action}",
-                details={
-                    "action": action,
-                    "valid_actions": list(VALID_ACTIONS)
-                }
-            )
-            raise StateException(ErrorHandler.handle_error(
-                StateException("Invalid action"),
-                state_manager,
-                error_context
-            ))
+            raise StateException(f"Invalid action type: {action}. Valid actions: {', '.join(sorted(VALID_ACTIONS))}")
 
         # Validate and store input
         return validate_step_input(state_manager, step, input_data, action)
 
-    except Exception as e:
-        # Only include step_id for flow errors
-        error_type = "flow" if isinstance(e, StateException) else "system"
-        error_context = ErrorContext(
-            error_type=error_type,
-            message=str(e),
-            step_id=step if error_type == "flow" else None,
-            details={
-                "input": input_data,
-                "action": action,
-                "error": str(e)
-            }
-        )
-        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+    except Exception:
+        # Let error propagate up to be handled by handle_flow_error
+        raise

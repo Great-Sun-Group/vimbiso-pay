@@ -46,7 +46,7 @@ def offer_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     payload = flow_data.get("api_payload", {})
 
     # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
+    response_data = make_credex_request(
         'credex', 'create',
         payload=payload,
         state_manager=state_manager
@@ -58,7 +58,7 @@ def offer_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             "current_step": "check_success",
             "step": 2,
             "data": {
-                "response": response.json()
+                "response": response_data
             }
         }
     })
@@ -85,7 +85,7 @@ def confirm_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     issuer_account_id = flow_data.get("issuer_account_id")
 
     # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
+    response_data = make_credex_request(
         'credex', 'confirm',
         payload={"credexID": credex_id, "issuerAccountID": issuer_account_id},
         state_manager=state_manager
@@ -97,7 +97,7 @@ def confirm_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             "current_step": "check_success",
             "step": 2,
             "data": {
-                "response": response.json()
+                "response": response_data
             }
         }
     })
@@ -123,7 +123,7 @@ def accept_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     credex_id = flow_data.get("credex_id")
 
     # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
+    response_data = make_credex_request(
         'credex', 'accept',
         payload={"credexID": credex_id},
         state_manager=state_manager
@@ -135,7 +135,7 @@ def accept_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             "current_step": "check_success",
             "step": 2,
             "data": {
-                "response": response.json()
+                "response": response_data
             }
         }
     })
@@ -161,7 +161,7 @@ def decline_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     credex_id = flow_data.get("credex_id")
 
     # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
+    response_data = make_credex_request(
         'credex', 'decline',
         payload={"credexID": credex_id},
         state_manager=state_manager
@@ -173,7 +173,7 @@ def decline_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             "current_step": "check_success",
             "step": 2,
             "data": {
-                "response": response.json()
+                "response": response_data
             }
         }
     })
@@ -199,7 +199,7 @@ def cancel_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     credex_id = flow_data.get("credex_id")
 
     # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
+    response_data = make_credex_request(
         'credex', 'cancel',
         payload={"credexID": credex_id},
         state_manager=state_manager
@@ -211,7 +211,7 @@ def cancel_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             "current_step": "check_success",
             "step": 2,
             "data": {
-                "response": response.json()
+                "response": response_data
             }
         }
     })
@@ -237,7 +237,7 @@ def get_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     credex_id = flow_data.get("credex_id")
 
     # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
+    response_data = make_credex_request(
         'credex', 'get',
         payload={"credexID": credex_id},
         state_manager=state_manager
@@ -249,7 +249,7 @@ def get_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             "current_step": "check_success",
             "step": 2,
             "data": {
-                "response": response.json()
+                "response": response_data
             }
         }
     })
@@ -275,7 +275,7 @@ def accept_bulk_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     credex_ids = flow_data.get("credex_ids", [])
 
     # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
+    response_data = make_credex_request(
         'credex', 'accept_bulk',
         payload={"credexIDs": credex_ids},
         state_manager=state_manager
@@ -287,7 +287,7 @@ def accept_bulk_credex(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             "current_step": "check_success",
             "step": 2,
             "data": {
-                "response": response.json()
+                "response": response_data
             }
         }
     })
@@ -312,7 +312,7 @@ def get_ledger(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     member_id = state_manager.get_member_id()
 
     # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
+    response_data = make_credex_request(
         'credex', 'get_ledger',
         payload={"memberId": member_id},
         state_manager=state_manager
@@ -324,7 +324,7 @@ def get_ledger(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             "current_step": "check_success",
             "step": 2,
             "data": {
-                "response": response.json()
+                "response": response_data
             }
         }
     })

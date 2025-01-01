@@ -6,8 +6,6 @@ from typing import Any, Dict, Optional, Union
 from core.utils.error_handler import ErrorHandler
 from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
-from services.credex.member import validate_account_handle
-
 logger = logging.getLogger(__name__)
 
 
@@ -72,9 +70,6 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
         StateException: If validation fails
     """
     try:
-        # Let StateManager validate token
-        jwt_token = state_manager.get("jwt_token")  # StateManager validates
-
         # Extract handle from interactive or text
         if isinstance(handle, dict):
             interactive = handle.get("interactive", {})
@@ -104,9 +99,6 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
                 state_manager,
                 error_context
             ))
-
-        # Validate handle through API (raises StateException if invalid)
-        validate_account_handle(handle, jwt_token)
 
         return handle
 
