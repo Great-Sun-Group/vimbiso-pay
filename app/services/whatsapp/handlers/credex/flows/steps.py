@@ -71,10 +71,6 @@ def validate_step_input(state_manager: Any, step: str, input_data: Any, action: 
                     **(flow_data.get("data", {})),  # Preserve existing data
                     "amount": result,               # Add new data
                     "last_completed": "amount"      # Track completion
-                },
-                "validation": {                     # Track validation
-                    "amount": True,
-                    "timestamp": flow_data.get("validation", {}).get("timestamp")
                 }
             }
         })
@@ -96,11 +92,6 @@ def validate_step_input(state_manager: Any, step: str, input_data: Any, action: 
                     **(flow_data.get("data", {})),  # Preserve existing data
                     "handle": validated,            # Add new data
                     "last_completed": "handle"      # Track completion
-                },
-                "validation": {                     # Track validation
-                    "amount": flow_data.get("validation", {}).get("amount"),
-                    "handle": True,
-                    "timestamp": flow_data.get("validation", {}).get("timestamp")
                 }
             }
         })
@@ -126,12 +117,6 @@ def validate_step_input(state_manager: Any, step: str, input_data: Any, action: 
                     **(flow_data.get("data", {})),    # Preserve existing data
                     "confirmed": confirmed,           # Add confirmation
                     "last_completed": "confirm" if confirmed else flow_data.get("data", {}).get("last_completed")
-                },
-                "validation": {                       # Track validation
-                    "amount": flow_data.get("validation", {}).get("amount"),
-                    "handle": flow_data.get("validation", {}).get("handle"),
-                    "confirmed": confirmed,
-                    "timestamp": flow_data.get("validation", {}).get("timestamp")
                 }
             }
         })
@@ -160,12 +145,6 @@ def validate_step_input(state_manager: Any, step: str, input_data: Any, action: 
                     "credex_id": credex_id,         # Add selection data
                     "action_type": action,
                     "last_completed": "select"      # Track completion
-                },
-                "validation": {                     # Track validation
-                    "amount": flow_data.get("validation", {}).get("amount"),
-                    "handle": flow_data.get("validation", {}).get("handle"),
-                    "select": True,
-                    "timestamp": flow_data.get("validation", {}).get("timestamp")
                 }
             }
         })

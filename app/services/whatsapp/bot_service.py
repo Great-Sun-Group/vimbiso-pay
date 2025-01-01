@@ -45,8 +45,8 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
                 return auth.handle_hi(state_manager)
 
             # Then check if we're in a flow
-            flow_data = state_manager.get_flow_step_data()
-            if flow_data and flow_data.get("current_step"):
+            current_step = state_manager.get_current_step()
+            if current_step:
                 # In a flow - process message through flow handler
                 return process_message(state_manager, message_type, message_text, message_data)
             else:

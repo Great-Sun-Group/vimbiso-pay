@@ -10,7 +10,7 @@ from core.utils.error_types import ErrorContext
 from ... import auth_handlers as auth
 from ..member.display import handle_dashboard_display
 from .flow_manager import FLOW_HANDLERS, initialize_flow
-from .input_handler import MENU_ACTIONS, extract_input_value, get_action
+from .input_handler import MENU_ACTIONS, extract_input_value
 
 logger = logging.getLogger(__name__)
 
@@ -22,19 +22,10 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
         Message: Core message type with recipient and content
     """
     try:
-        # Get action from input
-        action = get_action(message_text, state_manager, message_type, message)
-
         # First check if we're in a multi-step flow
         current_flow = state_manager.get_flow_type()
         if current_flow and current_flow in FLOW_HANDLERS:
-            # Always handle hi/greeting first to allow refresh at any time
-            if action == "hi":
-                return auth.handle_hi(state_manager)
-
-            # Process the flow step
-            current_step = state_manager.get_current_step()
-
+            # Get current step
             current_step = state_manager.get_current_step()
             if not current_step:
                 error_context = ErrorContext(
@@ -69,11 +60,11 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
                 else:
                     # CredEx-related flows (offer, accept, decline, cancel)
                     logger.debug(f"Getting credex flow handler: {current_flow}")
-                    from ...credex.flows import action, offer
-                    if current_flow == "offer":
-                        handler_func = offer.process_offer_step
-                    else:
-                        handler_func = getattr(action, handler_name)
+                    handler_module = __import__(
+                        f"services.whatsapp.handlers.credex.flows.{current_flow}",
+                        fromlist=[handler_name]
+                    )
+                    handler_func = getattr(handler_module, handler_name)
                     logger.debug(f"Got handler function: {handler_func}")
 
                 # Process step and return result
@@ -98,11 +89,12 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
                 )
                 return auth.create_error_message(state_manager, error_response)
 
-        # Not in a flow - handle menu actions
-        if action in MENU_ACTIONS:
+        # Not in a flow - check if input matches a menu action
+        message_text = message_text.strip().lower()
+        if message_text in MENU_ACTIONS:
             # Map special flow types
-            flow_type = "registration" if action == "start_registration" else (
-                "upgrade" if action == "upgrade_tier" else action
+            flow_type = "registration" if message_text == "start_registration" else (
+                "upgrade" if message_text == "upgrade_tier" else message_text
             )
 
             # Only initialize flow if it's a multi-step flow
@@ -114,13 +106,8 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
             # For non-flow actions like refresh, return to dashboard
             return handle_dashboard_display(state_manager)
 
-        # Handle other actions
-        if action == "hi":
-            # For greetings, refresh from API
-            return auth.handle_hi(state_manager)
-        else:
-            # For unrecognized inputs, show dashboard
-            return handle_dashboard_display(state_manager)
+        # For unrecognized inputs, show dashboard
+        return handle_dashboard_display(state_manager)
 
     except StateException as e:
         error_context = ErrorContext(
@@ -128,7 +115,7 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
             message=f"Message processing error: {str(e)}",
             details={
                 "message_type": message_type,
-                "action": action if 'action' in locals() else None
+                "message_text": message_text
             }
         )
         error_response = ErrorHandler.handle_error(

@@ -108,12 +108,11 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
             else:
                 # CredEx-related flows (offer, accept, decline, cancel)
                 logger.debug(f"Getting credex flow handler: {flow_type}")
-                if flow_type == "offer":
-                    from ..credex.flows import offer
-                    handler_func = offer.process_offer_step
-                else:
-                    from ..credex.flows import action
-                    handler_func = getattr(action, handler_name)
+                handler_module = __import__(
+                    f"services.whatsapp.handlers.credex.flows.{flow_type}",
+                    fromlist=[handler_name]
+                )
+                handler_func = getattr(handler_module, handler_name)
                 logger.debug(f"Got handler function: {handler_func}")
         except Exception as e:
             error_context = ErrorContext(

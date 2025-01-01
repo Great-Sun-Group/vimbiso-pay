@@ -30,21 +30,25 @@ def _update_state_core(state_manager: Any, updates: Dict[str, Any]) -> Tuple[boo
                 # Special handling for flow_data to preserve structure
                 current_flow_data = current_state.get("flow_data", {})
                 if isinstance(current_flow_data, dict):
-                    # Deep merge flow_data to preserve all fields
-                    new_flow_data = current_flow_data.copy()
-                    for k, v in value.items():
-                        if k == "data" and isinstance(v, dict):
-                            # Merge data dictionary
-                            current_data = new_flow_data.get("data", {})
-                            if isinstance(current_data, dict):
-                                new_flow_data["data"] = {**current_data, **v}
-                            else:
-                                new_flow_data["data"] = v
-                        else:
-                            # Update other fields
-                            new_flow_data[k] = v
+                    # Start with new values
+                    new_flow_data = value.copy()
+
+                    # Preserve data if not in update
+                    if "data" not in new_flow_data and "data" in current_flow_data:
+                        new_flow_data["data"] = current_flow_data["data"]
+                    # Merge data if both exist
+                    elif "data" in new_flow_data and "data" in current_flow_data:
+                        if isinstance(new_flow_data["data"], dict) and isinstance(current_flow_data["data"], dict):
+                            new_flow_data["data"] = {**current_flow_data["data"], **new_flow_data["data"]}
+
+                    # Ensure essential fields exist
+                    new_flow_data.setdefault("flow_type", current_flow_data.get("flow_type"))
+                    new_flow_data.setdefault("step", current_flow_data.get("step", 0))
+                    new_flow_data.setdefault("current_step", current_flow_data.get("current_step", ""))
+
                     current_state["flow_data"] = new_flow_data
                 else:
+                    # If no existing flow_data, just use new value
                     current_state["flow_data"] = value
             elif isinstance(value, dict) and isinstance(current_state.get(key), dict):
                 # For other dictionary fields, update nested values

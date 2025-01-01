@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Tuple
 from core.utils.exceptions import StateException
 from core.utils.state_validator import StateValidator
 
-from .config import ACTIVITY_TTL, atomic_state
+from .config import atomic_state
 from .state_utils import (
     _update_state_core,
     update_flow_state,
@@ -78,13 +78,7 @@ class StateManager:
                     logger.warning(f"Invalid state structure: {validation.error_message}")
                     state_data = initial_state
 
-            # Update state in Redis
-            logger.info(f"Updating state in Redis for channel {channel_id}: {state_data}")
-            success, error = atomic_state.atomic_update(self.key_prefix, state_data, ACTIVITY_TTL)
-            if not success:
-                raise StateException(f"Failed to update state: {error}")
-
-            logger.info(f"Successfully initialized state for channel {channel_id}: {state_data}")
+            logger.info(f"Successfully loaded state for channel {channel_id}: {state_data}")
             return state_data
 
         except StateException as e:

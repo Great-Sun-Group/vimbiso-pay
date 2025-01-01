@@ -166,13 +166,6 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
                                 **(flow_data.get("data", {})),
                                 "offer_id": response.get("data", {}).get("offer", {}).get("id"),
                                 "last_completed": "complete"
-                            },
-                            "validation": {
-                                "amount": flow_data.get("validation", {}).get("amount"),
-                                "handle": flow_data.get("validation", {}).get("handle"),
-                                "confirmed": True,
-                                "complete": True,
-                                "timestamp": flow_data.get("validation", {}).get("timestamp")
                             }
                         }
                     })
@@ -196,8 +189,10 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
                             "flow_type": flow_data.get("flow_type", "offer"),
                             "step": flow_data.get("step", 0),  # Don't increment on error
                             "current_step": "confirm",
-                            "data": flow_data.get("data", {}),  # Preserve existing data
-                            "error": str(e)
+                            "data": {
+                                **(flow_data.get("data", {})),  # Preserve existing data
+                                "error": str(e)
+                            }
                         }
                     })
                     raise
