@@ -135,12 +135,18 @@ class StateManager:
             if not isinstance(updates, dict):
                 raise StateException("Updates must be a dictionary")
 
-            # Validate only fields being updated
-            fields_to_validate = set(updates.keys())
-            if fields_to_validate:
-                validation = StateValidator.validate_before_access(updates, fields_to_validate)
-                if not validation.is_valid:
-                    raise StateException(f"Invalid update: {validation.error_message}")
+            # Create merged state for validation
+            merged_state = self._state.copy()
+            for key, value in updates.items():
+                if isinstance(value, dict) and isinstance(merged_state.get(key), dict):
+                    merged_state[key] = {**merged_state[key], **value}
+                else:
+                    merged_state[key] = value
+
+            # Validate merged state
+            validation = StateValidator.validate_state(merged_state)
+            if not validation.is_valid:
+                raise StateException(f"Invalid update: {validation.error_message}")
 
             # Validate critical fields are not being modified
             if "channel" in updates:

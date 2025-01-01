@@ -37,33 +37,42 @@ class StateValidator:
         if not channel_validation.is_valid:
             return channel_validation
 
+        # Check if this update requires authentication
+        requires_auth = False
+        if "flow_data" in state:
+            flow_type = state["flow_data"].get("flow_type")
+            if flow_type in cls.AUTHENTICATED_FLOWS:
+                requires_auth = True
+
+        # Validate authentication if required
+        if requires_auth or state.get("member_id") is not None or state.get("active_account_id") is not None:
+            # Skip auth validation if we're setting auth fields
+            if not ("authenticated" in state and "jwt_token" in state):
+                if not state.get("authenticated"):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="Authentication required for this operation"
+                    )
+                if not state.get("jwt_token"):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="Valid token required for this operation"
+                    )
+
         # Validate flow_data structure if present
         if "flow_data" in state:
-            flow_validation = cls._validate_flow_data(state["flow_data"])
+            flow_validation = cls._validate_flow_data(state["flow_data"], state)
             if not flow_validation.is_valid:
                 return flow_validation
 
-        # Only validate auth for non-null member/account operations
-        if (state.get("member_id") is not None or state.get("active_account_id") is not None):
-            if not state.get("authenticated"):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Authentication required for member operations"
-                )
-            if not state.get("jwt_token"):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Valid token required for member operations"
-                )
-
-            # Validate accounts structure if present
-            if "accounts" in state:
-                accounts_validation = cls._validate_accounts(
-                    state["accounts"],
-                    state.get("active_account_id")
-                )
-                if not accounts_validation.is_valid:
-                    return accounts_validation
+        # Validate accounts structure if present
+        if "accounts" in state:
+            accounts_validation = cls._validate_accounts(
+                state["accounts"],
+                state.get("active_account_id")
+            )
+            if not accounts_validation.is_valid:
+                return accounts_validation
 
         return ValidationResult(is_valid=True)
 
@@ -172,7 +181,7 @@ class StateValidator:
     }
 
     @classmethod
-    def _validate_flow_data(cls, flow_data: Any) -> ValidationResult:
+    def _validate_flow_data(cls, flow_data: Any, state: Dict[str, Any]) -> ValidationResult:
         """Validate flow data structure"""
         # Must be a dictionary
         if not isinstance(flow_data, dict):
@@ -206,10 +215,18 @@ class StateValidator:
             # Validate authentication for protected flows
             flow_type = flow_data["flow_type"]
             if flow_type in cls.AUTHENTICATED_FLOWS:
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Flow type '{flow_type}' requires authentication"
-                )
+                # Skip auth validation if we're setting auth fields
+                if not ("authenticated" in state and "jwt_token" in state):
+                    if not state.get("authenticated"):
+                        return ValidationResult(
+                            is_valid=False,
+                            error_message=f"Flow type '{flow_type}' requires authentication"
+                        )
+                    if not state.get("jwt_token"):
+                        return ValidationResult(
+                            is_valid=False,
+                            error_message=f"Flow type '{flow_type}' requires valid token"
+                        )
 
             if not isinstance(flow_data["step"], int):
                 return ValidationResult(
@@ -336,16 +353,18 @@ class StateValidator:
 
         # Only validate auth for non-null member/account access
         if ("member_id" in required_fields and state.get("member_id") is not None or "active_account_id" in required_fields and state.get("active_account_id") is not None):
-            if not state.get("authenticated"):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Authentication required for member operations"
-                )
-            if not state.get("jwt_token"):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Valid token required for member operations"
-                )
+            # Skip auth validation if we're setting auth fields
+            if not ("authenticated" in state and "jwt_token" in state):
+                if not state.get("authenticated"):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="Authentication required for member operations"
+                    )
+                if not state.get("jwt_token"):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="Valid token required for member operations"
+                    )
 
         # Validate accounts if required
         if "accounts" in required_fields:
@@ -363,7 +382,7 @@ class StateValidator:
 
         # Validate flow_data structure if being accessed
         if "flow_data" in required_fields and "flow_data" in state:
-            flow_validation = cls._validate_flow_data(state["flow_data"])
+            flow_validation = cls._validate_flow_data(state["flow_data"], state)
             if not flow_validation.is_valid:
                 return flow_validation
 

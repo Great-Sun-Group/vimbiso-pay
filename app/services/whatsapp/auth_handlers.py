@@ -116,14 +116,39 @@ def handle_hi(state_manager: Any) -> Message:
         success, response = attempt_login(state_manager)
 
         if success:
-            # Update state for dashboard flow
-            state_manager.update_state({
+            # Extract data from response
+            data = response.get("data", {})
+            action = data.get("action", {})
+            dashboard = data.get("dashboard", {})
+
+            # Extract auth details
+            auth_details = action.get("details", {})
+            member_data = dashboard.get("member", {})
+            accounts = dashboard.get("accounts", [])
+
+            # First update auth state
+            success, error = state_manager.update_state({
+                "member_id": auth_details.get("memberID"),
+                "jwt_token": auth_details.get("token"),
+                "authenticated": True,
+                "member_data": member_data,
+                "accounts": accounts,
+                "active_account_id": accounts[0]["accountID"] if accounts else None
+            })
+            if not success:
+                raise StateException(f"Failed to update auth state: {error}")
+
+            # Then update flow state
+            success, error = state_manager.update_state({
                 "flow_data": {
                     "flow_type": "dashboard",
                     "step": 0,
                     "current_step": "main"
                 }
             })
+            if not success:
+                raise StateException(f"Failed to update flow state: {error}")
+
             logger.info("Login successful, showing dashboard")
             return handle_dashboard_display(state_manager)
         else:
