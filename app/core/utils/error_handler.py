@@ -182,13 +182,21 @@ class ErrorHandler:
         Components should NOT update error state directly.
         All error state updates should come through here.
         """
-        # Build standardized error state
+        # Get current flow state
+        current_flow = state_manager.get("flow_data") or {}
+
+        # Build error state preserving flow information
         error_state = {
             "flow_data": {
-                "flow_type": context.error_type,
-                "step": 0,  # Reset step on error
-                "current_step": "error",
+                # Preserve flow type
+                "flow_type": current_flow.get("flow_type", "unknown"),
+                # Reset step info for amount validation errors
+                "step": 0 if context.step_id == "amount" else current_flow.get("step", 0),
+                "current_step": "amount" if context.step_id == "amount" else current_flow.get("current_step", "unknown"),
                 "data": {
+                    # Preserve existing data except for amount errors
+                    **(current_flow.get("data", {}) if context.step_id != "amount" else {}),
+                    # Add error information
                     "error": {
                         "type": context.error_type,
                         "message": context.message,
@@ -340,17 +348,17 @@ class ErrorHandler:
                 extra={
                     "handler_error": str(e),
                     "original_error": str(error),
-                    "step_id": context.step_id
+                    "step_id": getattr(error_context, "step_id", None) if isinstance(error_context, ErrorContext) else error_context
                 }
             )
 
             # Create system error context
             system_context = ErrorContext(
-                "system",
-                cls.ERROR_MESSAGES["system"]["generic"],
+                error_type="system",
+                message=cls.ERROR_MESSAGES["system"]["generic"],
                 details={
-                    "flow_type": "offer",
-                    "error": str(e)
+                    "handler_error": str(e),
+                    "original_error": str(error)
                 }
             )
 

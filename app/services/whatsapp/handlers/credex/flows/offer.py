@@ -10,12 +10,10 @@ from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 from services.credex.service import get_credex_service
 
-from .steps import cleanup_step_data, process_step
+from .constants import VALID_DENOMINATIONS
+from .steps import process_step
 
 logger = logging.getLogger(__name__)
-
-# Valid denominations for offers
-VALID_DENOMINATIONS = {"USD", "ZWG", "XAU", "CAD"}
 
 
 def create_message(channel_id: str, text: str, buttons: Optional[List[Dict[str, str]]] = None) -> Message:
@@ -48,53 +46,15 @@ def create_message(channel_id: str, text: str, buttons: Optional[List[Dict[str, 
     )
 
 
-def validate_offer_amount(amount: float, denomination: str, state_manager: Any = None) -> None:
-    """Validate offer amount based on business rules"""
-    if denomination not in VALID_DENOMINATIONS:
-        raise StateException("invalid_denomination")
-
-    if amount <= 0:
-        raise StateException("invalid_amount")
-
-
-def validate_offer_handle(handle: str, state_manager: Any) -> None:
-    """Validate offer handle based on business rules"""
-    if 50 < len(handle) < 3:
-        raise StateException("invalid_handle_length")
-
-    # Get flow step data which contains the amount using standard structure
-    flow_data = state_manager.get_flow_step_data()
-    if not flow_data or not flow_data.get("amount", {}).get("value"):
-        raise StateException("missing_amount")
-
-    # Check if handle exists using member service directly
-    from services.credex.member import validate_account_handle
-    success, response = validate_account_handle(handle, state_manager)
-    if not success:
-        raise StateException("invalid_handle")
-
-    # Get active account
-    active_account = state_manager.get_active_account()
-    if not active_account:
-        raise StateException("missing_account")
-
-    # Cannot send offer to self
-    if handle == active_account["accountHandle"]:
-        raise StateException("invalid_handle_self")
-
-
 def process_offer_step(state_manager: Any, step: str, input_data: Any = None) -> Message:
-    """Process offer step with validation"""
+    """Process offer step and return appropriate message"""
     try:
-        # Get channel ID through state manager
+        # Get channel ID for messages
         channel_id = state_manager.get("channel")["identifier"]
 
-        # Process step input through generic step processor
-        result = process_step(state_manager, step, input_data)
-
-        # Initial prompts or responses based on step
-        if step == "amount":
-            if not input_data:
+        # Handle initial prompts
+        if not input_data:
+            if step == "amount":
                 return create_message(
                     channel_id,
                     "*💸 What offer amount and denomination?*\n"
@@ -102,33 +62,58 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
                     "- Valid denom placement ✨ `54 ZWG`, `ZWG 125.54`\n"
                     f"- Valid denoms 🌐 {', '.join(f'`{d}`' for d in sorted(VALID_DENOMINATIONS))}"
                 )
+            elif step == "handle":
+                return create_message(channel_id, "Enter account 💳 handle:")
+            elif step == "complete":
+                return create_message(channel_id, "✅ Your offer has been sent.")
 
-            # Amount validation and state update handled in process_step
-            # Just return next prompt
+        # Return step-specific messages
+        if step == "amount":
+            # Process input through StateManager
+            process_step(state_manager, step, input_data)
+
+            # Get validated state
+            flow_data = state_manager.get("flow_data")
+
+            # Update step after processing amount
+            state_manager.update_state({
+                "flow_data": {
+                    "step": 2,
+                    "current_step": "handle"
+                }
+            })
             return create_message(channel_id, "Enter account 💳 handle:")
 
         elif step == "handle":
-            if not input_data:
-                return create_message(channel_id, "Enter account 💳 handle:")
+            # Process input through StateManager
+            process_step(state_manager, step, input_data)
 
-            # Handle error message result
-            if isinstance(result, Message):
-                return result
+            # Get validated state
+            flow_data = state_manager.get("flow_data")
 
-            # Validate handle based on business rules
-            validate_offer_handle(result["handle"], state_manager)
-
-            # Show confirmation with amount and account details
-            state = state_manager.get_flow_step_data()
+            # Get account details from validated state
             accounts = state_manager.get("accounts") or []
+            handle = flow_data["data"]["handle"]
             target_account = next(
-                (acc for acc in accounts if acc["accountHandle"] == result["handle"]),
+                (acc for acc in accounts if acc["accountHandle"] == handle),
                 None
             )
+
             if not target_account:
-                raise StateException("account_not_found")
-            amount_data = state.get("amount", {})
-            formatted_amount = f"{amount_data.get('value')} {amount_data.get('denomination')}".strip()
+                raise StateException(f"Account not found: {handle}")
+
+            # Show confirmation with validated data
+            amount_data = flow_data["data"]["amount"]
+            formatted_amount = f"{amount_data['value']} {amount_data['denomination']}".strip()
+
+            # Update step before returning message
+            state_manager.update_state({
+                "flow_data": {
+                    "step": 3,
+                    "current_step": "confirm"
+                }
+            })
+
             return create_message(
                 channel_id,
                 f"*📝 Review your offer:*\n"
@@ -140,95 +125,75 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
                 ]
             )
 
-        elif step == "complete":
-            # Just return success message for complete step
-            return create_message(channel_id, "✅ Your offer has been sent.")
-
         elif step == "confirm":
-            if not input_data:
-                # Re-show confirmation with current data
-                state = state_manager.get_flow_step_data()
-                accounts = state_manager.get("accounts") or []
-                handle = state.get("handle")
-                target_account = next(
-                    (acc for acc in accounts if acc["accountHandle"] == handle),
-                    None
-                )
-                if not target_account:
-                    raise StateException("account_not_found")
-                amount_data = state.get("amount", {})
-                formatted_amount = f"{amount_data.get('value')} {amount_data.get('denomination')}".strip()
-                return create_message(
-                    channel_id,
-                    f"*📝 Review your offer:*\n"
-                    f"💸 Amount: {formatted_amount}\n"
-                    f"💳 To: {target_account['accountName']} ({target_account['accountHandle']})",
-                    buttons=[
-                        {"id": "confirm", "text": "✅ Confirm"},
-                        {"id": "cancel", "text": "❌ Cancel"}
-                    ]
-                )
+            # Process input through StateManager
+            process_step(state_manager, step, input_data)
 
-            # Handle error message result
-            if isinstance(result, Message):
-                return result
+            # Get validated state
+            flow_data = state_manager.get("flow_data")
 
-            # Process confirmation result
-            if result and result.get("confirmed"):
-                # Get offer data from flow state
-                flow_data = state_manager.get_flow_step_data()
-                if not flow_data or not flow_data.get("data"):
-                    raise StateException("missing_flow_data")
+            # Submit offer if confirmed
+            if flow_data["data"].get("confirmed"):
+                # Get active account for issuer ID
+                active_account = state_manager.get_active_account()
 
-                # Extract offer data
+                # Build offer data
                 offer_data = {
                     "amount": flow_data["data"]["amount"],
-                    "handle": flow_data["data"]["handle"]
+                    "handle": flow_data["data"]["handle"],
+                    "issuerAccountID": active_account["accountID"]
                 }
+
+                # Update state with offer data
+                state_manager.update_state({
+                    "flow_data": {
+                        "data": offer_data
+                    }
+                })
 
                 # Submit through service layer
                 credex_service = get_credex_service(state_manager)
                 success, response = credex_service["offer_credex"](offer_data)
-                if not success:
-                    raise StateException("offer_creation_failed")
 
-                # Let state_manager handle completion state with clean data
-                clean_data = cleanup_step_data(state_manager, "complete", {
-                    "offer_id": response.get("data", {}).get("offer", {}).get("id"),
-                    "last_completed": "complete"
-                })
-                success, error = state_manager.update_state({
+                if not success:
+                    error_msg = response["message"] if isinstance(response, dict) else str(response)
+                    raise StateException(f"Failed to create offer: {error_msg}")
+
+                # Parse response
+                try:
+                    if isinstance(response, dict) and "data" in response and "offer" in response["data"]:
+                        offer_id = response["data"]["offer"]["id"]
+                    else:
+                        raise ValueError("Invalid response format")
+                except (KeyError, ValueError) as e:
+                    raise StateException(f"Invalid offer response: {str(e)}")
+
+                # Update step and state with result
+                state_manager.update_state({
                     "flow_data": {
-                        "flow_type": "offer",  # Ensure flow type stays as offer
-                        "step": 3,  # Move to complete step
+                        "step": 4,
                         "current_step": "complete",
-                        "data": clean_data
+                        "data": {
+                            "offer_id": offer_id
+                        }
                     }
                 })
-                if not success:
-                    logger.error(
-                        "Failed to update completion state",
-                        extra={
-                            "error": error,
-                            "step": "complete"
-                        }
-                    )
-                    raise StateException(f"Failed to update completion state: {error}")
 
                 return create_message(channel_id, "✅ Your request has been processed.")
 
-            # Not confirmed - show confirmation again
-            state = state_manager.get_flow_step_data()
+            # Show confirmation again if not confirmed
+            amount_data = flow_data["data"]["amount"]
+            formatted_amount = f"{amount_data['value']} {amount_data['denomination']}".strip()
             accounts = state_manager.get("accounts") or []
-            handle = state.get("handle")
+            handle = flow_data["data"]["handle"]
             target_account = next(
                 (acc for acc in accounts if acc["accountHandle"] == handle),
                 None
             )
+
             if not target_account:
-                raise StateException("account_not_found")
-            amount_data = state.get("amount", {})
-            formatted_amount = f"{amount_data.get('value')} {amount_data.get('denomination')}".strip()
+                raise StateException(f"Account not found: {handle}")
+
             return create_message(
                 channel_id,
                 f"*📝 Review your offer:*\n"
@@ -243,20 +208,18 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
         raise StateException("invalid_step")
 
     except Exception as e:
-        # Create proper error context
-        error_context = ErrorContext(
-            error_type="flow",
-            message=str(e),
-            step_id=step,
-            details={
-                "input": input_data,
-                "flow_data": state_manager.get("flow_data")
-            }
-        )
-        # Let error handler create proper message
+        # Let ErrorHandler create proper message
         return ErrorHandler.handle_flow_error(
             state_manager,
             e,
-            error_context,
+            ErrorContext(
+                error_type="flow",
+                message=str(e),
+                step_id=step,
+                details={
+                    "input": input_data,
+                    "flow_data": state_manager.get("flow_data")
+                }
+            ),
             return_message=True
         )
