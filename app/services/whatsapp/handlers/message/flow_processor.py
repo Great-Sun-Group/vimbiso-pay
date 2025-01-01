@@ -3,7 +3,8 @@ import logging
 from typing import Any, Dict, Optional
 
 from core.utils.exceptions import StateException
-from core.utils.error_handler import ErrorHandler, ErrorContext
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from ...types import WhatsAppMessage
 from ..member.dashboard import handle_dashboard_display
 
@@ -58,7 +59,9 @@ def process_flow(
         # Process step (StateManager validates current_step exists)
         current_step = state_manager.get_current_step()
         result = handler_func(state_manager, current_step, input_value)
-        if not result:
+
+        # Only clear flow and show dashboard if we're at the final step
+        if not result and current_step == "complete":
             # Clear flow state and return to default display
             success, error = state_manager.update_state({
                 "flow_data": {
@@ -86,6 +89,8 @@ def process_flow(
             # Show default dashboard display
             return handle_dashboard_display(state_manager)
 
+        # For intermediate steps, preserve flow state and return result
+        # This allows steps to return None for initial prompts
         return result
 
     except StateException as e:

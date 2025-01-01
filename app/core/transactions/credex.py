@@ -97,24 +97,6 @@ class CredexTransactionService(BaseTransactionService):
         logger.info("Transaction listing not yet implemented")
         return []
 
-    def _confirm_transaction(
-        self, transaction_id: str, issuer_account_id: str
-    ) -> TransactionResult:
-        """Confirm a transaction"""
-        try:
-            response = self.api_client.confirm_credex(transaction_id, issuer_account_id)
-            if not response[0]:  # Check first element of tuple for success
-                error_msg = response[1].get("message", "Failed to confirm transaction")
-                raise TransactionProcessingError(error_msg)
-
-            return TransactionResult(
-                success=True,
-                details=response[1].get("data", {})
-            )
-        except Exception as e:
-            logger.error(f"Failed to confirm transaction: {str(e)}")
-            raise TransactionProcessingError(str(e))
-
     def _parse_command(self, command: str) -> Dict[str, Any]:
         """Parse a CredEx transaction command string
 

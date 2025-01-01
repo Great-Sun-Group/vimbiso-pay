@@ -7,7 +7,7 @@ from .auth import register_member as auth_register
 from .credex import (accept_bulk_credex, accept_credex, cancel_credex,
                      decline_credex, get_credex, offer_credex)
 from .dashboard import get_dashboard as get_member_dashboard
-from .dashboard import get_ledger as get_member_ledger
+from .dashboard import get_ledger as get_account_ledger
 from .dashboard import refresh_member_info as refresh_member
 from .dashboard import validate_account_handle as validate_member_handle
 from .profile import update_profile_from_response
@@ -46,42 +46,18 @@ def create_api_service(state_manager: Any, channel_id: str) -> Dict[str, Callabl
             handle,
             state_manager.get("jwt_token")
         ),
-        "get_ledger": lambda payload: get_member_ledger(
-            payload,
+        "get_account_ledger": lambda account_id: get_account_ledger(
+            {"accountID": account_id},
             state_manager.get("jwt_token")
         ),
 
         # CredEx operations
-        "offer_credex": lambda offer_data: offer_credex(
-            state_manager,
-            channel_id,
-            offer_data
-        ),
-        "accept_credex": lambda credex_id: accept_credex(
-            state_manager,
-            channel_id,
-            credex_id
-        ),
-        "decline_credex": lambda credex_id: decline_credex(
-            state_manager,
-            channel_id,
-            credex_id
-        ),
-        "cancel_credex": lambda credex_id: cancel_credex(
-            state_manager,
-            channel_id,
-            credex_id
-        ),
-        "get_credex": lambda credex_id: get_credex(
-            state_manager,
-            channel_id,
-            credex_id
-        ),
-        "accept_bulk_credex": lambda credex_ids: accept_bulk_credex(
-            state_manager,
-            channel_id,
-            credex_ids
-        ),
+        "offer_credex": lambda: offer_credex(state_manager),
+        "accept_credex": lambda: accept_credex(state_manager),
+        "decline_credex": lambda: decline_credex(state_manager),
+        "cancel_credex": lambda: cancel_credex(state_manager),
+        "get_credex": lambda: get_credex(state_manager),
+        "accept_bulk_credex": lambda: accept_bulk_credex(state_manager),
 
         # Profile operations
         "update_profile_from_response": lambda api_response, action_type, update_from, token=None: update_profile_from_response(

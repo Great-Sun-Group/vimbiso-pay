@@ -18,67 +18,18 @@ Error Context Requirements:
 """
 
 import logging
-from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple, Union
 
 from rest_framework import status
 from rest_framework.response import Response
 
+from core.config.state_manager import StateManager
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
+from core.utils.error_types import ErrorContext
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ErrorContext:
-    """Error context for state updates
-
-    Required for ALL errors to ensure consistent handling.
-    Components should NOT create error messages directly.
-
-    Fields:
-        error_type: Type of error (must be one of: flow, state, input, api, system)
-        message: Clear user-facing message
-        step_id: Only required for flow errors, should be None for other types
-        details: Additional context (required for debugging)
-
-    Rules:
-        1. error_type must be one of the standard types
-        2. step_id is ONLY required when error_type is "flow"
-        3. For all other error types, step_id must be None
-        4. details must include relevant debugging information
-        5. message must be user-friendly and actionable
-    """
-
-    # Standard error types
-    VALID_ERROR_TYPES = {"flow", "state", "input", "api", "system"}
-    error_type: str
-    message: str
-    step_id: Optional[str] = None
-    details: Optional[Dict[str, Any]] = None
-
-    def __post_init__(self):
-        """Validate error context requirements"""
-        # Validate error type
-        if self.error_type not in self.VALID_ERROR_TYPES:
-            raise ValueError(f"error_type must be one of: {', '.join(self.VALID_ERROR_TYPES)}")
-
-        # Validate step_id requirements
-        if self.error_type == "flow" and not self.step_id:
-            raise ValueError("step_id is required for flow errors")
-        if self.error_type != "flow" and self.step_id:
-            raise ValueError("step_id should only be set for flow errors")
-
-        # Validate message
-        if not self.message or not isinstance(self.message, str):
-            raise ValueError("message must be a non-empty string")
-
-        # Validate details
-        if not self.details:
-            raise ValueError("details are required for debugging context")
-        if not isinstance(self.details, dict):
-            raise ValueError("details must be a dictionary")
 
 
 class ErrorHandler:
@@ -142,30 +93,15 @@ class ErrorHandler:
             For other error types, step_id is ignored
         """
         from .exceptions import (APIException, ConfigurationException,
-                                 FlowException, InvalidInputException,
-                                 StateException)
+                                 InvalidInputException, StateException)
 
-        # Map error to type and subtype
-        if isinstance(error, FlowException):
-            # Flow errors require step_id
-            if not step_id:
-                raise ValueError("step_id is required for flow errors")
+        # Map exception types to error types
+        # Determine error type from exception
+        if step_id:
+            # If step_id is provided, this is a flow error
             error_type = "flow"
-            subtype = error.subtype if hasattr(error, 'subtype') else "generic"
-            # Build flow error context with required step_id
-            return ErrorContext(
-                error_type=error_type,
-                message=cls.ERROR_MESSAGES[error_type][subtype],
-                step_id=step_id,  # Required for flow
-                details={
-                    "error_class": error.__class__.__name__,
-                    "error_message": str(error),
-                    "subtype": subtype
-                }
-            )
-
-        # Handle non-flow errors (step_id should be None)
-        if isinstance(error, InvalidInputException):
+            subtype = "generic"
+        elif isinstance(error, InvalidInputException):
             error_type = "input"
             subtype = error.subtype if hasattr(error, 'subtype') else "generic"
         elif isinstance(error, APIException):
@@ -246,17 +182,25 @@ class ErrorHandler:
         Components should NOT update error state directly.
         All error state updates should come through here.
         """
-        # Build standardized error state
+        # Get current flow state
+        current_flow = state_manager.get("flow_data") or {}
+
+        # Build error state preserving flow information
         error_state = {
             "flow_data": {
-                "flow_type": context.error_type,
-                "step": 0,  # Reset step on error
-                "current_step": "error",
+                # Preserve flow type
+                "flow_type": current_flow.get("flow_type", "unknown"),
+                # Reset step info for amount validation errors
+                "step": 0 if context.step_id == "amount" else current_flow.get("step", 0),
+                "current_step": "amount" if context.step_id == "amount" else current_flow.get("current_step", "unknown"),
                 "data": {
+                    # Preserve existing data except for amount errors
+                    **(current_flow.get("data", {}) if context.step_id != "amount" else {}),
+                    # Add error information
                     "error": {
                         "type": context.error_type,
                         "message": context.message,
-                        "timestamp": state_manager.get_timestamp()
+                        "timestamp": datetime.utcnow().isoformat()
                     }
                 }
             }
@@ -274,15 +218,23 @@ class ErrorHandler:
         state_manager.update_state(error_state)
 
     @classmethod
-    def handle_error(cls, error: Exception, state_manager: Any, step_id: Optional[str] = None) -> Dict[str, Any]:
+    def handle_error(cls, error: Exception, state_manager: Any, error_context: Optional[Union[ErrorContext, str]] = None) -> Dict[str, Any]:
         """Central error handling through state management
 
         This is the ONLY place errors should be handled.
         Components should let errors propagate up to here.
+
+        Args:
+            error: The exception to handle
+            state_manager: State manager instance
+            error_context: Either ErrorContext object or step_id string
         """
         try:
             # Get standardized error context
-            context = cls.get_error_context(error, step_id)
+            if isinstance(error_context, ErrorContext):
+                context = error_context
+            else:
+                context = cls.get_error_context(error, error_context)  # error_context is step_id string
 
             # Update error state through StateManager
             cls.update_error_state(state_manager, context)
@@ -294,7 +246,7 @@ class ErrorHandler:
                     "error_type": context.error_type,
                     "error_class": error.__class__.__name__,
                     "error_message": str(error),
-                    "step_id": step_id,
+                    "step_id": context.step_id,
                     "state": state_manager.get("flow_data"),
                     "details": context.details
                 }
@@ -328,32 +280,41 @@ class ErrorHandler:
         cls,
         state_manager: Any,
         error: Exception,
-        step_id: Optional[str] = None,
+        error_context: Optional[Union[ErrorContext, str]] = None,
         return_message: bool = False
     ) -> Union[Tuple[bool, Dict[str, Any]], Message]:
         """Handle flow-specific errors through state management
 
         Special handling for flow errors to support message responses.
         Components should still let errors propagate up.
+
+        Args:
+            state_manager: State manager instance
+            error: The exception to handle
+            error_context: Either ErrorContext object or step_id string
+            return_message: Whether to return Message object
         """
         try:
             # Get flow-specific error context
-            context = cls.get_error_context(error, step_id)
-            if context.error_type != "flow":
-                context.error_type = "flow"
-                context.message = cls.ERROR_MESSAGES["flow"]["generic"]
+            if isinstance(error_context, ErrorContext):
+                context = error_context
+            else:
+                context = cls.get_error_context(error, error_context)  # error_context is step_id string
+                if context.error_type != "flow":
+                    context.error_type = "flow"
+                    context.message = cls.ERROR_MESSAGES["flow"]["generic"]
 
             # Update error state
             cls.update_error_state(state_manager, context)
 
             # Log flow error with full context
             logger.error(
-                f"Flow error in step {step_id or 'unknown'}",
+                f"Flow error in step {context.step_id or 'unknown'}",
                 extra={
                     "error_type": "flow",
                     "error_class": error.__class__.__name__,
                     "error_message": str(error),
-                    "step_id": step_id,
+                    "step_id": context.step_id,
                     "state": state_manager.get("flow_data"),
                     "details": context.details
                 }
@@ -387,32 +348,65 @@ class ErrorHandler:
                 extra={
                     "handler_error": str(e),
                     "original_error": str(error),
-                    "step_id": step_id
+                    "step_id": getattr(error_context, "step_id", None) if isinstance(error_context, ErrorContext) else error_context
                 }
             )
 
-            # Return system error response
-            context = ErrorContext(
-                "system",
-                cls.ERROR_MESSAGES["system"]["generic"],
-                details={"handler_error": str(e)}
+            # Create system error context
+            system_context = ErrorContext(
+                error_type="system",
+                message=cls.ERROR_MESSAGES["system"]["generic"],
+                details={
+                    "handler_error": str(e),
+                    "original_error": str(error)
+                }
             )
 
-            if return_message:
-                return Message(
-                    recipient=MessageRecipient(
-                        channel_id=ChannelIdentifier(
-                            channel=ChannelType.WHATSAPP,
-                            value=state_manager.get("channel")["identifier"]
-                        )
-                    ),
-                    content=TextContent(
-                        body=cls.format_error_message(context.message)
-                    ),
-                    metadata={"error": "system_error"}
-                )
+            try:
+                # Update error state
+                cls.update_error_state(state_manager, system_context)
 
-            return False, cls.create_error_response(context)
+                if return_message:
+                    return Message(
+                        recipient=MessageRecipient(
+                            channel_id=ChannelIdentifier(
+                                channel=ChannelType.WHATSAPP,
+                                value=state_manager.get("channel")["identifier"]
+                            )
+                        ),
+                        content=TextContent(
+                            body=cls.format_error_message("Unable to start flow. Please try again")
+                        ),
+                        metadata={"error": "system_error"}
+                    )
+
+                return False, cls.create_error_response(system_context)
+
+            except Exception:
+                # Last resort - return basic error message when state update fails
+                if return_message:
+                    return Message(
+                        recipient=MessageRecipient(
+                            channel_id=ChannelIdentifier(
+                                channel=ChannelType.WHATSAPP,
+                                value=state_manager.get("channel")["identifier"]
+                            )
+                        ),
+                        content=TextContent(
+                            body=cls.format_error_message("❌ Unable to start flow. Please try again")
+                        )
+                    )
+
+                return False, {
+                    "data": {
+                        "action": {
+                            "type": "ERROR",
+                            "details": {
+                                "message": "Unable to start flow. Please try again"
+                            }
+                        }
+                    }
+                }
 
 
 def handle_api_error(error: Exception) -> Response:
@@ -458,15 +452,11 @@ def error_decorator(f):
             # Get state manager from arguments
             state_manager = None
 
-            # Try service instance
-            if args and hasattr(args[0], "state_manager"):
+            # Get state_manager - either passed directly or through service instance
+            if args and isinstance(args[0], StateManager):
+                state_manager = args[0]
+            elif args and hasattr(args[0], "state_manager"):
                 state_manager = args[0].state_manager
-
-            # Try user object
-            if not state_manager and args and hasattr(args[0], "user"):
-                user = args[0].user
-                if hasattr(user, "state_manager"):
-                    state_manager = user.state_manager
 
             # Handle missing state manager
             if not state_manager:
@@ -475,7 +465,7 @@ def error_decorator(f):
                     extra={
                         "function": f.__name__,
                         "error": str(e),
-                        "args": str(args)
+                        "func_args": str(args)
                     }
                 )
                 return ErrorHandler.create_error_response(

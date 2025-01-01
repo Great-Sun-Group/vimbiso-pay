@@ -3,7 +3,8 @@ import logging
 from typing import Any
 
 from core.messaging.types import Message
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 
 from .handlers.auth.auth_flow import attempt_login, handle_registration
@@ -27,13 +28,20 @@ def handle_error(state_manager: Any, operation: str, error: Exception) -> Messag
         StateException: If error handling fails
     """
     try:
-        # Create error context
+        # Get current flow state
+        current_step = state_manager.get_current_step()
+        flow_type = state_manager.get_flow_type()
+
+        # Create error context with flow information
         error_context = ErrorContext(
-            error_type="auth",
+            error_type="flow",
             message=f"{operation} failed: {str(error)}",
+            step_id=current_step or "login",  # Default to login if no current step
             details={
+                "flow_type": flow_type or "auth",
                 "operation": operation,
-                "error": str(error)
+                "error": str(error),
+                "auth_failure": True
             }
         )
 
@@ -43,56 +51,30 @@ def handle_error(state_manager: Any, operation: str, error: Exception) -> Messag
             extra={"error_context": error_context.__dict__}
         )
 
-        try:
-            # Let StateManager validate through state update
-            success, update_error = state_manager.update_state({
-                "flow_data": {
-                    "flow_type": "registration",
-                    "step": 0,
-                    "current_step": "welcome",
-                    "data": {
-                        "error": str(error),  # Include error in state for audit
-                        "error_type": error_context.error_type,
-                        "operation": operation
-                    }
-                }
-            })
-            if not success:
-                error_context = ErrorContext(
-                    error_type="state",
-                    message="Failed to update error state",
-                    details={
-                        "operation": operation,
-                        "error": update_error
-                    }
-                )
-                raise StateException(ErrorHandler.handle_error(
-                    StateException(update_error),
-                    state_manager,
-                    error_context
-                ))
+        # Let ErrorHandler handle state update
+        ErrorHandler.handle_error(error, state_manager, error_context)
 
-        except Exception as e:
-            error_context = ErrorContext(
-                error_type="state",
-                message="Failed to handle error state",
-                details={
-                    "operation": operation,
-                    "error": str(e)
-                }
-            )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+        # Initialize registration flow state
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "registration",
+                "step": 0,
+                "current_step": "welcome"
+            }
+        })
 
         return handle_registration(state_manager)
 
     except Exception as e:
+        # System errors should not have step_id
         error_context = ErrorContext(
             error_type="system",
             message="Failed to handle error",
             details={
                 "operation": operation,
                 "original_error": str(error),
-                "handler_error": str(e)
+                "handler_error": str(e),
+                "flow_type": state_manager.get_flow_type()  # Add flow context for debugging
             }
         )
         logger.error(
@@ -123,25 +105,92 @@ def handle_hi(state_manager: Any) -> Message:
             )
             raise StateException(error_context.message)
 
-        # Attempt login (updates state internally)
-        success, error = attempt_login(state_manager)
-        if not success:
+        # Let StateManager validate through update_state
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "auth",
+                "step": 0,
+                "current_step": "login"
+            }
+        })
+
+        # Attempt login (StateManager validates internally)
+        success, response = attempt_login(state_manager)
+
+        if success:
+            # Extract data from response
+            data = response.get("data", {})
+            action = data.get("action", {})
+            dashboard = data.get("dashboard", {})
+
+            # Extract auth details
+            auth_details = action.get("details", {})
+            member_data = dashboard.get("member", {})
+            accounts = dashboard.get("accounts", [])
+
+            # First update auth state
+            success, error = state_manager.update_state({
+                "member_id": auth_details.get("memberID"),
+                "jwt_token": auth_details.get("token"),
+                "authenticated": True,
+                "member_data": member_data,
+                "accounts": accounts,
+                "active_account_id": accounts[0]["accountID"] if accounts else None
+            })
+            if not success:
+                raise StateException(f"Failed to update auth state: {error}")
+
+            # Then update flow state
+            success, error = state_manager.update_state({
+                "flow_data": {
+                    "flow_type": "dashboard",
+                    "step": 0,
+                    "current_step": "main"
+                }
+            })
+            if not success:
+                raise StateException(f"Failed to update flow state: {error}")
+
+            logger.info("Login successful, showing dashboard")
+            return handle_dashboard_display(state_manager)
+        else:
+            # Update state for registration flow
+            state_manager.update_state({
+                "flow_data": {
+                    "flow_type": "registration",
+                    "step": 0,
+                    "current_step": "welcome"
+                }
+            })
             logger.info(
                 "Login failed, starting registration",
-                extra={"error": error}
+                extra={"error": response}
             )
             return handle_registration(state_manager)
 
-        # Login successful - show dashboard (StateManager validates authentication)
-        logger.info("Login successful, showing dashboard")
-        return handle_dashboard_display(state_manager)
-
     except StateException as e:
-        return handle_error(state_manager, "Greeting", e)
+        error_context = ErrorContext(
+            error_type="flow",
+            message=str(e),
+            step_id="login",  # Default to login step for auth errors
+            details={
+                "flow_type": "auth",
+                "operation": "greeting",
+                "error": str(e),
+                "auth_failure": True
+            }
+        )
+        return handle_error(state_manager, "Greeting", StateException(error_context.message))
     except Exception as e:
         error_context = ErrorContext(
-            error_type="auth",
+            error_type="flow",
             message="Failed to handle greeting",
-            details={"error": str(e)}
+            step_id="login",  # Default to login step for auth errors
+            details={
+                "flow_type": "auth",
+                "operation": "greeting",
+                "error": str(e),
+                "auth_failure": True
+            }
         )
         return handle_error(state_manager, "Greeting", StateException(error_context.message))

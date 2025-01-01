@@ -2,7 +2,7 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 
 from .config import ACTIVITY_TTL, atomic_state
@@ -30,21 +30,28 @@ def _update_state_core(state_manager: Any, updates: Dict[str, Any]) -> Tuple[boo
                 # Special handling for flow_data to preserve structure
                 current_flow_data = current_state.get("flow_data", {})
                 if isinstance(current_flow_data, dict):
-                    # Deep merge flow_data to preserve all fields
-                    new_flow_data = current_flow_data.copy()
-                    for k, v in value.items():
-                        if k == "data" and isinstance(v, dict):
-                            # Merge data dictionary
-                            current_data = new_flow_data.get("data", {})
-                            if isinstance(current_data, dict):
-                                new_flow_data["data"] = {**current_data, **v}
-                            else:
-                                new_flow_data["data"] = v
-                        else:
-                            # Update other fields
-                            new_flow_data[k] = v
+                    # Start with new values
+                    new_flow_data = value.copy()
+
+                    # Always preserve flow state fields
+                    new_flow_data["flow_type"] = value.get("flow_type", current_flow_data.get("flow_type"))
+                    new_flow_data["step"] = value.get("step", current_flow_data.get("step", 0))
+                    new_flow_data["current_step"] = value.get("current_step", current_flow_data.get("current_step", ""))
+
+                    # Then handle data updates
+                    if "data" in value:
+                        if not isinstance(value["data"], dict):
+                            raise StateException("flow_data.data must be a dictionary")
+                        new_flow_data["data"] = {
+                            **(current_flow_data.get("data", {})),
+                            **value["data"]
+                        }
+                    elif "data" in current_flow_data:
+                        new_flow_data["data"] = current_flow_data["data"]
+
                     current_state["flow_data"] = new_flow_data
                 else:
+                    # If no existing flow_data, just use new value
                     current_state["flow_data"] = value
             elif isinstance(value, dict) and isinstance(current_state.get(key), dict):
                 # For other dictionary fields, update nested values
@@ -76,8 +83,14 @@ def _update_state_core(state_manager: Any, updates: Dict[str, Any]) -> Tuple[boo
                 "update_keys": list(updates.keys())
             }
         )
-        ErrorHandler.handle_error(e, state_manager, error_context)
-        return False, str(e)
+        logger.error(
+            "State update error",
+            extra={
+                "error": str(e),
+                "error_context": error_context.__dict__
+            }
+        )
+        raise StateException(f"Failed to update state: {str(e)}") from e
 
 
 def update_flow_state(state_manager: Any, flow_type: str, step: int, current_step: str) -> Tuple[bool, Optional[str]]:
@@ -120,8 +133,14 @@ def update_flow_state(state_manager: Any, flow_type: str, step: int, current_ste
                 "current_step": current_step
             }
         )
-        ErrorHandler.handle_error(e, state_manager, error_context)
-        return False, str(e)
+        logger.error(
+            "Flow state update error",
+            extra={
+                "error": str(e),
+                "error_context": error_context.__dict__
+            }
+        )
+        raise StateException(f"Failed to update flow state: {str(e)}") from e
 
 
 def update_flow_data(state_manager: Any, data_updates: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -163,8 +182,14 @@ def update_flow_data(state_manager: Any, data_updates: Dict[str, Any]) -> Tuple[
                 "data_keys": list(data_updates.keys())
             }
         )
-        ErrorHandler.handle_error(e, state_manager, error_context)
-        return False, str(e)
+        logger.error(
+            "Flow data update error",
+            extra={
+                "error": str(e),
+                "error_context": error_context.__dict__
+            }
+        )
+        raise StateException(f"Failed to update flow data: {str(e)}") from e
 
 
 def advance_flow(
@@ -197,7 +222,6 @@ def advance_flow(
             }
         }
 
-        # Update state atomically
         return _update_state_core(state_manager, {
             "flow_data": new_flow_data
         })
@@ -212,5 +236,11 @@ def advance_flow(
                 "has_updates": bool(data_updates)
             }
         )
-        ErrorHandler.handle_error(e, state_manager, error_context)
-        return False, str(e)
+        logger.error(
+            "Flow advance error",
+            extra={
+                "error": str(e),
+                "error_context": error_context.__dict__
+            }
+        )
+        raise StateException(f"Failed to advance flow: {str(e)}") from e

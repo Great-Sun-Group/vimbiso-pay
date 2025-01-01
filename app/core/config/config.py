@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 import redis
-from core.utils.error_handler import ErrorContext
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 from core.utils.redis_atomic import AtomicStateManager
 from django.conf import settings

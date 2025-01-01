@@ -1,49 +1,92 @@
 """Data transformation logic for credex flows enforcing SINGLE SOURCE OF TRUTH"""
 import logging
 from datetime import datetime
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
-from services.credex.member import validate_account_handle
-
 logger = logging.getLogger(__name__)
 
 
-def transform_amount(amount_str: str, state_manager: Any) -> Dict[str, Any]:
-    """Transform amount input to standardized format
+def transform_button_input(input_data: Union[str, Dict[str, Any]], state_manager: Any) -> Optional[str]:
+    """Transform button input to standardized format
 
     Args:
-        amount_str: Raw amount string
+        input_data: Raw button input
         state_manager: State manager instance
 
     Returns:
-        Dict with amount and denomination
+        Button ID string or None if invalid
 
     Raises:
         StateException: If validation fails
     """
     try:
-        # Let StateManager validate amount through state update
+        # Extract button ID from interactive or text
+        if isinstance(input_data, dict):
+            interactive = input_data.get("interactive", {})
+            if interactive.get("type") == "button_reply":
+                return interactive.get("button_reply", {}).get("id")
+
+        # Handle direct button ID string
+        elif isinstance(input_data, str):
+            return input_data.strip()
+
+        # Get current flow data
+        # Let StateManager validate flow state
         state_manager.update_state({
-            "flow_data": {
-                "input": {
-                    "amount": str(amount_str).strip().upper()
-                }
+            "validation": {
+                "type": "flow_state",
+                "step": "confirm"
             }
         })
 
-        # Get validated amount from state
-        amount_data = state_manager.get("flow_data")["input"]["amount"]
-        return amount_data
+        # Get validated flow state
+        flow_state = state_manager.get_flow_state()
+        current_step = flow_state.get("current_step")
+
+        error_context = ErrorContext(
+            error_type="flow",
+            message="Invalid button selection",
+            step_id=current_step,
+            details={
+                "input": input_data,
+                "flow_type": flow_state.get("flow_type", "offer"),
+                "validation_type": "button",
+                "flow_data": flow_state
+            }
+        )
+        raise StateException(ErrorHandler.handle_error(
+            StateException("Invalid button input"),
+            state_manager,
+            error_context
+        ))
 
     except Exception as e:
+        # Get current flow data
+        # Let StateManager validate flow state
+        state_manager.update_state({
+            "validation": {
+                "type": "flow_state",
+                "step": "confirm"
+            }
+        })
+
+        # Get validated flow state
+        flow_state = state_manager.get_flow_state()
+        current_step = flow_state.get("current_step")
+
         error_context = ErrorContext(
-            error_type="input",
-            message="Invalid amount format. Please enter a valid number with optional denomination (e.g. 100 USD)",
+            error_type="flow",
+            message="Invalid button selection",
+            step_id=current_step,
             details={
-                "input": amount_str,
-                "error": str(e)
+                "input": input_data,
+                "error": str(e),
+                "flow_type": flow_state.get("flow_type", "offer"),
+                "validation_type": "dashboard",
+                "flow_data": flow_state
             }
         )
         raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
@@ -63,19 +106,34 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
         StateException: If validation fails
     """
     try:
-        # Let StateManager validate token
-        jwt_token = state_manager.get("jwt_token")  # StateManager validates
-
         # Extract handle from interactive or text
         if isinstance(handle, dict):
             interactive = handle.get("interactive", {})
             if interactive.get("type") == "text":
                 handle = interactive.get("text", {}).get("body", "")
             else:
+                # Let StateManager validate flow state
+                state_manager.update_state({
+                    "validation": {
+                        "type": "flow_state",
+                        "step": "handle"
+                    }
+                })
+
+                # Get validated flow state
+                flow_state = state_manager.get_flow_state()
+                current_step = flow_state.get("current_step")
+
                 error_context = ErrorContext(
-                    error_type="input",
+                    error_type="flow",
                     message="Invalid handle format. Please provide a valid account handle",
-                    details={"input": handle}
+                    step_id=current_step,
+                    details={
+                        "input": handle,
+                        "flow_type": flow_state.get("flow_type", "offer"),
+                        "validation_type": "handle_format",
+                        "flow_data": flow_state
+                    }
                 )
                 raise StateException(ErrorHandler.handle_error(
                     StateException("Invalid handle format"),
@@ -85,10 +143,28 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
 
         handle = handle.strip()
         if not handle:
+            # Let StateManager validate flow state
+            state_manager.update_state({
+                "validation": {
+                    "type": "flow_state",
+                    "step": "handle"
+                }
+            })
+
+            # Get validated flow state
+            flow_state = state_manager.get_flow_state()
+            current_step = flow_state.get("current_step")
+
             error_context = ErrorContext(
-                error_type="input",
+                error_type="flow",
                 message="Handle cannot be empty. Please provide a valid account handle",
-                details={"input": handle}
+                step_id=current_step,
+                details={
+                    "input": handle,
+                    "flow_type": flow_state.get("flow_type", "offer"),
+                    "validation_type": "handle_empty",
+                    "flow_data": flow_state
+                }
             )
             raise StateException(ErrorHandler.handle_error(
                 StateException("Empty handle"),
@@ -96,18 +172,31 @@ def transform_handle(handle: Union[str, Dict[str, Any]], state_manager: Any) -> 
                 error_context
             ))
 
-        # Validate handle through API (raises StateException if invalid)
-        validate_account_handle(handle, jwt_token)
-
         return handle
 
     except Exception as e:
+        # Let StateManager validate flow state
+        state_manager.update_state({
+            "validation": {
+                "type": "flow_state",
+                "step": "handle"
+            }
+        })
+
+        # Get validated flow state
+        flow_state = state_manager.get_flow_state()
+        current_step = flow_state.get("current_step")
+
         error_context = ErrorContext(
-            error_type="input",
+            error_type="flow",
             message="Invalid account handle. Please provide a valid handle",
+            step_id=current_step,
             details={
                 "input": handle,
-                "error": str(e)
+                "error": str(e),
+                "flow_type": flow_state.get("flow_type", "offer"),
+                "validation_type": "handle",
+                "flow_data": flow_state
             }
         )
         raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
@@ -151,15 +240,32 @@ def store_dashboard_data(state_manager: Any, response: Dict[str, Any]) -> None:
             })
 
         # Log success
-        logger.info(f"Successfully stored dashboard data for channel {state_manager.get('channel')['identifier']}")
+        logger.info(f"Successfully stored dashboard data for channel {state_manager.get_channel_id()}")
 
     except Exception as e:
+        # Get current flow data
+        # Let StateManager validate flow state
+        state_manager.update_state({
+            "validation": {
+                "type": "flow_state",
+                "step": "complete"
+            }
+        })
+
+        # Get validated flow state
+        flow_state = state_manager.get_flow_state()
+        current_step = flow_state.get("current_step")
+
         error_context = ErrorContext(
-            error_type="state",
+            error_type="flow",
             message="Failed to store dashboard data. Please try again",
+            step_id=current_step,
             details={
                 "response": response,
-                "error": str(e)
+                "error": str(e),
+                "flow_type": flow_state.get("flow_type", "offer"),
+                "validation_type": "dashboard",
+                "flow_data": flow_state
             }
         )
         raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))

@@ -1,7 +1,7 @@
 """CredEx recurring payment operations using pure functions"""
 import logging
 from datetime import datetime
-from typing import Any, Dict, Set, Tuple, Optional
+from typing import Any, Dict, Set, Tuple
 
 from .base import make_credex_request
 from .exceptions import ValidationError
@@ -40,7 +40,7 @@ def process_payment_data(data: Dict[str, Any]) -> Dict[str, Any]:
     return payment
 
 
-def create_recurring(payment_data: Dict[str, Any], jwt_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+def create_recurring(payment_data: Dict[str, Any], state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Create recurring payment"""
     try:
         validate_payment_data(payment_data)
@@ -49,7 +49,7 @@ def create_recurring(payment_data: Dict[str, Any], jwt_token: Optional[str] = No
         response = make_credex_request(
             'recurring', 'create',
             payload=processed_data,
-            jwt_token=jwt_token
+            state_manager=state_manager
         )
         data = response.json()
 
@@ -64,7 +64,7 @@ def create_recurring(payment_data: Dict[str, Any], jwt_token: Optional[str] = No
         return False, {"message": str(e)}
 
 
-def accept_recurring(payment_id: str, jwt_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+def accept_recurring(payment_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Accept recurring payment"""
     if not payment_id:
         raise ValidationError("Payment ID is required")
@@ -73,7 +73,7 @@ def accept_recurring(payment_id: str, jwt_token: Optional[str] = None) -> Tuple[
         response = make_credex_request(
             'recurring', 'accept',
             payload={"paymentID": payment_id},
-            jwt_token=jwt_token
+            state_manager=state_manager
         )
         data = response.json()
 
@@ -86,7 +86,7 @@ def accept_recurring(payment_id: str, jwt_token: Optional[str] = None) -> Tuple[
         return False, {"message": str(e)}
 
 
-def cancel_recurring(payment_id: str, jwt_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+def cancel_recurring(payment_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Cancel recurring payment"""
     if not payment_id:
         raise ValidationError("Payment ID is required")
@@ -95,7 +95,7 @@ def cancel_recurring(payment_id: str, jwt_token: Optional[str] = None) -> Tuple[
         response = make_credex_request(
             'recurring', 'cancel',
             payload={"paymentID": payment_id},
-            jwt_token=jwt_token
+            state_manager=state_manager
         )
         data = response.json()
 
@@ -108,7 +108,7 @@ def cancel_recurring(payment_id: str, jwt_token: Optional[str] = None) -> Tuple[
         return False, {"message": str(e)}
 
 
-def get_recurring(payment_id: str, jwt_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+def get_recurring(payment_id: str, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Get recurring payment details"""
     if not payment_id:
         raise ValidationError("Payment ID is required")
@@ -117,7 +117,7 @@ def get_recurring(payment_id: str, jwt_token: Optional[str] = None) -> Tuple[boo
         response = make_credex_request(
             'recurring', 'get',
             payload={"paymentID": payment_id},
-            jwt_token=jwt_token
+            state_manager=state_manager
         )
         data = response.json()
 

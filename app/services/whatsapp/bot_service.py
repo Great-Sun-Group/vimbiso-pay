@@ -39,16 +39,25 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
             # Get action from input handler (pass state_manager for flow check)
             action = get_action(message_text, state_manager, message_type)
 
+            # Always handle hi/greeting first to allow refresh at any time
             if action == "hi":
                 # Handle greeting action (attempts login and shows dashboard)
                 return auth.handle_hi(state_manager)
-            elif action:
-                # Process message through appropriate handler
-                return process_message(state_manager, message_type, message_text.lower())
+
+            # Then check if we're in a flow
+            current_step = state_manager.get_current_step()
+            if current_step:
+                # In a flow - process message through flow handler
+                return process_message(state_manager, message_type, message_text, message_data)
             else:
-                # Default to dashboard for unrecognized input
-                from .handlers.member.display import handle_dashboard_display
-                return handle_dashboard_display(state_manager)
+                # Not in flow - handle normal actions
+                if action:
+                    # Process message through appropriate handler
+                    return process_message(state_manager, message_type, message_text.lower())
+                else:
+                    # Default to dashboard for unrecognized input
+                    from .handlers.member.display import handle_dashboard_display
+                    return handle_dashboard_display(state_manager)
         else:
             # Default to dashboard for non-text messages
             from .handlers.member.display import handle_dashboard_display

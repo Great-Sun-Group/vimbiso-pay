@@ -104,31 +104,28 @@ def validate_registration_input(state_manager: Any, input_data: Dict[str, Any]) 
                 "step": 0,
                 "current_step": "validate",
                 "data": {
-                    "validation": {
-                        "firstname": input_data.get("firstname"),
-                        "lastname": input_data.get("lastname"),
-                        "defaultDenom": input_data.get("defaultDenom")
-                    }
+                    "firstname": input_data.get("firstname"),
+                    "lastname": input_data.get("lastname"),
+                    "defaultDenom": input_data.get("defaultDenom")
                 }
             }
         })
         if not success:
             raise StateException(f"Failed to update validation state: {error}")
 
-        # Get validation data
+        # Get input data
         flow_data = state_manager.get_flow_step_data()
-        validation = flow_data.get("validation", {})
 
         # Validate required fields from API spec
-        firstname = validation["firstname"]
+        firstname = flow_data["firstname"]
         if not firstname or len(firstname) < 3 or len(firstname) > 50:
             raise StateException("First name must be between 3 and 50 characters")
 
-        lastname = validation["lastname"]
+        lastname = flow_data["lastname"]
         if not lastname or len(lastname) < 3 or len(lastname) > 50:
             raise StateException("Last name must be between 3 and 50 characters")
 
-        defaultDenom = validation["defaultDenom"]
+        defaultDenom = flow_data["defaultDenom"]
         valid_denoms = {"CXX", "CAD", "USD", "XAU", "ZWG"}
         if not defaultDenom or defaultDenom not in valid_denoms:
             raise StateException(f"Invalid defaultDenom. Must be one of: {', '.join(valid_denoms)}")
@@ -144,10 +141,7 @@ def validate_registration_input(state_manager: Any, input_data: Dict[str, Any]) 
                 "data": {
                     "firstname": firstname,
                     "lastname": lastname,
-                    "defaultDenom": defaultDenom,
-                    "validation": {
-                        "success": True
-                    }
+                    "defaultDenom": defaultDenom
                 }
             }
         })
@@ -162,11 +156,7 @@ def validate_registration_input(state_manager: Any, input_data: Dict[str, Any]) 
                 "step": 0,
                 "current_step": "error",
                 "data": {
-                    "error": str(e),
-                    "validation": {
-                        "success": False,
-                        "error": str(e)
-                    }
+                    "error": str(e)
                 }
             }
         })

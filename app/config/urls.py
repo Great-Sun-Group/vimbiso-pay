@@ -7,6 +7,7 @@ from django.contrib import admin
 from django.core.cache import cache
 from django.http import JsonResponse
 from django.urls import include, path
+from django.views import defaults
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework import routers
@@ -15,6 +16,12 @@ from core.utils.redis_atomic import AtomicStateManager
 import redis
 
 from api import views
+
+# Error handlers
+handler400 = defaults.bad_request
+handler403 = defaults.permission_denied
+handler404 = defaults.page_not_found
+handler500 = defaults.server_error
 
 # Initialize Redis clients
 state_redis_client = redis.from_url(settings.REDIS_STATE_URL)

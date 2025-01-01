@@ -2,10 +2,10 @@
 import logging
 from typing import Any, Dict, Tuple
 
-from decouple import config
-
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
+from decouple import config
 
 from .base import BASE_URL, handle_error_response, make_api_request
 

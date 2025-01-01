@@ -5,13 +5,8 @@ from typing import Any, Dict, Optional, Tuple
 from core.utils.exceptions import StateException
 from core.utils.state_validator import StateValidator
 
-from .config import ACTIVITY_TTL, atomic_state
-from .state_utils import (
-    _update_state_core,
-    update_flow_state,
-    update_flow_data,
-    advance_flow
-)
+from .config import atomic_state
+from .state_utils import _update_state_core
 
 logger = logging.getLogger(__name__)
 
@@ -37,19 +32,12 @@ class StateManager:
             if not channel_id:
                 raise StateException("Invalid channel ID in key prefix")
 
-            # Create valid initial state
+            # Create minimal initial state with only required fields
             initial_state = {
                 "channel": {
                     "type": "whatsapp",
-                    "identifier": channel_id,
-                    "metadata": {}
-                },
-                "member_id": None,
-                "jwt_token": None,
-                "authenticated": False,
-                "accounts": [],
-                "active_account_id": None,
-                "flow_data": {}  # Initialize as empty dict instead of None
+                    "identifier": channel_id
+                }
             }
 
             # Validate initial state structure
@@ -75,16 +63,11 @@ class StateManager:
                 logger.info("Validating existing state")
                 validation = StateValidator.validate_state(state_data)
                 if not validation.is_valid:
+                    # Only reset flow data on validation failure
                     logger.warning(f"Invalid state structure: {validation.error_message}")
-                    state_data = initial_state
+                    state_data["flow_data"] = {}
 
-            # Update state in Redis
-            logger.info(f"Updating state in Redis for channel {channel_id}: {state_data}")
-            success, error = atomic_state.atomic_update(self.key_prefix, state_data, ACTIVITY_TTL)
-            if not success:
-                raise StateException(f"Failed to update state: {error}")
-
-            logger.info(f"Successfully initialized state for channel {channel_id}: {state_data}")
+            logger.info(f"Successfully loaded state for channel {channel_id}: {state_data}")
             return state_data
 
         except StateException as e:
@@ -135,42 +118,78 @@ class StateManager:
             if not isinstance(updates, dict):
                 raise StateException("Updates must be a dictionary")
 
-            # Validate only fields being updated
-            fields_to_validate = set(updates.keys())
-            if fields_to_validate:
-                validation = StateValidator.validate_before_access(updates, fields_to_validate)
-                if not validation.is_valid:
-                    raise StateException(f"Invalid update: {validation.error_message}")
-
-            # Validate critical fields are not being modified
-            if "channel" in updates:
-                raise StateException("Cannot modify channel - must only exist at top level")
-
-            # Detect update type and route to appropriate function
+            # Handle flow data updates first
             if "flow_data" in updates:
                 flow_data = updates["flow_data"]
                 if not isinstance(flow_data, dict):
                     raise StateException("flow_data must be a dictionary")
 
-                # Check for flow state update
-                if all(k in flow_data for k in ["flow_type", "step", "current_step"]):
-                    return update_flow_state(
-                        self,
-                        flow_data["flow_type"],
-                        flow_data["step"],
-                        flow_data["current_step"]
-                    )
+                # Get current flow data
+                current_flow = self.get("flow_data") or {}
 
-                # Check for flow data update
-                elif "data" in flow_data and isinstance(flow_data["data"], dict):
-                    return update_flow_data(self, flow_data["data"])
+                # Start with current flow state
+                new_flow = current_flow.copy()
 
-                # Check for flow advance
-                elif "next_step" in flow_data:
-                    data_updates = flow_data.get("data", {})
-                    return advance_flow(self, flow_data["next_step"], data_updates)
+                # Handle empty flow_data
+                if not flow_data:
+                    new_flow = {}
+                else:
+                    # Update flow type if provided
+                    if "flow_type" in flow_data:
+                        new_flow["flow_type"] = flow_data["flow_type"]
+                    elif not new_flow.get("flow_type"):
+                        raise StateException("flow_type is required")
 
-            # Default to direct state update
+                    # Update step info if provided
+                    if "step" in flow_data:
+                        new_flow["step"] = flow_data["step"]
+                    if "current_step" in flow_data:
+                        new_flow["current_step"] = flow_data["current_step"]
+
+                    # Update data if provided
+                    if "data" in flow_data:
+                        if not isinstance(flow_data["data"], dict):
+                            raise StateException("flow_data.data must be a dictionary")
+                        # Merge new data with existing
+                        new_flow["data"] = {
+                            **(new_flow.get("data", {})),
+                            **flow_data["data"]
+                        }
+
+                    # Clean data based on step requirements if step changed
+                    if ("step" in flow_data or "current_step" in flow_data) and \
+                       new_flow.get("current_step") in StateValidator.STEP_DATA_FIELDS:
+                        required_fields = StateValidator.STEP_DATA_FIELDS[new_flow["current_step"]]
+                        old_data = new_flow.get("data", {})
+                        clean_data = {}
+                        # Keep only required fields
+                        for field in required_fields:
+                            if field in old_data:
+                                clean_data[field] = old_data[field]
+                        new_flow["data"] = clean_data
+
+                # Validate flow data structure
+                validation = StateValidator._validate_flow_data(new_flow, self._state)
+                if not validation.is_valid:
+                    raise StateException(f"Invalid flow data: {validation.error_message}")
+
+                # Update atomically
+                return _update_state_core(self, {"flow_data": new_flow})
+
+            # Create merged state for direct updates
+            merged_state = self._state.copy()
+            for key, value in updates.items():
+                if isinstance(value, dict) and isinstance(merged_state.get(key), dict):
+                    merged_state[key] = {**merged_state[key], **value}
+                else:
+                    merged_state[key] = value
+
+            # Validate complete state
+            validation = StateValidator.validate_state(merged_state)
+            if not validation.is_valid:
+                raise StateException(f"Invalid state after update: {validation.error_message}")
+
+            # Update atomically
             return _update_state_core(self, updates)
 
         except StateException as e:
@@ -186,38 +205,157 @@ class StateManager:
             if not isinstance(key, str):
                 raise StateException("Key must be a string")
 
-            # Validate state access
-            validation = StateValidator.validate_before_access(self._state, {key})
-            if not validation.is_valid:
-                raise StateException(f"Invalid state access: {validation.error_message}")
+            # Only validate access for required fields
+            if key in StateValidator.CRITICAL_FIELDS:
+                validation = StateValidator.validate_before_access(self._state, {key})
+                if not validation.is_valid:
+                    raise StateException(f"Invalid state access: {validation.error_message}")
 
+            # Return None for missing optional fields
             return self._state.get(key)
 
         except StateException as e:
             logger.error(f"State access error: {str(e)}")
             raise
 
-    def get_flow_data(self) -> Dict[str, Any]:
-        """Get flow data with validation"""
+    def get_flow_state(self) -> Dict[str, Any]:
+        """Get validated flow state"""
         flow_data = self.get("flow_data")
         if not flow_data:
             return {}
+
+        # Validate flow state
+        validation = StateValidator._validate_flow_data(flow_data, self._state)
+        if not validation.is_valid:
+            raise StateException(f"Invalid flow state: {validation.error_message}")
+
         return flow_data
 
     def get_flow_type(self) -> Optional[str]:
         """Get current flow type"""
-        flow_data = self.get_flow_data()
-        return flow_data.get("flow_type")
+        flow_state = self.get_flow_state()
+        return flow_state.get("flow_type")
 
     def get_current_step(self) -> Optional[str]:
         """Get current flow step"""
-        flow_data = self.get_flow_data()
-        return flow_data.get("current_step")
+        flow_state = self.get_flow_state()
+        return flow_state.get("current_step")
 
     def get_flow_step_data(self) -> Dict[str, Any]:
-        """Get flow step data"""
-        flow_data = self.get_flow_data()
-        return flow_data.get("data", {})
+        """Get validated flow step data"""
+        flow_state = self.get_flow_state()
+        return flow_state.get("data", {})
+
+    def get_channel_data(self) -> Dict[str, Any]:
+        """Get validated channel data"""
+        channel = self.get("channel")
+        if not channel:
+            raise StateException("Channel data not found")
+
+        # Validate channel data
+        validation = StateValidator._validate_channel_data(channel)
+        if not validation.is_valid:
+            raise StateException(f"Invalid channel data: {validation.error_message}")
+
+        return channel
+
+    def get_amount_data(self) -> Dict[str, Any]:
+        """Get validated amount data"""
+        flow_data = self.get_flow_step_data()
+        amount_data = flow_data.get("amount")
+        if not amount_data:
+            raise StateException("Amount data not found")
+
+        # Validate amount data
+        validation = StateValidator._validate_amount_data(amount_data)
+        if not validation.is_valid:
+            raise StateException(f"Invalid amount data: {validation.error_message}")
+
+        return amount_data
+
+    def get_handle_data(self) -> Dict[str, Any]:
+        """Get validated handle data"""
+        flow_data = self.get_flow_step_data()
+        handle_data = flow_data.get("handle")
+        if not handle_data:
+            raise StateException("Handle data not found")
+
+        # Validate handle data
+        validation = StateValidator._validate_handle_data(handle_data)
+        if not validation.is_valid:
+            raise StateException(f"Invalid handle data: {validation.error_message}")
+
+        return handle_data
+
+    def get_confirmation_data(self) -> Dict[str, Any]:
+        """Get validated confirmation data"""
+        flow_data = self.get_flow_step_data()
+        confirmation_data = flow_data.get("confirmation")
+        if not confirmation_data:
+            raise StateException("Confirmation data not found")
+
+        # Validate confirmation data
+        validation = StateValidator._validate_confirmation_data(confirmation_data)
+        if not validation.is_valid:
+            raise StateException(f"Invalid confirmation data: {validation.error_message}")
+
+        return confirmation_data
+
+    def get_offer_id(self) -> str:
+        """Get validated offer ID"""
+        flow_data = self.get_flow_step_data()
+        offer_id = flow_data.get("offer_id")
+        if not offer_id:
+            raise StateException("Offer ID not found")
+
+        # Validate offer ID
+        validation = StateValidator._validate_offer_id(offer_id)
+        if not validation.is_valid:
+            raise StateException(f"Invalid offer ID: {validation.error_message}")
+
+        return offer_id
+
+    def get_auth_data(self) -> Dict[str, Any]:
+        """Get validated auth data"""
+        auth_data = {
+            "token": self.get("jwt_token"),
+            "authenticated": self.get("authenticated")
+        }
+
+        # Validate auth data
+        validation = StateValidator._validate_auth_data(auth_data)
+        if not validation.is_valid:
+            raise StateException(f"Invalid auth data: {validation.error_message}")
+
+        return auth_data
+
+    def get_service_data(self) -> Dict[str, Any]:
+        """Get validated service data"""
+        flow_data = self.get_flow_step_data()
+        service_data = flow_data.get("service")
+        if not service_data:
+            raise StateException("Service data not found")
+
+        # Validate service data
+        validation = StateValidator._validate_service_data(service_data)
+        if not validation.is_valid:
+            raise StateException(f"Invalid service data: {validation.error_message}")
+
+        return service_data
+
+    def get_step_data(self) -> Dict[str, Any]:
+        """Get validated step data"""
+        flow_data = self.get_flow_step_data()
+        step_data = flow_data.get("step")
+        if not step_data:
+            raise StateException("Step data not found")
+
+        # Validate step data
+        validation = StateValidator._validate_step_data(step_data)
+        if not validation.is_valid:
+            raise StateException(f"Invalid step data: {validation.error_message}")
+
+        return step_data
 
     def get_channel_id(self) -> str:
         """Get channel identifier enforcing SINGLE SOURCE OF TRUTH"""

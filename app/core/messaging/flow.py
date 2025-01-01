@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Union
 
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
-from core.utils.error_handler import ErrorHandler, ErrorContext
 from core.utils.state_validator import StateValidator
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ def validate_step(step: Step, input_data: Any) -> bool:
             ErrorHandler.handle_error(
                 validation_error,
                 ErrorContext(
-                    error_type="validation",
+                    error_type="input",
                     message=str(validation_error),
                     step_id=step.id,
                     details={
@@ -183,7 +184,7 @@ def process_flow_input(
             ErrorHandler.handle_error(
                 ValueError("Invalid input"),
                 ErrorContext(
-                    error_type="validation",
+                    error_type="input",
                     message="Invalid input",
                     step_id=step.id,
                     details={"input": input_data}
@@ -216,7 +217,7 @@ def process_flow_input(
         ErrorHandler.handle_error(
             validation_error,
             ErrorContext(
-                error_type="validation",
+                error_type="input",
                 message=str(validation_error),
                 step_id=step.id,
                 details={"input": input_data}

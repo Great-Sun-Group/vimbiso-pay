@@ -15,7 +15,7 @@ from .credex import decline_credex as decline_credex_offer
 from .credex import get_credex as get_credex_details
 from .credex import offer_credex as create_credex
 from .dashboard_client import get_dashboard as get_member_dashboard
-from .dashboard_client import get_ledger as get_member_ledger
+from .dashboard_client import get_ledger as get_account_ledger
 from .dashboard_client import process_dashboard_response
 from .dashboard_client import validate_account_handle as validate_member_handle
 
@@ -193,34 +193,16 @@ def create_api_interactions(state_manager: Any, channel_id: str) -> Dict[str, Ca
             handle,
             state_manager.get("jwt_token")
         ),
-        "get_ledger": lambda payload: get_member_ledger(
-            payload,
+        "get_account_ledger": lambda account_id: get_account_ledger(
+            {"accountID": account_id},
             state_manager.get("jwt_token")
         ),
 
         # CredEx operations
-        "offer_credex": lambda payload: create_credex(
-            payload,
-            state_manager.get("jwt_token")
-        ),
-        "accept_credex": lambda payload: accept_credex_offer(
-            payload,
-            state_manager.get("jwt_token")
-        ),
-        "accept_bulk_credex": lambda payload: accept_bulk_credex_offers(
-            payload,
-            state_manager.get("jwt_token")
-        ),
-        "decline_credex": lambda payload: decline_credex_offer(
-            payload,
-            state_manager.get("jwt_token")
-        ),
-        "cancel_credex": lambda payload: cancel_credex_offer(
-            payload,
-            state_manager.get("jwt_token")
-        ),
-        "get_credex": lambda payload: get_credex_details(
-            payload,
-            state_manager.get("jwt_token")
-        ),
+        "offer_credex": lambda: create_credex(state_manager),
+        "accept_credex": lambda: accept_credex_offer(state_manager),
+        "accept_bulk_credex": lambda: accept_bulk_credex_offers(state_manager),
+        "decline_credex": lambda: decline_credex_offer(state_manager),
+        "cancel_credex": lambda: cancel_credex_offer(state_manager),
+        "get_credex": lambda: get_credex_details(state_manager),
     }

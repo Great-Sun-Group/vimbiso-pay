@@ -4,7 +4,8 @@ from typing import Any, Dict
 
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
-from core.utils.error_handler import ErrorContext, ErrorHandler
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 
 logger = logging.getLogger(__name__)
@@ -40,26 +41,28 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
                 message="Failed to get channel information. Please try again",
                 details={"error": str(e)}
             )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+            error_response = ErrorHandler.handle_error(e, state_manager, error_context)
+            raise StateException(error_response["data"]["action"]["details"]["message"])
 
         # Validate flow type through state update
         if flow_type not in FLOW_HANDLERS:
             error_context = ErrorContext(
-                error_type="flow",
+                error_type="system",  # Use system type since we don't have a step yet
                 message=f"Unknown flow type: {flow_type}. Please select a valid option",
                 details={"flow_type": flow_type}
             )
-            raise StateException(ErrorHandler.handle_error(
+            error_response = ErrorHandler.handle_error(
                 StateException("Invalid flow type"),
                 state_manager,
                 error_context
-            ))
+            )
+            raise StateException(error_response["data"]["action"]["details"]["message"])
 
         # Initialize flow state through state update
         state_update = {
             "flow_data": {
                 "flow_type": flow_type,
-                "step": 0,  # Must be int for validation
+                "step": 1,  # Steps start at 1 to match validation
                 "current_step": "amount" if flow_type == "offer" else "start",
                 "data": {}
             }
@@ -69,19 +72,25 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
         success, error = state_manager.update_state(state_update)
         logger.debug(f"Flow state initialization result - success: {success}, error: {error}")
         if not success:
+            # Get current step for error context
+            current_step = state_update["flow_data"]["current_step"]
             error_context = ErrorContext(
-                error_type="state",
-                message="Failed to initialize flow. Please try again",
+                error_type="flow",  # Use flow type for validation errors
+                message=str(error),  # Use actual validation error
+                step_id=current_step,  # Include step_id
                 details={
                     "flow_type": flow_type,
+                    "step": current_step,
                     "error": error
                 }
             )
-            raise StateException(ErrorHandler.handle_error(
+            # Use flow error handler for proper message
+            return ErrorHandler.handle_flow_error(
                 StateException(error),
                 state_manager,
-                error_context
-            ))
+                error_context,
+                return_message=True
+            )
 
         # Log flow start attempt
         logger.info(
@@ -107,49 +116,64 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
             else:
                 # CredEx-related flows (offer, accept, decline, cancel)
                 logger.debug(f"Getting credex flow handler: {flow_type}")
-                from ...handlers.credex.flows import offer, action
-                if flow_type == "offer":
-                    handler_func = offer.process_offer_step
-                else:
-                    handler_func = getattr(action, handler_name)
+                handler_module = __import__(
+                    f"services.whatsapp.handlers.credex.flows.{flow_type}",
+                    fromlist=[handler_name]
+                )
+                handler_func = getattr(handler_module, handler_name)
                 logger.debug(f"Got handler function: {handler_func}")
         except Exception as e:
+            # Get current step for error context
+            current_step = state_update["flow_data"]["current_step"]
             error_context = ErrorContext(
-                error_type="system",
+                error_type="flow",  # Use flow type for all flow-related errors
                 message="Failed to load flow handler. Please try again",
+                step_id=current_step,  # Include step_id
                 details={
                     "flow_type": flow_type,
                     "handler": handler_name,
+                    "step": current_step,
                     "error": str(e)
                 }
             )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+            # Use flow error handler for proper message
+            return ErrorHandler.handle_flow_error(
+                e,
+                state_manager,
+                error_context,
+                return_message=True
+            )
 
         try:
-            # Initialize flow through state update with correct step
-            current_step = state_manager.get_current_step()
-            result = handler_func(state_manager, current_step, None)
+            # Initialize flow with first step
+            result = handler_func(state_manager, state_update["flow_data"]["current_step"], None)
             if not result:
+                # Get current step for error context
+                current_step = state_update["flow_data"]["current_step"]
                 error_context = ErrorContext(
-                    error_type="flow",
+                    error_type="flow",  # Use flow type for all flow-related errors
                     message="Failed to start flow. Please try again",
+                    step_id=current_step,  # Include step_id
                     details={
                         "flow_type": flow_type,
-                        "step": current_step
+                        "step": current_step,
+                        "error": "No initial message"
                     }
                 )
-                raise StateException(ErrorHandler.handle_error(
+                # Use flow error handler for proper message
+                return ErrorHandler.handle_flow_error(
                     StateException("No initial message"),
                     state_manager,
-                    error_context
-                ))
+                    error_context,
+                    return_message=True
+                )
 
             # Log success
             logger.info(
                 "Flow started successfully",
                 extra={
                     "flow_type": flow_type,
-                    "step": current_step
+                    "step": state_update["flow_data"]["current_step"]
                 }
             )
 
@@ -157,19 +181,20 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
 
         except Exception as e:
             error_context = ErrorContext(
-                error_type="flow",
+                error_type="system",  # Use system type for initialization errors
                 message="Failed to initialize flow. Please try again",
                 details={
                     "flow_type": flow_type,
-                    "step": current_step if 'current_step' in locals() else None,
+                    "step": state_update["flow_data"]["current_step"],
                     "error": str(e)
                 }
             )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
+            error_response = ErrorHandler.handle_error(e, state_manager, error_context)
+            raise StateException(error_response["data"]["action"]["details"]["message"])
 
     except Exception as e:
         error_context = ErrorContext(
-            error_type="flow",
+            error_type="system",  # Use system type for top-level errors
             message="Unable to start flow. Please try again",
             details={
                 "flow_type": flow_type,

@@ -9,180 +9,86 @@ from .base import make_credex_request
 @error_decorator
 def login(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Authenticate user enforcing SINGLE SOURCE OF TRUTH"""
-    # Let StateManager validate through flow state update
+    # Let StateManager validate channel through update
     state_manager.update_state({
-        "flow_data": {
-            "flow_type": "auth",  # Not an authenticated flow
-            "step": 1,
-            "current_step": "login",
-            "data": {
-                "channel": state_manager.get("channel")  # StateManager validates
-            }
+        "validation": {
+            "type": "channel",
+            "required": True
         }
     })
 
-    # Get validated channel info
-    flow_data = state_manager.get_flow_step_data()
-    channel = flow_data.get("channel")
+    # Get validated channel data
+    channel_data = state_manager.get_channel_data()
 
-    # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
+    # Make API request with validated channel data
+    response_data = make_credex_request(
         'auth', 'login',
-        payload={"phone": channel["identifier"]},
+        payload={"phone": channel_data["identifier"]},
         state_manager=state_manager
     )
 
-    # Let StateManager validate through flow advance
+    # Let StateManager validate response through update
     state_manager.update_state({
-        "flow_data": {
-            "next_step": "complete",
-            "data": {
-                "response": response.json()
-            }
+        "validation": {
+            "type": "auth_response",
+            "data": response_data
         }
     })
 
-    # Get validated response
-    flow_data = state_manager.get_flow_step_data()
-    return True, flow_data.get("response")
+    # Get validated response data
+    validated_response = state_manager.get_auth_response()
+    success = validated_response.get("type") == "MEMBER_LOGIN"
+
+    if success:
+        # Let StateManager handle complete login response
+        state_manager.update_state({
+            "flow_data": {
+                "response": validated_response
+            }
+        })
+
+    return success, validated_response
 
 
 @error_decorator
-def register_member(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+def register_member(state_manager: Any, member_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
     """Register new member enforcing SINGLE SOURCE OF TRUTH"""
-    # Let StateManager validate through flow state update
+    # Let StateManager validate member data through update
     state_manager.update_state({
-        "flow_data": {
-            "flow_type": "auth",  # Not an authenticated flow
-            "step": 1,
-            "current_step": "register",
-            "data": {
-                "validation": {
-                    "valid_denoms": {"CXX", "CAD", "USD", "XAU", "ZWG"},
-                    "name_min_length": 3,
-                    "name_max_length": 50
-                }
-            }
-        }
-    })
-
-    # Let StateManager validate member data
-    state_manager.update_state({
-        "flow_data": {
-            "next_step": "validate",
-            "data": {
-                "member_data": {
-                    "defaultDenom": "USD",  # Default value
-                    "firstname": "",  # StateManager validates
-                    "lastname": ""  # StateManager validates
-                }
-            }
+        "validation": {
+            "type": "member_data",
+            "data": member_data
         }
     })
 
     # Get validated member data
-    flow_data = state_manager.get_flow_step_data()
-    member_data = flow_data.get("member_data")
+    validated_data = state_manager.get_member_data()
 
-    # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
+    # Make API request with validated member data
+    response_data = make_credex_request(
         'auth', 'register',
-        payload=member_data,
+        payload=validated_data,
         state_manager=state_manager
     )
 
-    # Let StateManager validate through flow advance
+    # Let StateManager validate response through update
     state_manager.update_state({
-        "flow_data": {
-            "next_step": "complete",
-            "data": {
-                "response": response.json()
-            }
+        "validation": {
+            "type": "auth_response",
+            "data": response_data
         }
     })
 
-    # Get validated response
-    flow_data = state_manager.get_flow_step_data()
-    return True, flow_data.get("response")
+    # Get validated response data
+    validated_response = state_manager.get_auth_response()
+    success = validated_response.get("type") == "MEMBER_REGISTER"
 
-
-@error_decorator
-def refresh_token(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Refresh authentication token enforcing SINGLE SOURCE OF TRUTH"""
-    # Let StateManager validate through flow state update
-    state_manager.update_state({
-        "flow_data": {
-            "flow_type": "auth",  # Not an authenticated flow
-            "step": 1,
-            "current_step": "refresh",
-            "data": {
-                "channel": state_manager.get("channel")  # StateManager validates
+    if success:
+        # Let StateManager handle complete registration response
+        state_manager.update_state({
+            "flow_data": {
+                "response": validated_response
             }
-        }
-    })
+        })
 
-    # Get validated channel info
-    flow_data = state_manager.get_flow_step_data()
-    channel = flow_data.get("channel")
-
-    # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
-        'auth', 'login',
-        payload={"phone": channel["identifier"]},
-        state_manager=state_manager
-    )
-
-    # Let StateManager validate through flow advance
-    state_manager.update_state({
-        "flow_data": {
-            "next_step": "complete",
-            "data": {
-                "response": response.json()
-            }
-        }
-    })
-
-    # Get validated response
-    flow_data = state_manager.get_flow_step_data()
-    return True, flow_data.get("response")
-
-
-@error_decorator
-def get_dashboard(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Get dashboard data from login response enforcing SINGLE SOURCE OF TRUTH"""
-    # Let StateManager validate through flow state update
-    state_manager.update_state({
-        "flow_data": {
-            "flow_type": "dashboard",  # Requires authentication
-            "step": 1,
-            "current_step": "get",
-            "data": {
-                "channel": state_manager.get("channel")  # StateManager validates
-            }
-        }
-    })
-
-    # Get validated channel info
-    flow_data = state_manager.get_flow_step_data()
-    channel = flow_data.get("channel")
-
-    # Make API request (ErrorHandler handles any errors)
-    response = make_credex_request(
-        'auth', 'login',
-        payload={"phone": channel["identifier"]},
-        state_manager=state_manager
-    )
-
-    # Let StateManager validate through flow advance
-    state_manager.update_state({
-        "flow_data": {
-            "next_step": "complete",
-            "data": {
-                "response": response.json()
-            }
-        }
-    })
-
-    # Get validated response
-    flow_data = state_manager.get_flow_step_data()
-    return True, flow_data.get("response")
+    return success, validated_response
