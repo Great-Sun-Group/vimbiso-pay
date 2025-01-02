@@ -1,55 +1,37 @@
 """Redis configuration and basic constants"""
 import logging
 from datetime import datetime, timedelta
-from urllib.parse import urlparse
 
-import redis
 from core.utils.error_types import ErrorContext
 from core.utils.exceptions import StateException
 from core.utils.redis_atomic import AtomicStateManager
 from django.conf import settings
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-# Redis Configuration
+# Cache Configuration
 try:
-    redis_url = urlparse(settings.REDIS_STATE_URL)
-    state_redis = redis.Redis(
-        host=redis_url.hostname or 'localhost',
-        port=redis_url.port or 6380,
-        db=int(redis_url.path[1:]) if redis_url.path else 0,
-        password=redis_url.password,
-        decode_responses=True,
-        socket_timeout=30,
-        socket_connect_timeout=30,
-        retry_on_timeout=True
-    )
-
-    # Test connection
-    state_redis.ping()
-    logger.info("Redis connection established successfully")
+    # Test cache connection
+    cache.set('test_key', 'test_value', timeout=5)
+    if cache.get('test_key') != 'test_value':
+        raise StateException("Cache test failed")
+    logger.info("Cache connection established successfully")
 
 except Exception as e:
     error_context = ErrorContext(
         error_type="system",
-        message="Failed to connect to Redis",
-        details={
-            "host": redis_url.hostname or 'localhost',
-            "port": redis_url.port or 6380,
-            "error": str(e)
-        }
+        message="Failed to connect to cache",
+        details={"error": str(e)}
     )
     logger.error(
-        "Redis connection error",
-        extra={
-            "error": str(e),
-            "error_context": error_context.__dict__
-        }
+        "Cache connection error",
+        extra={"error": str(e), "error_context": error_context.__dict__}
     )
-    raise StateException("Redis connection failed") from e
+    raise StateException("Cache connection failed") from e
 
 # Initialize atomic state manager
-atomic_state = AtomicStateManager(state_redis)
+atomic_state = AtomicStateManager(cache)
 
 # TTL Constants
 ACTIVITY_TTL = 300  # 5 minutes
@@ -105,9 +87,6 @@ def get_greeting(name: str) -> str:
         )
         logger.error(
             "Greeting generation error",
-            extra={
-                "error": str(e),
-                "error_context": error_context.__dict__
-            }
+            extra={"error": str(e), "error_context": error_context.__dict__}
         )
         raise StateException("Failed to generate greeting") from e

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def handle_error(state_manager: Any, operation: str, error: Exception) -> Message:
+    print(state_manager)
     """Handle errors consistently
 
     Args:

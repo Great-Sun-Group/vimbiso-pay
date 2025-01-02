@@ -16,7 +16,7 @@ SECRET_KEY = env("DJANGO_SECRET")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env("DEBUG", default=False, cast=bool)
 
-ALLOWED_HOSTS = env("ALLOWED_HOSTS", default="localhost 127.0.0.1 0bc7-129-222-164-147.ngrok-free.app").split(" ")
+ALLOWED_HOSTS = env("ALLOWED_HOSTS", default="localhost 127.0.0.1 bae2-129-222-164-135.ngrok-free.app").split(" ")
 
 # Application definition
 INSTALLED_APPS = [
@@ -113,29 +113,44 @@ CACHES = {
         "LOCATION": REDIS_CACHE_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SOCKET_CONNECT_TIMEOUT": 30,
-            "SOCKET_TIMEOUT": 30,
-            "RETRY_ON_TIMEOUT": True,
-            "MAX_CONNECTIONS": 20,
-            "CONNECTION_POOL_KWARGS": {
-                "max_connections": 20,
-                "retry_on_timeout": True,
-                "retry_on_error": [
-                    redis.ConnectionError,
-                    redis.TimeoutError,
-                    socket.timeout,
-                    socket.error,
-                ],
-                "health_check_interval": 30,
-            },
-            "IGNORE_EXCEPTIONS": True,
-            "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
-            "SERIALIZER": "django_redis.serializers.json.JSONSerializer",
         },
-        "KEY_PREFIX": "vimbiso",
-        "TIMEOUT": 300,  # 5 minutes default timeout for cache keys
-    }
+    },
+    "state": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_STATE_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
+    },
 }
+# {
+#     "default": {
+#         "BACKEND": "django_redis.cache.RedisCache",
+#         "LOCATION": REDIS_CACHE_URL,
+#         "OPTIONS": {
+#             "CLIENT_CLASS": "django_redis.client.DefaultClient",
+#             "SOCKET_CONNECT_TIMEOUT": 30,
+#             "SOCKET_TIMEOUT": 30,
+#             "RETRY_ON_TIMEOUT": True,
+#             "MAX_CONNECTIONS": 20,
+#             "CONNECTION_POOL_KWARGS": {
+#                 "max_connections": 20,
+#                 "retry_on_timeout": True,
+#                 "retry_on_error": [
+#                     redis.ConnectionError,
+#                     redis.TimeoutError,
+#                     socket.timeout,
+#                     socket.error,
+#                 ],
+#                 "health_check_interval": 30,
+#             },
+#             "IGNORE_EXCEPTIONS": True,
+#             "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
+#             "SERIALIZER": "django_redis.serializers.json.JSONSerializer",
+#         },
+#         "KEY_PREFIX": "vimbiso",
+#         "TIMEOUT": 300,  # 5 minutes default timeout for cache keys
+#     }
 
 # Use Redis for session storage with optimized settings
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
@@ -247,6 +262,22 @@ if not DEBUG:
     USE_X_FORWARDED_PORT = True
 
 # Logging Configuration
+# LOGGING = {
+#     "version": 1,
+#     "disable_existing_loggers": False,
+#     "handlers": {
+#         "console": {
+#             "class": "logging.StreamHandler",
+#         },
+#     },
+#     "loggers": {
+#         "": {
+#             "handlers": ["console"],
+#             "level": "INFO",
+#         },
+#     },
+# }
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

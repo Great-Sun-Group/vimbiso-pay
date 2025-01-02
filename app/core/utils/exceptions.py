@@ -29,7 +29,6 @@ class StateException(CredExCoreException):
         self.details = details or {}
         super().__init__(message)
 
-
 class ActionHandlerException(CredExCoreException):
     """Exception raised for errors in action handlers"""
     def __init__(self, message: str, action: str = None, details: Dict[str, Any] = None):

@@ -61,7 +61,7 @@ def _update_state_core(state_manager: Any, updates: Dict[str, Any]) -> Tuple[boo
                 current_state[key] = value
 
         # Store state atomically
-        success, error = atomic_state.atomic_update(
+        success, error = state_manager.atomic_state.atomic_update(
             state_manager.key_prefix,
             current_state,
             ACTIVITY_TTL
