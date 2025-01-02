@@ -1,46 +1,99 @@
-from typing import Any, Dict
+"""Core exceptions with clear error boundaries
+
+This module defines the base exceptions used throughout the system.
+Each exception maps to a specific error type with clear boundaries.
+"""
+
+from typing import Dict, Optional
 
 
-class CredExCoreException(Exception):
-    """Base exception for CredEx Core"""
+class BaseException(Exception):
+    """Base exception with error details"""
+    def __init__(self, message: str, details: Optional[Dict] = None):
+        self.message = message
+        self.details = details or {}
+        super().__init__(message)
+
+
+class ComponentException(BaseException):
+    """Component validation errors"""
+    def __init__(
+        self,
+        message: str,
+        component: str,
+        field: str,
+        value: str
+    ):
+        details = {
+            "component": component,
+            "field": field,
+            "value": value
+        }
+        super().__init__(message, details)
+
+
+class FlowException(BaseException):
+    """Flow business logic errors"""
+    def __init__(
+        self,
+        message: str,
+        step: str,
+        action: str,
+        data: Dict
+    ):
+        details = {
+            "step": step,
+            "action": action,
+            "data": data
+        }
+        super().__init__(message, details)
+
+
+class SystemException(BaseException):
+    """System technical errors"""
+    def __init__(
+        self,
+        message: str,
+        code: str,
+        service: str,
+        action: str
+    ):
+        details = {
+            "code": code,
+            "service": service,
+            "action": action
+        }
+        super().__init__(message, details)
+
+
+# Specific component exceptions
+class ValidationException(ComponentException):
+    """Input validation errors"""
     pass
 
 
-class InvalidInputException(CredExCoreException):
-    """Exception raised for invalid user input"""
-    def __init__(self, message: str, field: str = None):
-        self.message = message
-        self.field = field
-        super().__init__(message)
+class ConversionException(ComponentException):
+    """Data conversion errors"""
+    pass
 
 
-class APIException(CredExCoreException):
-    """Exception raised for API-related errors"""
-    def __init__(self, message: str, details: Dict[str, Any] = None):
-        self.message = message
-        self.details = details or {}
-        super().__init__(message)
+# Specific flow exceptions
+class InvalidStepException(FlowException):
+    """Invalid flow step errors"""
+    pass
 
 
-class StateException(CredExCoreException):
-    """Exception raised for state-related errors"""
-    def __init__(self, message: str, details: Dict[str, Any] = None):
-        self.message = message
-        self.details = details or {}
-        super().__init__(message)
-
-class ActionHandlerException(CredExCoreException):
-    """Exception raised for errors in action handlers"""
-    def __init__(self, message: str, action: str = None, details: Dict[str, Any] = None):
-        self.message = message
-        self.action = action
-        self.details = details or {}
-        super().__init__(message)
+class InvalidActionException(FlowException):
+    """Invalid flow action errors"""
+    pass
 
 
-class ConfigurationException(CredExCoreException):
-    """Exception raised for configuration-related errors"""
-    def __init__(self, message: str, subtype: str = None):
-        self.message = message
-        self.subtype = subtype
-        super().__init__(message)
+# Specific system exceptions
+class ConfigurationException(SystemException):
+    """System configuration errors"""
+    pass
+
+
+class ServiceException(SystemException):
+    """External service errors"""
+    pass

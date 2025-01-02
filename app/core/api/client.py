@@ -6,10 +6,10 @@ from .auth import login as auth_login
 from .auth import register_member as auth_register
 from .credex import (accept_bulk_credex, accept_credex, cancel_credex,
                      decline_credex, get_credex, offer_credex)
-from .dashboard import get_dashboard as get_member_dashboard
-from .dashboard import get_ledger as get_account_ledger
-from .dashboard import refresh_member_info as refresh_member
-from .dashboard import validate_account_handle as validate_member_handle
+from .dashboard_client import get_dashboard as get_member_dashboard
+from .dashboard_client import get_ledger as get_account_ledger
+from .dashboard_client import validate_account_handle as validate_member_handle
+from .api_interactions import refresh_member_info as refresh_member
 from .profile import update_profile_from_response
 
 logger = logging.getLogger(__name__)

@@ -24,31 +24,39 @@ def make_credex_request(
     url = config.get_url(path)
     headers = config.get_headers()
 
-    # Let StateManager validate auth through update
+    # Check if endpoint requires authentication
+    if CredExEndpoints.requires_auth(group, action):
+        # Get token directly from state (SINGLE SOURCE OF TRUTH)
+        jwt_token = state_manager.get("jwt_token")
+        if not jwt_token:
+            raise APIException("Authentication required for this endpoint")
+        headers["Authorization"] = f"Bearer {jwt_token}"
+
+    # For auth endpoints, get channel info directly (SINGLE SOURCE OF TRUTH)
+    if group == 'auth' and action == 'login':
+        channel = state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            raise APIException("Channel identifier required for authentication")
+        payload = {"phone": channel["identifier"]}
+
+    # Get current flow state
+    flow_data = state_manager.get("flow_data") or {}
+
+    # Update flow state preserving flow type and step
     state_manager.update_state({
-        "validation": {
-            "type": "auth",
-            "group": group,
-            "action": action
+        "flow_data": {
+            "flow_type": flow_data.get("flow_type"),  # Preserve flow type
+            "step": flow_data.get("step", 0),         # Preserve step number
+            "current_step": flow_data.get("current_step"),  # Preserve step name
+            "type": "api_request",  # Add request info
+            "data": {
+                "group": group,
+                "action": action,
+                "payload": payload,
+                **(flow_data.get("data", {}))  # Preserve existing data
+            }
         }
     })
-
-    # Get validated auth data
-    auth_data = state_manager.get_auth_data()
-    if auth_data.get("token"):
-        headers["Authorization"] = f"Bearer {auth_data['token']}"
-
-    # For auth endpoints, let StateManager validate channel
-    if group == 'auth' and action == 'login':
-        state_manager.update_state({
-            "validation": {
-                "type": "channel",
-                "required": True
-            }
-        })
-        # Get validated channel data
-        channel_data = state_manager.get_channel_data()
-        payload = {"phone": channel_data["identifier"]}
 
     try:
         # Make request

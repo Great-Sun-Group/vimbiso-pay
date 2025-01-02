@@ -60,7 +60,11 @@ def handle_error(state_manager: Any, operation: str, error: Exception) -> Messag
             "flow_data": {
                 "flow_type": "registration",
                 "step": 0,
-                "current_step": "welcome"
+                "current_step": "welcome",
+                "type": "registration_start",
+                "data": {
+                    "error": str(error)
+                }
             }
         })
 
@@ -106,16 +110,7 @@ def handle_hi(state_manager: Any) -> Message:
             )
             raise StateException(error_context.message)
 
-        # Let StateManager validate through update_state
-        state_manager.update_state({
-            "flow_data": {
-                "flow_type": "auth",
-                "step": 0,
-                "current_step": "login"
-            }
-        })
-
-        # Attempt login (StateManager validates internally)
+        # Attempt login (handles state management internally)
         success, response = attempt_login(state_manager)
 
         if success:
@@ -146,7 +141,11 @@ def handle_hi(state_manager: Any) -> Message:
                 "flow_data": {
                     "flow_type": "dashboard",
                     "step": 0,
-                    "current_step": "main"
+                    "current_step": "main",
+                    "type": "dashboard_display",
+                    "data": {
+                        "member_id": auth_details.get("memberID")
+                    }
                 }
             })
             if not success:
@@ -160,7 +159,11 @@ def handle_hi(state_manager: Any) -> Message:
                 "flow_data": {
                     "flow_type": "registration",
                     "step": 0,
-                    "current_step": "welcome"
+                    "current_step": "welcome",
+                    "type": "registration_start",
+                    "data": {
+                        "error": response
+                    }
                 }
             })
             logger.info(
