@@ -10,6 +10,9 @@ This package provides the component system with:
 from .auth import DashboardDisplay, LoginCompleteHandler, LoginHandler
 from .base import Component, InputComponent
 from .input import AmountInput, ConfirmInput, HandleInput, SelectInput
+from .registration import (
+    FirstNameInput, LastNameInput, RegistrationComplete, RegistrationWelcome
+)
 from .registry import ComponentRegistry, create_component
 
 __all__ = [
@@ -27,6 +30,12 @@ __all__ = [
     "HandleInput",
     "SelectInput",
     "ConfirmInput",
+
+    # Registration components
+    "RegistrationWelcome",
+    "FirstNameInput",
+    "LastNameInput",
+    "RegistrationComplete",
 
     # Registry
     "ComponentRegistry",

@@ -16,8 +16,9 @@ class FlowRegistry:
     FLOWS: Dict[str, Dict] = {
         # Member flows
         "registration": {
-            "steps": ["firstname", "lastname", "complete"],
+            "steps": ["welcome", "firstname", "lastname", "complete"],
             "components": {
+                "welcome": "RegistrationWelcome",
                 "firstname": "FirstNameInput",
                 "lastname": "LastNameInput",
                 "complete": "RegistrationComplete"

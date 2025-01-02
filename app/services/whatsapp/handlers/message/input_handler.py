@@ -3,6 +3,8 @@ import logging
 from typing import Any, Dict, Union
 
 from core.config.config import GREETINGS
+from core.utils.error_handler import ErrorHandler
+from core.utils.exceptions import ComponentException, SystemException
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +79,28 @@ def get_action(message_body: str, state_manager: Any = None, message_type: str =
         logger.debug(f"No action recognized for text: '{text}'")
         return ""
 
-    except Exception as e:
-        logger.error(f"Error processing input: {str(e)}")
-        raise  # Let higher levels handle errors
+    except ComponentException as e:
+        # Re-raise component errors with context
+        logger.error("Input validation error", extra={
+            "component": e.component,
+            "field": e.field,
+            "value": e.value
+        })
+        raise
+
+    except Exception:
+        # Handle system errors directly
+        logger.error("Input processing error", extra={
+            "message_body": message_body,
+            "message_type": message_type,
+            "current_step": state_manager.get_current_step() if state_manager else None
+        })
+        raise SystemException(
+            message=ErrorHandler.MESSAGES["system"]["unknown_error"],
+            code="INPUT_ERROR",
+            service="input_handler",
+            action="get_action"
+        )
 
 
 def extract_input_value(message_body: str, message_type: str = "text",
@@ -92,9 +113,6 @@ def extract_input_value(message_body: str, message_type: str = "text",
         message_type: Type of message (text, interactive, etc)
         message: Full message data for interactive messages
         state_manager: Optional state manager instance for flow state access
-
-    Returns:
-        Extracted input value
 
     Returns:
         Extracted input value
@@ -119,6 +137,14 @@ def extract_input_value(message_body: str, message_type: str = "text",
             elif interactive_type == "button_reply":
                 return interactive.get("button_reply", {})
 
+            # Invalid interactive type
+            raise ComponentException(
+                message=f"Invalid interactive type: {interactive_type}",
+                component="input_handler",
+                field="interactive_type",
+                value=str(interactive_type)
+            )
+
         # Handle text messages
         value = str(message_body).strip()
 
@@ -133,9 +159,28 @@ def extract_input_value(message_body: str, message_type: str = "text",
 
         return value
 
-    except Exception as e:
-        logger.error(f"Error extracting input value: {str(e)}")
-        raise  # Let higher levels handle errors
+    except ComponentException as e:
+        # Re-raise component errors with context
+        logger.error("Input validation error", extra={
+            "component": e.component,
+            "field": e.field,
+            "value": e.value
+        })
+        raise
+
+    except Exception:
+        # Handle system errors directly
+        logger.error("Input extraction error", extra={
+            "message_body": message_body,
+            "message_type": message_type,
+            "interactive": message.get("interactive") if message else None
+        })
+        raise SystemException(
+            message=ErrorHandler.MESSAGES["system"]["unknown_error"],
+            code="INPUT_ERROR",
+            service="input_handler",
+            action="extract_value"
+        )
 
 
 def is_greeting(text: str) -> bool:

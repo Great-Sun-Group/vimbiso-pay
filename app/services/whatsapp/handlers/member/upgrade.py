@@ -1,12 +1,28 @@
 """Upgrade handler using component system"""
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from core.messaging.flow import FlowManager, initialize_flow
+from core.utils.error_handler import ErrorHandler
 from core.utils.exceptions import ComponentException, FlowException, SystemException
 from services.credex.service import upgrade_member_tier
 
 logger = logging.getLogger(__name__)
+
+
+def get_step_content(step: str, data: Optional[Dict] = None) -> str:
+    """Get step content without channel formatting"""
+    if step == "confirm":
+        return (
+            "⭐ Upgrade Member Tier\n"
+            "This will upgrade your account to the next tier level.\n"
+            "Please confirm (yes/no):"
+        )
+    elif step == "complete":
+        if data and data.get("new_tier"):
+            return f"✅ Successfully upgraded to Tier {data['new_tier']}!"
+        return "✅ Upgrade completed successfully!"
+    return ""
 
 
 def process_upgrade_step(state_manager: Any, step: str, input_value: Any) -> Dict:
@@ -82,48 +98,67 @@ def process_upgrade_step(state_manager: Any, step: str, input_value: Any) -> Dic
                 }
             })
 
-        return {"success": True}
+        # Return step content
+        return {
+            "success": True,
+            "content": get_step_content(step, state_manager.get_flow_data()),
+            "actions": ["confirm", "cancel"] if step == "confirm" else None
+        }
 
     except ComponentException as e:
-        # Component validation error
-        logger.error(f"Upgrade validation error: {str(e)}")
-        return {
-            "error": {
-                "type": "validation",
-                "message": str(e),
-                "details": e.details
-            }
-        }
+        # Handle component validation errors
+        logger.error("Upgrade validation error", extra={
+            "component": e.component,
+            "field": e.field,
+            "value": e.value
+        })
+        return ErrorHandler.handle_component_error(
+            component=e.component,
+            field=e.field,
+            value=e.value,
+            message=str(e)
+        )
+
     except FlowException as e:
-        # Flow error
-        logger.error(f"Upgrade flow error: {str(e)}")
-        return {
-            "error": {
-                "type": "flow",
-                "message": str(e),
-                "details": e.details
-            }
-        }
+        # Handle flow errors
+        logger.error("Upgrade flow error", extra={
+            "step": e.step,
+            "action": e.action,
+            "data": e.data
+        })
+        return ErrorHandler.handle_flow_error(
+            step=e.step,
+            action=e.action,
+            data=e.data,
+            message=str(e)
+        )
+
     except SystemException as e:
-        # System error
-        logger.error(f"Upgrade system error: {str(e)}")
-        return {
-            "error": {
-                "type": "system",
-                "message": str(e),
-                "details": e.details
-            }
-        }
-    except Exception as e:
-        # Unexpected error
-        logger.error(f"Unexpected upgrade error: {str(e)}")
-        return {
-            "error": {
-                "type": "system",
-                "message": "Unexpected upgrade error",
-                "details": {"error": str(e)}
-            }
-        }
+        # Handle system errors
+        logger.error("Upgrade system error", extra={
+            "code": e.code,
+            "service": e.service,
+            "action": e.action
+        })
+        return ErrorHandler.handle_system_error(
+            code=e.code,
+            service=e.service,
+            action=e.action,
+            message=str(e)
+        )
+
+    except Exception:
+        # Handle unexpected errors
+        logger.error("Unexpected upgrade error", extra={
+            "step": step,
+            "flow_data": state_manager.get_flow_state()
+        })
+        return ErrorHandler.handle_system_error(
+            code="UPGRADE_ERROR",
+            service="upgrade",
+            action="process_step",
+            message=ErrorHandler.MESSAGES["system"]["service_error"]
+        )
 
 
 def start_upgrade(state_manager: Any) -> None:

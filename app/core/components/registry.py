@@ -9,7 +9,9 @@ from typing import Dict, Type
 from .base import Component
 from .auth import LoginHandler, LoginCompleteHandler, DashboardDisplay
 from .input import AmountInput, ConfirmInput, HandleInput, SelectInput, ButtonInput
-from .registration import FirstNameInput, LastNameInput, RegistrationComplete
+from .registration import (
+    FirstNameInput, LastNameInput, RegistrationComplete, RegistrationWelcome
+)
 from .upgrade import UpgradeConfirm, UpgradeComplete
 
 
@@ -39,6 +41,12 @@ class ComponentRegistry:
         },
 
         # Registration components
+        "RegistrationWelcome": {
+            "type": "registration",
+            "class": RegistrationWelcome,
+            "validates": ["welcome_response"],
+            "converts_to": ["registration_start"]
+        },
         "FirstNameInput": {
             "type": "registration",
             "class": FirstNameInput,

@@ -12,7 +12,7 @@ Each error type has a specific structure and boundary.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -21,17 +21,12 @@ class ErrorHandler:
     """Central error handling with clear boundaries"""
 
     @classmethod
-    def handle_error(
-        cls,
-        error_type: str,
-        message: str,
-        details: Optional[Dict] = None
-    ) -> Dict:
-        """Handle any error type with standard format"""
+    def _create_error_response(cls, error_type: str, message: str, details: Dict) -> Dict:
+        """Create standardized error response"""
         error = {
             "type": error_type,
             "message": message,
-            "details": details or {}
+            "details": details
         }
 
         # Log error
@@ -54,7 +49,7 @@ class ErrorHandler:
         message: str
     ) -> Dict:
         """Handle component validation error"""
-        return cls.handle_error(
+        return cls._create_error_response(
             error_type="component",
             message=message,
             details={
@@ -73,7 +68,7 @@ class ErrorHandler:
         message: str
     ) -> Dict:
         """Handle flow business logic error"""
-        return cls.handle_error(
+        return cls._create_error_response(
             error_type="flow",
             message=message,
             details={
@@ -92,7 +87,7 @@ class ErrorHandler:
         message: str
     ) -> Dict:
         """Handle system technical error"""
-        return cls.handle_error(
+        return cls._create_error_response(
             error_type="system",
             message=message,
             details={
@@ -133,10 +128,11 @@ def error_decorator(f):
         try:
             return f(*args, **kwargs)
         except Exception as e:
-            return ErrorHandler.handle_system_error(
-                code="RUNTIME_ERROR",
-                service=f.__module__,
-                action=f.__name__,
+            # Return tuple format expected by auth functions
+            return False, ErrorHandler.handle_system_error(
+                code="REQUEST_ERROR",
+                service="credex",
+                action="auth_request",
                 message=str(e)
             )
     return wrapper

@@ -7,7 +7,7 @@ This module provides components for handling authentication flows:
 
 from typing import Any, Dict
 
-from core.utils.exceptions import ComponentException
+from core.utils.exceptions import ComponentException, SystemException
 from services.credex.auth import login
 from .base import Component
 
@@ -36,15 +36,30 @@ class LoginHandler(Component):
 
         # Attempt login
         success, response = login(self.state_manager)
-        if not success:
-            raise ComponentException(
-                message="Login failed",
-                component=self.type,
-                field="login",
-                value=str(response)
-            )
 
-        return response
+        # Check response type
+        if not success:
+            if isinstance(response, dict) and response.get("error", {}).get("type") == "system":
+                # System error - propagate
+                error = response["error"]
+                raise SystemException(
+                    message=error["message"],
+                    code=error["details"]["code"],
+                    service=error["details"]["service"],
+                    action=error["details"]["action"]
+                )
+            else:
+                # Auth failure - return false with response
+                return {
+                    "success": False,
+                    "response": response
+                }
+
+        # Login successful
+        return {
+            "success": True,
+            "response": response
+        }
 
 
 class LoginCompleteHandler(Component):

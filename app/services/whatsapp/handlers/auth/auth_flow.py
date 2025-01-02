@@ -2,107 +2,162 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from core.messaging.types import (
-    ChannelIdentifier,
-    ChannelType,
-    InteractiveContent,
-    InteractiveType,
-    Message,
-    MessageRecipient
-)
 from core.messaging.flow import FlowManager, initialize_flow
 from core.utils.error_handler import ErrorHandler
-from core.utils.exceptions import ComponentException, FlowException, SystemException
+from core.utils.exceptions import (ComponentException, FlowException)
 
 logger = logging.getLogger(__name__)
 
 
-def handle_registration(state_manager: Any) -> Message:
+def get_step_content(step: str, data: Optional[Dict] = None) -> str:
+    """Get step content without channel formatting"""
+    if step == "welcome":
+        return (
+            "👋 Welcome to VimbisoPay!\n"
+            "Let's get you started with registration."
+        )
+    elif step == "login_error":
+        return "❌ Login failed. Please try again."
+    return ""
+
+
+def handle_registration(state_manager: Any) -> Dict:
     """Initialize registration flow using component system"""
     try:
         # Initialize registration flow
         initialize_flow(state_manager, "registration", "welcome")
 
-        # Get channel for message
-        channel_id = state_manager.get_channel_id()
+        # Return welcome content
+        return {
+            "success": True,
+            "content": get_step_content("welcome"),
+            "metadata": {"flow": "registration", "step": "welcome"}
+        }
 
-        # Return welcome message
-        return Message(
-            recipient=MessageRecipient(
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
-            content=InteractiveContent(
-                interactive_type=InteractiveType.BUTTON,
-                body="Welcome to VimbisoPay 💰\n\nWe're your portal 🚪to the credex ecosystem 🌱\n\nBecome a member 🌐 and open a free account 💳 to get started 📈",
-                action_items={
-                    "buttons": [{
-                        "type": "reply",
-                        "reply": {
-                            "id": "start_registration",
-                            "title": "Become a Member"
-                        }
-                    }]
-                }
-            )
+    except ComponentException as e:
+        # Handle component validation errors
+        logger.error("Registration validation error", extra={
+            "component": e.component,
+            "field": e.field,
+            "value": e.value
+        })
+        error = ErrorHandler.handle_component_error(
+            component=e.component,
+            field=e.field,
+            value=e.value,
+            message=str(e)
         )
+        return {
+            "success": False,
+            "content": error["message"],
+            "metadata": {"error": error}
+        }
 
-    except (ComponentException, FlowException, SystemException) as e:
-        return ErrorHandler.handle_error_with_message(e, state_manager)
+    except FlowException as e:
+        # Handle flow errors
+        logger.error("Registration flow error", extra={
+            "step": e.step,
+            "action": e.action,
+            "data": e.data
+        })
+        error = ErrorHandler.handle_flow_error(
+            step=e.step,
+            action=e.action,
+            data=e.data,
+            message=str(e)
+        )
+        return {
+            "success": False,
+            "content": error["message"],
+            "metadata": {"error": error}
+        }
+
+    except Exception:
+        # Handle unexpected errors
+        logger.error("Registration error", extra={
+            "flow_type": state_manager.get_flow_type(),
+            "step": state_manager.get_current_step()
+        })
+        error = ErrorHandler.handle_system_error(
+            code="REGISTRATION_ERROR",
+            service="auth_flow",
+            action="handle_registration",
+            message=ErrorHandler.MESSAGES["system"]["service_error"]
+        )
+        return {
+            "success": False,
+            "content": error["message"],
+            "metadata": {"error": error}
+        }
 
 
 def attempt_login(state_manager: Any) -> Tuple[bool, Optional[Dict[str, Any]]]:
-    """Attempt login using component system"""
-    try:
-        # Initialize auth flow
-        initialize_flow(state_manager, "auth", "login")
+    """Attempt login without state changes
 
-        # Get login component and process
+    Args:
+        state_manager: State manager instance
+
+    Returns:
+        Tuple of (success, response)
+        - On success: (True, login_response)
+        - On failure: (False, error_response)
+    """
+    try:
+        # Get login component
         flow_manager = FlowManager("auth")
         login_component = flow_manager.get_component("login")
 
         # Set state manager context
         login_component.state_manager = state_manager
 
-        # Process login
-        result = login_component.to_verified_data(None)  # Login triggered by "hi"
+        # Attempt login (triggered by "hi")
+        result = login_component.to_verified_data(None)
 
-        # Update flow state with result
-        state_manager.update_state({
-            "flow_data": {
-                "step": "login_complete",
-                "data": result
-            }
-        })
+        # Check login result
+        if not result.get("success"):
+            # Auth failure - return false with response
+            return False, result["response"]
 
-        return True, result
+        # Return success response
+        return True, result["response"]
 
     except ComponentException as e:
-        # Login validation failed
-        logger.error(f"Login validation error: {str(e)}")
+        # Handle component validation errors
+        logger.error("Login validation error", extra={
+            "component": e.component,
+            "field": e.field,
+            "value": e.value
+        })
         return False, ErrorHandler.handle_component_error(
-            component=e.details["component"],
-            field=e.details["field"],
-            value=e.details["value"],
+            component=e.component,
+            field=e.field,
+            value=e.value,
             message=str(e)
         )
+
     except FlowException as e:
-        # Flow state error
-        logger.error(f"Login flow error: {str(e)}")
+        # Handle flow errors
+        logger.error("Login flow error", extra={
+            "step": e.step,
+            "action": e.action,
+            "data": e.data
+        })
         return False, ErrorHandler.handle_flow_error(
-            step=e.details["step"],
-            action=e.details["action"],
-            data=e.details["data"],
+            step=e.step,
+            action=e.action,
+            data=e.data,
             message=str(e)
         )
-    except Exception as e:
-        # System error
-        logger.error(f"Login system error: {str(e)}")
+
+    except Exception:
+        # Handle unexpected errors
+        logger.error("Login error", extra={
+            "flow_type": state_manager.get_flow_type(),
+            "step": state_manager.get_current_step()
+        })
         return False, ErrorHandler.handle_system_error(
             code="LOGIN_ERROR",
             service="auth_flow",
             action="attempt_login",
-            message="Unexpected error during login"
+            message=ErrorHandler.MESSAGES["system"]["service_error"]
         )

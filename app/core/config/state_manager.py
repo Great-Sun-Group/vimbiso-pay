@@ -10,11 +10,8 @@ This module provides state management with:
 import logging
 from typing import Any, Dict, Optional
 
-from core.utils.exceptions import (
-    ComponentException,
-    FlowException,
-    SystemException
-)
+from core.utils.exceptions import (ComponentException, FlowException,
+                                   SystemException)
 from django.core.cache import cache
 
 from .atomic_state import AtomicStateManager
@@ -133,8 +130,8 @@ class StateManager:
         flow_data = self.get_flow_state()
         return flow_data.get("flow_type") if flow_data else None
 
-    def get_flow_step(self) -> Optional[str]:
-        """Get current flow step"""
+    def get_current_step(self) -> Optional[str]:
+        """Get current step for flow routing"""
         flow_data = self.get_flow_state()
         return flow_data.get("step") if flow_data else None
 

@@ -2,8 +2,7 @@
 import logging
 from typing import Any, Dict
 
-from core.messaging.types import Message
-from core.utils.exceptions import ComponentException, FlowException, SystemException
+from core.utils.exceptions import ComponentException, FlowException
 
 from . import auth_handlers as auth
 from .handlers.message.input_handler import get_action
@@ -13,7 +12,7 @@ from .types import WhatsAppMessage
 logger = logging.getLogger(__name__)
 
 
-def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
+def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> WhatsAppMessage:
     """Process bot message enforcing SINGLE SOURCE OF TRUTH
 
     Args:
@@ -73,69 +72,60 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
             # Get action from input handler (pass state_manager for flow check)
             action = get_action(message_text, state_manager, message_type)
 
-            # Always handle hi/greeting first to allow refresh at any time
+            # Get current step for flow check
+            current_step = state_manager.get_current_step()
+
+            # Process through message handlers (returns core Message)
+            message = None
             if action == "hi":
                 # Handle greeting action (attempts login and shows dashboard)
-                return auth.handle_hi(state_manager)
-
-            # Then check if we're in a flow
-            current_step = state_manager.get_current_step()
-            if current_step:
+                message = auth.handle_hi(state_manager)
+            elif current_step:
                 # In a flow - process message through flow handler
-                return process_message(state_manager, message_type, message_text, message_data)
-            else:
+                message = process_message(state_manager, message_type, message_text, message_data)
+            elif action:
                 # Not in flow - handle normal actions
-                if action:
-                    # Process message through appropriate handler
-                    return process_message(state_manager, message_type, message_text.lower())
-                else:
-                    # Default to dashboard for unrecognized input
-                    from .handlers.member.display import handle_dashboard_display
-                    return handle_dashboard_display(state_manager)
+                message = process_message(state_manager, message_type, message_text.lower())
+            else:
+                # Default to dashboard for unrecognized input
+                from .handlers.member.display import handle_dashboard_display
+                message = handle_dashboard_display(state_manager)
         else:
             # Default to dashboard for non-text messages
             from .handlers.member.display import handle_dashboard_display
-            return handle_dashboard_display(state_manager)
+            message = handle_dashboard_display(state_manager)
 
-    except ComponentException as e:
-        # Handle validation errors
-        logger.error(
-            "Bot service validation error",
-            extra={"error": str(e)}
-        )
+        # Transform core Message to WhatsAppMessage
+        if message.metadata and "error" in message.metadata:
+            # Add error formatting for error messages
+            return WhatsAppMessage.create_text(
+                message.recipient.channel_value,
+                f"❌ {message.content.body}"
+            )
+        else:
+            # Pass through normal messages
+            return WhatsAppMessage.create_text(
+                message.recipient.channel_value,
+                message.content.body
+            )
+
+    except (ComponentException, FlowException):
+        # Handle known errors through message handler
+        message = process_message(state_manager, message_type, message_text, message_data)
         return WhatsAppMessage.create_text(
-            channel.get("identifier", "unknown"),
-            f"❌ {str(e)}"
+            message.recipient.channel_value,
+            f"❌ {message.content.body}"
         )
 
-    except FlowException as e:
-        # Handle flow errors
-        logger.error(
-            "Bot service flow error",
-            extra={"error": str(e)}
-        )
-        return WhatsAppMessage.create_text(
-            channel.get("identifier", "unknown"),
-            f"❌ {str(e)}"
-        )
-
-    except Exception as e:
+    except Exception:
         # Handle unexpected errors
-        error = SystemException(
-            message=str(e),
-            code="BOT_SERVICE_ERROR",
-            service="bot_service",
-            action="process_message",
-            details={
-                "message_type": message_type if 'message_type' in locals() else None,
-                "action": action if 'action' in locals() else None
-            }
-        )
-        logger.error(
-            "Bot service error",
-            extra={"error": str(error)}
-        )
+        logger.error("Bot service error", extra={
+            "message_type": message_type if 'message_type' in locals() else "unknown",
+            "action": action if 'action' in locals() else "unknown"
+        })
+        # Let message handler create proper error message
+        message = process_message(state_manager, message_type, message_text, message_data)
         return WhatsAppMessage.create_text(
-            channel.get("identifier", "unknown") if 'channel' in locals() else "unknown",
-            f"❌ {str(error)}"
+            message.recipient.channel_value,
+            f"❌ {message.content.body}"
         )

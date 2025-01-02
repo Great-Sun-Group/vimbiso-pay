@@ -1,12 +1,35 @@
 """Registration handler using component system"""
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from core.messaging.flow import FlowManager, initialize_flow
+from core.utils.error_handler import ErrorHandler
 from core.utils.exceptions import ComponentException, FlowException, SystemException
 from services.credex.service import register_member
 
 logger = logging.getLogger(__name__)
+
+
+def get_step_content(step: str, data: Optional[Dict] = None) -> str:
+    """Get step content without channel formatting"""
+    if step == "welcome":
+        return (
+            "👋 Welcome to VimbisoPay!\n"
+            "Let's get you registered. First, I'll need some information."
+        )
+    elif step == "firstname":
+        return "👤 What is your first name?"
+    elif step == "lastname":
+        return "👤 What is your last name?"
+    elif step == "complete":
+        if data:
+            return (
+                "✅ Registration complete!\n"
+                f"Welcome {data.get('firstname')} {data.get('lastname')}!\n"
+                "You can now start using VimbisoPay."
+            )
+        return "✅ Registration complete!"
+    return ""
 
 
 def process_registration_step(state_manager: Any, step: str, input_value: Any) -> Dict:
@@ -98,50 +121,72 @@ def process_registration_step(state_manager: Any, step: str, input_value: Any) -
                 "active_account_id": verified_data["active_account_id"]
             })
 
-        return {"success": True}
+        # Return step content
+        return {
+            "success": True,
+            "content": get_step_content(step, state_manager.get_flow_data())
+        }
 
     except ComponentException as e:
-        # Component validation error
-        logger.error(f"Registration validation error: {str(e)}")
-        return {
-            "error": {
-                "type": "validation",
-                "message": str(e),
-                "details": e.details
-            }
-        }
+        # Handle component validation errors
+        logger.error("Registration validation error", extra={
+            "component": e.component,
+            "field": e.field,
+            "value": e.value
+        })
+        return ErrorHandler.handle_component_error(
+            component=e.component,
+            field=e.field,
+            value=e.value,
+            message=str(e)
+        )
+
     except FlowException as e:
-        # Flow error
-        logger.error(f"Registration flow error: {str(e)}")
-        return {
-            "error": {
-                "type": "flow",
-                "message": str(e),
-                "details": e.details
-            }
-        }
+        # Handle flow errors
+        logger.error("Registration flow error", extra={
+            "step": e.step,
+            "action": e.action,
+            "data": e.data
+        })
+        return ErrorHandler.handle_flow_error(
+            step=e.step,
+            action=e.action,
+            data=e.data,
+            message=str(e)
+        )
+
     except SystemException as e:
-        # System error
-        logger.error(f"Registration system error: {str(e)}")
-        return {
-            "error": {
-                "type": "system",
-                "message": str(e),
-                "details": e.details
-            }
-        }
-    except Exception as e:
-        # Unexpected error
-        logger.error(f"Unexpected registration error: {str(e)}")
-        return {
-            "error": {
-                "type": "system",
-                "message": "Unexpected registration error",
-                "details": {"error": str(e)}
-            }
-        }
+        # Handle system errors
+        logger.error("Registration system error", extra={
+            "code": e.code,
+            "service": e.service,
+            "action": e.action
+        })
+        return ErrorHandler.handle_system_error(
+            code=e.code,
+            service=e.service,
+            action=e.action,
+            message=str(e)
+        )
+
+    except Exception:
+        # Handle unexpected errors
+        logger.error("Registration error", extra={
+            "step": step,
+            "flow_data": state_manager.get_flow_state()
+        })
+        return ErrorHandler.handle_system_error(
+            code="REGISTRATION_ERROR",
+            service="registration",
+            action="process_step",
+            message=ErrorHandler.MESSAGES["system"]["service_error"]
+        )
 
 
 def start_registration(state_manager: Any) -> None:
     """Initialize registration flow"""
-    initialize_flow(state_manager, "registration", "firstname")
+    try:
+        initialize_flow(state_manager, "registration", "firstname")
+    except (ComponentException, FlowException, SystemException):
+        # Let caller handle errors
+        raise

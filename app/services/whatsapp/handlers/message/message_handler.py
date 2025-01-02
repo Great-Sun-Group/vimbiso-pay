@@ -2,9 +2,9 @@
 import logging
 from typing import Any, Dict
 
-from core.messaging.types import Message
+from core.messaging.types import Message, MessageRecipient, TextContent, ChannelIdentifier, ChannelType
 from core.utils.error_handler import ErrorHandler
-from core.utils.exceptions import ComponentException, FlowException
+from core.utils.exceptions import ComponentException, FlowException, SystemException
 from ..member.display import handle_dashboard_display
 from .flow_manager import FLOW_HANDLERS, initialize_flow
 from .input_handler import MENU_ACTIONS, extract_input_value
@@ -58,13 +58,21 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
                     logger.debug(f"Flow handler result: {result}")
                     return result
 
-                except Exception as e:
-                    # Handle flow step error
-                    return ErrorHandler.handle_flow_error(
-                        state_manager,
-                        e,
-                        step_id=current_step,
-                        return_message=True
+                except Exception:
+                    # Handle flow step error with proper context
+                    logger.error("Flow step processing error", extra={
+                        "flow_type": current_flow,
+                        "step": current_step,
+                        "input": input_value
+                    })
+                    raise FlowException(
+                        message=ErrorHandler.MESSAGES["flow"]["invalid_action"],
+                        step=current_step,
+                        action="process_step",
+                        data={
+                            "flow_type": current_flow,
+                            "input": input_value
+                        }
                     )
 
             # Not in a valid flow - treat as menu action or show dashboard
@@ -82,28 +90,74 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
         return handle_dashboard_display(state_manager)
 
     except ComponentException as e:
-        # Handle input validation errors
-        return ErrorHandler.handle_component_error(
-            component="message",
-            field="input",
-            value=message_text,
+        # Handle component validation errors with context
+        logger.error("Message validation error", extra={
+            "component": e.component,
+            "field": e.field,
+            "value": e.value
+        })
+        error = ErrorHandler.handle_component_error(
+            component=e.component,
+            field=e.field,
+            value=e.value,
             message=str(e)
         )
+        return Message(
+            recipient=MessageRecipient(
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=state_manager.get_channel_id()
+                )
+            ),
+            content=TextContent(error["message"]),
+            metadata={"error": error}
+        )
+
     except FlowException as e:
-        # Handle flow state errors
-        return ErrorHandler.handle_flow_error(
-            step=e.details["step"],
-            action=e.details["action"],
-            data=e.details["data"],
+        # Handle flow errors with context
+        logger.error("Flow processing error", extra={
+            "step": e.step,
+            "action": e.action,
+            "data": e.data
+        })
+        error = ErrorHandler.handle_flow_error(
+            step=e.step,
+            action=e.action,
+            data=e.data,
             message=str(e)
         )
-    except Exception as e:
-        # Handle system errors
-        return ErrorHandler.handle_system_error(
+        return Message(
+            recipient=MessageRecipient(
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=state_manager.get_channel_id()
+                )
+            ),
+            content=TextContent(error["message"]),
+            metadata={"error": error}
+        )
+
+    except Exception:
+        # Handle system errors with context
+        logger.error("Message processing error", extra={
+            "message_type": message_type,
+            "flow_data": state_manager.get_flow_state()
+        })
+        error = ErrorHandler.handle_system_error(
             code="MESSAGE_ERROR",
             service="message_handler",
             action="process_message",
-            message=str(e)
+            message=ErrorHandler.MESSAGES["system"]["unknown_error"]
+        )
+        return Message(
+            recipient=MessageRecipient(
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=state_manager.get_channel_id()
+                )
+            ),
+            content=TextContent(error["message"]),
+            metadata={"error": error}
         )
 
 
@@ -117,26 +171,34 @@ def handle_menu_action(state_manager: Any, message_text: str) -> Message:
     Returns:
         Message: Core message type with recipient and content
     """
-    # Reset flow with proper structure
-    state_manager.update_state({
-        "flow_data": {
-            "flow_type": "dashboard",
-            "step": 0,
-            "current_step": "main",
-            "data": {}
-        }
-    })
+    try:
+        # Reset flow with proper structure
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "dashboard",
+                "step": 0,
+                "current_step": "main",
+                "data": {}
+            }
+        })
 
-    # Map special flow types
-    flow_type = "registration" if message_text == "start_registration" else (
-        "upgrade" if message_text == "upgrade_tier" else message_text
-    )
+        # Map special flow types
+        flow_type = "registration" if message_text == "start_registration" else (
+            "upgrade" if message_text == "upgrade_tier" else message_text
+        )
 
-    # Only initialize flow if it's a multi-step flow
-    if flow_type in FLOW_HANDLERS:
-        # Let StateManager validate authentication for new flows
-        state_manager.get("authenticated")
-        return initialize_flow(state_manager, flow_type)
+        # Only initialize flow if it's a multi-step flow
+        if flow_type in FLOW_HANDLERS:
+            # Let StateManager validate authentication for new flows
+            state_manager.get("authenticated")
+            # Initialize flow (may raise exceptions)
+            initialize_flow(state_manager, flow_type)
+            # Return first step message from handler
+            return handle_dashboard_display(state_manager)
 
-    # For non-flow actions like refresh, return to dashboard
-    return handle_dashboard_display(state_manager)
+        # For non-flow actions like refresh, return to dashboard
+        return handle_dashboard_display(state_manager)
+
+    except (ComponentException, FlowException, SystemException):
+        # Let process_message handle all errors consistently
+        raise

@@ -6,8 +6,76 @@ Each component handles a specific part of registration with clear validation and
 
 from typing import Any, Dict, Set
 
+from core.messaging.types import (
+    ChannelIdentifier,
+    ChannelType,
+    InteractiveContent,
+    InteractiveType,
+    Message,
+    MessageRecipient
+)
 from core.utils.exceptions import ComponentException
 from .base import Component, InputComponent
+
+
+class RegistrationWelcome(Component):
+    """Handles registration welcome screen"""
+
+    def __init__(self):
+        super().__init__("registration_welcome")
+
+    def validate(self, value: Any) -> Dict:
+        """Validate welcome response"""
+        # Validate type
+        if not isinstance(value, str):
+            raise ComponentException(
+                message="Invalid response type",
+                component=self.type,
+                field="response",
+                value=str(type(value))
+            )
+
+        # Validate action
+        if value.strip().lower() != "start_registration":
+            raise ComponentException(
+                message="Invalid response - please use the Become a Member button",
+                component=self.type,
+                field="response",
+                value=value
+            )
+
+        return {"valid": True}
+
+    def to_verified_data(self, value: Any) -> Dict:
+        """Convert to verified welcome data"""
+        return {
+            "action": "start_registration",
+            "confirmed": True
+        }
+
+    def get_message(self, channel_id: str) -> Message:
+        """Get welcome message"""
+        return Message(
+            recipient=MessageRecipient(
+                channel_id=ChannelIdentifier(
+                    channel=ChannelType.WHATSAPP,
+                    value=channel_id
+                )
+            ),
+            content=InteractiveContent(
+                interactive_type=InteractiveType.BUTTON,
+                body="Welcome to VimbisoPay 💰\n\nWe're your portal 🚪to the credex ecosystem 🌱\n\nBecome a member 🌐 and open a free account 💳 to get started 📈",
+                action_items={
+                    "buttons": [{
+                        "type": "reply",
+                        "reply": {
+                            "id": "start_registration",
+                            "title": "Become a Member"
+                        }
+                    }]
+                }
+            )
+        )
 
 
 class FirstNameInput(InputComponent):

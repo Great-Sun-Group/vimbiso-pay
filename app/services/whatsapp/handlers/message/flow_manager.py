@@ -2,9 +2,9 @@
 import logging
 from typing import Any, Dict
 
-from core.messaging.types import Message
 from core.utils.error_handler import ErrorHandler
-from core.utils.exceptions import ComponentException, FlowException, SystemException
+from core.utils.exceptions import (ComponentException, FlowException,
+                                   SystemException)
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +19,17 @@ FLOW_HANDLERS: Dict[str, Any] = {
 }
 
 
-def initialize_flow(state_manager: Any, flow_type: str) -> Message:
+def initialize_flow(state_manager: Any, flow_type: str) -> None:
     """Initialize a new flow enforcing SINGLE SOURCE OF TRUTH
 
     Args:
         state_manager: State manager instance
         flow_type: Type of flow to initialize
 
-    Returns:
-        Message: Core message type with recipient and content
+    Raises:
+        ComponentException: For validation errors
+        FlowException: For flow-related errors
+        SystemException: For system-level errors
     """
     try:
         # Let StateManager validate channel access
@@ -122,8 +124,6 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
                 }
             )
 
-            return result
-
         except Exception:  # Exception details not needed since raising new exception
             raise SystemException(
                 message="Failed to initialize flow",
@@ -132,18 +132,9 @@ def initialize_flow(state_manager: Any, flow_type: str) -> Message:
                 action="initialize_flow"
             )
 
-    except (ComponentException, FlowException, SystemException) as e:
-        # Let error handler create appropriate message
-        return ErrorHandler.handle_error_with_message(e, state_manager)
-    except Exception:  # Exception details not needed since raising new exception
-        # Unexpected errors treated as system errors
-        system_error = SystemException(
-            message="Unexpected error initializing flow",
-            code="UNEXPECTED_ERROR",
-            service="flow_manager",
-            action="initialize_flow"
-        )
-        return ErrorHandler.handle_error_with_message(system_error, state_manager)
+    except (ComponentException, FlowException, SystemException):
+        # Let exceptions propagate up for handling by message layer
+        raise
 
 
 def check_pending_offers(state_manager: Any) -> bool:
@@ -157,10 +148,14 @@ def check_pending_offers(state_manager: Any) -> bool:
         )
         return True
 
-    except Exception as e:
-        logger.error(f"Error checking pending offers: {str(e)}")
+    except Exception:
+        # Handle system errors with context
+        logger.error("Offer check error", extra={
+            "channel_id": state_manager.get_channel_id(),
+            "state": state_manager.get_flow_state()
+        })
         raise SystemException(
-            message="Failed to check pending offers",
+            message=ErrorHandler.MESSAGES["system"]["service_error"],
             code="OFFER_CHECK_ERROR",
             service="flow_manager",
             action="check_pending_offers"
