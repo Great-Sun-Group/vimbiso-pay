@@ -10,11 +10,16 @@ This module provides state management with:
 import logging
 from typing import Any, Dict, Optional
 
-from core.utils.exceptions import StateException
-from .atomic_state import AtomicStateManager
-from .state_utils import (clear_flow_state, update_flow_data, update_flow_state,
-                          update_state_core)
+from core.utils.exceptions import (
+    ComponentException,
+    FlowException,
+    SystemException
+)
 from django.core.cache import cache
+
+from .atomic_state import AtomicStateManager
+from .state_utils import (clear_flow_state, update_flow_data,
+                          update_flow_state, update_state_core)
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +34,15 @@ class StateManager:
             key_prefix: Redis key prefix (must start with 'channel:')
 
         Raises:
-            StateException: If key prefix invalid
+            ComponentException: If key prefix format is invalid
         """
         if not key_prefix or not key_prefix.startswith("channel:"):
-            raise StateException("Invalid key prefix - must start with 'channel:'")
+            raise ComponentException(
+                message="Invalid key prefix format",
+                component="state_manager",
+                field="key_prefix",
+                value=str(key_prefix)
+            )
 
         self.key_prefix = key_prefix
         self.atomic_state = AtomicStateManager(cache)
@@ -54,7 +64,12 @@ class StateManager:
         # Get existing state
         state_data, error = self.atomic_state.atomic_get(self.key_prefix)
         if error:
-            raise StateException(f"Failed to get state: {error}")
+            raise SystemException(
+                message=f"Failed to get state: {error}",
+                code="STATE_INIT_ERROR",
+                service="state_manager",
+                action="initialize"
+            )
 
         # Use existing or initial state
         return state_data or initial_state
@@ -66,14 +81,25 @@ class StateManager:
             updates: State updates to apply
 
         Raises:
-            StateException: If update invalid or fails
+            ComponentException: If updates format is invalid
+            SystemException: If state update fails
         """
         if not isinstance(updates, dict):
-            raise StateException("Updates must be a dictionary")
+            raise ComponentException(
+                message="Updates must be a dictionary",
+                component="state_manager",
+                field="updates",
+                value=str(type(updates))
+            )
 
         success, error = update_state_core(self, updates)
         if not success:
-            raise StateException(f"Failed to update state: {error}")
+            raise SystemException(
+                message=f"Failed to update state: {error}",
+                code="STATE_UPDATE_ERROR",
+                service="state_manager",
+                action="update"
+            )
 
     def get(self, key: str) -> Any:
         """Get state value
@@ -85,10 +111,15 @@ class StateManager:
             Value for key or None
 
         Raises:
-            StateException: If key invalid
+            ComponentException: If key format is invalid
         """
         if not key or not isinstance(key, str):
-            raise StateException("Key must be a non-empty string")
+            raise ComponentException(
+                message="Key must be a non-empty string",
+                component="state_manager",
+                field="key",
+                value=str(key)
+            )
         return self._state.get(key)
 
     # Flow state methods
@@ -126,11 +157,16 @@ class StateManager:
             data: Optional flow data
 
         Raises:
-            StateException: If update fails
+            FlowException: If flow state update fails
         """
         success, error = update_flow_state(self, flow_type, step, data)
         if not success:
-            raise StateException(f"Failed to update flow state: {error}")
+            raise FlowException(
+                message=f"Failed to update flow state: {error}",
+                step=step,
+                action="update_state",
+                data={"flow_type": flow_type}
+            )
 
     def update_flow_data(self, data: Dict[str, Any]) -> None:
         """Update flow data
@@ -139,21 +175,31 @@ class StateManager:
             data: Flow data updates
 
         Raises:
-            StateException: If update fails
+            FlowException: If flow data update fails
         """
         success, error = update_flow_data(self, data)
         if not success:
-            raise StateException(f"Failed to update flow data: {error}")
+            raise FlowException(
+                message=f"Failed to update flow data: {error}",
+                step="update_data",
+                action="update",
+                data=data
+            )
 
     def clear_flow_state(self) -> None:
         """Clear flow state
 
         Raises:
-            StateException: If clear fails
+            FlowException: If flow state clear fails
         """
         success, error = clear_flow_state(self)
         if not success:
-            raise StateException(f"Failed to clear flow state: {error}")
+            raise FlowException(
+                message=f"Failed to clear flow state: {error}",
+                step="clear",
+                action="clear_state",
+                data={}
+            )
 
     # Channel methods
 
@@ -164,11 +210,16 @@ class StateManager:
             Channel ID string
 
         Raises:
-            StateException: If channel ID not found
+            ComponentException: If channel identifier not found
         """
         channel = self.get("channel")
         if not channel or not channel.get("identifier"):
-            raise StateException("Channel identifier not found")
+            raise ComponentException(
+                message="Channel identifier not found",
+                component="state_manager",
+                field="channel.identifier",
+                value=str(channel)
+            )
         return channel["identifier"]
 
     def get_channel_type(self) -> str:
@@ -178,9 +229,14 @@ class StateManager:
             Channel type string
 
         Raises:
-            StateException: If channel type not found
+            ComponentException: If channel type not found
         """
         channel = self.get("channel")
         if not channel or not channel.get("type"):
-            raise StateException("Channel type not found")
+            raise ComponentException(
+                message="Channel type not found",
+                component="state_manager",
+                field="channel.type",
+                value=str(channel)
+            )
         return channel["type"]

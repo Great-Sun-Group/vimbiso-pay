@@ -8,7 +8,9 @@ from typing import Dict, Type
 
 from .base import Component
 from .auth import LoginHandler, LoginCompleteHandler, DashboardDisplay
-from .input import AmountInput, ConfirmInput, HandleInput, SelectInput
+from .input import AmountInput, ConfirmInput, HandleInput, SelectInput, ButtonInput
+from .registration import FirstNameInput, LastNameInput, RegistrationComplete
+from .upgrade import UpgradeConfirm, UpgradeComplete
 
 
 class ComponentRegistry:
@@ -36,7 +38,47 @@ class ComponentRegistry:
             "converts_to": ["dashboard_data"]
         },
 
+        # Registration components
+        "FirstNameInput": {
+            "type": "registration",
+            "class": FirstNameInput,
+            "validates": ["firstname"],
+            "converts_to": ["verified_firstname"]
+        },
+        "LastNameInput": {
+            "type": "registration",
+            "class": LastNameInput,
+            "validates": ["lastname"],
+            "converts_to": ["verified_lastname"]
+        },
+        "RegistrationComplete": {
+            "type": "registration",
+            "class": RegistrationComplete,
+            "validates": ["registration_response"],
+            "converts_to": ["member_data"]
+        },
+
+        # Upgrade components
+        "UpgradeConfirm": {
+            "type": "upgrade",
+            "class": UpgradeConfirm,
+            "validates": ["upgrade_confirmation"],
+            "converts_to": ["verified_upgrade"]
+        },
+        "UpgradeComplete": {
+            "type": "upgrade",
+            "class": UpgradeComplete,
+            "validates": ["upgrade_response"],
+            "converts_to": ["upgrade_data"]
+        },
+
         # Input components
+        "ButtonInput": {
+            "type": "input",
+            "class": ButtonInput,
+            "validates": ["button_input"],
+            "converts_to": ["button_id"]
+        },
         "AmountInput": {
             "type": "input",
             "class": AmountInput,

@@ -1,42 +1,37 @@
-"""Authentication flow implementation enforcing SINGLE SOURCE OF TRUTH"""
+"""Authentication flow implementation using component system"""
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from core.messaging.types import (ChannelIdentifier, ChannelType,
-                                  InteractiveContent, InteractiveType, Message,
-                                  MessageRecipient, TextContent)
+from core.messaging.types import (
+    ChannelIdentifier,
+    ChannelType,
+    InteractiveContent,
+    InteractiveType,
+    Message,
+    MessageRecipient
+)
+from core.messaging.flow import FlowManager, initialize_flow
 from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
-from core.utils.exceptions import StateException
-from services.credex.auth import login
+from core.utils.exceptions import ComponentException, FlowException, SystemException
 
 logger = logging.getLogger(__name__)
 
 
 def handle_registration(state_manager: Any) -> Message:
-    """Handle registration flow enforcing SINGLE SOURCE OF TRUTH"""
+    """Initialize registration flow using component system"""
     try:
-        channel = state_manager.get("channel")
+        # Initialize registration flow
+        initialize_flow(state_manager, "registration", "welcome")
 
-        # Set registration flow state
-        state_manager.update_state({
-            "flow_data": {
-                "flow_type": "registration",
-                "step": 0,
-                "current_step": "welcome",
-                "type": "registration_welcome",
-                "data": {
-                    "channel_id": channel["identifier"]
-                }
-            }
-        })
+        # Get channel for message
+        channel_id = state_manager.get_channel_id()
 
-        # Return welcome message with registration button
+        # Return welcome message
         return Message(
             recipient=MessageRecipient(
                 channel_id=ChannelIdentifier(
                     channel=ChannelType.WHATSAPP,
-                    value=channel["identifier"]
+                    value=channel_id
                 )
             ),
             content=InteractiveContent(
@@ -54,96 +49,60 @@ def handle_registration(state_manager: Any) -> Message:
             )
         )
 
-    except StateException as e:
-        # Use ErrorHandler with context
-        error_response = ErrorHandler.handle_error(
-            e,
-            state_manager,
-            ErrorContext(
-                error_type="flow",
-                message="Unable to process registration. Please try again.",
-                step_id="welcome",
-                details={
-                    "flow_type": "registration",
-                    "operation": "registration_start"
-                }
-            )
-        )
-
-        # Convert error response to Message
-        return Message(
-            recipient=MessageRecipient(
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=state_manager.get("channel")["identifier"]
-                )
-            ),
-            content=TextContent(
-                body=f"❌ Error: {error_response['data']['action']['details']['message']}"
-            ),
-            metadata=error_response["data"]["action"]["details"]
-        )
+    except (ComponentException, FlowException, SystemException) as e:
+        return ErrorHandler.handle_error_with_message(e, state_manager)
 
 
 def attempt_login(state_manager: Any) -> Tuple[bool, Optional[Dict[str, Any]]]:
-    """Attempt login enforcing SINGLE SOURCE OF TRUTH"""
+    """Attempt login using component system"""
     try:
-        # Update flow state for login attempt
+        # Initialize auth flow
+        initialize_flow(state_manager, "auth", "login")
+
+        # Get login component and process
+        flow_manager = FlowManager("auth")
+        login_component = flow_manager.get_component("login")
+
+        # Set state manager context
+        login_component.state_manager = state_manager
+
+        # Process login
+        result = login_component.to_verified_data(None)  # Login triggered by "hi"
+
+        # Update flow state with result
         state_manager.update_state({
             "flow_data": {
-                "flow_type": "auth",
-                "step": 0,
-                "current_step": "login",
-                "data": {
-                    "type": "login_attempt",
-                    "data": {}
-                }
+                "step": "login_complete",
+                "data": result
             }
         })
 
-        # Attempt login
-        success, response = login(state_manager)
-        if not success:
-            # Let error propagate up with flow context
-            error_context = ErrorContext(
-                error_type="flow",
-                message="Login failed",
-                step_id="login",
-                details={
-                    "flow_type": "auth",
-                    "operation": "login_attempt",
-                    "response": response
-                }
-            )
-            return False, ErrorHandler.handle_error(
-                StateException("Login failed"),
-                state_manager,
-                error_context
-            )
+        return True, result
 
-        # Update flow state with response
-        state_manager.update_state({
-            "flow_data": {
-                "flow_type": "auth",
-                "step": 1,
-                "current_step": "login_complete",
-                "type": "login_response",
-                "data": response
-            }
-        })
-
-        return True, response
-
-    except Exception as e:
-        # Add flow context to any error
-        error_context = ErrorContext(
-            error_type="flow",
-            message="Login failed",
-            step_id="login",
-            details={
-                "flow_type": "auth",
-                "operation": "login_attempt",
-                "error": str(e)
-            }
+    except ComponentException as e:
+        # Login validation failed
+        logger.error(f"Login validation error: {str(e)}")
+        return False, ErrorHandler.handle_component_error(
+            component=e.details["component"],
+            field=e.details["field"],
+            value=e.details["value"],
+            message=str(e)
         )
-        return False, ErrorHandler.handle_error(e, state_manager, error_context)
+    except FlowException as e:
+        # Flow state error
+        logger.error(f"Login flow error: {str(e)}")
+        return False, ErrorHandler.handle_flow_error(
+            step=e.details["step"],
+            action=e.details["action"],
+            data=e.details["data"],
+            message=str(e)
+        )
+    except Exception as e:
+        # System error
+        logger.error(f"Login system error: {str(e)}")
+        return False, ErrorHandler.handle_system_error(
+            code="LOGIN_ERROR",
+            service="auth_flow",
+            action="attempt_login",
+            message="Unexpected error during login"
+        )

@@ -2,7 +2,7 @@
 import base64
 import logging
 import time
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Optional
 from urllib.parse import urljoin
 
 import requests
@@ -10,6 +10,7 @@ from decouple import config
 from django.core.cache import cache
 from requests.exceptions import RequestException
 
+from core.utils.error_handler import ErrorHandler
 from core.utils.state_validator import StateValidator
 from ..utils.utils import send_whatsapp_message
 
@@ -25,13 +26,7 @@ if not BASE_URL.endswith('/'):
 
 
 def get_headers(state_manager: Any, include_auth: bool = True) -> Dict[str, str]:
-    """
-    Get request headers with authentication
-
-    Args:
-        state_manager: State manager instance
-        include_auth: Whether to include authentication headers
-    """
+    """Get request headers with authentication"""
     headers = {
         "Content-Type": "application/json",
         "x-client-api-key": config("CLIENT_API_KEY"),
@@ -69,22 +64,44 @@ def validate_request_params(
     url: str,
     headers: Dict[str, str],
     payload: Dict[str, Any]
-) -> None:
+) -> Dict:
     """Validate request parameters before making API call"""
     if not url:
-        raise ValueError("URL cannot be empty")
+        return ErrorHandler.handle_system_error(
+            code="INVALID_URL",
+            service="api_client",
+            action="validate_params",
+            message="URL cannot be empty"
+        )
 
     if not isinstance(headers, dict):
-        raise ValueError("Headers must be a dictionary")
+        return ErrorHandler.handle_system_error(
+            code="INVALID_HEADERS",
+            service="api_client",
+            action="validate_params",
+            message="Headers must be a dictionary"
+        )
 
     if not isinstance(payload, dict):
-        raise ValueError("Payload must be a dictionary")
+        return ErrorHandler.handle_system_error(
+            code="INVALID_PAYLOAD",
+            service="api_client",
+            action="validate_params",
+            message="Payload must be a dictionary"
+        )
 
     # Validate URL format
     if not url.startswith(('http://', 'https://')):
         url = urljoin(BASE_URL, url)
         if not url.startswith(('http://', 'https://')):
-            raise ValueError(f"Invalid URL format: {url}")
+            return ErrorHandler.handle_system_error(
+                code="INVALID_URL_FORMAT",
+                service="api_client",
+                action="validate_params",
+                message=f"Invalid URL format: {url}"
+            )
+
+    return {"valid": True}
 
 
 def make_api_request(
@@ -94,21 +111,13 @@ def make_api_request(
     method: str = "POST",
     retry_auth: bool = True,
     state_manager: Optional[Any] = None
-) -> requests.Response:
-    """
-    Make API request with logging, validation and error handling
-
-    Args:
-        url: API endpoint URL
-        headers: Request headers
-        payload: Request payload
-        method: HTTP method
-        retry_auth: Whether to retry with fresh auth token on 401
-        state_manager: Optional state manager for auth refresh
-    """
+) -> Dict:
+    """Make API request with logging, validation and error handling"""
     try:
         # Validate request parameters
-        validate_request_params(url, headers, payload)
+        validation = validate_request_params(url, headers, payload)
+        if "error" in validation:
+            return validation
 
         # Ensure URL is absolute
         if not url.startswith(('http://', 'https://')):
@@ -152,65 +161,83 @@ def make_api_request(
                 if retries < MAX_RETRIES:
                     time.sleep(RETRY_DELAY)
                     continue
-                raise
+                return ErrorHandler.handle_system_error(
+                    code="REQUEST_FAILED",
+                    service="api_client",
+                    action=f"{method}_{url}",
+                    message=f"Request failed after {MAX_RETRIES} retries: {str(e)}"
+                )
 
-        raise Exception(f"Failed after {MAX_RETRIES} retries")
+        return ErrorHandler.handle_system_error(
+            code="MAX_RETRIES_EXCEEDED",
+            service="api_client",
+            action=f"{method}_{url}",
+            message=f"Failed after {MAX_RETRIES} retries"
+        )
 
     except Exception as e:
-        logger.error(f"Error making API request: {str(e)}")
-        raise
+        return ErrorHandler.handle_system_error(
+            code="REQUEST_ERROR",
+            service="api_client",
+            action=f"{method}_{url}",
+            message=f"Error making API request: {str(e)}"
+        )
 
 
 def process_api_response(
     response: requests.Response,
     expected_status_codes: Optional[list] = None
 ) -> Dict[str, Any]:
-    """
-    Process API response with validation
-
-    Args:
-        response: Response object to process
-        expected_status_codes: List of valid status codes, defaults to [200]
-    """
+    """Process API response with validation"""
     if expected_status_codes is None:
         expected_status_codes = [200]
 
-    # Validate status code
-    if response.status_code not in expected_status_codes:
-        raise ValueError(
-            f"Unexpected status code: {response.status_code}. "
-            f"Expected one of: {expected_status_codes}"
-        )
-
-    # Validate content type
-    content_type = response.headers.get("Content-Type", "")
-    if "application/json" not in content_type:
-        raise ValueError(f"Received unexpected Content-Type: {content_type}")
-
-    # Parse and validate response
     try:
+        # Validate status code
+        if response.status_code not in expected_status_codes:
+            return ErrorHandler.handle_system_error(
+                code="INVALID_STATUS",
+                service="api_client",
+                action="process_response",
+                message=f"Unexpected status code: {response.status_code}. Expected one of: {expected_status_codes}"
+            )
+
+        # Validate content type
+        content_type = response.headers.get("Content-Type", "")
+        if "application/json" not in content_type:
+            return ErrorHandler.handle_system_error(
+                code="INVALID_CONTENT_TYPE",
+                service="api_client",
+                action="process_response",
+                message=f"Received unexpected Content-Type: {content_type}"
+            )
+
+        # Parse and validate response
         data = response.json()
         if not isinstance(data, dict):
-            raise ValueError("Response data must be a dictionary")
+            return ErrorHandler.handle_system_error(
+                code="INVALID_RESPONSE",
+                service="api_client",
+                action="process_response",
+                message="Response data must be a dictionary"
+            )
         return data
+
     except ValueError as e:
-        logger.error(f"Failed to parse response JSON: {str(e)}")
-        raise
+        return ErrorHandler.handle_system_error(
+            code="PARSE_ERROR",
+            service="api_client",
+            action="process_response",
+            message=f"Failed to parse response JSON: {str(e)}"
+        )
 
 
 def handle_error_response(
     operation: str,
     response: requests.Response,
     custom_message: str = None
-) -> Tuple[bool, str]:
-    """
-    Handle error response with logging
-
-    Args:
-        operation: Name of the operation that failed
-        response: Response object containing error
-        custom_message: Optional custom error message
-    """
+) -> Dict:
+    """Handle error response with logging"""
     try:
         error_data = response.json()
         error_msg = custom_message or error_data.get(
@@ -233,7 +260,16 @@ def handle_error_response(
         "response_body": response.text[:1000]  # Truncate long responses
     })
 
-    return False, error_msg
+    return ErrorHandler.handle_system_error(
+        code="API_ERROR",
+        service="api_client",
+        action=operation,
+        message=error_msg,
+        details={
+            "status_code": response.status_code,
+            "response": error_data if "error_data" in locals() else response.text
+        }
+    )
 
 
 def get_basic_auth_header(channel_identifier: str) -> str:

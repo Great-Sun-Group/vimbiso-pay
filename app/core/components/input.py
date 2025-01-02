@@ -5,9 +5,67 @@ Each component handles a specific input type with clear boundaries.
 """
 
 from typing import Any, Dict
-
-from core.utils.exceptions import ValidationException
 from .base import InputComponent
+
+
+class ButtonInput(InputComponent):
+    """Button input with validation"""
+
+    def __init__(self):
+        super().__init__("button_input")
+
+    def validate(self, value: Any) -> Dict:
+        """Validate button input"""
+        try:
+            # Extract button ID from interactive message
+            if isinstance(value, dict):
+                interactive = value.get("interactive", {})
+                if interactive.get("type") == "button_reply":
+                    button_id = interactive.get("button_reply", {}).get("id")
+                    if not button_id:
+                        return self._handle_validation_error(
+                            value=str(value),
+                            message="Missing button ID",
+                            field="button"
+                        )
+                    return {"valid": True}
+                return self._handle_validation_error(
+                    value=str(value),
+                    message="Invalid button type",
+                    field="button"
+                )
+
+            # Handle direct button ID string
+            type_validation = self._validate_type(value, str, "text")
+            if "error" in type_validation:
+                return type_validation
+
+            button_id = value.strip()
+            if not button_id:
+                return self._handle_validation_error(
+                    value=str(value),
+                    message="Empty button ID",
+                    field="button"
+                )
+
+            return {"valid": True}
+
+        except Exception:
+            return self._handle_validation_error(
+                value=str(value),
+                message="Invalid button input",
+                field="button"
+            )
+
+    def to_verified_data(self, value: Any) -> Dict:
+        """Convert to verified button data"""
+        if isinstance(value, dict):
+            return {
+                "button_id": value.get("interactive", {}).get("button_reply", {}).get("id")
+            }
+        return {
+            "button_id": value.strip()
+        }
 
 
 class AmountInput(InputComponent):
@@ -20,28 +78,28 @@ class AmountInput(InputComponent):
         """Validate amount value"""
         try:
             # Validate type
-            self._validate_type(value, (int, float, str), "numeric")
+            type_validation = self._validate_type(value, (int, float, str), "numeric")
+            if "error" in type_validation:
+                return type_validation
 
             # Convert to float
             amount = float(value) if isinstance(value, str) else value
 
             # Validate value
             if amount <= 0:
-                raise ValidationException(
+                return self._handle_validation_error(
+                    value=str(value),
                     message="Amount must be positive",
-                    component=self.type,
-                    field="amount",
-                    value=str(value)
+                    field="amount"
                 )
 
             return {"valid": True}
 
         except ValueError:
-            raise ValidationException(
+            return self._handle_validation_error(
+                value=str(value),
                 message="Invalid amount format",
-                component=self.type,
-                field="amount",
-                value=str(value)
+                field="amount"
             )
 
     def to_verified_data(self, value: Any) -> Dict:
@@ -60,16 +118,17 @@ class HandleInput(InputComponent):
     def validate(self, value: Any) -> Dict:
         """Validate handle value"""
         # Validate type
-        self._validate_type(value, str, "text")
+        type_validation = self._validate_type(value, str, "text")
+        if "error" in type_validation:
+            return type_validation
 
         # Validate content
         handle = value.strip()
         if not handle:
-            raise ValidationException(
+            return self._handle_validation_error(
+                value=str(value),
                 message="Handle required",
-                component=self.type,
-                field="handle",
-                value=str(value)
+                field="handle"
             )
 
         return {"valid": True}
@@ -91,15 +150,16 @@ class SelectInput(InputComponent):
     def validate(self, value: Any) -> Dict:
         """Validate selection value"""
         # Validate type
-        self._validate_type(value, str, "text")
+        type_validation = self._validate_type(value, str, "text")
+        if "error" in type_validation:
+            return type_validation
 
         # Validate selection
         if value not in self.options:
-            raise ValidationException(
+            return self._handle_validation_error(
+                value=str(value),
                 message="Invalid selection",
-                component=self.type,
-                field="selection",
-                value=str(value)
+                field="selection"
             )
 
         return {"valid": True}
@@ -127,15 +187,16 @@ class ConfirmInput(InputComponent):
             elif value in ("no", "false", "0"):
                 value = False
             else:
-                raise ValidationException(
+                return self._handle_validation_error(
+                    value=str(value),
                     message="Invalid confirmation value",
-                    component=self.type,
-                    field="confirmation",
-                    value=str(value)
+                    field="confirmation"
                 )
 
         # Validate type
-        self._validate_type(value, bool, "boolean")
+        type_validation = self._validate_type(value, bool, "boolean")
+        if "error" in type_validation:
+            return type_validation
 
         return {"valid": True}
 

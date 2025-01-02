@@ -7,7 +7,11 @@ and minimal nesting.
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from core.utils.exceptions import StateException
+from core.utils.exceptions import (
+    ComponentException,
+    FlowException,
+    SystemException
+)
 from .config import ACTIVITY_TTL
 
 logger = logging.getLogger(__name__)
@@ -44,7 +48,12 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> Tuple[bool
                     }
                 }
             else:
-                raise StateException("flow_data must be dict or None")
+                raise ComponentException(
+                    message="Invalid flow data format",
+                    component="state_utils",
+                    field="flow_data",
+                    value=str(type(flow_data))
+                )
 
         # Handle other updates
         for key, value in updates.items():
@@ -59,7 +68,12 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> Tuple[bool
         )
 
         if not success:
-            raise StateException(f"Failed to update state: {error}")
+            raise SystemException(
+                message=f"Failed to update state: {error}",
+                code="STATE_UPDATE_ERROR",
+                service="state_utils",
+                action="update_state"
+            )
 
         # Update internal state
         state_manager._state = current_state
@@ -135,7 +149,12 @@ def update_flow_data(
         # Get current flow state
         flow_state = state_manager.get("flow_data")
         if not flow_state:
-            raise StateException("No active flow")
+            raise FlowException(
+                message="No active flow",
+                step="update_data",
+                action="validate_flow",
+                data={"data_keys": list(data.keys())}
+            )
 
         # Update flow data
         return update_state_core(state_manager, {

@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 from core.messaging.types import Message
 from core.utils.error_handler import ErrorHandler
-from core.utils.exceptions import StateException
+from core.utils.exceptions import ComponentException, FlowException
 from ..member.display import handle_dashboard_display
 from .flow_manager import FLOW_HANDLERS, initialize_flow
 from .input_handler import MENU_ACTIONS, extract_input_value
@@ -81,12 +81,29 @@ def process_message(state_manager: Any, message_type: str, message_text: str, me
         # For unrecognized inputs, show dashboard
         return handle_dashboard_display(state_manager)
 
-    except StateException as e:
-        # Handle top-level message error
+    except ComponentException as e:
+        # Handle input validation errors
+        return ErrorHandler.handle_component_error(
+            component="message",
+            field="input",
+            value=message_text,
+            message=str(e)
+        )
+    except FlowException as e:
+        # Handle flow state errors
         return ErrorHandler.handle_flow_error(
-            state_manager,
-            e,
-            return_message=True
+            step=e.details["step"],
+            action=e.details["action"],
+            data=e.details["data"],
+            message=str(e)
+        )
+    except Exception as e:
+        # Handle system errors
+        return ErrorHandler.handle_system_error(
+            code="MESSAGE_ERROR",
+            service="message_handler",
+            action="process_message",
+            message=str(e)
         )
 
 

@@ -3,11 +3,12 @@ import logging
 from typing import Any, Dict
 
 from core.messaging.types import Message
-from core.utils.exceptions import StateException
+from core.utils.exceptions import ComponentException, FlowException, SystemException
 
 from . import auth_handlers as auth
 from .handlers.message.input_handler import get_action
 from .handlers.message.message_handler import process_message
+from .types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +24,45 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
         Message: Core message type with recipient and content
     """
     try:
+        # Validate state manager
+        if not state_manager:
+            raise ComponentException(
+                message="State manager is required",
+                component="bot_service",
+                field="state_manager",
+                value="None"
+            )
+
+        # Validate payload
+        if not payload:
+            raise ComponentException(
+                message="Message payload is required",
+                component="bot_service",
+                field="payload",
+                value="None"
+            )
+
         # Let StateManager validate state by accessing a required field
-        state_manager.get("channel")
+        channel = state_manager.get("channel")
+        if not channel:
+            raise ComponentException(
+                message="Channel information not found",
+                component="bot_service",
+                field="channel",
+                value="None"
+            )
 
         # Extract message data from WhatsApp payload
-        value = payload.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
-        message_data = value.get("messages", [{}])[0]
+        try:
+            value = payload.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
+            message_data = value.get("messages", [{}])[0]
+        except Exception:
+            raise ComponentException(
+                message="Invalid message payload format",
+                component="bot_service",
+                field="payload",
+                value=str(payload)
+            )
 
         # Extract message metadata
         message_type = message_data.get("type", "")
@@ -63,6 +97,45 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
             from .handlers.member.display import handle_dashboard_display
             return handle_dashboard_display(state_manager)
 
-    except StateException as e:
-        # Handle state validation errors consistently
-        return auth.handle_error(state_manager, "Bot service", e)
+    except ComponentException as e:
+        # Handle validation errors
+        logger.error(
+            "Bot service validation error",
+            extra={"error": str(e)}
+        )
+        return WhatsAppMessage.create_text(
+            channel.get("identifier", "unknown"),
+            f"❌ {str(e)}"
+        )
+
+    except FlowException as e:
+        # Handle flow errors
+        logger.error(
+            "Bot service flow error",
+            extra={"error": str(e)}
+        )
+        return WhatsAppMessage.create_text(
+            channel.get("identifier", "unknown"),
+            f"❌ {str(e)}"
+        )
+
+    except Exception as e:
+        # Handle unexpected errors
+        error = SystemException(
+            message=str(e),
+            code="BOT_SERVICE_ERROR",
+            service="bot_service",
+            action="process_message",
+            details={
+                "message_type": message_type if 'message_type' in locals() else None,
+                "action": action if 'action' in locals() else None
+            }
+        )
+        logger.error(
+            "Bot service error",
+            extra={"error": str(error)}
+        )
+        return WhatsAppMessage.create_text(
+            channel.get("identifier", "unknown") if 'channel' in locals() else "unknown",
+            f"❌ {str(error)}"
+        )

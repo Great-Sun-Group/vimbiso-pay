@@ -1,12 +1,11 @@
 """Offer flow implementation enforcing SINGLE SOURCE OF TRUTH"""
 from typing import Any, Dict, List, Optional
 
+from core.components.input import AmountInput, HandleInput, ConfirmInput
 from core.messaging.types import (Button, ChannelIdentifier, ChannelType,
                                   InteractiveContent, InteractiveType, Message,
                                   MessageRecipient, TextContent)
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
-from core.utils.exceptions import StateException
+from core.utils.exceptions import FlowException, SystemException
 from services.credex.service import get_credex_service
 
 from .constants import VALID_DENOMINATIONS
@@ -22,7 +21,6 @@ def create_message(channel_id: str, text: str, buttons: Optional[List[Dict[str, 
     )
 
     if buttons:
-        # Convert button dicts to Button objects
         button_objects = [
             Button(id=btn["id"], title=btn["text"])
             for btn in buttons
@@ -45,15 +43,7 @@ def create_message(channel_id: str, text: str, buttons: Optional[List[Dict[str, 
 def process_offer_step(state_manager: Any, step: str, input_data: Any = None) -> Message:
     """Process offer step and return appropriate message"""
     try:
-        # Let StateManager validate channel
-        state_manager.update_state({
-            "validation": {
-                "type": "channel",
-                "required": True
-            }
-        })
-
-        # Get validated channel data
+        # Get channel ID through state manager
         channel_id = state_manager.get_channel_id()
 
         # Handle initial prompts
@@ -71,61 +61,72 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
             elif step == "complete":
                 return create_message(channel_id, "✅ Your offer has been sent.")
 
-        # Return step-specific messages
+            raise FlowException(
+                message="Invalid step for prompt",
+                step=step,
+                action="prompt",
+                data={"step": step}
+            )
+
+        # Process step with proper component validation
         if step == "amount":
-            # Let StateManager validate amount input
-            state_manager.update_state({
-                "validation": {
-                    "type": "amount_input",
-                    "input": input_data,
-                    "denominations": list(VALID_DENOMINATIONS)
-                }
-            })
+            # Validate amount through component
+            amount_component = AmountInput()
+            result = amount_component.validate(input_data)
+            if "error" in result:
+                return create_message(channel_id, result["error"]["message"])
 
-            # Get validated amount data
-            amount_data = state_manager.get_amount_data()
+            # Convert to verified data
+            amount_data = amount_component.to_verified_data(input_data)
 
-            # Update step after validation
+            # Update state with verified data
             state_manager.update_state({
-                "validation": {
-                    "type": "step_update",
-                    "step": 2,
-                    "current_step": "handle"
+                "flow_data": {
+                    "data": amount_data,
+                    "step": "handle"
                 }
             })
 
             return create_message(channel_id, "Enter account 💳 handle:")
 
         elif step == "handle":
-            # Let StateManager validate handle input
+            # Validate handle through component
+            handle_component = HandleInput()
+            result = handle_component.validate(input_data)
+            if "error" in result:
+                return create_message(channel_id, result["error"]["message"])
+
+            # Convert to verified data
+            handle_data = handle_component.to_verified_data(input_data)
+
+            # Get amount from state
+            flow_data = state_manager.get_flow_state()
+            amount_data = flow_data.get("data", {}).get("amount")
+            if not amount_data:
+                raise FlowException(
+                    message="Missing amount data",
+                    step=step,
+                    action="validate",
+                    data={"step": step}
+                )
+
+            # Update state with verified data
             state_manager.update_state({
-                "validation": {
-                    "type": "handle_input",
-                    "input": input_data
+                "flow_data": {
+                    "data": {
+                        "amount": amount_data,
+                        "handle": handle_data["handle"]
+                    },
+                    "step": "confirm"
                 }
             })
 
-            # Get validated handle data
-            handle_data = state_manager.get_handle_data()
-
-            # Show confirmation with validated data
-            amount_data = handle_data["amount"]
-            formatted_amount = f"{amount_data['value']} {amount_data['denomination']}".strip()
-
-            # Update step before returning message
-            state_manager.update_state({
-                "validation": {
-                    "type": "step_update",
-                    "step": 3,
-                    "current_step": "confirm"
-                }
-            })
-
+            # Format confirmation message
             return create_message(
                 channel_id,
                 f"*📝 Review your offer:*\n"
-                f"💸 Amount: {formatted_amount}\n"
-                f"💳 To: {handle_data['account_name']} ({handle_data['account_handle']})",
+                f"💸 Amount: {amount_data}\n"
+                f"💳 To: {handle_data['handle']}",
                 buttons=[
                     {"id": "confirm", "text": "✅ Confirm"},
                     {"id": "cancel", "text": "❌ Cancel"}
@@ -133,88 +134,94 @@ def process_offer_step(state_manager: Any, step: str, input_data: Any = None) ->
             )
 
         elif step == "confirm":
-            # Let StateManager validate confirmation input
-            state_manager.update_state({
-                "validation": {
-                    "type": "confirmation_input",
-                    "input": input_data
-                }
-            })
+            # Validate confirmation through component
+            confirm_component = ConfirmInput()
+            result = confirm_component.validate(input_data)
+            if "error" in result:
+                return create_message(channel_id, result["error"]["message"])
 
-            # Get validated confirmation data
-            confirmation_data = state_manager.get_confirmation_data()
+            # Convert to verified data
+            confirm_data = confirm_component.to_verified_data(input_data)
 
-            # Submit offer if confirmed
-            if confirmation_data["confirmed"]:
-                # Let StateManager assemble offer data
-                state_manager.update_state({
-                    "validation": {
-                        "type": "offer_assembly"
-                    }
-                })
+            if confirm_data["confirmed"]:
+                # Get flow data
+                flow_data = state_manager.get_flow_state()
+                offer_data = flow_data.get("data", {})
 
-                # Submit through service layer
-                credex_service = get_credex_service(state_manager)
-                success, response = credex_service["offer_credex"](state_manager)
+                if not offer_data.get("amount") or not offer_data.get("handle"):
+                    raise FlowException(
+                        message="Missing offer data",
+                        step=step,
+                        action="validate",
+                        data={"step": step}
+                    )
 
-                if not success:
-                    error_msg = response["message"] if isinstance(response, dict) else str(response)
-                    raise StateException(f"Failed to create offer: {error_msg}")
+                try:
+                    # Submit through service layer
+                    credex_service = get_credex_service(state_manager)
+                    success, response = credex_service["offer_credex"](state_manager)
 
-                # Let StateManager validate response
-                state_manager.update_state({
-                    "validation": {
-                        "type": "offer_response",
-                        "response": response
-                    }
-                })
+                    if not success:
+                        raise SystemException(
+                            message=response.get("message", "Failed to create offer"),
+                            code="OFFER_CREATE_FAILED",
+                            service="credex",
+                            action="create_offer"
+                        )
 
-                # Get validated offer ID
-                offer_id = state_manager.get_offer_id()
+                    # Update state with completion
+                    state_manager.update_state({
+                        "flow_data": {
+                            "data": {
+                                **offer_data,
+                                "offer_id": response["offer_id"]
+                            },
+                            "step": "complete"
+                        }
+                    })
 
-                # Update step with completion
-                state_manager.update_state({
-                    "validation": {
-                        "type": "step_complete",
-                        "step": 4,
-                        "current_step": "complete",
-                        "offer_id": offer_id
-                    }
-                })
+                    return create_message(channel_id, "✅ Your request has been processed.")
 
-                return create_message(channel_id, "✅ Your request has been processed.")
+                except (FlowException, SystemException):
+                    # Let flow and system errors propagate up
+                    raise
+                except Exception as e:
+                    raise SystemException(
+                        message=str(e),
+                        code="OFFER_ERROR",
+                        service="credex",
+                        action="create_offer"
+                    )
 
             # Show confirmation again if not confirmed
-            handle_data = state_manager.get_handle_data()
-            amount_data = handle_data["amount"]
-            formatted_amount = f"{amount_data['value']} {amount_data['denomination']}".strip()
+            flow_data = state_manager.get_flow_state()
+            offer_data = flow_data.get("data", {})
 
             return create_message(
                 channel_id,
                 f"*📝 Review your offer:*\n"
-                f"💸 Amount: {formatted_amount}\n"
-                f"💳 To: {handle_data['account_name']} ({handle_data['account_handle']})",
+                f"💸 Amount: {offer_data.get('amount')}\n"
+                f"💳 To: {offer_data.get('handle')}",
                 buttons=[
                     {"id": "confirm", "text": "✅ Confirm"},
                     {"id": "cancel", "text": "❌ Cancel"}
                 ]
             )
 
-        raise StateException("invalid_step")
+        raise FlowException(
+            message="Invalid step",
+            step=step,
+            action="process",
+            data={"step": step}
+        )
 
+    except (FlowException, SystemException):
+        # Let flow and system errors propagate up
+        raise
     except Exception as e:
-        # Let ErrorHandler create proper message with context
-        return ErrorHandler.handle_flow_error(
-            state_manager,
-            e,
-            ErrorContext(
-                error_type="flow",
-                message=str(e),
-                step_id=step,
-                details={
-                    "input": input_data,
-                    "flow_type": "offer"
-                }
-            ),
-            return_message=True
+        raise SystemException(
+            message=str(e),
+            code="FLOW_ERROR",
+            service="offer_flow",
+            action=step
         )

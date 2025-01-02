@@ -3,18 +3,16 @@ import logging
 from typing import Any
 
 from core.messaging.types import Message
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
-from core.utils.exceptions import StateException
+from core.utils.exceptions import ComponentException, FlowException, SystemException
 
 from .handlers.auth.auth_flow import attempt_login, handle_registration
 from .handlers.member.display import handle_dashboard_display
+from .types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 
 
 def handle_error(state_manager: Any, operation: str, error: Exception) -> Message:
-    print(state_manager)
     """Handle errors consistently
 
     Args:
@@ -24,36 +22,21 @@ def handle_error(state_manager: Any, operation: str, error: Exception) -> Messag
 
     Returns:
         Message: Registration flow message
-
-    Raises:
-        StateException: If error handling fails
     """
     try:
-        # Get current flow state
-        current_step = state_manager.get_current_step()
-        flow_type = state_manager.get_flow_type()
-
-        # Create error context with flow information
-        error_context = ErrorContext(
-            error_type="flow",
-            message=f"{operation} failed: {str(error)}",
-            step_id=current_step or "login",  # Default to login if no current step
-            details={
-                "flow_type": flow_type or "auth",
-                "operation": operation,
-                "error": str(error),
-                "auth_failure": True
-            }
-        )
+        # Get channel ID for error response
+        channel_id = state_manager.get_channel_id()
 
         # Log error with context
         logger.error(
             f"{operation} failed",
-            extra={"error_context": error_context.__dict__}
+            extra={
+                "operation": operation,
+                "error": str(error),
+                "flow_type": state_manager.get_flow_type(),
+                "step": state_manager.get_current_step()
+            }
         )
-
-        # Let ErrorHandler handle state update
-        ErrorHandler.handle_error(error, state_manager, error_context)
 
         # Initialize registration flow state
         state_manager.update_state({
@@ -71,22 +54,25 @@ def handle_error(state_manager: Any, operation: str, error: Exception) -> Messag
         return handle_registration(state_manager)
 
     except Exception as e:
-        # System errors should not have step_id
-        error_context = ErrorContext(
-            error_type="system",
-            message="Failed to handle error",
+        # Handle unexpected errors
+        error = SystemException(
+            message=f"Failed to handle error: {str(e)}",
+            code="ERROR_HANDLER_ERROR",
+            service="auth_handlers",
+            action="handle_error",
             details={
                 "operation": operation,
-                "original_error": str(error),
-                "handler_error": str(e),
-                "flow_type": state_manager.get_flow_type()  # Add flow context for debugging
+                "original_error": str(error)
             }
         )
         logger.error(
             "Error handler failed",
-            extra={"error_context": error_context.__dict__}
+            extra={"error": str(error)}
         )
-        raise StateException(error_context.message)
+        return WhatsAppMessage.create_text(
+            channel_id if 'channel_id' in locals() else "unknown",
+            f"❌ {str(error)}"
+        )
 
 
 def handle_hi(state_manager: Any) -> Message:
@@ -97,18 +83,16 @@ def handle_hi(state_manager: Any) -> Message:
 
     Returns:
         Message: Dashboard or registration message
-
-    Raises:
-        StateException: If greeting handling fails
     """
     try:
+        # Validate state manager
         if not state_manager:
-            error_context = ErrorContext(
-                error_type="state",
+            raise ComponentException(
                 message="State manager is required",
-                details={"state_manager": None}
+                component="auth_handlers",
+                field="state_manager",
+                value="None"
             )
-            raise StateException(error_context.message)
 
         # Attempt login (handles state management internally)
         success, response = attempt_login(state_manager)
@@ -134,7 +118,12 @@ def handle_hi(state_manager: Any) -> Message:
                 "active_account_id": accounts[0]["accountID"] if accounts else None
             })
             if not success:
-                raise StateException(f"Failed to update auth state: {error}")
+                raise FlowException(
+                    message=f"Failed to update auth state: {error}",
+                    step="login",
+                    action="update_auth",
+                    data={"error": error}
+                )
 
             # Then update flow state
             success, error = state_manager.update_state({
@@ -149,7 +138,12 @@ def handle_hi(state_manager: Any) -> Message:
                 }
             })
             if not success:
-                raise StateException(f"Failed to update flow state: {error}")
+                raise FlowException(
+                    message=f"Failed to update flow state: {error}",
+                    step="login",
+                    action="update_flow",
+                    data={"error": error}
+                )
 
             logger.info("Login successful, showing dashboard")
             return handle_dashboard_display(state_manager)
@@ -172,29 +166,16 @@ def handle_hi(state_manager: Any) -> Message:
             )
             return handle_registration(state_manager)
 
-    except StateException as e:
-        error_context = ErrorContext(
-            error_type="flow",
-            message=str(e),
-            step_id="login",  # Default to login step for auth errors
-            details={
-                "flow_type": "auth",
-                "operation": "greeting",
-                "error": str(e),
-                "auth_failure": True
-            }
-        )
-        return handle_error(state_manager, "Greeting", StateException(error_context.message))
+    except (ComponentException, FlowException) as e:
+        # Handle validation and flow errors
+        return handle_error(state_manager, "Greeting", e)
+
     except Exception as e:
-        error_context = ErrorContext(
-            error_type="flow",
-            message="Failed to handle greeting",
-            step_id="login",  # Default to login step for auth errors
-            details={
-                "flow_type": "auth",
-                "operation": "greeting",
-                "error": str(e),
-                "auth_failure": True
-            }
+        # Handle unexpected errors
+        error = SystemException(
+            message=str(e),
+            code="AUTH_ERROR",
+            service="auth_handlers",
+            action="handle_greeting"
         )
-        return handle_error(state_manager, "Greeting", StateException(error_context.message))
+        return handle_error(state_manager, "Greeting", error)

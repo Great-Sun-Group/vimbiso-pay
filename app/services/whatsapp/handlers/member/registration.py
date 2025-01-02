@@ -1,163 +1,147 @@
-"""Registration handler enforcing SINGLE SOURCE OF TRUTH"""
+"""Registration handler using component system"""
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict
 
-from core.utils.exceptions import StateException
+from core.messaging.flow import FlowManager, initialize_flow
+from core.utils.exceptions import ComponentException, FlowException, SystemException
 from services.credex.service import register_member
 
 logger = logging.getLogger(__name__)
 
 
-def handle_registration(state_manager: Any, input_data: Dict[str, Any]) -> Tuple[bool, Optional[Dict[str, Any]]]:
-    """Handle registration enforcing SINGLE SOURCE OF TRUTH"""
+def process_registration_step(state_manager: Any, step: str, input_value: Any) -> Dict:
+    """Process registration step using component system
+
+    Args:
+        state_manager: State manager instance
+        step: Current step
+        input_value: Input value for step
+
+    Returns:
+        Step result or error
+    """
     try:
-        # Initialize registration flow with input data
-        success, error = state_manager.update_state({
-            "flow_data": {
-                "flow_type": "registration",
-                "step": 0,
-                "current_step": "validate",
-                "data": input_data
-            }
-        })
-        if not success:
-            raise StateException(f"Failed to initialize registration: {error}")
+        # Get flow manager and component
+        flow_manager = FlowManager("registration")
+        component = flow_manager.get_component(step)
 
-        # Get channel ID for registration
-        phone = state_manager.get_channel_id()
+        # Process step
+        if step == "firstname":
+            # Validate and store first name
+            result = component.validate(input_value)
+            if "error" in result:
+                return result
 
-        # Register member
-        success, response = register_member(phone, input_data)
-        if not success:
-            raise StateException("Failed to register member")
-
-        # Get data from onboarding response
-        dashboard = response["data"]["dashboard"]
-        action = response["data"]["action"]
-
-        # Get member data from dashboard.member
-        member = dashboard["member"]  # Member data is under member
-        member_data = {
-            "memberTier": member["memberTier"],  # Always 1 for new members
-            "remainingAvailableUSD": member.get("remainingAvailableUSD"),
-            "firstname": member["firstname"],
-            "lastname": member["lastname"],
-            "memberHandle": member["memberHandle"],  # Initially phone number
-            "defaultDenom": member["defaultDenom"]
-        }
-
-        # Update state with member data and registration complete
-        success, error = state_manager.update_state({
-            # Core identity - SINGLE SOURCE OF TRUTH
-            "jwt_token": action["details"]["token"],
-            "authenticated": True,
-            "member_id": action["details"]["memberID"],
-
-            # Member data at top level
-            "member_data": member_data,
-
-            # Account data at top level (single personal account)
-            "accounts": dashboard["accounts"],
-            "active_account_id": action["details"]["defaultAccountID"],
-
-            # Flow state only for routing
-            "flow_data": {
-                "flow_type": "registration",
-                "step": 1,
-                "current_step": "complete"
-            }
-        })
-        if not success:
-            raise StateException(f"Failed to update state: {error}")
-
-        return True, None
-
-    except StateException as e:
-        logger.error(f"Registration error: {str(e)}")
-        # Update state with error
-        state_manager.update_state({
-            "flow_data": {
-                "flow_type": "registration",
-                "step": 0,
-                "current_step": "error",
-                "data": {
-                    "error": str(e),
-                    "input": input_data
+            verified_data = component.to_verified_data(input_value)
+            state_manager.update_state({
+                "flow_data": {
+                    "data": verified_data
                 }
+            })
+
+        elif step == "lastname":
+            # Validate and store last name
+            result = component.validate(input_value)
+            if "error" in result:
+                return result
+
+            verified_data = component.to_verified_data(input_value)
+            state_manager.update_state({
+                "flow_data": {
+                    "data": verified_data
+                }
+            })
+
+        elif step == "complete":
+            # Get stored registration data
+            flow_data = state_manager.get_flow_data()
+            registration_data = {
+                "firstname": flow_data.get("firstname"),
+                "lastname": flow_data.get("lastname"),
+                "defaultDenom": "USD"  # Always USD for now
             }
-        })
-        return False, {
+
+            # Get channel ID
+            phone = state_manager.get_channel_id()
+
+            # Register member
+            success, response = register_member(phone, registration_data)
+            if not success:
+                raise SystemException(
+                    message="Failed to register member",
+                    code="REGISTRATION_ERROR",
+                    service="registration",
+                    action="register"
+                )
+
+            # Validate registration response
+            component.validate(response)
+            verified_data = component.to_verified_data(response)
+
+            # Update state with verified data
+            state_manager.update_state({
+                # Core identity - SINGLE SOURCE OF TRUTH
+                "jwt_token": verified_data["jwt_token"],
+                "authenticated": True,
+                "member_id": verified_data["member_id"],
+
+                # Member data at top level
+                "member_data": {
+                    "memberTier": 1,  # Always 1 for new members
+                    "firstname": registration_data["firstname"],
+                    "lastname": registration_data["lastname"],
+                    "defaultDenom": registration_data["defaultDenom"]
+                },
+
+                # Account data at top level
+                "accounts": verified_data["accounts"],
+                "active_account_id": verified_data["active_account_id"]
+            })
+
+        return {"success": True}
+
+    except ComponentException as e:
+        # Component validation error
+        logger.error(f"Registration validation error: {str(e)}")
+        return {
             "error": {
-                "type": "REGISTRATION_ERROR",
-                "message": str(e)
+                "type": "validation",
+                "message": str(e),
+                "details": e.details
+            }
+        }
+    except FlowException as e:
+        # Flow error
+        logger.error(f"Registration flow error: {str(e)}")
+        return {
+            "error": {
+                "type": "flow",
+                "message": str(e),
+                "details": e.details
+            }
+        }
+    except SystemException as e:
+        # System error
+        logger.error(f"Registration system error: {str(e)}")
+        return {
+            "error": {
+                "type": "system",
+                "message": str(e),
+                "details": e.details
+            }
+        }
+    except Exception as e:
+        # Unexpected error
+        logger.error(f"Unexpected registration error: {str(e)}")
+        return {
+            "error": {
+                "type": "system",
+                "message": "Unexpected registration error",
+                "details": {"error": str(e)}
             }
         }
 
 
-def validate_registration_input(state_manager: Any, input_data: Dict[str, Any]) -> None:
-    """Validate registration input through state update"""
-    try:
-        # Update state with validation data
-        success, error = state_manager.update_state({
-            "flow_data": {
-                "flow_type": "registration",
-                "step": 0,
-                "current_step": "validate",
-                "data": {
-                    "firstname": input_data.get("firstname"),
-                    "lastname": input_data.get("lastname"),
-                    "defaultDenom": input_data.get("defaultDenom")
-                }
-            }
-        })
-        if not success:
-            raise StateException(f"Failed to update validation state: {error}")
-
-        # Get input data
-        flow_data = state_manager.get_flow_step_data()
-
-        # Validate required fields from API spec
-        firstname = flow_data["firstname"]
-        if not firstname or len(firstname) < 3 or len(firstname) > 50:
-            raise StateException("First name must be between 3 and 50 characters")
-
-        lastname = flow_data["lastname"]
-        if not lastname or len(lastname) < 3 or len(lastname) > 50:
-            raise StateException("Last name must be between 3 and 50 characters")
-
-        defaultDenom = flow_data["defaultDenom"]
-        valid_denoms = {"CXX", "CAD", "USD", "XAU", "ZWG"}
-        if not defaultDenom or defaultDenom not in valid_denoms:
-            raise StateException(f"Invalid defaultDenom. Must be one of: {', '.join(valid_denoms)}")
-
-        # Phone validation handled by channel (phone number format: ^[1-9]\d{1,14}$)
-
-        # Update state with validated data
-        success, error = state_manager.update_state({
-            "flow_data": {
-                "flow_type": "registration",
-                "step": 0,
-                "current_step": "validated",
-                "data": {
-                    "firstname": firstname,
-                    "lastname": lastname,
-                    "defaultDenom": defaultDenom
-                }
-            }
-        })
-        if not success:
-            raise StateException(f"Failed to update validated state: {error}")
-
-    except StateException as e:
-        # Update state with validation error
-        state_manager.update_state({
-            "flow_data": {
-                "flow_type": "registration",
-                "step": 0,
-                "current_step": "error",
-                "data": {
-                    "error": str(e)
-                }
-            }
-        })
-        raise
+def start_registration(state_manager: Any) -> None:
+    """Initialize registration flow"""
+    initialize_flow(state_manager, "registration", "firstname")

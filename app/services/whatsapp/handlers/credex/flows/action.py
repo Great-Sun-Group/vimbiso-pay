@@ -4,9 +4,7 @@ from typing import Any, Dict, List
 
 from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
                                   MessageRecipient, TextContent)
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
-from core.utils.exceptions import StateException
+from core.utils.exceptions import FlowException, SystemException
 from services.credex.service import get_credex_service
 
 from .steps import process_step
@@ -117,7 +115,12 @@ def process_action_step(state_manager: Any, step: str, action: str, input_data: 
                 success, response = credex_service[f"{action}_credex"](state_manager)
 
                 if not success:
-                    raise StateException(response.get("message", "Failed to create offer"))
+                    raise SystemException(
+                        message=response.get("message", f"Failed to {action} offer"),
+                        code=f"{action.upper()}_ERROR",
+                        service="credex_action",
+                        action=action
+                    )
 
                 # Log success
                 logger.info(
@@ -146,19 +149,29 @@ def process_action_step(state_manager: Any, step: str, action: str, input_data: 
                 action
             )
 
-        raise StateException(f"Invalid step: {step}")
+        raise FlowException(
+            message=f"Invalid step: {step}",
+            step=step,
+            action="validate_step",
+            data={"action": action}
+        )
+
+    except (FlowException, SystemException):
+        # Let flow and system errors propagate up
+        raise
 
     except Exception as e:
-        error_context = ErrorContext(
-            error_type="flow",
+        # Wrap unexpected errors as system errors
+        raise SystemException(
             message=str(e),
-            step_id=step,
+            code="ACTION_ERROR",
+            service="credex_action",
+            action=action,
             details={
-                "action": action,
+                "step": step,
                 "input": input_data
             }
         )
-        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
 
 def process_cancel_step(state_manager: Any, step: str, input_data: Any = None) -> Message:

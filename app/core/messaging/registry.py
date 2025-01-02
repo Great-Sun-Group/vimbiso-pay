@@ -14,6 +14,25 @@ class FlowRegistry:
 
     # Flow type definitions
     FLOWS: Dict[str, Dict] = {
+        # Member flows
+        "registration": {
+            "steps": ["firstname", "lastname", "complete"],
+            "components": {
+                "firstname": "FirstNameInput",
+                "lastname": "LastNameInput",
+                "complete": "RegistrationComplete"
+            }
+        },
+
+        # Upgrade flow
+        "upgrade": {
+            "steps": ["confirm", "complete"],
+            "components": {
+                "confirm": "UpgradeConfirm",
+                "complete": "UpgradeComplete"
+            }
+        },
+
         # Authentication flows
         "auth": {
             "steps": ["login", "login_complete"],

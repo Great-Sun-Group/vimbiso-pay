@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict, Union, Optional
 
 from core.messaging.types import Message as CoreMessage
-from core.utils.exceptions import StateException
+from core.utils.exceptions import ComponentException
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +22,15 @@ class WhatsAppMessage(Dict[str, Any]):
         try:
             # Let StateManager handle validation
             channel = state_manager.get("channel")
+            if not channel or not channel.get("identifier"):
+                raise ComponentException(
+                    message="Channel identifier not found",
+                    component="whatsapp_message",
+                    field="channel.identifier",
+                    value=str(channel)
+                )
             return channel["identifier"]
-        except StateException as e:
+        except ComponentException as e:
             logger.error(f"Failed to get channel identifier: {str(e)}")
             raise ValueError(str(e))
 

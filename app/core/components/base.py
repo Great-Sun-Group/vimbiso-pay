@@ -4,8 +4,8 @@ This module defines the core Component interface that all components must implem
 Components handle their own validation and data conversion with clear boundaries.
 """
 
-from typing import Any, Dict
-from core.utils.exceptions import ComponentException
+from typing import Any, Dict, Type, Union
+from core.utils.error_handler import ErrorHandler
 
 
 class Component:
@@ -37,9 +37,6 @@ class Component:
 
         Returns:
             Dict with converted data
-
-        Raises:
-            ComponentException: If conversion fails
         """
         raise NotImplementedError
 
@@ -50,21 +47,40 @@ class InputComponent(Component):
     def __init__(self, component_type: str):
         super().__init__(component_type)
 
-    def _validate_type(self, value: Any, expected_type: type, type_name: str) -> None:
+    def _validate_type(self, value: Any, expected_type: Union[Type, tuple], type_name: str) -> None:
         """Validate value type
 
         Args:
             value: Value to validate
-            expected_type: Expected Python type
+            expected_type: Expected Python type or tuple of types
             type_name: Human readable type name
 
-        Raises:
-            ComponentException: If type is invalid
+        Returns:
+            Dict with error if validation fails
         """
         if not isinstance(value, expected_type):
-            raise ComponentException(
-                message=f"Value must be {type_name}",
+            return ErrorHandler.handle_component_error(
                 component=self.type,
                 field="value",
-                value=str(value)
+                value=str(value),
+                message=f"Value must be {type_name}"
             )
+        return {"valid": True}
+
+    def _handle_validation_error(self, value: Any, message: str, field: str = "value") -> Dict:
+        """Handle component validation error
+
+        Args:
+            value: Invalid value
+            message: Error message
+            field: Field name that failed validation
+
+        Returns:
+            Dict with error details
+        """
+        return ErrorHandler.handle_component_error(
+            component=self.type,
+            field=field,
+            value=str(value),
+            message=message
+        )
