@@ -11,7 +11,39 @@ Error Context:
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
+
+
+@dataclass
+class ValidationResult:
+    """Result of UI/component validation
+
+    Attributes:
+        valid: Whether validation passed
+        error: Optional error details if validation failed
+        value: Optional transformed value if validation passed
+    """
+    valid: bool
+    error: Optional[Dict] = None
+    value: Optional[Any] = None
+
+    @classmethod
+    def success(cls, value: Any = None) -> 'ValidationResult':
+        """Create successful validation result"""
+        return cls(valid=True, value=value)
+
+    @classmethod
+    def failure(cls, message: str, field: str = "value", details: Optional[Dict] = None) -> 'ValidationResult':
+        """Create validation error result"""
+        return cls(
+            valid=False,
+            error={
+                "type": "validation",
+                "field": field,
+                "message": message,
+                **({"details": details} if details else {})
+            }
+        )
 
 
 @dataclass

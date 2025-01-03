@@ -1,21 +1,23 @@
 """Core input components
 
-This module implements the core input components with specific validation and conversion logic.
+This module implements pure UI input components with format validation.
 Each component handles a specific input type with clear boundaries.
+Business logic validation happens in services.
 """
 
-from typing import Any, Dict
+from typing import Any, List
 from .base import InputComponent
+from core.utils.error_types import ValidationResult
 
 
 class ButtonInput(InputComponent):
-    """Button input with validation"""
+    """Button input with pure UI validation"""
 
     def __init__(self):
         super().__init__("button_input")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate button input"""
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate button input format"""
         try:
             # Extract button ID from interactive message
             if isinstance(value, dict):
@@ -23,162 +25,162 @@ class ButtonInput(InputComponent):
                 if interactive.get("type") == "button_reply":
                     button_id = interactive.get("button_reply", {}).get("id")
                     if not button_id:
-                        return self._handle_validation_error(
-                            value=str(value),
+                        return ValidationResult.failure(
                             message="Missing button ID",
                             field="button"
                         )
-                    return {"valid": True}
-                return self._handle_validation_error(
-                    value=str(value),
+                    self.update_state(button_id, ValidationResult.success(button_id))
+                    return ValidationResult.success(button_id)
+                return ValidationResult.failure(
                     message="Invalid button type",
                     field="button"
                 )
 
             # Handle direct button ID string
-            type_validation = self._validate_type(value, str, "text")
-            if "error" in type_validation:
-                return type_validation
+            type_result = self._validate_type(value, str, "text")
+            if not type_result.valid:
+                return type_result
 
             button_id = value.strip()
             if not button_id:
-                return self._handle_validation_error(
-                    value=str(value),
+                return ValidationResult.failure(
                     message="Empty button ID",
                     field="button"
                 )
 
-            return {"valid": True}
+            self.update_state(button_id, ValidationResult.success(button_id))
+            return ValidationResult.success(button_id)
 
         except Exception:
-            return self._handle_validation_error(
-                value=str(value),
+            return ValidationResult.failure(
                 message="Invalid button input",
                 field="button"
             )
 
-    def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified button data"""
-        if isinstance(value, dict):
-            return {
-                "button_id": value.get("interactive", {}).get("button_reply", {}).get("id")
-            }
-        return {
-            "button_id": value.strip()
-        }
-
 
 class AmountInput(InputComponent):
-    """Amount input with validation"""
+    """Amount input with pure UI validation"""
 
     def __init__(self):
         super().__init__("amount_input")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate amount value"""
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate amount format only
+
+        Only checks basic format requirements:
+        - Must be numeric
+        - Must be positive
+        - Must parse as float
+
+        Business validation (limits etc) happens in service layer
+        """
         try:
             # Validate type
-            type_validation = self._validate_type(value, (int, float, str), "numeric")
-            if "error" in type_validation:
-                return type_validation
+            type_result = self._validate_type(value, (int, float, str), "numeric")
+            if not type_result.valid:
+                return type_result
 
             # Convert to float
             amount = float(value) if isinstance(value, str) else value
 
-            # Validate value
+            # Basic format validation
             if amount <= 0:
-                return self._handle_validation_error(
-                    value=str(value),
+                return ValidationResult.failure(
                     message="Amount must be positive",
                     field="amount"
                 )
 
-            return {"valid": True}
+            self.update_state(str(amount), ValidationResult.success(amount))
+            return ValidationResult.success(amount)
 
         except ValueError:
-            return self._handle_validation_error(
-                value=str(value),
+            return ValidationResult.failure(
                 message="Invalid amount format",
                 field="amount"
             )
 
-    def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified amount"""
-        return {
-            "amount": float(value)
-        }
-
 
 class HandleInput(InputComponent):
-    """Handle input with validation"""
+    """Handle input with pure UI validation"""
 
     def __init__(self):
         super().__init__("handle_input")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate handle value"""
-        # Validate type
-        type_validation = self._validate_type(value, str, "text")
-        if "error" in type_validation:
-            return type_validation
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate handle format only
 
-        # Validate content
+        Only checks basic format requirements:
+        - Must be string
+        - Must not be empty
+        - Must be <= 30 chars
+
+        Business validation (availability etc) happens in service layer
+        """
+        # Validate type
+        type_result = self._validate_type(value, str, "text")
+        if not type_result.valid:
+            return type_result
+
+        # Validate basic format
         handle = value.strip()
         if not handle:
-            return self._handle_validation_error(
-                value=str(value),
+            return ValidationResult.failure(
                 message="Handle required",
                 field="handle"
             )
 
-        return {"valid": True}
+        if len(handle) > 30:
+            return ValidationResult.failure(
+                message="Handle too long (max 30 chars)",
+                field="handle"
+            )
 
-    def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified handle"""
-        return {
-            "handle": value.strip()
-        }
+        self.update_state(handle, ValidationResult.success(handle))
+        return ValidationResult.success(handle)
 
 
 class SelectInput(InputComponent):
-    """Selection input with validation"""
+    """Selection input with pure UI validation"""
 
-    def __init__(self, options: list):
+    def __init__(self, options: List[str]):
         super().__init__("select_input")
         self.options = options
 
-    def validate(self, value: Any) -> Dict:
-        """Validate selection value"""
-        # Validate type
-        type_validation = self._validate_type(value, str, "text")
-        if "error" in type_validation:
-            return type_validation
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate selection format only
 
-        # Validate selection
+        Only checks that selection is in allowed options.
+        Business validation happens in service layer.
+        """
+        # Validate type
+        type_result = self._validate_type(value, str, "text")
+        if not type_result.valid:
+            return type_result
+
+        # Validate selection exists
         if value not in self.options:
-            return self._handle_validation_error(
-                value=str(value),
+            return ValidationResult.failure(
                 message="Invalid selection",
-                field="selection"
+                field="selection",
+                details={"valid_options": self.options}
             )
 
-        return {"valid": True}
-
-    def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified selection"""
-        return {
-            "selected_id": value
-        }
+        self.update_state(value, ValidationResult.success(value))
+        return ValidationResult.success(value)
 
 
 class ConfirmInput(InputComponent):
-    """Confirmation input with validation"""
+    """Confirmation input with pure UI validation"""
 
     def __init__(self):
         super().__init__("confirm_input")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate confirmation value"""
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate confirmation format only
+
+        Converts string inputs to boolean and validates type.
+        Business validation happens in service layer.
+        """
         # Handle string inputs
         if isinstance(value, str):
             value = value.lower()
@@ -187,24 +189,15 @@ class ConfirmInput(InputComponent):
             elif value in ("no", "false", "0"):
                 value = False
             else:
-                return self._handle_validation_error(
-                    value=str(value),
-                    message="Invalid confirmation value",
+                return ValidationResult.failure(
+                    message="Please respond with yes or no",
                     field="confirmation"
                 )
 
         # Validate type
-        type_validation = self._validate_type(value, bool, "boolean")
-        if "error" in type_validation:
-            return type_validation
+        type_result = self._validate_type(value, bool, "boolean")
+        if not type_result.valid:
+            return type_result
 
-        return {"valid": True}
-
-    def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified confirmation"""
-        if isinstance(value, str):
-            value = value.lower() in ("yes", "true", "1")
-
-        return {
-            "confirmed": value
-        }
+        self.update_state(value, ValidationResult.success(value))
+        return ValidationResult.success(value)

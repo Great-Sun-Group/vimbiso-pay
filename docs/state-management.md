@@ -3,20 +3,20 @@
 ## Core Principles
 
 1. **Single Source of Truth**
-- Member ID at top level
-- Channel info at top level
-- JWT token in state
-- NO duplication
+- Member ID accessed through get_member_id()
+- Channel info accessed through get_channel_id()
+- JWT token accessed through flow_data auth
+- NO direct state access
 - NO state passing
 - NO transformation
 
 2. **Simple Structure**
-- Minimal nesting
+- Common configurations
 - Clear boundaries
 - Standard validation
+- Flow metadata
 - NO complex hierarchies
 - NO redundant wrapping
-- NO state duplication
 
 3. **Pure Functions**
 - Stateless operations
@@ -30,170 +30,115 @@
 - Single state manager
 - Standard validation
 - Clear boundaries
+- Progress tracking
 - NO manual updates
 - NO local state
-- NO mixed concerns
 
 ## State Structure
 
+### 1. Core Identity
 ```python
 {
-    # Core identity (SINGLE SOURCE OF TRUTH)
-    "member_id": str,
-    "channel": {
-        "type": str,      # whatsapp, etc
-        "identifier": str # channel-specific id
+    # Accessed through proper methods
+    "member_id": str,     # Use get_member_id()
+    "channel": {          # Use get_channel_id()
+        "type": str,      # Use get_channel_type()
+        "identifier": str
     },
-    "jwt_token": str,
+    "jwt_token": str     # Accessed through flow_data auth
+}
+```
 
-    # Flow state
+### 2. Flow State
+```python
+{
     "flow_data": {
-        "flow_type": str,  # offer, accept, etc
-        "step": str,       # current step id
-        "data": {          # verified step data
-            "amount": float,
-            "handle": str,
-            "confirmed": bool
+        # Flow identification
+        "flow_type": str,     # Type of flow
+        "handler_type": str,  # Handler responsible
+        "step": str,         # Current step
+        "step_index": int,   # Current position
+        "total_steps": int,  # Total steps
+
+        # Validation tracking
+        "active_component": {
+            "type": str,     # Component type
+            "validation": {
+                "in_progress": bool,
+                "error": Optional[Dict],
+                "attempts": int,
+                "last_attempt": Any
+            }
         }
     }
 }
 ```
 
-## Implementation
+## Access Patterns
 
-### 1. State Manager
+### 1. State Access
 ```python
-class StateManager:
-    """Manages state updates and validation"""
+# CORRECT - Use proper accessor methods
+channel_id = state_manager.get_channel_id()
+member_id = state_manager.get_member_id()
 
-    def __init__(self, key_prefix: str):
-        self.key_prefix = key_prefix
-        self._state = self._initialize()
-
-    def update_state(self, updates: Dict) -> None:
-        """Update state with validation"""
-        # Validate updates
-        if not self._validate_updates(updates):
-            raise StateError("Invalid state update")
-
-        # Apply updates
-        self._state.update(updates)
-
-        # Store state
-        self._store_state()
-
-    def get_state(self) -> Dict:
-        """Get current state"""
-        return self._state
-
-    def get_flow_state(self) -> Dict:
-        """Get flow state section"""
-        return self._state.get("flow_data", {})
-
-    def clear_flow_state(self) -> None:
-        """Clear flow state"""
-        self.update_state({
-            "flow_data": None
-        })
+# WRONG - Direct state access
+channel = state_manager.get("channel")  # Don't access directly!
+member_id = state_manager.get("member_id")  # Don't access directly!
 ```
 
-### 2. State Validation
+### 2. Validation Updates
 ```python
-class StateValidator:
-    """Validates state updates"""
-
-    @classmethod
-    def validate_updates(cls, current: Dict, updates: Dict) -> bool:
-        """Validate state updates"""
-        # Check core fields
-        if not cls._validate_core_fields(current, updates):
-            return False
-
-        # Check flow state
-        if "flow_data" in updates:
-            if not cls._validate_flow_state(updates["flow_data"]):
-                return False
-
-        return True
-
-    @classmethod
-    def _validate_core_fields(cls, current: Dict, updates: Dict) -> bool:
-        """Validate core field updates"""
-        core_fields = ["member_id", "channel", "jwt_token"]
-
-        for field in core_fields:
-            if (
-                field in updates and
-                field in current and
-                updates[field] != current[field]
-            ):
-                return False
-
-        return True
-
-    @classmethod
-    def _validate_flow_state(cls, flow_data: Dict) -> bool:
-        """Validate flow state structure"""
-        if flow_data is None:
-            return True
-
-        required = ["flow_type", "step"]
-        return all(field in flow_data for field in required)
-```
-
-### 3. State Usage
-```python
-# Initialize state
-state_manager = StateManager("channel:123")
-
-# Update flow state
+# CORRECT - Update with validation tracking
 state_manager.update_state({
     "flow_data": {
-        "flow_type": "offer",
-        "step": "amount",
-        "data": {
-            "amount": 100.00
+        "active_component": {
+            "type": "input",
+            "validation": {
+                "in_progress": True,
+                "attempts": current + 1,
+                "last_attempt": datetime.utcnow()
+            }
         }
     }
 })
 
-# Get flow state
-flow_state = state_manager.get_flow_state()
-
-# Clear flow state
-state_manager.clear_flow_state()
+# WRONG - Update without tracking
+state_manager.update_state({
+    "value": new_value  # Don't update without validation!
+})
 ```
 
 ## Best Practices
 
-1. **State Updates**
-- Use StateManager
-- Validate updates
-- Clear structure
-- NO manual updates
-- NO state duplication
-- NO transformation
-
-2. **State Access**
-- Use getter methods
-- Check existence
-- Handle missing data
+1. **State Access**
+- Use proper accessor methods
+- Validate through updates
+- Track all attempts
 - NO direct access
 - NO assumptions
 - NO default values
 
+2. **State Updates**
+- Include validation tracking
+- Track all attempts
+- Include error context
+- NO manual updates
+- NO transformation
+- NO state fixing
+
 3. **Flow State**
 - Clear boundaries
 - Standard structure
-- Minimal nesting
+- Track progress
+- Track validation
 - NO mixed concerns
-- NO redundant data
 - NO manual handling
 
 4. **Error Handling**
-- Use ErrorHandler
-- Clear boundaries
-- Standard formats
+- Update state with errors
+- Track validation failures
+- Include error context
 - NO manual handling
 - NO local recovery
 - NO state fixing

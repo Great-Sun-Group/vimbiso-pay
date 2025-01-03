@@ -1,300 +1,204 @@
 # WhatsApp Integration
 
-This document covers both the core WhatsApp service implementation and the mock testing interface.
+## Core Patterns
 
-## Core WhatsApp Service
+1. **Message Handling**
+- Messages processed through state_manager
+- Validation tracking on all operations
+- Error context for failures
+- NO direct state access
+- NO manual validation
+- NO state passing
 
-Located in `app/services/whatsapp/`, this module handles WhatsApp message processing for the Credex system.
+2. **Template Management**
+- Templates organized by domain
+- Validation through state updates
+- Error tracking on all operations
+- NO direct data access
+- NO manual validation
+- NO state duplication
 
-### Structure
+3. **Flow Integration**
+- Flow state managed through updates
+- Progress tracking on all steps
+- Validation state for all operations
+- NO direct state access
+- NO manual validation
+- NO state passing
 
-```
-app/services/whatsapp/
-├── __init__.py          # Package exports
-├── handler.py           # Main action handler
-├── types.py            # Type definitions
-├── service.py          # WhatsApp messaging service
-├── base_handler.py     # Base handler class
-├── auth_handlers.py    # Authentication handlers
-└── handlers/           # Domain-specific handlers
-    ├── credex/         # Credex transaction flows
-    │   ├── __init__.py
-    │   ├── flows.py    # Credex flow implementations
-    │   └── templates.py # Credex message templates
-    └── member/         # Member management flows
-        ├── __init__.py
-        ├── dashboard.py # Dashboard handling
-        ├── flows.py    # Member flow implementations
-        └── templates.py # Member message templates
-```
+4. **Error Handling**
+- Error boundaries for all operations
+- Validation state in all errors
+- Attempt tracking for recovery
+- NO direct error handling
+- NO manual recovery
+- NO state corruption
 
-### Message Types
+## Message Patterns
 
-The service uses standardized message types from `core.messaging.types`:
-
-1. **Core Message Types**
-   ```python
-   @dataclass
-   class Message:
-       """Complete message with recipient and content"""
-       recipient: MessageRecipient
-       content: Union[
-           TextContent,
-           InteractiveContent,
-           TemplateContent,
-           MediaContent
-       ]
-   ```
-
-2. **Content Types**
-   ```python
-   @dataclass
-   class TextContent:
-       """Text message content"""
-       body: str
-
-   @dataclass
-   class InteractiveContent:
-       """Interactive message content"""
-       interactive_type: InteractiveType  # BUTTON or LIST
-       body: str
-       buttons: List[Button] = field(default_factory=list)
-       action_items: Dict[str, Any] = field(default_factory=dict)
-   ```
-
-### Template Organization
-
-1. **Domain-Specific Templates**
-   ```python
-   class MemberTemplates:
-       @staticmethod
-       def create_first_name_prompt(recipient: str) -> Message:
-           return Message(
-               recipient=MessageRecipient(phone_number=recipient),
-               content=TextContent(body="What's your first name?")
-           )
-
-       @staticmethod
-       def create_registration_confirmation(
-           recipient: str,
-           first_name: str,
-           last_name: str
-       ) -> Message:
-           return Message(
-               recipient=MessageRecipient(phone_number=recipient),
-               content=InteractiveContent(
-                   interactive_type=InteractiveType.BUTTON,
-                   body=(
-                       "✅ Please confirm your registration details:\n\n"
-                       f"First Name: {first_name}\n"
-                       f"Last Name: {last_name}\n"
-                       f"Default Currency: USD"
-                   ),
-                   buttons=[
-                       Button(id="confirm_action", title="Confirm Registration")
-                   ]
-               )
-           )
-   ```
-
-2. **Flow Integration**
-   ```python
-   def process_registration(state_manager: Any) -> Message:
-       """Process registration through state updates
-
-       Args:
-           state_manager: State manager instance
-
-       Returns:
-           Message to send
-
-       Raises:
-           StateException: If validation fails
-       """
-       # Let StateManager validate state
-       mobile = state_manager.get("channel")["identifier"]  # ONLY at top level
-
-       # Let StateManager validate registration data
-       state_manager.update_state({
-           "flow_data": {
-               "registration": {
-                   "first_name": state_manager.get("flow_data")["input"]["first_name"],
-                   "last_name": state_manager.get("flow_data")["input"]["last_name"]
-               }
-           }
-       })
-
-       # Create message with validated data
-       return MemberTemplates.create_registration_confirmation(
-           recipient=mobile,
-           first_name=state_manager.get("flow_data")["registration"]["first_name"],
-           last_name=state_manager.get("flow_data")["registration"]["last_name"]
-       )
-   ```
-
-### WhatsApp Service
-
-The WhatsAppMessagingService handles all WhatsApp API interactions:
-
+### 1. Message State
+Every message includes:
 ```python
-class WhatsAppMessagingService:
-    async def send_message(self, message: Message) -> None:
-        """Send a message via WhatsApp Cloud API
-
-        Args:
-            message: Message to send
-
-        Raises:
-            StateException: If sending fails
-        """
-        # Convert core message to WhatsApp format
-        whatsapp_message = WhatsAppMessage.from_core_message(message)
-
-        # Send via API client (raises StateException if fails)
-        await self.api_client.send_message(whatsapp_message)
-
-    async def send_template(
-        self,
-        state_manager: Any,
-        template_name: str,
-        language: str,
-        components: Optional[List[Dict[str, Any]]] = None
-    ) -> None:
-        """Send a template message
-
-        Args:
-            state_manager: State manager instance
-            template_name: Name of template
-            language: Language code
-            components: Optional template components
-
-        Raises:
-            StateException: If sending fails
-        """
-        # Let StateManager validate recipient
-        recipient = state_manager.get("channel")["identifier"]
-
-        # Create template message
-        message = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": recipient,
-            "type": "template",
-            "template": {
-                "name": template_name,
-                "language": {"code": language}
-            }
-        }
-        if components:
-            message["template"]["components"] = components
-
-        # Send message (raises StateException if fails)
-        await self.api_client.send_message(message)
+message_state = {
+    "type": str,          # Message type
+    "validation": {       # Validation state
+        "in_progress": bool,
+        "attempts": int,
+        "last_attempt": Any,
+        "error": Optional[Dict]
+    }
+}
 ```
+
+### 2. Template State
+Every template includes:
+```python
+template_state = {
+    "name": str,          # Template name
+    "validation": {       # Validation state
+        "in_progress": bool,
+        "attempts": int,
+        "last_attempt": Any,
+        "error": Optional[Dict]
+    }
+}
+```
+
+### 3. Flow State
+Every flow includes:
+```python
+flow_state = {
+    "step": str,          # Current step
+    "validation": {       # Validation state
+        "in_progress": bool,
+        "attempts": int,
+        "last_attempt": Any,
+        "error": Optional[Dict]
+    }
+}
+```
+
+## Testing Patterns
+
+### 1. Message Testing
+Every message test verifies:
+- Message validation state
+- Attempt tracking
+- Error context
+- Recovery paths
+- NO direct state access
+- NO state assumptions
+
+### 2. Template Testing
+Every template test verifies:
+- Template validation state
+- Attempt tracking
+- Error context
+- Recovery paths
+- NO direct state access
+- NO state assumptions
+
+### 3. Flow Testing
+Every flow test verifies:
+- Flow validation state
+- Progress tracking
+- Error context
+- Recovery paths
+- NO direct state access
+- NO state assumptions
 
 ## Best Practices
 
-1. **Message Creation**
-   - Let StateManager validate all data
-   - NO manual validation
-   - NO error recovery
-   - NO state transformation
+1. **Message Handling**
+- Use proper accessor methods
+- Track validation state
+- Include error context
+- NO direct state access
+- NO manual validation
+- NO state passing
 
-2. **Template Organization**
-   - Group related templates in domain classes
-   - Use static methods for template creation
-   - Keep templates focused and reusable
-   - Let StateManager validate data
+2. **Template Management**
+- Use proper accessor methods
+- Track validation state
+- Include error context
+- NO direct state access
+- NO manual validation
+- NO state passing
 
-3. **Flow Implementation**
-   - Let StateManager validate through updates
-   - NO manual validation
-   - NO error recovery
-   - NO state transformation
-   - NO state passing
+3. **Flow Integration**
+- Use proper accessor methods
+- Track validation state
+- Include error context
+- NO direct state access
+- NO manual validation
+- NO state passing
 
 4. **Error Handling**
-   ```python
-   def process_completion(state_manager: Any) -> Message:
-       """Process completion through state updates
+- Use proper error boundaries
+- Track validation state
+- Include error context
+- NO direct error handling
+- NO manual recovery
+- NO state corruption
 
-       Args:
-           state_manager: State manager instance
+## Mock Testing
 
-       Returns:
-           Message to send
+### 1. Test Categories
+- Message validation tests
+- Template validation tests
+- Flow validation tests
+- Error recovery tests
+- NO direct state access
+- NO state assumptions
 
-       Raises:
-           StateException: If validation fails
-       """
-       # Let StateManager validate state
-       mobile = state_manager.get("channel")["identifier"]  # ONLY at top level
-
-       # Let StateManager validate completion
-       state_manager.update_state({
-           "flow_data": {
-               "status": "complete"
-           }
-       })
-
-       # Return success message
-       return Templates.create_success_message(
-           recipient=mobile,
-           message="Operation completed successfully"
-       )
-   ```
-
-## Mock Implementation
-
-Located in `mock/`, this module provides a testing interface that simulates both WhatsApp client and server behavior.
-
-### Structure
-
-```
-mock/
-├── server.py          # Mock WhatsApp server
-├── cli.py            # CLI client interface
-├── index.html        # Web client interface
-├── whatsapp_utils.py # Shared utilities
-├── scripts/          # Client-side scripts
-│   ├── handlers.js   # Message handlers
-│   ├── main.js      # Core functionality
-│   └── ui.js        # Interface updates
-└── styles/          # UI styling
-    └── main.css     # Core styles
+### 2. Test Patterns
+Every test verifies:
+```python
+test_state = {
+    "validation": {       # Validation state
+        "in_progress": bool,
+        "attempts": int,
+        "last_attempt": Any,
+        "error": Optional[Dict]
+    },
+    "recovery": {         # Recovery state
+        "type": str,
+        "attempts": int,
+        "last_valid": str
+    }
+}
 ```
 
-### Usage
+### 3. Error Testing
+Every error test verifies:
+```python
+error_state = {
+    "type": str,          # Error type
+    "validation": {       # Validation state
+        "in_progress": bool,
+        "attempts": int,
+        "last_attempt": Any,
+        "error": Optional[Dict]
+    },
+    "recovery": {         # Recovery state
+        "type": str,
+        "attempts": int,
+        "last_valid": str
+    }
+}
+```
 
-1. Start the mock server:
-   ```bash
-   python mock/server.py
-   ```
+## Integration
 
-2. Access the web interface:
-   ```bash
-   # Open in browser
-   http://localhost:8001
-   ```
-
-3. Use the CLI interface:
-   ```bash
-   # Text message
-   ./mock/cli.py "hi"
-
-   # Flow navigation
-   ./mock/cli.py --type interactive "flow:MEMBER_SIGNUP"
-   ./mock/cli.py --type interactive "flow:MAKE_SECURE_OFFER"
-
-   # Button response
-   ./mock/cli.py --type button "accept_offer_123"
-
-   # Menu selection
-   ./mock/cli.py --type interactive "handleactionoffercredex"
-   ```
+WhatsApp integration works with:
+- Flow framework
+- State management
+- Error handling
+- Message templates
+- API services
 
 For more details on:
-- Flow framework: [Flow Framework](flow-framework.md)
-- State management: [State Management](state-management.md)
-- API integration: [API Integration](api-integration.md)
+- Flow Framework: [Flow Framework](flow-framework.md)
+- State Management: [State Management](state-management.md)
+- API Integration: [API Integration](api-integration.md)
 - Security: [Security](security.md)

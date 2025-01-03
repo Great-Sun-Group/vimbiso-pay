@@ -1,1 +1,0 @@
-"""WhatsApp message handling components"""

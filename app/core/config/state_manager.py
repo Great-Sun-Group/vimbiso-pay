@@ -99,7 +99,7 @@ class StateManager:
             )
 
     def get(self, key: str) -> Any:
-        """Get state value
+        """Get state value with validation tracking
 
         Args:
             key: State key to get
@@ -115,8 +115,20 @@ class StateManager:
                 message="Key must be a non-empty string",
                 component="state_manager",
                 field="key",
-                value=str(key)
+                value=str(key),
+                validation={
+                    "in_progress": False,
+                    "error": "Invalid key format",
+                    "attempts": self._state.get("validation_attempts", {}).get(key, 0) + 1,
+                    "last_attempt": key
+                }
             )
+
+        # Track validation attempt
+        validation_attempts = self._state.get("validation_attempts", {})
+        validation_attempts[key] = validation_attempts.get(key, 0) + 1
+        self._state["validation_attempts"] = validation_attempts
+
         return self._state.get(key)
 
     # Flow state methods
@@ -146,7 +158,7 @@ class StateManager:
         step: str,
         data: Optional[Dict] = None
     ) -> None:
-        """Update flow state
+        """Update flow state with validation and progress tracking
 
         Args:
             flow_type: Type of flow
@@ -156,13 +168,64 @@ class StateManager:
         Raises:
             FlowException: If flow state update fails
         """
-        success, error = update_flow_state(self, flow_type, step, data)
-        if not success:
+        # Get current flow state for progress tracking
+        current_flow = self.get_flow_state() or {}
+        current_step_index = current_flow.get("step_index", 0)
+        total_steps = current_flow.get("total_steps", 1)
+
+        # Track validation attempt
+        validation_state = {
+            "in_progress": True,
+            "attempts": current_flow.get("validation_attempts", 0) + 1,
+            "last_attempt": {
+                "flow_type": flow_type,
+                "step": step,
+                "data": data
+            }
+        }
+
+        try:
+            success, error = update_flow_state(self, flow_type, step, {
+                **(data or {}),
+                "step_index": current_step_index + 1,
+                "total_steps": total_steps,
+                "validation": validation_state
+            })
+
+            if not success:
+                validation_state.update({
+                    "in_progress": False,
+                    "error": error
+                })
+                raise FlowException(
+                    message=f"Failed to update flow state: {error}",
+                    step=step,
+                    action="update_state",
+                    data={
+                        "flow_type": flow_type,
+                        "validation": validation_state
+                    }
+                )
+
+            # Update validation state on success
+            validation_state.update({
+                "in_progress": False,
+                "error": None
+            })
+
+        except Exception as e:
+            validation_state.update({
+                "in_progress": False,
+                "error": str(e)
+            })
             raise FlowException(
-                message=f"Failed to update flow state: {error}",
+                message=str(e),
                 step=step,
                 action="update_state",
-                data={"flow_type": flow_type}
+                data={
+                    "flow_type": flow_type,
+                    "validation": validation_state
+                }
             )
 
     def update_flow_data(self, data: Dict[str, Any]) -> None:
@@ -237,3 +300,36 @@ class StateManager:
                 value=str(channel)
             )
         return channel["type"]
+
+    def get_member_id(self) -> Optional[str]:
+        """Get member ID from flow data
+
+        Returns:
+            Member ID string if authenticated, None otherwise
+
+        Raises:
+            ComponentException: If flow data access fails
+        """
+        try:
+            flow_data = self.get_flow_data()
+            auth_data = flow_data.get("auth", {})
+
+            if auth_data.get("authenticated"):
+                member_id = auth_data.get("member_id")
+                if not member_id:
+                    raise ComponentException(
+                        message="Member ID not found in authenticated state",
+                        component="state_manager",
+                        field="auth.member_id",
+                        value=str(auth_data)
+                    )
+                return member_id
+            return None
+
+        except Exception as e:
+            raise ComponentException(
+                message=f"Failed to get member ID: {str(e)}",
+                component="state_manager",
+                field="member_id",
+                value="None"
+            )

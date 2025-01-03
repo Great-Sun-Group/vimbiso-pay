@@ -28,12 +28,15 @@ def create_api_service(state_manager: Any, channel_id: str) -> Dict[str, Callabl
     return {
         # Auth operations
         "login": lambda: auth_login(channel_id),
-        "register_member": lambda member_data: auth_register(member_data, state_manager.get("jwt_token")),
+        "register_member": lambda member_data: auth_register(
+            member_data,
+            state_manager.get_flow_data().get("auth", {}).get("token")
+        ),
 
         # Dashboard operations
         "get_dashboard": lambda: get_member_dashboard(
             channel_id,
-            state_manager.get("jwt_token")
+            state_manager.get_flow_data().get("auth", {}).get("token")
         ),
         "refresh_member_info": lambda reset=True, silent=True, init=False: refresh_member(
             state_manager,
@@ -44,11 +47,11 @@ def create_api_service(state_manager: Any, channel_id: str) -> Dict[str, Callabl
         ),
         "validate_account_handle": lambda handle: validate_member_handle(
             handle,
-            state_manager.get("jwt_token")
+            state_manager.get_flow_data().get("auth", {}).get("token")
         ),
         "get_account_ledger": lambda account_id: get_account_ledger(
             {"accountID": account_id},
-            state_manager.get("jwt_token")
+            state_manager.get_flow_data().get("auth", {}).get("token")
         ),
 
         # CredEx operations

@@ -10,33 +10,49 @@ VimbisoPay implements multi-layered security for:
 - Flow framework
 - Redis instances
 
-## Authentication
+## Core Security Patterns
 
-### JWT Tokens
+### 1. Authentication
+- JWT tokens accessed through flow_data auth
+- Automatic token refresh with validation
+- Secure token storage in Redis
+- Session binding with validation
+- NO direct token access
+- NO token duplication
+
+### 2. State Access
+- Member ID accessed through get_member_id()
+- Channel info accessed through get_channel_id()
+- API keys accessed through state validation
+- NO direct state access
+- NO credential duplication
+- NO state passing
+
+### 3. Request Validation
+Every request includes:
 ```python
-headers = {
-    "Authorization": f"Bearer {jwt_token}",
-    "x-client-api-key": config("CLIENT_API_KEY")
+validation_state = {
+    "in_progress": bool,
+    "attempts": int,
+    "last_attempt": datetime,
+    "error": Optional[Dict]
 }
 ```
 
-Features:
-- 5-minute expiration
-- Automatic refresh
-- Secure Redis storage
-- Session binding
-
-### WhatsApp Verification
+### 4. Rate Limiting
+Every operation tracks:
 ```python
-def validate_webhook(request):
-    signature = request.headers.get("X-Hub-Signature-256")
-    if not verify_signature(signature, request.body):
-        raise SecurityException("Invalid signature")
+rate_limit = {
+    "window": str,      # Time window
+    "attempts": int,    # Current attempts
+    "limit": int,      # Max attempts
+    "reset_at": datetime
+}
 ```
 
 ## Data Protection
 
-### Redis Security
+### 1. Redis Security
 
 #### Cache Redis
 - No persistence
@@ -54,172 +70,80 @@ def validate_webhook(request):
 - Connection pooling
 - Health checks
 
-### Flow Framework Security
+### 2. Flow Security
 - Validation through state updates
-- Member ID ONLY at top level
-- Channel info ONLY at top level
-- NO validation state
-- NO state duplication
-- NO error recovery
+- Access through proper methods
+- Progress tracking
+- Attempt tracking
+- NO direct state access
+- NO validation bypass
 
-### State Management
-- Member ID ONLY at top level
-- Channel info ONLY at top level
-- JWT token ONLY in state
+### 3. State Security
+- Access through proper methods
+- Validation tracking
+- Attempt tracking
+- NO direct access
 - NO state duplication
-- NO state transformation
 - NO state passing
 
-### Sensitive Data
-- Data minimization
-- TLS encryption
-- Secure storage
+### 4. Data Minimization
+- Access only needed data
+- Validate all access
+- Track all attempts
 - NO sensitive logs
 - NO state duplication
-- NO validation state
+- NO validation bypass
 
 ## API Security
 
-### Request Validation
-```python
-def process_request(state_manager: Any) -> None:
-    """Process request through state validation
+### 1. Request Patterns
+Every API request includes:
+- Validation tracking
+- Attempt tracking
+- Rate limiting
+- Error context
+- NO direct state access
+- NO credential passing
 
-    Args:
-        state_manager: State manager instance
+### 2. Response Patterns
+Every API response includes:
+- Validation state
+- Attempt tracking
+- Error context
+- NO sensitive data
+- NO state duplication
+- NO validation bypass
 
-    Raises:
-        StateException: If validation fails
-    """
-    # Let StateManager validate request data
-    state_manager.update_state({
-        "flow_data": {
-            "request": {
-                "phone": state_manager.get("channel")["identifier"],  # ONLY at top level
-                "amount": state_manager.get("flow_data")["input"]["amount"],
-                "handle": state_manager.get("flow_data")["input"]["handle"]
-            }
-        }
-    })
-
-    # Let StateManager validate headers
-    state_manager.update_state({
-        "flow_data": {
-            "headers": {
-                "content_type": "application/json",
-                "api_key": state_manager.get("api_key"),  # ONLY in state
-                "token": state_manager.get("jwt_token")   # ONLY in state
-            }
-        }
-    })
-```
-
-### Rate Limiting
-```python
-def check_rate_limit(state_manager: Any) -> None:
-    """Check rate limit through state validation
-
-    Args:
-        state_manager: State manager instance
-
-    Raises:
-        StateException: If rate limit exceeded
-    """
-    # Let StateManager validate rate limit
-    state_manager.update_state({
-        "flow_data": {
-            "rate_limit": {
-                "user_id": state_manager.get("member_id"),  # ONLY at top level
-                "limit": 1000 if state_manager.get("authenticated") else 100,
-                "period": "daily"
-            }
-        }
-    })
-```
-
-## Error Handling
-
-### Secure Responses
-```python
-def handle_error(state_manager: Any, error: StateException) -> Dict[str, Any]:
-    """Handle error through state validation
-
-    Args:
-        state_manager: State manager instance
-        error: StateException instance
-
-    Returns:
-        Error response dict
-    """
-    # Let StateManager validate error response
-    state_manager.update_state({
-        "flow_data": {
-            "error": {
-                "message": str(error),
-                "code": error.code,
-                "details": error.details
-            }
-        }
-    })
-
-    return {
-        "error": state_manager.get("flow_data")["error"]["message"],
-        "details": state_manager.get("flow_data")["error"]["details"]
-    }
-```
-
-### Logging
-```python
-def log_event(state_manager: Any, event_type: str, data: Dict[str, Any]) -> None:
-    """Log event through state validation
-
-    Args:
-        state_manager: State manager instance
-        event_type: Type of event
-        data: Event data
-
-    Raises:
-        StateException: If validation fails
-    """
-    # Let StateManager validate log data
-    state_manager.update_state({
-        "flow_data": {
-            "log": {
-                "type": event_type,
-                "member_id": state_manager.get("member_id"),  # ONLY at top level
-                "channel": state_manager.get("channel"),      # ONLY at top level
-                "data": data
-            }
-        }
-    })
-```
+### 3. Error Handling
+Every error includes:
+- Validation state
+- Attempt tracking
+- Operation context
+- NO sensitive data
+- NO state duplication
+- NO validation bypass
 
 ## Environment Security
 
-### Configuration
+### 1. Configuration
 ```python
 # Core Security
 DJANGO_ENV=production
 DEBUG=False
 ALLOWED_HOSTS=*.vimbisopay.africa
-DJANGO_SECRET=secure-key
 
 # Redis Security
-REDIS_URL=redis://redis-cache:6379/0
+REDIS_CACHE_URL=redis://redis-cache:6379/0
 REDIS_STATE_URL=redis://redis-state:6379/0
 
 # API Security
 MYCREDEX_APP_URL=https://api.mycredex.com
-CLIENT_API_KEY=secure-api-key
 
 # WhatsApp Security
 WHATSAPP_API_URL=https://graph.facebook.com
-WHATSAPP_ACCESS_TOKEN=secure-token
-WHATSAPP_PHONE_NUMBER_ID=your-phone-id
-WHATSAPP_BUSINESS_ID=your-business-id
 ```
 
-### Production Settings
+### 2. Production Settings
 ```python
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -239,33 +163,36 @@ SECURE_HSTS_PRELOAD = True
 ## Best Practices
 
 1. **Authentication**
-   - JWT token ONLY in state
-   - NO token duplication
-   - NO manual validation
-   - NO error recovery
-   - Let StateManager validate
+- Use proper accessor methods
+- Track validation attempts
+- Include error context
+- NO direct token access
+- NO credential duplication
+- NO validation bypass
 
 2. **Data Protection**
-   - Member ID ONLY at top level
-   - Channel info ONLY at top level
-   - NO state duplication
-   - NO validation state
-   - NO sensitive logs
+- Use proper accessor methods
+- Track all access attempts
+- Include validation state
+- NO direct state access
+- NO sensitive logging
+- NO validation bypass
 
 3. **State Validation**
-   - ALL validation through state updates
-   - NO manual validation
-   - NO validation helpers
-   - NO error recovery
-   - Let StateManager validate
+- Use proper accessor methods
+- Track all attempts
+- Include error context
+- NO direct access
+- NO state duplication
+- NO validation bypass
 
 4. **Monitoring**
-   - Log through state updates
-   - NO manual validation
-   - NO error recovery
-   - NO state fixing
-   - Clear error messages
-   - Let StateManager validate
+- Track all operations
+- Include validation state
+- Add error context
+- NO sensitive data
+- NO state duplication
+- NO validation bypass
 
 For more details on:
 - WhatsApp security: [WhatsApp](whatsapp.md)

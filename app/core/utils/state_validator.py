@@ -23,12 +23,32 @@ class StateValidator:
     # Core state fields that can't be modified once set
     CORE_FIELDS = {"member_id", "channel", "jwt_token"}
 
-    # Valid flow types and their steps
-    FLOW_TYPES = {
-        "offer": ["amount", "handle", "confirm"],
-        "accept": ["select", "confirm"],
-        "decline": ["select", "confirm"],
-        "cancel": ["select", "confirm"]
+    # Flow validation rules
+    FLOW_RULES = {
+        # Required fields in flow_data
+        "required_fields": {
+            "flow_type": str,
+            "handler_type": str,
+            "step": str,
+            "step_index": int,
+            "total_steps": int
+        },
+
+        # Required fields in active_component
+        "component_fields": {
+            "type": str,
+            "validation": {
+                "in_progress": bool,
+                "error": (type(None), dict),
+                "attempts": int,
+                "last_attempt": (type(None), str, int, float, bool, dict, list)
+            }
+        },
+
+        # Valid handler types
+        "handler_types": {"member", "account", "credex"},
+
+        # Flow type validation is now handled by FlowRegistry
     }
 
     @classmethod
@@ -70,33 +90,80 @@ class StateValidator:
                     error_message="Flow data must be a dictionary"
                 )
 
-            # Validate flow type
-            flow_type = flow_data.get("flow_type")
-            if not flow_type:
+            # Validate required fields
+            for field, field_type in cls.FLOW_RULES["required_fields"].items():
+                if field not in flow_data:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"Missing required field: {field}"
+                    )
+                if not isinstance(flow_data[field], field_type):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"Invalid type for {field}"
+                    )
+
+            # Validate handler type
+            if flow_data["handler_type"] not in cls.FLOW_RULES["handler_types"]:
                 return ValidationResult(
                     is_valid=False,
-                    error_message="Flow type required"
+                    error_message=f"Invalid handler type: {flow_data['handler_type']}"
                 )
 
-            if flow_type not in cls.FLOW_TYPES:
+            # Validate step index
+            if not (0 <= flow_data["step_index"] < flow_data["total_steps"]):
                 return ValidationResult(
                     is_valid=False,
-                    error_message=f"Invalid flow type: {flow_type}"
+                    error_message="Invalid step index"
                 )
 
-            # Validate step
-            step = flow_data.get("step")
-            if not step:
+            # Validate component state
+            component = flow_data.get("active_component")
+            if not component or not isinstance(component, dict):
                 return ValidationResult(
                     is_valid=False,
-                    error_message="Flow step required"
+                    error_message="Invalid component state"
                 )
 
-            if step not in cls.FLOW_TYPES[flow_type]:
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Invalid step {step} for flow {flow_type}"
-                )
+            for field, field_type in cls.FLOW_RULES["component_fields"].items():
+                if field not in component:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"Missing component field: {field}"
+                    )
+
+                if field == "validation":
+                    validation = component[field]
+                    if not isinstance(validation, dict):
+                        return ValidationResult(
+                            is_valid=False,
+                            error_message="Invalid validation state"
+                        )
+
+                    for val_field, val_type in field_type.items():
+                        if val_field not in validation:
+                            return ValidationResult(
+                                is_valid=False,
+                                error_message=f"Missing validation field: {val_field}"
+                            )
+                        if not isinstance(validation[val_field], val_type):
+                            if isinstance(val_type, tuple):
+                                if not any(isinstance(validation[val_field], t) for t in val_type):
+                                    return ValidationResult(
+                                        is_valid=False,
+                                        error_message=f"Invalid type for {val_field}"
+                                    )
+                            else:
+                                return ValidationResult(
+                                    is_valid=False,
+                                    error_message=f"Invalid type for {val_field}"
+                                )
+                else:
+                    if not isinstance(component[field], field_type):
+                        return ValidationResult(
+                            is_valid=False,
+                            error_message=f"Invalid type for component {field}"
+                        )
 
             # Validate data structure
             if "data" in flow_data and not isinstance(flow_data["data"], dict):
@@ -124,18 +191,39 @@ class StateValidator:
         return ValidationResult(is_valid=True)
 
     @classmethod
-    def validate_flow_state(cls, flow_type: str, step: str) -> ValidationResult:
-        """Validate flow type and step"""
-        if flow_type not in cls.FLOW_TYPES:
+    def validate_flow_state(cls, flow_data: Dict[str, Any]) -> ValidationResult:
+        """Validate flow state structure"""
+        if not isinstance(flow_data, dict):
             return ValidationResult(
                 is_valid=False,
-                error_message=f"Invalid flow type: {flow_type}"
+                error_message="Flow data must be a dictionary"
             )
 
-        if step not in cls.FLOW_TYPES[flow_type]:
+        # Validate required fields
+        for field, field_type in cls.FLOW_RULES["required_fields"].items():
+            if field not in flow_data:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Missing required field: {field}"
+                )
+            if not isinstance(flow_data[field], field_type):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Invalid type for {field}"
+                )
+
+        # Validate handler type
+        if flow_data["handler_type"] not in cls.FLOW_RULES["handler_types"]:
             return ValidationResult(
                 is_valid=False,
-                error_message=f"Invalid step {step} for flow {flow_type}"
+                error_message=f"Invalid handler type: {flow_data['handler_type']}"
+            )
+
+        # Validate step index
+        if not (0 <= flow_data["step_index"] < flow_data["total_steps"]):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Invalid step index"
             )
 
         return ValidationResult(is_valid=True)

@@ -1,12 +1,13 @@
 """Upgrade components
 
 This module implements upgrade-specific components following the component system pattern.
-Each component handles a specific part of the upgrade flow with clear validation and conversion.
+Each component handles a specific part of the upgrade flow with pure UI validation.
+Business validation happens in services.
 """
 
 from typing import Any, Dict
 
-from core.utils.exceptions import ComponentException
+from core.utils.error_types import ValidationResult
 from .base import Component
 
 
@@ -16,54 +17,38 @@ class UpgradeConfirm(Component):
     def __init__(self):
         super().__init__("upgrade_confirm")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate upgrade confirmation
-
-        Args:
-            value: Dictionary containing:
-                - confirmed: Boolean confirmation
-                - member_id: Member ID
-                - account_id: Account ID
-
-        Returns:
-            On success: {"valid": True}
-            On error: ComponentException
-        """
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate upgrade confirmation with proper tracking"""
         # Validate type
-        if not isinstance(value, dict):
-            raise ComponentException(
-                message="Invalid upgrade data format",
-                component=self.type,
-                field="data",
-                value=str(type(value))
-            )
+        type_result = self._validate_type(value, dict, "object")
+        if not type_result.valid:
+            return type_result
 
         # Validate required fields
-        if not value.get("confirmed"):
-            raise ComponentException(
+        required_fields = {"confirmed", "member_id", "account_id"}
+        missing = required_fields - set(value.keys())
+        if missing:
+            return ValidationResult.failure(
+                message="Missing required upgrade fields",
+                field="data",
+                details={
+                    "missing_fields": list(missing),
+                    "received_fields": list(value.keys())
+                }
+            )
+
+        # Validate confirmation
+        if not value["confirmed"]:
+            return ValidationResult.failure(
                 message="Upgrade must be confirmed",
-                component=self.type,
                 field="confirmed",
-                value=str(value.get("confirmed"))
+                details={
+                    "expected": True,
+                    "received": value["confirmed"]
+                }
             )
 
-        if not value.get("member_id"):
-            raise ComponentException(
-                message="Member ID required for upgrade",
-                component=self.type,
-                field="member_id",
-                value=str(value.get("member_id"))
-            )
-
-        if not value.get("account_id"):
-            raise ComponentException(
-                message="Account ID required for upgrade",
-                component=self.type,
-                field="account_id",
-                value=str(value.get("account_id"))
-            )
-
-        return {"valid": True}
+        return ValidationResult.success(value)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified upgrade data"""
@@ -80,36 +65,25 @@ class UpgradeComplete(Component):
     def __init__(self):
         super().__init__("upgrade_complete")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate upgrade response
-
-        Args:
-            value: Upgrade response containing:
-                - tier: New tier level
-                - limits: Updated tier limits
-
-        Returns:
-            On success: {"valid": True}
-            On error: ComponentException
-        """
-        if not isinstance(value, dict):
-            raise ComponentException(
-                message="Invalid upgrade response format",
-                component=self.type,
-                field="response",
-                value=str(type(value))
-            )
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate upgrade response with proper tracking"""
+        # Validate type
+        type_result = self._validate_type(value, dict, "object")
+        if not type_result.valid:
+            return type_result
 
         # Validate required fields
         if "tier" not in value:
-            raise ComponentException(
+            return ValidationResult.failure(
                 message="Missing tier in upgrade response",
-                component=self.type,
                 field="tier",
-                value=str(value)
+                details={
+                    "missing_field": "tier",
+                    "received_fields": list(value.keys())
+                }
             )
 
-        return {"valid": True}
+        return ValidationResult.success(value)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified upgrade data"""

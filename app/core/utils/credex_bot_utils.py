@@ -3,7 +3,9 @@ import logging
 from typing import Any, Dict
 
 from core.utils import wrap_text
+from core.utils.error_handler import ErrorHandler
 from core.utils.state_validator import StateValidator
+
 from ..config.constants import REGISTER
 
 logger = logging.getLogger(__name__)
@@ -92,7 +94,13 @@ def handle_offer_credex(state_manager: Any) -> Dict[str, Any]:
     # Update action in state
     success, error = state_manager.update_state({"action": "offer_credex"})
     if not success:
-        raise ValueError(f"Failed to update action state: {error}")
+        return ErrorHandler.handle_flow_error(
+            step="offer_credex",
+            action="update_state",
+            data={"error": error},
+            message=f"Failed to update action state: {error}",
+            flow_state=state_manager.get_flow_state()
+        )
     return handle_action_offer_credex(state_manager)
 
 
@@ -119,7 +127,13 @@ def handle_action(state_manager: Any, action: str) -> Dict[str, Any]:
         logger.info(f"Handling action: {action}")
         success, error = state_manager.update_state({"action": action})
         if not success:
-            raise ValueError(f"Failed to update action state: {error}")
+            return ErrorHandler.handle_flow_error(
+                step="action",
+                action=action,
+                data={"error": error},
+                message=f"Failed to update action state: {error}",
+                flow_state=state_manager.get_flow_state()
+            )
         return handler(state_manager)
     else:
         logger.warning(f"Action method {action} not found")
@@ -138,7 +152,13 @@ def handle_greeting(state_manager: Any) -> Dict[str, Any]:
     logger.info("Handling greeting")
     success, error = state_manager.update_state({"action": "greeting"})
     if not success:
-        raise ValueError(f"Failed to update action state: {error}")
+        return ErrorHandler.handle_flow_error(
+            step="greeting",
+            action="update_state",
+            data={"error": error},
+            message=f"Failed to update action state: {error}",
+            flow_state=state_manager.get_flow_state()
+        )
     return handle_action_greeting(state_manager)
 
 

@@ -1,9 +1,9 @@
 """Base handler enforcing SINGLE SOURCE OF TRUTH"""
 import logging
+from datetime import datetime
 from typing import Any
 
 from core.utils.exceptions import ComponentException, SystemException
-from core.utils.state_validator import StateValidator
 from core.utils.utils import wrap_text
 
 from .screens import INVALID_ACTION
@@ -31,24 +31,27 @@ def handle_default_action(state_manager: Any) -> WhatsAppMessage:
                 value="None"
             )
 
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {"channel": state_manager.get("channel")},
-            {"channel"}
-        )
-        if not validation.is_valid:
-            raise ComponentException(
-                message=validation.error_message,
-                component="base_handler",
-                field="channel",
-                value=str(state_manager.get("channel"))
-            )
+        # Get channel info through proper method
+        channel_id = state_manager.get_channel_id()
+
+        # Update state with action handling
+        state_manager.update_state({
+            "flow_data": {
+                "active_component": {
+                    "type": "default_handler",
+                    "validation": {
+                        "in_progress": True,
+                        "attempts": state_manager.get_flow_data().get("action_attempts", 0) + 1,
+                        "last_attempt": datetime.utcnow().isoformat()
+                    }
+                }
+            }
+        })
 
         # Create response
-        channel = state_manager.get("channel")
         return WhatsAppMessage.create_text(
-            channel["identifier"],
-            wrap_text(INVALID_ACTION, channel["identifier"])
+            channel_id,
+            wrap_text(INVALID_ACTION, channel_id)
         )
 
     except ComponentException as e:
@@ -138,22 +141,25 @@ def get_response_template(state_manager: Any, message_text: str) -> WhatsAppMess
                 value="None"
             )
 
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {"channel": state_manager.get("channel")},
-            {"channel"}
-        )
-        if not validation.is_valid:
-            raise ComponentException(
-                message=validation.error_message,
-                component="base_handler",
-                field="channel",
-                value=str(state_manager.get("channel"))
-            )
+        # Get channel info through proper methods
+        channel_id = state_manager.get_channel_id()
+
+        # Update state with template handling
+        state_manager.update_state({
+            "flow_data": {
+                "active_component": {
+                    "type": "template_handler",
+                    "validation": {
+                        "in_progress": True,
+                        "attempts": state_manager.get_flow_data().get("template_attempts", 0) + 1,
+                        "last_attempt": datetime.utcnow().isoformat()
+                    }
+                }
+            }
+        })
 
         # Create response
-        channel = state_manager.get("channel")
-        return WhatsAppMessage.create_text(channel["identifier"], message_text)
+        return WhatsAppMessage.create_text(channel_id, message_text)
 
     except ComponentException as e:
         # Component errors become error messages
@@ -208,23 +214,26 @@ def format_error_response(state_manager: Any, error_message: str) -> WhatsAppMes
         if not error_message:
             error_message = "An unknown error occurred"
 
-        # Validate state access at boundary
-        validation = StateValidator.validate_before_access(
-            {"channel": state_manager.get("channel")},
-            {"channel"}
-        )
-        if not validation.is_valid:
-            raise ComponentException(
-                message=validation.error_message,
-                component="base_handler",
-                field="channel",
-                value=str(state_manager.get("channel"))
-            )
+        # Get channel info through proper methods
+        channel_id = state_manager.get_channel_id()
+
+        # Update state with error handling
+        state_manager.update_state({
+            "flow_data": {
+                "active_component": {
+                    "type": "error_handler",
+                    "validation": {
+                        "in_progress": True,
+                        "attempts": state_manager.get_flow_data().get("error_attempts", 0) + 1,
+                        "last_attempt": datetime.utcnow().isoformat()
+                    }
+                }
+            }
+        })
 
         # Create response
-        channel = state_manager.get("channel")
         return WhatsAppMessage.create_text(
-            channel["identifier"],
+            channel_id,
             f"❌ {error_message}"
         )
 
