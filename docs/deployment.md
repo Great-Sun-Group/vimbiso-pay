@@ -271,8 +271,3 @@ aws cloudwatch get-metric-statistics \
 3. Redis state can be recovered from AOF files
 4. Application can be rebuilt from ECR images
 5. DNS can be updated through Route53
-
-For more details on:
-- Redis configuration: [Redis Management](redis-memory-management.md)
-- Flow framework: [Flow Framework](flow-framework.md)
-- Security: [Security](security.md)

@@ -196,9 +196,3 @@ WhatsApp integration works with:
 - Error handling
 - Message templates
 - API services
-
-For more details on:
-- Flow Framework: [Flow Framework](flow-framework.md)
-- State Management: [State Management](state-management.md)
-- API Integration: [API Integration](api-integration.md)
-- Security: [Security](security.md)

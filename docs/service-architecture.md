@@ -375,7 +375,3 @@ if error:
     return {"error": str(error)}  # Don't handle directly!
 ```
 
-For more details on:
-- State management: [State Management](state-management.md)
-- Flow framework: [Flow Framework](flow-framework.md)
-- API integration: [API Integration](api-integration.md)

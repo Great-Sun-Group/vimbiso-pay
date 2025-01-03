@@ -297,15 +297,6 @@ STOP and verify before ANY code change:
    - [ ] NO manual handling?
    - [ ] Proper validation state?
 
-## Validation
-
-The system enforces these patterns through:
-1. Code review - Catch violations early
-2. Static analysis - Verify patterns automatically
-3. Runtime validation - Catch violations at runtime
-4. Logging/monitoring - Track state access patterns
-5. Error tracking - Identify state-related issues
-
 These patterns ensure:
 - Consistent state access
 - Proper validation
@@ -313,8 +304,3 @@ These patterns ensure:
 - Maintainable code
 - Progress tracking
 - Validation tracking
-
-For more details on:
-- Service architecture: [Service Architecture](service-architecture.md)
-- API integration: [API Integration](api-integration.md)
-- Flow framework: [Flow Framework](flow-framework.md)
