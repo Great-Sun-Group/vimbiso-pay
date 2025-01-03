@@ -1,11 +1,11 @@
 """Base component interface
 
 This module defines the core Component interface that all components must implement.
-Components handle their own validation and data conversion with clear boundaries.
+Components handle pure UI validation with clear boundaries.
 """
 
 from typing import Any, Dict, Type, Union
-from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ValidationResult
 
 
 class Component:
@@ -13,32 +13,47 @@ class Component:
 
     def __init__(self, component_type: str):
         self.type = component_type
+        self.value = None
+        self.validation_state = {
+            "in_progress": False,
+            "error": None
+        }
 
-    def validate(self, value: Any) -> Dict:
+    def validate(self, value: Any) -> ValidationResult:
         """Validate component input
 
+        Args:
+            value: Value to validate
+
         Returns:
-            On success: {"valid": True}
-            On error: {
-                "error": {
-                    "type": "component",
-                    "message": str,
-                    "details": {...}
-                }
-            }
+            ValidationResult with validation status
         """
         raise NotImplementedError
 
-    def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified data
+    def get_ui_state(self) -> Dict:
+        """Get current UI state
+
+        Returns:
+            Dict with component state
+        """
+        return {
+            "type": self.type,
+            "value": self.value,
+            "validation": self.validation_state
+        }
+
+    def update_state(self, value: Any, validation_result: ValidationResult) -> None:
+        """Update component state
 
         Args:
-            value: Validated input value
-
-        Returns:
-            Dict with converted data
+            value: New value
+            validation_result: Validation result
         """
-        raise NotImplementedError
+        self.value = value
+        self.validation_state = {
+            "in_progress": False,
+            "error": validation_result.error
+        }
 
 
 class InputComponent(Component):
@@ -47,7 +62,7 @@ class InputComponent(Component):
     def __init__(self, component_type: str):
         super().__init__(component_type)
 
-    def _validate_type(self, value: Any, expected_type: Union[Type, tuple], type_name: str) -> None:
+    def _validate_type(self, value: Any, expected_type: Union[Type, tuple], type_name: str) -> ValidationResult:
         """Validate value type
 
         Args:
@@ -56,31 +71,12 @@ class InputComponent(Component):
             type_name: Human readable type name
 
         Returns:
-            Dict with error if validation fails
+            ValidationResult with validation status
         """
         if not isinstance(value, expected_type):
-            return ErrorHandler.handle_component_error(
-                component=self.type,
+            return ValidationResult.failure(
+                message=f"Value must be {type_name}",
                 field="value",
-                value=str(value),
-                message=f"Value must be {type_name}"
+                details={"actual_type": str(type(value))}
             )
-        return {"valid": True}
-
-    def _handle_validation_error(self, value: Any, message: str, field: str = "value") -> Dict:
-        """Handle component validation error
-
-        Args:
-            value: Invalid value
-            message: Error message
-            field: Field name that failed validation
-
-        Returns:
-            Dict with error details
-        """
-        return ErrorHandler.handle_component_error(
-            component=self.type,
-            field=field,
-            value=str(value),
-            message=message
-        )
+        return ValidationResult.success(value)

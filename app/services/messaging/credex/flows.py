@@ -1,10 +1,23 @@
-"""Credex flows using messaging service interface"""
+"""Credex flows using clean architecture patterns
+
+Components handle UI validation
+Services handle business logic
+Flows coordinate the process
+"""
+
 import logging
 from typing import Any, Dict, Optional
 
 from core.messaging.interface import MessagingServiceInterface
 from core.messaging.types import Message, MessageRecipient
 from core.utils.exceptions import FlowException, SystemException
+from core.components.input import (
+    AmountInput,
+    HandleInput,
+    ConfirmInput,
+    SelectInput
+)
+from services.credex.service import get_credex_service
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +45,7 @@ class CredexFlow:
 
 
 class OfferFlow(CredexFlow):
-    """Credex offer flow"""
+    """Credex offer flow using clean architecture"""
 
     def get_step_content(self, step: str, data: Optional[Dict] = None) -> str:
         """Get offer step content"""
@@ -57,42 +70,105 @@ class OfferFlow(CredexFlow):
         return ""
 
     def process_step(self, state_manager: Any, step: str, input_value: Any) -> Message:
-        """Process offer step"""
+        """Process offer step using clean architecture patterns"""
         try:
             recipient = self._get_recipient(state_manager)
+            credex_service = get_credex_service(state_manager)
 
             if step == "amount":
-                # TODO: Validate amount and denomination
+                # UI validation
+                component = AmountInput()
+                validation = component.validate(input_value)
+                if not validation.valid:
+                    return self.messaging.send_text(
+                        recipient=recipient,
+                        text=f"❌ {validation.error['message']}"
+                    )
+
+                # Update component state
                 state_manager.update_state({
                     "flow_data": {
-                        "data": {"amount": input_value}
+                        "active_component": component.get_ui_state(),
+                        "data": {"amount": validation.value}
                     }
                 })
+
+                # Move to next step
                 return self.messaging.send_text(
                     recipient=recipient,
                     text=self.get_step_content("handle")
                 )
 
             elif step == "handle":
-                # TODO: Validate handle
+                # UI validation
+                component = HandleInput()
+                validation = component.validate(input_value)
+                if not validation.valid:
+                    return self.messaging.send_text(
+                        recipient=recipient,
+                        text=f"❌ {validation.error['message']}"
+                    )
+
+                # Business validation
+                success, result = credex_service["validate_account_handle"](validation.value)
+                if not success:
+                    return self.messaging.send_text(
+                        recipient=recipient,
+                        text=f"❌ {result['message']}"
+                    )
+
+                # Update component and flow state
                 state_manager.update_state({
                     "flow_data": {
+                        "active_component": component.get_ui_state(),
                         "data": {
                             **state_manager.get_flow_data(),
-                            "handle": input_value
+                            "handle": validation.value
                         }
                     }
                 })
+
+                # Show confirmation
+                flow_data = state_manager.get_flow_data()
                 return self.messaging.send_text(
                     recipient=recipient,
                     text=self.get_step_content("confirm", {
-                        "amount": state_manager.get_flow_data().get("amount"),
-                        "handle": input_value
+                        "amount": flow_data.get("amount"),
+                        "handle": validation.value
                     })
                 )
 
             elif step == "confirm":
-                # TODO: Submit offer through API
+                # UI validation
+                component = ConfirmInput()
+                validation = component.validate(input_value)
+                if not validation.valid:
+                    return self.messaging.send_text(
+                        recipient=recipient,
+                        text=f"❌ {validation.error['message']}"
+                    )
+
+                # Only proceed if confirmed
+                if not validation.value:
+                    return self.messaging.send_text(
+                        recipient=recipient,
+                        text="❌ Offer cancelled."
+                    )
+
+                # Submit through service
+                flow_data = state_manager.get_flow_data()
+                success, result = credex_service["offer_credex"]({
+                    "amount": flow_data.get("amount"),
+                    "handle": flow_data.get("handle")
+                })
+
+                if not success:
+                    return self.messaging.send_text(
+                        recipient=recipient,
+                        text=f"❌ {result['message']}"
+                    )
+
+                # Complete flow
                 return self.messaging.send_text(
                     recipient=recipient,
                     text=self.get_step_content("complete")
@@ -143,22 +219,73 @@ class AcceptFlow(CredexFlow):
         """Process accept step"""
         try:
             recipient = self._get_recipient(state_manager)
+            credex_service = get_credex_service(state_manager)
 
             if step == "select":
-                # TODO: Validate selection
+                # UI validation
+                component = SelectInput([])  # TODO: Get options from service
+                validation = component.validate(input_value)
+                if not validation.valid:
+                    return self.messaging.send_text(
+                        recipient=recipient,
+                        text=f"❌ {validation.error['message']}"
+                    )
+
+                # Get offer details
+                success, result = credex_service["get_credex"](validation.value)
+                if not success:
+                    return self.messaging.send_text(
+                        recipient=recipient,
+                        text=f"❌ {result['message']}"
+                    )
+
+                # Update state
                 state_manager.update_state({
                     "flow_data": {
-                        "data": {"offer_id": input_value}
+                        "active_component": component.get_ui_state(),
+                        "data": {
+                            "offer_id": validation.value,
+                            "offer_details": result
+                        }
                     }
                 })
-                # TODO: Get offer details from API
+
+                # Show confirmation
                 return self.messaging.send_text(
                     recipient=recipient,
-                    text=self.get_step_content("confirm")
+                    text=self.get_step_content("confirm", result)
                 )
 
             elif step == "confirm":
-                # TODO: Submit acceptance through API
+                # UI validation
+                component = ConfirmInput()
+                validation = component.validate(input_value)
+                if not validation.valid:
+                    return self.messaging.send_text(
+                        recipient=recipient,
+                        text=f"❌ {validation.error['message']}"
+                    )
+
+                # Only proceed if confirmed
+                if not validation.value:
+                    return self.messaging.send_text(
+                        recipient=recipient,
+                        text="❌ Acceptance cancelled."
+                    )
+
+                # Submit through service
+                flow_data = state_manager.get_flow_data()
+                success, result = credex_service["accept_credex"](
+                    flow_data.get("offer_id")
+                )
+
+                if not success:
+                    return self.messaging.send_text(
+                        recipient=recipient,
+                        text=f"❌ {result['message']}"
+                    )
+
+                # Complete flow
                 return self.messaging.send_text(
                     recipient=recipient,
                     text=self.get_step_content("complete")

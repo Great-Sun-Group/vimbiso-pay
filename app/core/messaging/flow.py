@@ -1,18 +1,21 @@
-"""Flow management with component coordination
+"""Flow management with clean architecture patterns
 
-This module provides flow management using the component system.
-Flows coordinate components and manage progression through steps.
+This module provides flow management using:
+- Pure UI validation in components
+- State tracking with clear boundaries
+- Proper validation state management
 """
 
 from typing import Any, Dict, Optional
 
 from core.components import create_component
 from core.utils.exceptions import FlowException
+from core.utils.error_types import ValidationResult
 from .registry import FlowRegistry
 
 
 class FlowManager:
-    """Manages flow progression and components"""
+    """Manages flow progression and component state"""
 
     def __init__(self, flow_type: str):
         """Initialize flow manager"""
@@ -21,7 +24,7 @@ class FlowManager:
         self.components = {}
 
     def get_component(self, step: str) -> Any:
-        """Get component for step"""
+        """Get component for step with validation"""
         # Validate step
         FlowRegistry.validate_flow_step(self.flow_type, step)
 
@@ -32,16 +35,15 @@ class FlowManager:
 
         return self.components[step]
 
-    def process_step(self, step: str, value: Any) -> Dict:
-        """Process step input
+    def process_step(self, step: str, value: Any) -> ValidationResult:
+        """Process step input with pure validation
 
         Args:
             step: Current step ID
             value: Input value
 
         Returns:
-            On success: Verified data dict
-            On error: Error dict
+            ValidationResult with validation status
 
         Raises:
             FlowException: If step invalid
@@ -49,13 +51,8 @@ class FlowManager:
         # Get component
         component = self.get_component(step)
 
-        # Validate input
-        result = component.validate(value)
-        if "error" in result:
-            return result
-
-        # Convert to verified data
-        return component.to_verified_data(value)
+        # Only handle UI validation
+        return component.validate(value)
 
 
 def initialize_flow(
@@ -63,7 +60,7 @@ def initialize_flow(
     flow_type: str,
     step: Optional[str] = None
 ) -> None:
-    """Initialize or update flow state
+    """Initialize flow state with proper structure
 
     Args:
         state_manager: State manager instance
@@ -82,12 +79,29 @@ def initialize_flow(
     else:
         FlowRegistry.validate_flow_step(flow_type, step)
 
-    # Create flow state with handler type
+    # Get component type for step
+    component_type = FlowRegistry.get_step_component(flow_type, step)
+
+    # Create flow state with proper structure
     flow_state = {
         "flow_data": {
+            # Flow identification
             "flow_type": flow_type,
             "handler_type": config.get("handler_type", "member"),
             "step": step,
+            "step_index": 0,
+
+            # Component state
+            "active_component": {
+                "type": component_type,
+                "value": None,
+                "validation": {
+                    "in_progress": False,
+                    "error": None
+                }
+            },
+
+            # Business data
             "data": {}
         }
     }
@@ -100,7 +114,7 @@ def process_flow_input(
     state_manager: Any,
     input_data: Any
 ) -> Optional[Dict]:
-    """Process flow input
+    """Process flow input with validation
 
     Args:
         state_manager: State manager instance
@@ -128,23 +142,24 @@ def process_flow_input(
     # Get handler type
     handler_type = flow_data.get("handler_type", "member")
 
-    # Process step through appropriate handler
+    # Process through flow manager
     flow_manager = FlowManager(flow_type)
-    result = flow_manager.process_step(current_step, input_data)
+    validation = flow_manager.process_step(current_step, input_data)
 
-    # Include handler type in result for routing
-    if isinstance(result, dict) and "error" not in result:
-        result["handler_type"] = handler_type
+    # Handle validation error
+    if not validation.valid:
+        return {"error": validation.error}
 
-    # Handle error
-    if "error" in result:
-        return result
-
-    # Update state with verified data
+    # Update component state
     state_manager.update_state({
         "flow_data": {
-            "data": {
-                current_step: result
+            "active_component": {
+                "type": flow_data["active_component"]["type"],
+                "value": validation.value,
+                "validation": {
+                    "in_progress": False,
+                    "error": None
+                }
             }
         }
     })
@@ -154,14 +169,28 @@ def process_flow_input(
     if next_step == "complete":
         return None
 
-    # Update step
+    # Get next component type
+    next_component_type = FlowRegistry.get_step_component(flow_type, next_step)
+
+    # Update step and component state
     state_manager.update_state({
         "flow_data": {
-            "step": next_step
+            "step": next_step,
+            "active_component": {
+                "type": next_component_type,
+                "value": None,
+                "validation": {
+                    "in_progress": False,
+                    "error": None
+                }
+            }
         }
     })
 
-    return {"step": next_step}
+    return {
+        "step": next_step,
+        "handler_type": handler_type
+    }
 
 
 def complete_flow(state_manager: Any) -> None:

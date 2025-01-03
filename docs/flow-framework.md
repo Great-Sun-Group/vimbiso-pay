@@ -155,7 +155,7 @@ class FlowRegistry:
 ### 1. Flow Manager
 ```python
 class FlowManager:
-    """Manages flow progression"""
+    """Manages flow progression and component state"""
 
     def __init__(self, flow_type: str):
         self.config = FlowRegistry.FLOWS[flow_type]
@@ -168,29 +168,42 @@ class FlowManager:
             self.components[step] = create_component(component_type)
         return self.components[step]
 
-    def validate_step(self, step: str, value: Any) -> Dict:
-        """Validate step input"""
+    def validate_step(self, step: str, value: Any) -> ValidationResult:
+        """Validate step input format"""
+        # Get component
         component = self.get_component(step)
-        result = component.validate(value)
-        if not result.valid:
-            return ErrorHandler.handle_component_error(
-                component=component.type,
-                field=step,
-                value=value,
-                message=result.message
-            )
-        return None
 
-    def process_step(self, step: str, value: Any) -> Dict:
-        """Process step input"""
-        # Validate input
-        error = self.validate_step(step, value)
-        if error:
-            return error
+        # UI validation only
+        return component.validate(value)
 
-        # Convert to verified data
-        component = self.get_component(step)
-        return component.to_verified_data(value)
+    def process_step(self, step: str, value: Any, state_manager: Any) -> Dict:
+        """Process step with validation"""
+        # UI validation
+        validation = self.validate_step(step, value)
+        if not validation.valid:
+            return {
+                "error": validation.error,
+                "type": "validation"
+            }
+
+        # Update component state
+        state_manager.update_state({
+            "flow_data": {
+                "active_component": {
+                    "type": self.config["components"][step],
+                    "value": validation.value,
+                    "validation": {
+                        "in_progress": False,
+                        "error": None
+                    }
+                }
+            }
+        })
+
+        return {
+            "success": True,
+            "value": validation.value
+        }
 ```
 
 ### 2. Flow Processing
@@ -199,60 +212,66 @@ def process_flow_input(
     state_manager: Any,
     input_data: Any
 ) -> Optional[Dict]:
-    """Process flow input"""
+    """Process flow input with clear boundaries"""
     # Get flow state
     flow_state = state_manager.get_flow_state()
     flow_type = flow_state["flow_type"]
     handler_type = flow_state["handler_type"]
     current_step = flow_state["step"]
+    step_index = flow_state["step_index"]
 
     # Get appropriate handler
-    if handler_type == "member":
-        handler = MemberHandler(messaging_service)
-    elif handler_type == "account":
-        handler = AccountHandler(messaging_service)
-    elif handler_type == "credex":
-        handler = CredexHandler(messaging_service)
-    else:
-        raise FlowException(f"Invalid handler type: {handler_type}")
+    handler = get_handler(handler_type, messaging_service)
 
-    # Process through handler
-    result = handler.handle_flow_step(
-        state_manager,
-        flow_type,
-        current_step,
-        input_data
-    )
+    try:
+        # 1. UI Validation
+        flow_manager = FlowManager(flow_type)
+        result = flow_manager.process_step(current_step, input_data, state_manager)
+        if "error" in result:
+            return handler.handle_validation_error(result["error"])
 
-    # Handle error
-    if "error" in result:
-        return result
+        # 2. Business Processing
+        service_result = handler.process_step(
+            state_manager,
+            flow_type,
+            current_step,
+            result["value"]
+        )
+        if not service_result.success:
+            return handler.handle_business_error(service_result.error)
 
-    # Update state
-    state_manager.update_state({
-        "flow_data": {
-            "data": result.data,
-            "step_index": flow_state["step_index"] + 1
-        }
-    })
-
-    # Get next step
-    next_step = get_next_step(flow_type, current_step)
-    if not next_step:
-        return handler.complete_flow(state_manager)
-
-    # Update step
-    state_manager.update_state({
-        "flow_data": {
-            "step": next_step,
-            "active_component": {
-                "type": get_component_type(flow_type, next_step),
-                "validation": {"in_progress": False}
+        # 3. State Updates
+        state_manager.update_state({
+            "flow_data": {
+                "data": service_result.data,
+                "step_index": step_index + 1
             }
-        }
-    })
+        })
 
-    return handler.get_step_message(next_step)
+        # 4. Flow Progression
+        next_step = get_next_step(flow_type, current_step)
+        if not next_step:
+            return handler.complete_flow(state_manager)
+
+        # Initialize next component
+        state_manager.update_state({
+            "flow_data": {
+                "step": next_step,
+                "active_component": {
+                    "type": get_component_type(flow_type, next_step),
+                    "value": None,
+                    "validation": {
+                        "in_progress": False,
+                        "error": None
+                    }
+                }
+            }
+        })
+
+        return handler.get_step_message(next_step)
+
+    except Exception as e:
+        return handler.handle_system_error(e)
 ```
 
 ### 3. Flow Completion

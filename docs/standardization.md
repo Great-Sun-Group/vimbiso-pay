@@ -60,58 +60,60 @@ def handle_greeting(state_manager: Any) -> Dict:
         return {"error": "Failed"}  # Don't handle errors directly!
 ```
 
-### 2. Input Validation
+### 2. Component Validation
 ```python
-# CORRECT - Component handles validation
-class AmountDenomInput(InputComponent):
+# CORRECT - Component handles UI validation only
+class TextInput(InputComponent):
+    """Pure UI validation component"""
+
     def validate(self, value: Any) -> ValidationResult:
-        """Validate through component"""
-        try:
-            amount = float(value)
-            if amount <= 0:
-                return ValidationResult(
-                    valid=False,
-                    error={
-                        "type": "input",
-                        "message": "Amount must be positive"
-                    }
-                )
-            return ValidationResult(valid=True)
-        except ValueError:
-            return ValidationResult(
-                valid=False,
-                error={
-                    "type": "input",
-                    "message": "Invalid amount format"
-                }
+        """Validate input format"""
+        # Type validation
+        if not isinstance(value, str):
+            return ValidationResult.failure(
+                message="Input must be text",
+                field="value"
             )
 
-# WRONG - Manual validation in flow
-def handle_amount(state_manager: Any, value: str) -> None:
-    try:
-        amount = float(value)  # Don't validate here!
-        if amount > 0:  # Don't check here!
-            state_manager.update_state({"amount": amount})
-    except ValueError:
-        pass  # Don't handle errors here!
+        # Basic format validation
+        if not value.strip():
+            return ValidationResult.failure(
+                message="Input required",
+                field="value"
+            )
+
+        # Update component state
+        self.update_state(value, ValidationResult.success(value))
+        return ValidationResult.success(value)
+
+# WRONG - Component with business logic
+class TextInput(InputComponent):
+    def validate(self, value: Any) -> ValidationResult:
+        if self.check_database(value):  # Don't do this!
+            return ValidationResult.success(value)
+        return ValidationResult.failure("Already exists")
 ```
 
-### 2. Data Conversion
+### 2. Service Layer
 ```python
-# CORRECT - Component converts to verified data
-class HandleInput(InputComponent):
-    def to_verified_data(self) -> Dict:
-        """Convert to verified data"""
-        return {
-            "handle": self.value  # Clean handle value
-        }
+# CORRECT - Services handle business logic
+def process_input(value: str, state_manager: Any) -> Result:
+    """Handle business validation and processing"""
+    # Business validation
+    if not is_valid_for_business(value):
+        return Result(success=False, error="Invalid for business")
 
-# WRONG - Flow transforms data
-def process_handle(state_manager: Any, handle: str) -> None:
-    cleaned = handle.strip()  # Don't transform here!
-    state_manager.update_state({
-        "handle": cleaned  # Don't store unverified!
-    })
+    # API operations
+    response = api_client.submit(value)
+    if not response.success:
+        return Result(success=False, error=response.error)
+
+    return Result(success=True, data=response.data)
+
+# WRONG - Business logic in components/flows
+def handle_input(value: str) -> None:
+    if is_valid_for_business(value):  # Don't do business validation here!
+        api_client.submit(value)  # Don't call APIs here!
 ```
 
 ### 3. Component State
