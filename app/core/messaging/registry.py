@@ -12,10 +12,11 @@ from core.utils.exceptions import FlowException
 class FlowRegistry:
     """Central flow type management"""
 
-    # Flow type definitions
+    # Flow type definitions matching API structure
     FLOWS: Dict[str, Dict] = {
         # Member flows
         "registration": {
+            "handler_type": "member",
             "steps": ["welcome", "firstname", "lastname", "complete"],
             "components": {
                 "welcome": "RegistrationWelcome",
@@ -24,32 +25,36 @@ class FlowRegistry:
                 "complete": "RegistrationComplete"
             }
         },
-
-        # Upgrade flow
         "upgrade": {
+            "handler_type": "member",
             "steps": ["confirm", "complete"],
             "components": {
                 "confirm": "UpgradeConfirm",
                 "complete": "UpgradeComplete"
             }
         },
-
-        # Authentication flows
         "auth": {
+            "handler_type": "member",
             "steps": ["login", "login_complete"],
             "components": {
                 "login": "LoginHandler",
                 "login_complete": "LoginCompleteHandler"
             }
         },
-        "dashboard": {
-            "steps": ["main"],
+
+        # Account flows
+        "account_ledger": {
+            "handler_type": "account",
+            "steps": ["select", "display"],
             "components": {
-                "main": "DashboardDisplay"
+                "select": "AccountSelect",
+                "display": "LedgerDisplay"
             }
         },
-        # Transaction flows
-        "offer": {
+
+        # Credex flows
+        "credex_offer": {
+            "handler_type": "credex",
             "steps": ["amount", "handle", "confirm"],
             "components": {
                 "amount": "AmountInput",
@@ -57,21 +62,24 @@ class FlowRegistry:
                 "confirm": "ConfirmInput"
             }
         },
-        "accept": {
+        "credex_accept": {
+            "handler_type": "credex",
             "steps": ["select", "confirm"],
             "components": {
                 "select": "SelectInput",
                 "confirm": "ConfirmInput"
             }
         },
-        "decline": {
+        "credex_decline": {
+            "handler_type": "credex",
             "steps": ["select", "confirm"],
             "components": {
                 "select": "SelectInput",
                 "confirm": "ConfirmInput"
             }
         },
-        "cancel": {
+        "credex_cancel": {
+            "handler_type": "credex",
             "steps": ["select", "confirm"],
             "components": {
                 "select": "SelectInput",

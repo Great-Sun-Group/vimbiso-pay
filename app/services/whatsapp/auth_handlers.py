@@ -2,13 +2,15 @@
 import logging
 from typing import Any
 
-from core.messaging.types import (Message, MessageRecipient, TextContent,
-                                  ChannelIdentifier)
+from core.messaging.flow import initialize_flow
+from core.messaging.types import (ChannelIdentifier, Message, MessageRecipient,
+                                  TextContent)
 from core.utils.error_handler import ErrorHandler
 from core.utils.exceptions import ComponentException, FlowException
 
-from .handlers.auth.auth_flow import attempt_login, handle_registration
+from .handlers.auth.auth_flow import attempt_login
 from .handlers.member.display import handle_dashboard_display
+from .handlers.message.message_handler import process_message
 
 logger = logging.getLogger(__name__)
 
@@ -88,14 +90,10 @@ def handle_hi(state_manager: Any) -> Message:
         else:
             # Login failed - start registration
             logger.info("User not found, starting registration")
-            state_manager.update_state({
-                "flow_data": {
-                    "flow_type": "registration",
-                    "step": "welcome",
-                    "type": "registration_start"
-                }
-            })
-            return handle_registration(state_manager)
+            # Initialize registration flow (first step from registry)
+            initialize_flow(state_manager, "registration")
+            # Process through message handler for consistent message creation
+            return process_message(state_manager, "text", "hi")
 
     except ComponentException as e:
         # Handle component validation errors

@@ -82,10 +82,11 @@ def initialize_flow(
     else:
         FlowRegistry.validate_flow_step(flow_type, step)
 
-    # Create flow state
+    # Create flow state with handler type
     flow_state = {
         "flow_data": {
             "flow_type": flow_type,
+            "handler_type": config.get("handler_type", "member"),
             "step": step,
             "data": {}
         }
@@ -124,9 +125,16 @@ def process_flow_input(
     flow_type = flow_data["flow_type"]
     current_step = flow_data["step"]
 
-    # Process step
+    # Get handler type
+    handler_type = flow_data.get("handler_type", "member")
+
+    # Process step through appropriate handler
     flow_manager = FlowManager(flow_type)
     result = flow_manager.process_step(current_step, input_data)
+
+    # Include handler type in result for routing
+    if isinstance(result, dict) and "error" not in result:
+        result["handler_type"] = handler_type
 
     # Handle error
     if "error" in result:

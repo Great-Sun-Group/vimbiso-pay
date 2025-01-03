@@ -7,6 +7,7 @@ All components must be registered here to be used in flows.
 from typing import Dict, Type
 
 from .base import Component
+from .account import AccountSelect, LedgerDisplay
 from .auth import LoginHandler, LoginCompleteHandler, DashboardDisplay
 from .input import AmountInput, ConfirmInput, HandleInput, SelectInput, ButtonInput
 from .registration import (
@@ -18,9 +19,9 @@ from .upgrade import UpgradeConfirm, UpgradeComplete
 class ComponentRegistry:
     """Central component management"""
 
-    # Component type definitions
+    # Component type definitions matching service structure
     COMPONENTS: Dict[str, Dict] = {
-        # Auth components
+        # Member components
         "LoginHandler": {
             "type": "auth",
             "class": LoginHandler,
@@ -40,7 +41,7 @@ class ComponentRegistry:
             "converts_to": ["dashboard_data"]
         },
 
-        # Registration components
+        # Member registration components
         "RegistrationWelcome": {
             "type": "registration",
             "class": RegistrationWelcome,
@@ -66,7 +67,7 @@ class ComponentRegistry:
             "converts_to": ["member_data"]
         },
 
-        # Upgrade components
+        # Member upgrade components
         "UpgradeConfirm": {
             "type": "upgrade",
             "class": UpgradeConfirm,
@@ -80,7 +81,21 @@ class ComponentRegistry:
             "converts_to": ["upgrade_data"]
         },
 
-        # Input components
+        # Account components
+        "AccountSelect": {
+            "type": "account",
+            "class": AccountSelect,
+            "validates": ["account_id"],
+            "converts_to": ["verified_account"]
+        },
+        "LedgerDisplay": {
+            "type": "account",
+            "class": LedgerDisplay,
+            "validates": ["ledger_data"],
+            "converts_to": ["verified_ledger"]
+        },
+
+        # Common input components
         "ButtonInput": {
             "type": "input",
             "class": ButtonInput,
@@ -90,26 +105,26 @@ class ComponentRegistry:
         "AmountInput": {
             "type": "input",
             "class": AmountInput,
-            "validates": ["amount"],
-            "converts_to": ["amount"]
+            "validates": ["amount", "denom"],
+            "converts_to": ["verified_amount"]
         },
         "HandleInput": {
             "type": "input",
             "class": HandleInput,
             "validates": ["handle"],
-            "converts_to": ["handle"]
+            "converts_to": ["verified_handle"]
         },
         "SelectInput": {
             "type": "input",
             "class": SelectInput,
             "validates": ["selection"],
-            "converts_to": ["selected_id"]
+            "converts_to": ["verified_selection"]
         },
         "ConfirmInput": {
             "type": "input",
             "class": ConfirmInput,
             "validates": ["confirmation"],
-            "converts_to": ["confirmed"]
+            "converts_to": ["verified_confirmation"]
         }
     }
 
