@@ -3,9 +3,9 @@ import logging
 from typing import Any, Dict
 
 from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
 from core.utils.exceptions import ComponentException
 from services.messaging.service import MessagingService
+
 from .service import WhatsAppMessagingService
 from .types import WhatsAppMessage
 
@@ -30,19 +30,18 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> WhatsApp
         return bot_service.process_message(payload, state_manager)
 
     except Exception as e:
-        # Let ErrorHandler format error message
-        error_context = ErrorContext(
-            error_type="bot_service",
+        # Handle system errors
+        error_response = ErrorHandler.handle_system_error(
+            code="BOT_ERROR",
+            service="bot_service",
+            action="process_message",
             message=str(e),
-            details={
-                "payload": payload,
-            }
+            error=e
         )
-        error = ErrorHandler.handle_error(e, state_manager, error_context)
 
         return WhatsAppMessage.create_text(
             state_manager.get_channel_id(),
-            error["message"]
+            error_response["error"]["message"]
         )
 
 
@@ -94,21 +93,18 @@ class BotService:
             return WhatsAppMessage.from_core_message(message)
 
         except Exception as e:
-            # Let ErrorHandler format error message
-            error_context = ErrorContext(
-                error_type="bot_service",
+            # Handle system errors
+            error_response = ErrorHandler.handle_system_error(
+                code="BOT_ERROR",
+                service="bot_service",
+                action="process_message",
                 message=str(e),
-                details={
-                    "payload": payload,
-                    "message_type": message_type if 'message_type' in locals() else "unknown",
-                    "message_text": message_text if 'message_text' in locals() else "unknown"
-                }
+                error=e
             )
-            error = ErrorHandler.handle_error(e, state_manager, error_context)
 
             return WhatsAppMessage.create_text(
                 state_manager.get_channel_id(),
-                error["message"]
+                error_response["error"]["message"]
             )
 
     def _extract_message_data(self, payload: Dict[str, Any]) -> Dict[str, Any]:

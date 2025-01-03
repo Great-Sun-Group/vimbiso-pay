@@ -8,60 +8,23 @@ Facilitates transactions through the [credex-core](https://github.com/Great-Sun-
 - Account ledgers with pagination
 - Multiple account management
 
-## Core Architecture
+## Architecture
 
-The system follows these key principles:
-
-1. **State-Based Design**
-- All operations go through state_manager
-- Credentials exist ONLY in state
-- No direct passing of sensitive data
-- State validation through updates
-- Progress tracking through state
-- Validation tracking through state
-
-2. **Pure Functions**
-- Services use stateless functions
-- No stored instance variables
-- No service-level state
-- Clear input/output contracts
-- Standard validation patterns
-- Standard error handling
-
-3. **Single Source of Truth**
-- Member ID ONLY at top level
-- Channel info ONLY at top level
-- JWT token ONLY in state
-- No credential duplication
-- No state duplication
-- No manual transformation
-
-4. **Flow Framework**
-- Common flow configurations
-- Clear flow types
-- Standard components
-- Flow type metadata
-- Progress tracking
-- Validation tracking
-
-For detailed implementation patterns, see:
-- [Service Architecture](docs/service-architecture.md) - Core service patterns and best practices
-- [API Integration](docs/api-integration.md) - API interaction patterns and state management
-- [State Management](docs/state-management.md) - State validation and flow control
+See [Core Architecture](docs/architecture.md) for detailed architectural principles, patterns, and implementation guidelines.
 
 ## Documentation
-- [Standardization](docs/standardization.md) - Summary of centralized solution for state, flow, and error management.
-- [State Management](docs/state-management.md) - Conversation and session management
+
+### Core Implementation
+- [Core Architecture](docs/ARCHITECTURE.md) - Architectural principles and patterns
+- [Service & API](docs/service-architecture.md) - Service and API integration patterns
+- [State Management](docs/state-management.md) - State validation and flow control
 - [Flow Framework](docs/flow-framework.md) - Progressive interaction framework
-- [Components](docs/components.md) - UI components
-- [WhatsApp Integration](docs/whatsapp.md) - WhatsApp bot implementation
-- [API Integration](docs/api-integration.md) - Integration with credex-core API
-- [Error Handling](docs/error-handling.md) - Testing infrastructure and tools
-- [Testing Guide](docs/testing.md) - Testing infrastructure and tools
-- [Security](docs/security.md) - Security measures and best practices
-- [Docker](docs/docker.md) - Docker configuration and services
-- [Deployment](docs/deployment.md) - Deployment process and infrastructure
-- [Redis Management](docs/redis-memory-management.md) - Redis configuration and management
+
+### Infrastructure
+- [Security](docs/infrastructure/security.md) - Security measures and best practices
+- [Docker](docs/infrastructure/docker.md) - Container configuration and services
+- [Deployment](docs/infrastructure/deployment.md) - Deployment process and infrastructure
+- [Redis](docs/infrastructure/redis-memory-management.md) - Redis configuration and management
 
 ## Quick Start
 

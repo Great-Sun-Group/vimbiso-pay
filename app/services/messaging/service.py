@@ -1,17 +1,23 @@
 """Channel-agnostic messaging service"""
 import logging
-from typing import Any
 from datetime import datetime
+from typing import Any
 
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import Message, MessageRecipient
+from core.messaging.flow import initialize_flow
 from core.messaging.registry import FlowRegistry
+from core.messaging.types import (
+    ChannelIdentifier,
+    ChannelType,
+    Message,
+    MessageRecipient
+)
+from core.utils.error_handler import ErrorHandler
 from core.utils.exceptions import ComponentException, FlowException
 
-from .member.handlers import MemberHandler
-from .member.auth import AuthHandler
 from .account.handlers import AccountHandler
 from .credex.handlers import CredexHandler
+from .member.handlers import MemberHandler
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +33,6 @@ class MessagingService:
         """Get appropriate handler instance"""
         handlers = {
             "member": lambda: MemberHandler(self.messaging),
-            "auth": lambda: AuthHandler(self.messaging),
             "account": lambda: AccountHandler(self.messaging),
             "credex": lambda: CredexHandler(self.messaging)
         }
@@ -43,16 +48,15 @@ class MessagingService:
     def _get_recipient(self, state_manager: Any) -> MessageRecipient:
         """Get message recipient from state with validation"""
         try:
-            return MessageRecipient(
-                channel_id=state_manager.get_channel_id(),
-                member_id=state_manager.get_member_id()
+            # Create proper channel identifier
+            channel_id = ChannelIdentifier(
+                channel=ChannelType.WHATSAPP,
+                value=state_manager.get_channel_id()
             )
-        except ComponentException:
-            # If member_id fails, still return with channel_id
-            return MessageRecipient(
-                channel_id=state_manager.get_channel_id(),
-                member_id=None
-            )
+            return MessageRecipient(channel_id=channel_id)
+        except ComponentException as e:
+            logger.error(f"Error creating recipient: {str(e)}")
+            raise
 
     def handle_message(self, state_manager: Any, message_type: str, message_text: str) -> Message:
         """Handle incoming message using appropriate handler"""
@@ -137,15 +141,26 @@ class MessagingService:
                     }
                 })
 
-                # Get auth handler
-                auth_handler = self._get_handler("auth")
+                # Get member handler for both auth and registration
                 member_handler = self._get_handler("member")
 
-                # Handle initial greeting
+                # Initialize auth flow for greeting
                 if message_text.lower() in ["hi", "hello"]:
-                    return auth_handler.handle_greeting(state_manager)
+                    initialize_flow(
+                        state_manager=state_manager,
+                        flow_type="auth",
+                        initial_data={
+                            "started_at": datetime.utcnow().isoformat()
+                        }
+                    )
+                    return member_handler.handle_flow_step(
+                        state_manager=state_manager,
+                        flow_type="auth",
+                        step="login",
+                        input_value=message_text
+                    )
 
-                # Start registration
+                # Start registration for new users
                 return member_handler.start_registration(state_manager)
 
             # Create standardized command validation state
@@ -221,46 +236,43 @@ class MessagingService:
                 text="I don't understand that command."
             )
 
-        except Exception as e:
-            # Create standardized error validation state
-            validation_state = {
-                "in_progress": False,
-                "error": {
-                    "message": str(e),
-                    "details": {
-                        "message_type": message_type,
-                        "message_text": message_text,
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                },
-                "attempts": flow_data.get("error_attempts", 0) + 1,
-                "last_attempt": {
-                    "message": message_text,
-                    "type": message_type,
-                    "timestamp": datetime.utcnow().isoformat()
-                },
-                "operation": "handle_error",
-                "component": "error_handler",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-
-            # Update state with standardized error tracking
-            state_manager.update_state({
-                "flow_data": {
-                    "active_component": {
-                        "type": "error_handler",
-                        "validation": validation_state
-                    }
-                }
-            })
-
-            logger.error("Error handling message", extra={
-                "error": str(e),
-                "message_type": message_type,
-                "message_text": message_text
-            })
-
+        except FlowException as e:
+            # Handle flow errors
+            error_response = ErrorHandler.handle_flow_error(
+                step=e.step,
+                action=e.action,
+                data=e.data,
+                message=str(e),
+                flow_state=flow_state if 'flow_state' in locals() else None
+            )
             return self.messaging.send_text(
                 recipient=self._get_recipient(state_manager),
-                text="❌ An error occurred. Please try again."
+                text=f"❌ {error_response['error']['message']}"
+            )
+
+        except ComponentException as e:
+            # Handle component errors
+            error_response = ErrorHandler.handle_component_error(
+                component=e.component,
+                field=e.field,
+                value=e.value,
+                message=str(e)
+            )
+            return self.messaging.send_text(
+                recipient=self._get_recipient(state_manager),
+                text=f"❌ {error_response['error']['message']}"
+            )
+
+        except Exception as e:
+            # Handle system errors
+            error_response = ErrorHandler.handle_system_error(
+                code="MESSAGE_ERROR",
+                service="messaging",
+                action="handle_message",
+                message=str(e),
+                error=e
+            )
+            return self.messaging.send_text(
+                recipient=self._get_recipient(state_manager),
+                text=f"❌ {error_response['error']['message']}"
             )
