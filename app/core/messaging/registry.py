@@ -5,6 +5,7 @@ All flows must be registered here to be used in the system.
 """
 
 from typing import Dict, List
+from datetime import datetime
 
 from core.utils.exceptions import FlowException
 
@@ -100,42 +101,103 @@ class FlowRegistry:
 
     @classmethod
     def get_flow_config(cls, flow_type: str) -> Dict:
-        """Get flow configuration with validation
+        """Get flow configuration with standardized validation tracking
 
         Args:
             flow_type: Flow type identifier
 
         Returns:
-            Dict with flow configuration
+            Dict with flow configuration and validation state
 
         Raises:
             FlowException: If flow type invalid or action type invalid
         """
-        if flow_type not in cls.FLOWS:
-            raise FlowException(
-                message=f"Invalid flow type: {flow_type}",
-                step="init",
-                action="get_config",
-                data={"flow_type": flow_type}
-            )
+        # Create validation state
+        validation_state = {
+            "in_progress": True,
+            "attempts": 0,  # Registry operations don't track attempts
+            "operation": "get_flow_config",
+            "component": "flow_registry",
+            "timestamp": datetime.utcnow().isoformat()
+        }
 
-        config = cls.FLOWS[flow_type]
-
-        # Validate action type if present
-        if config.get("flow_type") == "action":
-            action_type = config.get("action_type")
-            if not action_type or action_type not in cls.ACTION_TYPES:
+        try:
+            if flow_type not in cls.FLOWS:
+                validation_state.update({
+                    "in_progress": False,
+                    "error": {
+                        "message": f"Invalid flow type: {flow_type}",
+                        "details": {"flow_type": flow_type},
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                })
                 raise FlowException(
-                    message=f"Invalid action type: {action_type}",
+                    message=f"Invalid flow type: {flow_type}",
                     step="init",
                     action="get_config",
-                    data={
-                        "flow_type": flow_type,
-                        "action_type": action_type
-                    }
+                    data={"flow_type": flow_type, "validation": validation_state}
                 )
 
-        return config
+            config = cls.FLOWS[flow_type]
+
+            # Validate action type if present
+            if config.get("flow_type") == "action":
+                action_type = config.get("action_type")
+                if not action_type or action_type not in cls.ACTION_TYPES:
+                    validation_state.update({
+                        "in_progress": False,
+                        "error": {
+                            "message": f"Invalid action type: {action_type}",
+                            "details": {
+                                "flow_type": flow_type,
+                                "action_type": action_type
+                            },
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                    })
+                    raise FlowException(
+                        message=f"Invalid action type: {action_type}",
+                        step="init",
+                        action="get_config",
+                        data={
+                            "flow_type": flow_type,
+                            "action_type": action_type,
+                            "validation": validation_state
+                        }
+                    )
+
+            # Update validation state for success
+            validation_state.update({
+                "in_progress": False,
+                "error": None,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+
+            # Add validation state and metadata to config
+            return {
+                **config,
+                "_validation": validation_state,
+                "_metadata": {
+                    "retrieved_at": datetime.utcnow().isoformat()
+                }
+            }
+
+        except FlowException:
+            raise
+        except Exception as e:
+            validation_state.update({
+                "in_progress": False,
+                "error": {
+                    "message": str(e),
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            })
+            raise FlowException(
+                message=f"Failed to get flow config: {str(e)}",
+                step="init",
+                action="get_config",
+                data={"flow_type": flow_type, "validation": validation_state}
+            )
 
     @classmethod
     def get_flow_steps(cls, flow_type: str) -> List[str]:
@@ -171,23 +233,73 @@ class FlowRegistry:
 
     @classmethod
     def validate_flow_step(cls, flow_type: str, step: str) -> None:
-        """Validate flow step with proper error context"""
-        config = cls.get_flow_config(flow_type)
+        """Validate flow step with standardized validation tracking"""
+        # Create validation state
+        validation_state = {
+            "in_progress": True,
+            "attempts": 0,  # Registry operations don't track attempts
+            "operation": "validate_flow_step",
+            "component": "flow_registry",
+            "timestamp": datetime.utcnow().isoformat()
+        }
 
-        # Get steps from common flow if needed
-        if config.get("flow_type") in cls.COMMON_FLOWS:
-            steps = cls.COMMON_FLOWS[config["flow_type"]]["steps"]
-        else:
-            steps = config["steps"]
+        try:
+            config = cls.get_flow_config(flow_type)
 
-        if step not in steps:
+            # Get steps from common flow if needed
+            if config.get("flow_type") in cls.COMMON_FLOWS:
+                steps = cls.COMMON_FLOWS[config["flow_type"]]["steps"]
+            else:
+                steps = config["steps"]
+
+            if step not in steps:
+                validation_state.update({
+                    "in_progress": False,
+                    "error": {
+                        "message": f"Invalid step {step} for flow {flow_type}",
+                        "details": {
+                            "flow_type": flow_type,
+                            "step": step,
+                            "valid_steps": steps
+                        },
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                })
+                raise FlowException(
+                    message=f"Invalid step {step} for flow {flow_type}",
+                    step=step,
+                    action="validate",
+                    data={
+                        "flow_type": flow_type,
+                        "valid_steps": steps,
+                        "validation": validation_state
+                    }
+                )
+
+            # Update validation state for success
+            validation_state.update({
+                "in_progress": False,
+                "error": None,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+
+        except FlowException:
+            raise
+        except Exception as e:
+            validation_state.update({
+                "in_progress": False,
+                "error": {
+                    "message": str(e),
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            })
             raise FlowException(
-                message=f"Invalid step {step} for flow {flow_type}",
+                message=f"Failed to validate flow step: {str(e)}",
                 step=step,
                 action="validate",
                 data={
                     "flow_type": flow_type,
-                    "valid_steps": steps
+                    "validation": validation_state
                 }
             )
 

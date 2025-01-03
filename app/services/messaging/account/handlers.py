@@ -8,12 +8,13 @@ from datetime import datetime
 from typing import Any
 
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import Message, MessageRecipient
+from core.messaging.types import Message
 from core.utils.exceptions import FlowException, SystemException
 from core.messaging.flow import initialize_flow
 from core.utils.error_handler import ErrorHandler
 
 from .flows import LedgerFlow
+from ..utils import get_recipient
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +24,6 @@ class AccountHandler:
 
     def __init__(self, messaging_service: MessagingServiceInterface):
         self.messaging = messaging_service
-        self.ledger = LedgerFlow(messaging_service)
-
-    def _get_recipient(self, state_manager: Any) -> MessageRecipient:
-        """Get message recipient from state"""
-        return MessageRecipient(
-            channel_id=state_manager.get_channel_id(),
-            member_id=state_manager.get("member_id")
-        )
 
     def start_ledger(self, state_manager: Any) -> Message:
         """Start ledger flow with proper state initialization"""
@@ -45,7 +38,7 @@ class AccountHandler:
                     message="No accounts available"
                 )
                 return self.messaging.send_text(
-                    recipient=self._get_recipient(state_manager),
+                    recipient=get_recipient(state_manager),
                     text=f"❌ {error_response['error']['message']}"
                 )
 
@@ -67,11 +60,11 @@ class AccountHandler:
             )
 
             # Get recipient and flow state
-            recipient = self._get_recipient(state_manager)
+            recipient = get_recipient(state_manager)
             flow_state = state_manager.get_flow_state()
 
             # Build message with progress
-            step_content = self.ledger.get_step_content("select")
+            step_content = LedgerFlow.get_step_content("select")
             progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
             message = "\n".join([
                 step_content,
@@ -103,7 +96,7 @@ class AccountHandler:
             )
 
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
 
@@ -120,9 +113,9 @@ class AccountHandler:
                     data={"flow_type": flow_type}
                 )
 
-            # Process step with proper flow
+            # Process step through appropriate flow class
             if flow_type == "account_ledger":
-                result = self.ledger.process_step(state_manager, step, input_value)
+                result = LedgerFlow.process_step(self.messaging, state_manager, step, input_value)
             else:
                 raise FlowException(
                     message=f"Invalid flow type: {flow_type}",
@@ -152,7 +145,7 @@ class AccountHandler:
                 flow_state=flow_state
             )
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
 
@@ -166,7 +159,7 @@ class AccountHandler:
                 error=e
             )
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
 
@@ -180,6 +173,6 @@ class AccountHandler:
                 error=e
             )
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )

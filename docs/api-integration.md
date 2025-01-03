@@ -5,14 +5,14 @@
 1. **State-Based Integration**
 - All API calls go through state_manager
 - Credentials exist ONLY in state
-- Extract credentials only when needed
-- Validate through state updates
+- Extract credentials through proper validation
+- Track all validation attempts
 
 2. **Single Source of Truth**
-- Member ID ONLY at top level
-- Channel info ONLY at top level
-- JWT token ONLY in state
-- No credential duplication
+- Member ID accessed through get_member_id()
+- Channel info accessed through get_channel_id()
+- JWT token accessed through flow_data auth
+- No direct state access
 
 3. **Pure Functions**
 - Stateless service functions
@@ -32,26 +32,63 @@ def make_credex_request(
     state_manager: Any = None
 ) -> requests.Response:
     """Make API request through state validation"""
-    # Get endpoint info
-    path = CredExEndpoints.get_path(group, action)
-    config = CredExConfig.from_env()
-    url = config.get_url(path)
-    headers = config.get_headers()
+    try:
+        # Update state with request attempt
+        state_manager.update_state({
+            "flow_data": {
+                "active_component": {
+                    "type": "api_request",
+                    "validation": {
+                        "in_progress": True,
+                        "attempts": state_manager.get_flow_data().get("api_attempts", 0) + 1,
+                        "last_attempt": datetime.utcnow().isoformat()
+                    }
+                }
+            }
+        })
 
-    # Extract credentials from state ONLY when needed
-    jwt_token = state_manager.get("jwt_token")
-    if jwt_token:
-        headers["Authorization"] = f"Bearer {jwt_token}"
+        # Get endpoint info
+        path = CredExEndpoints.get_path(group, action)
+        config = CredExConfig.from_env()
+        url = config.get_url(path)
+        headers = config.get_headers()
 
-    # For auth endpoints, ensure phone from state
-    if group == 'auth' and action == 'login':
-        channel = state_manager.get("channel")
-        if not channel or not channel.get("identifier"):
-            raise ConfigurationException("Missing channel identifier")
-        payload = {"phone": channel["identifier"]}
+        # Get auth token through flow data
+        auth_data = state_manager.get_flow_data().get("auth", {})
+        if auth_data.get("token"):
+            headers["Authorization"] = f"Bearer {auth_data['token']}"
 
-    # Make request (implementation details stay in service layer)
-    return requests.request(method, url, headers=headers, json=payload)
+        # For auth endpoints, get channel through proper method
+        if group == 'auth' and action == 'login':
+            try:
+                channel_id = state_manager.get_channel_id()
+                payload = {"phone": channel_id}
+            except ComponentException as e:
+                raise ConfigurationException("Missing channel identifier")
+
+        # Make request (implementation details stay in service layer)
+        return requests.request(method, url, headers=headers, json=payload)
+
+    except Exception as e:
+        # Update state with error
+        state_manager.update_state({
+            "flow_data": {
+                "active_component": {
+                    "type": "api_request",
+                    "validation": {
+                        "in_progress": False,
+                        "error": {
+                            "message": str(e),
+                            "details": {
+                                "group": group,
+                                "action": action
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        raise
 ```
 
 ### 2. Service Implementation
@@ -65,7 +102,7 @@ def handle_offer(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             raise StateException("No active flow")
 
         # Get validated business data
-        flow_data = flow_state.get("data", {})
+        flow_data = state_manager.get_flow_data()
         amount_data = flow_data.get("amount", {})
         handle = flow_data.get("handle")
 
@@ -153,21 +190,19 @@ def update_member_state(state_manager: Any, result: Dict[str, Any]) -> None:
         # Update complete state with validation
         if dashboard.get("member") or dashboard.get("accounts"):
             state_manager.update_state({
-                # Auth data
-                "jwt_token": details.get("token"),
-                "authenticated": True,
-                "member_id": details.get("memberID"),
-                # Member data
-                "member_data": dashboard.get("member"),
-                # Account data
-                "accounts": dashboard.get("accounts", []),
-                "active_account_id": next(
-                    (account["accountID"] for account in dashboard.get("accounts", [])
-                     if account["accountType"] == "PERSONAL"),
-                    None
-                ),
-                # Flow state
                 "flow_data": {
+                    "auth": {
+                        "token": details.get("token"),
+                        "authenticated": True,
+                        "member_id": details.get("memberID")
+                    },
+                    "member": dashboard.get("member"),
+                    "accounts": dashboard.get("accounts", []),
+                    "active_account": next(
+                        (account for account in dashboard.get("accounts", [])
+                         if account["accountType"] == "PERSONAL"),
+                        None
+                    ),
                     "step": "complete",
                     "step_index": flow_state["total_steps"],
                     "active_component": {
@@ -195,61 +230,84 @@ def update_member_state(state_manager: Any, result: Dict[str, Any]) -> None:
 
 ### 1. Credential Access
 ```python
-# CORRECT - Extract from state only when needed
+# CORRECT - Access through flow data with validation
 def make_api_call(state_manager: Any) -> None:
     """Make API call through state validation"""
-    # Let StateManager validate through update
+    # Update state with request attempt
     state_manager.update_state({
         "flow_data": {
-            "step": "api_call"
+            "active_component": {
+                "type": "api_request",
+                "validation": {
+                    "in_progress": True,
+                    "attempts": state_manager.get_flow_data().get("api_attempts", 0) + 1,
+                    "last_attempt": datetime.utcnow().isoformat()
+                }
+            }
         }
     })
 
-    # Extract token ONLY when needed
-    jwt_token = state_manager.get("jwt_token")
-    if jwt_token:
-        headers["Authorization"] = f"Bearer {jwt_token}"
+    # Get auth token through flow data
+    auth_data = state_manager.get_flow_data().get("auth", {})
+    if auth_data.get("token"):
+        headers["Authorization"] = f"Bearer {auth_data['token']}"
 
     # Make request with validated token
     response = requests.post(url, headers=headers)
 
-# WRONG - Store credentials in variables
+# WRONG - Direct state access
 def make_api_call(state_manager: Any) -> None:
-    token = state_manager.get("jwt_token")  # Don't store!
+    token = state_manager.get("jwt_token")  # Don't access directly!
     make_request(token)  # Don't pass credentials!
 ```
 
-### 2. Phone Number Access
+### 2. Channel Access
 ```python
-# CORRECT - Extract from state only when needed
+# CORRECT - Use proper accessor method
 def handle_auth(state_manager: Any) -> None:
     """Handle auth through state validation"""
-    # Let StateManager validate channel
-    channel = state_manager.get("channel")
-    if not channel or not channel.get("identifier"):
-        raise ConfigurationException("Missing channel identifier")
+    try:
+        # Get channel through proper method
+        channel_id = state_manager.get_channel_id()
+        payload = {"phone": channel_id}
+        response = make_request(payload)
+    except ComponentException as e:
+        # Handle validation error
+        error_response = ErrorHandler.handle_component_error(
+            component="auth_handler",
+            field="channel_id",
+            value=None,
+            message=str(e)
+        )
+        return error_response
 
-    # Use phone ONLY for this request
-    payload = {"phone": channel["identifier"]}
-    response = make_request(payload)
-
-# WRONG - Store phone in variables
+# WRONG - Direct state access
 def handle_auth(state_manager: Any) -> None:
-    phone = state_manager.get("channel")["identifier"]  # Don't store!
-    make_auth_call(phone)  # Don't pass phone!
+    channel = state_manager.get("channel")  # Don't access directly!
+    phone = channel["identifier"]  # Don't access structure directly!
+    make_auth_call(phone)  # Don't pass raw data!
 ```
 
 ### 3. Response Handling
 ```python
-# CORRECT - Update flow state with business data
+# CORRECT - Update flow state with business data and validation
 def handle_offer_response(state_manager: Any, response: Dict[str, Any]) -> None:
     """Handle offer response through state validation"""
     # Extract business data from response
     offer_data = response.get("data", {}).get("offer", {})
 
-    # Update flow state with business data only
+    # Update flow state with business data and validation
     state_manager.update_state({
         "flow_data": {
+            "active_component": {
+                "type": "api_response",
+                "validation": {
+                    "in_progress": False,
+                    "error": None,
+                    "attempts": state_manager.get_flow_data().get("response_attempts", 0) + 1,
+                    "last_attempt": datetime.utcnow().isoformat()
+                }
+            },
             "data": {
                 "offer_id": offer_data.get("id"),
                 "status": offer_data.get("status")
@@ -257,7 +315,7 @@ def handle_offer_response(state_manager: Any, response: Dict[str, Any]) -> None:
         }
     })
 
-# WRONG - Store raw response in flow state
+# WRONG - Store raw response without validation
 def handle_offer_response(state_manager: Any, response: Dict[str, Any]) -> None:
     state_manager.update_state({
         "flow_data": {
@@ -278,6 +336,25 @@ try:
         state_manager=state_manager
     )
 except Exception as e:
+    # Update state with error
+    state_manager.update_state({
+        "flow_data": {
+            "active_component": {
+                "type": "api_request",
+                "validation": {
+                    "in_progress": False,
+                    "error": {
+                        "message": str(e),
+                        "details": {
+                            "operation": "create_credex",
+                            "payload": payload
+                        }
+                    }
+                }
+            }
+        }
+    })
+
     # Create error context
     error_context = ErrorContext(
         error_type="api",
@@ -301,9 +378,18 @@ try:
     # Extract business data from response
     offer_data = response.json().get("data", {}).get("offer", {})
 
-    # Update flow state with business data only
+    # Update flow state with business data and validation
     state_manager.update_state({
         "flow_data": {
+            "active_component": {
+                "type": "api_response",
+                "validation": {
+                    "in_progress": False,
+                    "error": None,
+                    "attempts": state_manager.get_flow_data().get("response_attempts", 0) + 1,
+                    "last_attempt": datetime.utcnow().isoformat()
+                }
+            },
             "data": {
                 "offer_id": offer_data.get("id"),
                 "status": offer_data.get("status")
@@ -311,6 +397,25 @@ try:
         }
     })
 except Exception as e:
+    # Update state with error
+    state_manager.update_state({
+        "flow_data": {
+            "active_component": {
+                "type": "api_response",
+                "validation": {
+                    "in_progress": False,
+                    "error": {
+                        "message": str(e),
+                        "details": {
+                            "operation": "update_offer_state",
+                            "offer_id": offer_data.get("id")
+                        }
+                    }
+                }
+            }
+        }
+    })
+
     # Create error context with business data
     error_context = ErrorContext(
         error_type="state",
@@ -330,29 +435,29 @@ except Exception as e:
 
 ## Best Practices
 
-1. **Credential Management**
-- Extract credentials only when needed
-- No storing credentials in variables
-- No passing credentials between functions
-- Let state_manager handle all credentials
+1. **State Access**
+- Use proper accessor methods (get_channel_id, get_member_id)
+- Access auth data through flow_data
+- Track all validation attempts
+- Handle validation errors properly
 
 2. **State Updates**
-- Update state before API calls
-- Update state with responses
-- No manual state transformation
+- Update state with validation tracking
+- Track all operation attempts
+- Include proper error context
 - Let state_manager validate all updates
 
 3. **Error Handling**
-- Use ErrorHandler for all errors
-- Provide clear error context
+- Update state with error context
+- Track validation failures
 - Include operation details
-- Let state_manager validate errors
+- Let ErrorHandler handle errors
 
 4. **Response Processing**
-- Extract business data from responses
-- Store only business data in flow state
-- Keep implementation details in service layer
-- Handle errors through ErrorHandler
+- Track response processing attempts
+- Include validation state
+- Store only business data
+- Handle errors with context
 
 For more details on:
 - Service architecture: [Service Architecture](service-architecture.md)

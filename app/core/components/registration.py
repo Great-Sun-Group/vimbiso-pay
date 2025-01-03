@@ -14,7 +14,7 @@ from core.messaging.types import (
     Message,
     MessageRecipient
 )
-from core.utils.exceptions import ComponentException
+from core.utils.error_types import ValidationResult
 from .base import Component, InputComponent
 
 
@@ -24,27 +24,26 @@ class RegistrationWelcome(Component):
     def __init__(self):
         super().__init__("registration_welcome")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate welcome response"""
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate welcome response with proper tracking"""
         # Validate type
-        if not isinstance(value, str):
-            raise ComponentException(
-                message="Invalid response type",
-                component=self.type,
-                field="response",
-                value=str(type(value))
-            )
+        type_result = self._validate_type(value, str, "text")
+        if not type_result.valid:
+            return type_result
 
         # Validate action
-        if value.strip().lower() != "start_registration":
-            raise ComponentException(
-                message="Invalid response - please use the Become a Member button",
-                component=self.type,
+        action = value.strip().lower()
+        if action != "start_registration":
+            return ValidationResult.failure(
+                message="Please use the Become a Member button",
                 field="response",
-                value=value
+                details={
+                    "expected": "start_registration",
+                    "received": action
+                }
             )
 
-        return {"valid": True}
+        return ValidationResult.success(action)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified welcome data"""
@@ -84,28 +83,32 @@ class FirstNameInput(InputComponent):
     def __init__(self):
         super().__init__("firstname_input")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate first name"""
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate first name with proper tracking"""
         # Validate type
-        if not isinstance(value, str):
-            raise ComponentException(
-                message="First name must be text",
-                component=self.type,
-                field="firstname",
-                value=str(type(value))
-            )
+        type_result = self._validate_type(value, str, "text")
+        if not type_result.valid:
+            return type_result
+
+        # Validate required
+        required_result = self._validate_required(value)
+        if not required_result.valid:
+            return required_result
 
         # Validate length
         firstname = value.strip()
-        if not firstname or len(firstname) < 3 or len(firstname) > 50:
-            raise ComponentException(
+        if len(firstname) < 3 or len(firstname) > 50:
+            return ValidationResult.failure(
                 message="First name must be between 3 and 50 characters",
-                component=self.type,
                 field="firstname",
-                value=firstname
+                details={
+                    "min_length": 3,
+                    "max_length": 50,
+                    "actual_length": len(firstname)
+                }
             )
 
-        return {"valid": True}
+        return ValidationResult.success(firstname)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified first name"""
@@ -120,28 +123,32 @@ class LastNameInput(InputComponent):
     def __init__(self):
         super().__init__("lastname_input")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate last name"""
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate last name with proper tracking"""
         # Validate type
-        if not isinstance(value, str):
-            raise ComponentException(
-                message="Last name must be text",
-                component=self.type,
-                field="lastname",
-                value=str(type(value))
-            )
+        type_result = self._validate_type(value, str, "text")
+        if not type_result.valid:
+            return type_result
+
+        # Validate required
+        required_result = self._validate_required(value)
+        if not required_result.valid:
+            return required_result
 
         # Validate length
         lastname = value.strip()
-        if not lastname or len(lastname) < 3 or len(lastname) > 50:
-            raise ComponentException(
+        if len(lastname) < 3 or len(lastname) > 50:
+            return ValidationResult.failure(
                 message="Last name must be between 3 and 50 characters",
-                component=self.type,
                 field="lastname",
-                value=lastname
+                details={
+                    "min_length": 3,
+                    "max_length": 50,
+                    "actual_length": len(lastname)
+                }
             )
 
-        return {"valid": True}
+        return ValidationResult.success(lastname)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified last name"""
@@ -156,39 +163,27 @@ class RegistrationComplete(Component):
     def __init__(self):
         super().__init__("registration_complete")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate registration response
-
-        Args:
-            value: Registration response containing:
-                - member_id: New member ID
-                - token: JWT token
-                - accounts: Initial accounts
-
-        Returns:
-            On success: {"valid": True}
-            On error: ComponentException
-        """
-        if not isinstance(value, dict):
-            raise ComponentException(
-                message="Invalid registration response format",
-                component=self.type,
-                field="response",
-                value=str(type(value))
-            )
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate registration response with proper tracking"""
+        # Validate type
+        type_result = self._validate_type(value, dict, "object")
+        if not type_result.valid:
+            return type_result
 
         # Validate required fields
         required: Set[str] = {"member_id", "token", "accounts"}
         missing = required - set(value.keys())
         if missing:
-            raise ComponentException(
-                message=f"Missing required fields in response: {missing}",
-                component=self.type,
+            return ValidationResult.failure(
+                message="Missing required fields in response",
                 field="response",
-                value=str(value)
+                details={
+                    "missing_fields": list(missing),
+                    "received_fields": list(value.keys())
+                }
             )
 
-        return {"valid": True}
+        return ValidationResult.success(value)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified member data"""

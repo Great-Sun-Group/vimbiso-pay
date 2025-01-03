@@ -70,7 +70,7 @@ class ErrorHandler:
         message: str,
         validation_state: Optional[Dict] = None
     ) -> Dict:
-        """Handle component validation error with tracking
+        """Handle component validation error with standardized tracking
 
         Args:
             component: Component type
@@ -82,26 +82,32 @@ class ErrorHandler:
         Returns:
             Dict with standardized error structure
         """
+        # Create standardized validation state
+        current_validation = validation_state or {}
+        validation = {
+            "in_progress": False,
+            "error": message,
+            "attempts": current_validation.get("attempts", 0) + 1,
+            "last_attempt": datetime.utcnow().isoformat(),
+            "operation": "validate_component",
+            "component": component,
+            "field": field
+        }
+
         details = {
             "component": component,
             "field": field,
             "value": str(value),
-            "validation": validation_state or {}
+            "validation": validation
         }
-
-        # Add validation tracking if available
-        if validation_state:
-            details["validation"].update({
-                "attempts": validation_state.get("attempts", 0),
-                "last_attempt": validation_state.get("last_attempt")
-            })
 
         return cls._create_error_response(
             error_type="component",
             message=message,
             details=details,
             context={
-                "validation_state": validation_state
+                "validation": validation,
+                "component_state": validation_state
             }
         )
 
@@ -114,7 +120,7 @@ class ErrorHandler:
         message: str,
         flow_state: Optional[Dict] = None
     ) -> Dict:
-        """Handle flow business logic error with state tracking
+        """Handle flow business logic error with standardized tracking
 
         Args:
             step: Current flow step
@@ -126,25 +132,37 @@ class ErrorHandler:
         Returns:
             Dict with standardized error structure
         """
+        # Get current flow validation state
+        current_flow = flow_state or {}
+        current_validation = current_flow.get("validation", {})
+
+        # Create standardized validation state
+        validation = {
+            "in_progress": False,
+            "error": message,
+            "attempts": current_validation.get("attempts", 0) + 1,
+            "last_attempt": datetime.utcnow().isoformat(),
+            "operation": "validate_flow",
+            "step": step,
+            "action": action
+        }
+
         details = {
             "step": step,
             "action": action,
-            "data": data
+            "data": data,
+            "validation": validation,
+            "step_index": current_flow.get("step_index", 0),
+            "total_steps": current_flow.get("total_steps", 1),
+            "handler_type": current_flow.get("handler_type")
         }
-
-        # Add flow tracking if available
-        if flow_state:
-            details.update({
-                "step_index": flow_state.get("step_index"),
-                "total_steps": flow_state.get("total_steps"),
-                "handler_type": flow_state.get("handler_type")
-            })
 
         return cls._create_error_response(
             error_type="flow",
             message=message,
             details=details,
             context={
+                "validation": validation,
                 "flow_state": flow_state
             }
         )
@@ -156,9 +174,10 @@ class ErrorHandler:
         service: str,
         action: str,
         message: str,
-        error: Optional[Exception] = None
+        error: Optional[Exception] = None,
+        validation_state: Optional[Dict] = None
     ) -> Dict:
-        """Handle system technical error with error tracking
+        """Handle system technical error with standardized tracking
 
         Args:
             code: Error code
@@ -166,14 +185,28 @@ class ErrorHandler:
             action: Action being performed
             message: Error message
             error: Optional exception for tracking
+            validation_state: Optional validation state for tracking
 
         Returns:
             Dict with standardized error structure
         """
+        # Create standardized validation state
+        current_validation = validation_state or {}
+        validation = {
+            "in_progress": False,
+            "error": message,
+            "attempts": current_validation.get("attempts", 0) + 1,
+            "last_attempt": datetime.utcnow().isoformat(),
+            "operation": "system_operation",
+            "service": service,
+            "action": action
+        }
+
         details = {
             "code": code,
             "service": service,
-            "action": action
+            "action": action,
+            "validation": validation
         }
 
         # Add error details if available
@@ -189,6 +222,7 @@ class ErrorHandler:
             message=message,
             details=details,
             context={
+                "validation": validation,
                 "exception": repr(error) if error else None,
                 "traceback": traceback.format_exc() if error else None
             }

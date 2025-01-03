@@ -34,154 +34,71 @@
 - NO manual routing
 - NO local state
 
-## Flow Types
+## Flow Registry
 
+### 1. Common Configurations
 ```python
-class FlowRegistry:
-    """Central flow type management"""
-
-    # Common flow configurations
-    COMMON_FLOWS = {
-        "action": {
-            "steps": ["select", "confirm"],
-            "components": {
-                "select": "SelectInput",
-                "confirm": "ConfirmInput"
-            }
+COMMON_FLOWS = {
+    "action": {
+        "steps": ["select", "confirm"],
+        "components": {
+            "select": "SelectInput",
+            "confirm": "ConfirmInput"
         }
     }
-
-    # Flow type definitions with metadata
-    FLOWS = {
-        # Member flows
-        "registration": {
-            "handler_type": "member",
-            "flow_type": "registration",
-            "steps": ["firstname", "lastname"],
-            "components": {
-                "firstname": "TextInput",
-                "lastname": "TextInput"
-            }
-        },
-
-        # Action flows use common configuration
-        "credex_accept": {
-            "handler_type": "credex",
-            "flow_type": "action",
-            "action_type": "accept",
-            **COMMON_FLOWS["action"]
-        }
-    }
+}
 ```
 
-## Flow State
-
+### 2. Flow Types
 ```python
-{
-    # Flow identification
-    "flow_type": str,        # registration, upgrade, ledger, offer, accept
-    "handler_type": str,     # member, account, credex
-    "step": str,            # current step id
-    "step_index": int,      # current step index
-    "total_steps": int,     # total steps in flow
+FLOWS = {
+    "registration": {
+        "handler_type": "member",
+        "steps": ["firstname", "lastname"],
+        "components": {
+            "firstname": "TextInput",
+            "lastname": "TextInput"
+        }
+    },
+    "credex_accept": {
+        "handler_type": "credex",
+        "flow_type": "action",
+        "action_type": "accept"
+    }
+}
+```
 
-    # Component state
+## State Patterns
+
+### 1. Flow State
+```python
+flow_state = {
+    # Flow identification
+    "flow_type": str,     # Type of flow
+    "handler_type": str,  # Handler responsible
+    "step": str,         # Current step
+    "step_index": int,   # Current position
+    "total_steps": int,  # Total steps
+
+    # Validation tracking
     "active_component": {
-        "type": str,        # component type
-        "value": Any,       # current value
-        "validation": {     # validation state
+        "type": str,     # Component type
+        "validation": {
             "in_progress": bool,
             "error": Optional[Dict],
             "attempts": int,
             "last_attempt": Any
         }
-    },
-
-    # Flow metadata
-    "started_at": str,      # ISO timestamp
-    "action_type": str,     # For action flows
-
-    # Business data
-    "data": Dict           # Flow-specific data
+    }
 }
 ```
 
-## Implementation
-
-### 1. Flow Manager
-```python
-class FlowManager:
-    """Manages flow progression and component state"""
-
-    def process_step(self, step: str, value: Any, state_manager: Any) -> Dict:
-        """Process step with validation"""
-        # Get component
-        component = self.get_component(step)
-
-        # UI validation with tracking
-        validation = component.validate(value)
-        if not validation.valid:
-            return {
-                "error": validation.error,
-                "type": "validation",
-                "attempts": component.validation_state["attempts"]
-            }
-
-        # Update component state
-        state_manager.update_state({
-            "flow_data": {
-                "active_component": component.get_ui_state(),
-                "step_index": current_index + 1
-            }
-        })
-
-        return {
-            "success": True,
-            "value": validation.value,
-            "progress": {
-                "current": current_index + 1,
-                "total": total_steps
-            }
-        }
-```
-
-### 2. Action Flow
-```python
-class ActionFlow(BaseFlow):
-    """Flow for accept/decline/cancel actions"""
-
-    ACTIONS = {
-        "accept": {
-            "service_method": "accept_credex",
-            "confirm_prompt": "accept",
-            "cancel_message": "Acceptance cancelled",
-            "complete_message": "✅ Offer accepted successfully."
-        }
-    }
-
-    def __init__(self, messaging_service: MessagingServiceInterface, action_type: str):
-        super().__init__(messaging_service)
-        self.action_type = action_type
-        self.config = self.ACTIONS[action_type]
-
-    def process_step(self, state_manager: Any, step: str, input_value: Any) -> Message:
-        """Process action step with proper tracking"""
-        # Get flow state
-        flow_state = state_manager.get_flow_state()
-
-        # Validate input
-        component = self._get_component(step)
-        value = self._validate_input(state_manager, step, input_value, component)
-
-        # Update progress
-        progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
-
-        # Return result with progress
-        return {
-            "success": True,
-            "message": f"{self.get_step_content(step)}\n\n{progress}"
-        }
-```
+### 2. Progress Tracking
+Every flow update includes:
+- Current step index
+- Total steps
+- Validation state
+- Attempt tracking
 
 ## Best Practices
 

@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional, Type
 
 from core.messaging.interface import MessagingServiceInterface
 from core.messaging.types import Message, MessageRecipient
-from core.utils.exceptions import FlowException
+from core.utils.exceptions import ComponentException, FlowException
 from core.utils.error_handler import ErrorHandler
 from core.components.base import Component
 
@@ -35,11 +35,18 @@ class CredexFlow:
         raise NotImplementedError("Flow must implement process_step")
 
     def _get_recipient(self, state_manager: Any) -> MessageRecipient:
-        """Get message recipient from state"""
-        return MessageRecipient(
-            channel_id=state_manager.get_channel_id(),
-            member_id=state_manager.get("member_id")
-        )
+        """Get message recipient from state with validation"""
+        try:
+            return MessageRecipient(
+                channel_id=state_manager.get_channel_id(),
+                member_id=state_manager.get_member_id()
+            )
+        except ComponentException:
+            # If member_id fails, still return with channel_id
+            return MessageRecipient(
+                channel_id=state_manager.get_channel_id(),
+                member_id=None
+            )
 
     def _get_component(self, component_type: Type[Component], **kwargs) -> Component:
         """Get or create component with proper state tracking"""

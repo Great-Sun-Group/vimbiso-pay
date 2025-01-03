@@ -1,12 +1,15 @@
 """Authentication handlers using messaging service interface"""
 import logging
+from datetime import datetime
 from typing import Any, Dict, Tuple
 
 from core.messaging.flow import initialize_flow
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import Message, MessageRecipient
+from core.messaging.types import Message
 from core.utils.error_handler import ErrorHandler
 from core.utils.exceptions import ComponentException, FlowException, SystemException
+
+from ..utils import get_recipient
 
 logger = logging.getLogger(__name__)
 
@@ -14,33 +17,40 @@ logger = logging.getLogger(__name__)
 class AuthHandler:
     """Handler for authentication operations"""
 
-    def __init__(self, messaging_service: MessagingServiceInterface):
-        self.messaging = messaging_service
-
-    def attempt_login(self, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
+    @staticmethod
+    def attempt_login(messaging_service: MessagingServiceInterface, state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
         """Attempt to login user with channel ID
 
         Args:
+            messaging_service: Service for sending messages
             state_manager: State manager instance
 
         Returns:
             Tuple[bool, Dict]: Success flag and response data
         """
         try:
-            # Get channel info
-            channel = state_manager.get("channel")
-            if not channel:
-                raise ComponentException(
-                    message="Channel information not found",
-                    component="auth_handler",
-                    field="channel",
-                    value="None"
-                )
+            # Update state with auth attempt
+            state_manager.update_state({
+                "flow_data": {
+                    "active_component": {
+                        "type": "auth_handler",
+                        "validation": {
+                            "in_progress": True,
+                            "attempts": state_manager.get_flow_data().get("auth_attempts", 0) + 1,
+                            "last_attempt": datetime.utcnow().isoformat()
+                        }
+                    }
+                }
+            })
+
+            # Get channel info through proper methods
+            channel_type = state_manager.get_channel_type()
+            channel_id = state_manager.get_channel_id()
 
             # Attempt login through messaging service
-            response = self.messaging.authenticate_user(
-                channel_type=channel["type"],
-                channel_id=state_manager.get_channel_id()
+            response = messaging_service.authenticate_user(
+                channel_type=channel_type,
+                channel_id=channel_id
             )
 
             return True, response
@@ -49,10 +59,12 @@ class AuthHandler:
             logger.error(f"Login failed: {str(e)}")
             return False, {"error": str(e)}
 
-    def handle_greeting(self, state_manager: Any) -> Message:
+    @staticmethod
+    def handle_greeting(messaging_service: MessagingServiceInterface, state_manager: Any) -> Message:
         """Handle initial greeting with login attempt
 
         Args:
+            messaging_service: Service for sending messages
             state_manager: State manager instance
 
         Returns:
@@ -69,7 +81,7 @@ class AuthHandler:
                 )
 
             # Attempt login
-            success, response = self.attempt_login(state_manager)
+            success, response = AuthHandler.attempt_login(messaging_service, state_manager)
 
             if success:
                 # Extract data from response
@@ -121,11 +133,8 @@ class AuthHandler:
 
                 # Send dashboard message
                 logger.info("Login successful, showing dashboard")
-                return self.messaging.send_dashboard(
-                    recipient=MessageRecipient(
-                        channel_id=state_manager.get_channel_id(),
-                        member_id=auth_details.get("memberID")
-                    ),
+                return messaging_service.send_dashboard(
+                    recipient=get_recipient(state_manager),
                     dashboard_data=dashboard
                 )
 
@@ -133,10 +142,8 @@ class AuthHandler:
                 # Start registration for new users
                 logger.info("User not found, starting registration")
                 initialize_flow(state_manager, "registration")
-                return self.messaging.send_text(
-                    recipient=MessageRecipient(
-                        channel_id=state_manager.get_channel_id()
-                    ),
+                return messaging_service.send_text(
+                    recipient=get_recipient(state_manager),
                     text="👋 Welcome to VimbisoPay! Let's get you registered."
                 )
 
@@ -153,10 +160,8 @@ class AuthHandler:
                 value=e.value,
                 message=str(e)
             )
-            return self.messaging.send_text(
-                recipient=MessageRecipient(
-                    channel_id=state_manager.get_channel_id()
-                ),
+            return messaging_service.send_text(
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error['message']}"
             )
 
@@ -173,10 +178,8 @@ class AuthHandler:
                 data=e.data,
                 message=str(e)
             )
-            return self.messaging.send_text(
-                recipient=MessageRecipient(
-                    channel_id=state_manager.get_channel_id()
-                ),
+            return messaging_service.send_text(
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error['message']}"
             )
 
@@ -193,10 +196,8 @@ class AuthHandler:
                 action=e.action,
                 message=str(e)
             )
-            return self.messaging.send_text(
-                recipient=MessageRecipient(
-                    channel_id=state_manager.get_channel_id()
-                ),
+            return messaging_service.send_text(
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error['message']}"
             )
 
@@ -209,9 +210,7 @@ class AuthHandler:
                 action="handle_greeting",
                 message="An unexpected error occurred"
             )
-            return self.messaging.send_text(
-                recipient=MessageRecipient(
-                    channel_id=state_manager.get_channel_id()
-                ),
+            return messaging_service.send_text(
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error['message']}"
             )

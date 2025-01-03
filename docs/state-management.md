@@ -3,10 +3,10 @@
 ## Core Principles
 
 1. **Single Source of Truth**
-- Member ID at top level
-- Channel info at top level
-- JWT token in state
-- NO duplication
+- Member ID accessed through get_member_id()
+- Channel info accessed through get_channel_id()
+- JWT token accessed through flow_data auth
+- NO direct state access
 - NO state passing
 - NO transformation
 
@@ -36,186 +36,96 @@
 
 ## State Structure
 
+### 1. Core Identity
 ```python
 {
-    # Core identity (SINGLE SOURCE OF TRUTH)
-    "member_id": str,
-    "channel": {
-        "type": str,      # whatsapp, etc
-        "identifier": str # channel-specific id
+    # Accessed through proper methods
+    "member_id": str,     # Use get_member_id()
+    "channel": {          # Use get_channel_id()
+        "type": str,      # Use get_channel_type()
+        "identifier": str
     },
-    "jwt_token": str,
+    "jwt_token": str     # Accessed through flow_data auth
+}
+```
 
-    # Flow state
+### 2. Flow State
+```python
+{
     "flow_data": {
         # Flow identification
-        "flow_type": str,        # registration, upgrade, ledger, offer, accept
-        "handler_type": str,     # member, account, credex
-        "step": str,            # current step id
-        "step_index": int,      # current step index
-        "total_steps": int,     # total steps in flow
+        "flow_type": str,     # Type of flow
+        "handler_type": str,  # Handler responsible
+        "step": str,         # Current step
+        "step_index": int,   # Current position
+        "total_steps": int,  # Total steps
 
-        # Flow metadata
-        "started_at": str,      # ISO timestamp
-        "action_type": str,     # For action flows
-
-        # Component state
+        # Validation tracking
         "active_component": {
-            "type": str,        # component type
-            "value": Any,       # current value
-            "validation": {     # validation state
+            "type": str,     # Component type
+            "validation": {
                 "in_progress": bool,
                 "error": Optional[Dict],
                 "attempts": int,
                 "last_attempt": Any
             }
-        },
-
-        # Business data
-        "data": Dict           # Flow-specific data
+        }
     }
 }
 ```
 
-## Implementation
+## Access Patterns
 
-### 1. State Manager
+### 1. State Access
 ```python
-class StateManager:
-    """Manages state updates and validation"""
+# CORRECT - Use proper accessor methods
+channel_id = state_manager.get_channel_id()
+member_id = state_manager.get_member_id()
 
-    def update_state(self, updates: Dict) -> None:
-        """Update state with validation"""
-        # Validate updates
-        validation = StateValidator.validate_updates(self._state, updates)
-        if not validation.is_valid:
-            raise StateError(validation.error_message)
-
-        # Apply updates
-        self._state.update(updates)
-
-        # Store state
-        self._store_state()
-
-    def get_flow_state(self) -> Dict:
-        """Get flow state with validation"""
-        flow_data = self._state.get("flow_data", {})
-        if flow_data:
-            validation = StateValidator.validate_flow_state(flow_data)
-            if not validation.is_valid:
-                raise StateError(validation.error_message)
-        return flow_data
+# WRONG - Direct state access
+channel = state_manager.get("channel")  # Don't access directly!
+member_id = state_manager.get("member_id")  # Don't access directly!
 ```
 
-### 2. State Validation
+### 2. Validation Updates
 ```python
-class StateValidator:
-    """Validates state updates"""
-
-    # Flow validation rules
-    FLOW_RULES = {
-        # Required fields in flow_data
-        "required_fields": {
-            "flow_type": str,
-            "handler_type": str,
-            "step": str,
-            "step_index": int,
-            "total_steps": int
-        },
-
-        # Required fields in active_component
-        "component_fields": {
-            "type": str,
-            "validation": {
-                "in_progress": bool,
-                "error": (type(None), dict),
-                "attempts": int,
-                "last_attempt": (type(None), str, int, float, bool, dict, list)
-            }
-        },
-
-        # Valid handler types
-        "handler_types": {"member", "account", "credex"}
-    }
-
-    @classmethod
-    def validate_flow_state(cls, flow_data: Dict) -> ValidationResult:
-        """Validate flow state structure"""
-        # Validate required fields
-        for field, field_type in cls.FLOW_RULES["required_fields"].items():
-            if field not in flow_data:
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Missing required field: {field}"
-                )
-
-        # Validate component state
-        component = flow_data.get("active_component")
-        if component:
-            for field, field_type in cls.FLOW_RULES["component_fields"].items():
-                if field not in component:
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"Missing component field: {field}"
-                    )
-
-        return ValidationResult(is_valid=True)
-```
-
-### 3. State Usage
-```python
-# Initialize flow with metadata
-initialize_flow(
-    state_manager=state_manager,
-    flow_type="credex_accept",
-    initial_data={
-        "started_at": datetime.utcnow().isoformat(),
-        "action_type": "accept"
-    }
-)
-
-# Update component state with tracking
+# CORRECT - Update with validation tracking
 state_manager.update_state({
     "flow_data": {
         "active_component": {
-            "type": "SelectInput",
-            "value": "123",
+            "type": "input",
             "validation": {
-                "in_progress": False,
-                "error": None,
-                "attempts": 1,
-                "last_attempt": "123"
+                "in_progress": True,
+                "attempts": current + 1,
+                "last_attempt": datetime.utcnow()
             }
         }
     }
 })
 
-# Update progress
+# WRONG - Update without tracking
 state_manager.update_state({
-    "flow_data": {
-        "step_index": current_index + 1,
-        "step": next_step
-    }
+    "value": new_value  # Don't update without validation!
 })
 ```
 
 ## Best Practices
 
-1. **State Updates**
-- Use StateManager
-- Validate updates
-- Track progress
-- Track validation
-- NO manual updates
-- NO transformation
-
-2. **State Access**
-- Use getter methods
-- Check existence
-- Validate state
+1. **State Access**
+- Use proper accessor methods
+- Validate through updates
+- Track all attempts
 - NO direct access
 - NO assumptions
 - NO default values
+
+2. **State Updates**
+- Include validation tracking
+- Track all attempts
+- Include error context
+- NO manual updates
+- NO transformation
+- NO state fixing
 
 3. **Flow State**
 - Clear boundaries
@@ -226,9 +136,9 @@ state_manager.update_state({
 - NO manual handling
 
 4. **Error Handling**
-- Use ErrorHandler
-- Clear boundaries
-- Track attempts
+- Update state with errors
+- Track validation failures
+- Include error context
 - NO manual handling
 - NO local recovery
 - NO state fixing

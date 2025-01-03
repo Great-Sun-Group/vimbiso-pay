@@ -8,13 +8,14 @@ from datetime import datetime
 from typing import Any
 
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import Message, MessageRecipient
+from core.messaging.types import Message
 from core.utils.exceptions import FlowException, SystemException
 from core.messaging.flow import initialize_flow
 from core.utils.error_handler import ErrorHandler
 from services.credex.service import get_credex_service
 
 from .flows import OfferFlow, ActionFlow
+from ..utils import get_recipient
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +25,6 @@ class CredexHandler:
 
     def __init__(self, messaging_service: MessagingServiceInterface):
         self.messaging = messaging_service
-        self.offer = OfferFlow(messaging_service)
-        self.actions = {
-            "accept": ActionFlow(messaging_service, "accept"),
-            "decline": ActionFlow(messaging_service, "decline"),
-            "cancel": ActionFlow(messaging_service, "cancel")
-        }
 
     def start_offer(self, state_manager: Any) -> Message:
         """Start offer flow with proper state initialization"""
@@ -45,11 +40,11 @@ class CredexHandler:
             )
 
             # Get recipient for messaging
-            recipient = self._get_recipient(state_manager)
+            recipient = get_recipient(state_manager)
 
             # Get step content with progress
             flow_state = state_manager.get_flow_state()
-            step_content = self.offer.get_step_content("amount")
+            step_content = OfferFlow.get_step_content("amount")
             progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
 
             # Send prompt with progress
@@ -75,7 +70,7 @@ class CredexHandler:
             )
 
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
 
@@ -95,7 +90,7 @@ class CredexHandler:
                     message=f"No pending offers to {action_type}"
                 )
                 return self.messaging.send_text(
-                    recipient=self._get_recipient(state_manager),
+                    recipient=get_recipient(state_manager),
                     text=f"❌ {error_response['error']['message']}"
                 )
 
@@ -118,11 +113,11 @@ class CredexHandler:
             )
 
             # Get recipient and flow state
-            recipient = self._get_recipient(state_manager)
+            recipient = get_recipient(state_manager)
             flow_state = state_manager.get_flow_state()
 
             # Build message with progress
-            step_content = self.actions[action_type].get_step_content("select")
+            step_content = ActionFlow.get_step_content(f"credex_{action_type}", "select")
             progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
             message = "\n".join([
                 step_content,
@@ -154,7 +149,7 @@ class CredexHandler:
             )
 
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
 
@@ -183,20 +178,20 @@ class CredexHandler:
                     data={"flow_type": flow_type}
                 )
 
-            # Process step with proper flow
+            # Process step through appropriate flow class
             if flow_type == "credex_offer":
-                result = self.offer.process_step(state_manager, step, input_value)
+                result = OfferFlow.process_step(self.messaging, state_manager, step, input_value)
             elif flow_type.startswith("credex_"):
                 # Extract action type from flow type (e.g. "credex_accept" -> "accept")
                 action_type = flow_type.split("_", 1)[1]
-                if action_type not in self.actions:
+                if action_type not in {"accept", "decline", "cancel"}:
                     raise FlowException(
                         message=f"Invalid flow type: {flow_type}",
                         step=step,
                         action="handle_flow",
                         data={"flow_type": flow_type}
                     )
-                result = self.actions[action_type].process_step(state_manager, step, input_value)
+                result = ActionFlow.process_step(self.messaging, state_manager, step, input_value, flow_type)
             else:
                 raise FlowException(
                     message=f"Invalid flow type: {flow_type}",
@@ -226,7 +221,7 @@ class CredexHandler:
                 flow_state=flow_state
             )
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
 
@@ -240,7 +235,7 @@ class CredexHandler:
                 error=e
             )
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
 
@@ -254,13 +249,6 @@ class CredexHandler:
                 error=e
             )
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
-
-    def _get_recipient(self, state_manager: Any) -> MessageRecipient:
-        """Get message recipient from state"""
-        return MessageRecipient(
-            channel_id=state_manager.get_channel_id(),
-            member_id=state_manager.get("member_id")
-        )

@@ -7,6 +7,7 @@ This module provides flow management using:
 """
 
 from typing import Any, Dict, Optional
+from datetime import datetime
 
 from core.components import create_component
 from core.utils.exceptions import FlowException
@@ -95,17 +96,27 @@ def initialize_flow(
     # Get component type for step
     component_type = FlowRegistry.get_step_component(flow_type, step)
 
-    # Create flow state with proper structure
+    # Create flow state with standardized validation tracking
+    validation_state = {
+        "in_progress": True,
+        "attempts": 0,
+        "last_attempt": None,
+        "operation": "initialize_flow",
+        "component": component_type,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
     flow_state = {
         "flow_data": {
-            # Flow identification
+            # Flow identification with validation
             "flow_type": flow_type,
             "handler_type": config.get("handler_type", "member"),
             "step": step,
             "step_index": step_index,
             "total_steps": len(steps),
+            "validation": validation_state,
 
-            # Component state
+            # Component state with tracking
             "active_component": {
                 "type": component_type,
                 "value": None,
@@ -113,12 +124,21 @@ def initialize_flow(
                     "in_progress": False,
                     "error": None,
                     "attempts": 0,
-                    "last_attempt": None
+                    "last_attempt": None,
+                    "operation": "initialize_component",
+                    "component": component_type,
+                    "timestamp": datetime.utcnow().isoformat()
                 }
             },
 
-            # Business data
-            "data": initial_data or {}
+            # Business data with timestamp
+            "data": {
+                **(initial_data or {}),
+                "_metadata": {
+                    "initialized_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            }
         }
     }
 
@@ -164,31 +184,54 @@ def process_flow_input(
     flow_manager = FlowManager(flow_type)
     validation = flow_manager.process_step(current_step, input_data)
 
-    # Update validation state
+    # Update validation state with tracking
     component_state = flow_data["active_component"]
-    component_state["validation"]["attempts"] += 1
-    component_state["validation"]["last_attempt"] = input_data
+    validation_state = {
+        "in_progress": True,
+        "attempts": component_state["validation"]["attempts"] + 1,
+        "last_attempt": {
+            "value": input_data,
+            "timestamp": datetime.utcnow().isoformat()
+        },
+        "operation": "validate_input",
+        "component": component_state["type"],
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
-    # Handle validation error
+    # Handle validation error with tracking
     if not validation.valid:
-        component_state["validation"]["error"] = validation.error
-        component_state["validation"]["in_progress"] = False
-        state_manager.update_state({
-            "flow_data": {
-                "active_component": component_state
+        validation_state.update({
+            "in_progress": False,
+            "error": {
+                "message": validation.error.get("message"),
+                "details": validation.error.get("details", {}),
+                "timestamp": datetime.utcnow().isoformat()
             }
         })
-        return {"error": validation.error}
+        state_manager.update_state({
+            "flow_data": {
+                "active_component": {
+                    **component_state,
+                    "validation": validation_state
+                }
+            }
+        })
+        return {
+            "error": validation.error,
+            "validation": validation_state
+        }
 
-    # Update component state with valid value
+    # Update component state with valid value and tracking
+    validation_state.update({
+        "in_progress": False,
+        "error": None,
+        "timestamp": datetime.utcnow().isoformat()
+    })
+
     component_state.update({
         "value": validation.value,
-        "validation": {
-            "in_progress": False,
-            "error": None,
-            "attempts": component_state["validation"]["attempts"],
-            "last_attempt": input_data
-        }
+        "validation": validation_state,
+        "updated_at": datetime.utcnow().isoformat()
     })
     state_manager.update_state({
         "flow_data": {
@@ -204,7 +247,18 @@ def process_flow_input(
     # Get next component type
     next_component_type = FlowRegistry.get_step_component(flow_type, next_step)
 
-    # Update step and component state
+    # Create next component validation state
+    next_validation_state = {
+        "in_progress": False,
+        "error": None,
+        "attempts": 0,
+        "last_attempt": None,
+        "operation": "initialize_component",
+        "component": next_component_type,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+    # Update step and component state with tracking
     state_manager.update_state({
         "flow_data": {
             "step": next_step,
@@ -212,13 +266,10 @@ def process_flow_input(
             "active_component": {
                 "type": next_component_type,
                 "value": None,
-                "validation": {
-                    "in_progress": False,
-                    "error": None,
-                    "attempts": 0,
-                    "last_attempt": None
-                }
-            }
+                "validation": next_validation_state,
+                "created_at": datetime.utcnow().isoformat()
+            },
+            "updated_at": datetime.utcnow().isoformat()
         }
     })
 

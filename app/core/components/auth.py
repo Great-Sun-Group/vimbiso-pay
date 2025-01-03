@@ -1,95 +1,77 @@
 """Authentication components
 
-This module provides components for handling authentication flows:
-- LoginHandler: Handles login attempts
-- LoginCompleteHandler: Handles successful login
+This module provides components for handling authentication flows with pure UI validation.
+Business validation happens in services.
 """
 
 from typing import Any, Dict
 
-from core.utils.exceptions import ComponentException, SystemException
-from services.credex.auth import login
+from core.utils.error_types import ValidationResult
 from .base import Component
 
 
 class LoginHandler(Component):
-    """Handles login attempts via CredEx API"""
+    """Handles login attempts with pure UI validation"""
 
     def __init__(self):
         super().__init__("login")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate login attempt"""
-        # No validation needed - login is triggered by "hi"
-        return {"valid": True}
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate login attempt with proper tracking"""
+        # Validate type
+        type_result = self._validate_type(value, str, "text")
+        if not type_result.valid:
+            return type_result
 
-    def to_verified_data(self, value: Any) -> Dict:
-        """Attempt login via CredEx API"""
-        # Get state manager from context
-        if not hasattr(self, "state_manager"):
-            raise ComponentException(
-                message="State manager required",
-                component=self.type,
-                field="state_manager",
-                value="None"
+        # Validate greeting format
+        greeting = value.strip().lower()
+        if greeting not in ["hi", "hello"]:
+            return ValidationResult.failure(
+                message="Please start with a greeting (hi/hello)",
+                field="greeting",
+                details={
+                    "valid_values": ["hi", "hello"],
+                    "received": greeting
+                }
             )
 
-        # Attempt login
-        success, response = login(self.state_manager)
+        return ValidationResult.success(greeting)
 
-        # Check response type
-        if not success:
-            if isinstance(response, dict) and response.get("error", {}).get("type") == "system":
-                # System error - propagate
-                error = response["error"]
-                raise SystemException(
-                    message=error["message"],
-                    code=error["details"]["code"],
-                    service=error["details"]["service"],
-                    action=error["details"]["action"]
-                )
-            else:
-                # Auth failure - return false with response
-                return {
-                    "success": False,
-                    "response": response
-                }
-
-        # Login successful
+    def to_verified_data(self, value: Any) -> Dict:
+        """Convert to verified login data"""
         return {
-            "success": True,
-            "response": response
+            "greeting": value.strip().lower(),
+            "action": "login"
         }
 
 
 class LoginCompleteHandler(Component):
-    """Handles successful login completion"""
+    """Handles successful login completion with pure UI validation"""
 
     def __init__(self):
         super().__init__("login_complete")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate login response"""
-        if not isinstance(value, dict):
-            raise ComponentException(
-                message="Invalid login response",
-                component=self.type,
-                field="response",
-                value=str(value)
-            )
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate login response with proper tracking"""
+        # Validate type
+        type_result = self._validate_type(value, dict, "object")
+        if not type_result.valid:
+            return type_result
 
         # Validate required fields
         required = {"memberID", "token", "member", "accounts"}
         missing = required - set(value.keys())
         if missing:
-            raise ComponentException(
-                message=f"Missing required fields: {missing}",
-                component=self.type,
+            return ValidationResult.failure(
+                message="Missing required login fields",
                 field="response",
-                value=str(value)
+                details={
+                    "missing_fields": list(missing),
+                    "received_fields": list(value.keys())
+                }
             )
 
-        return {"valid": True}
+        return ValidationResult.success(value)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert login response to verified data"""
@@ -104,72 +86,37 @@ class LoginCompleteHandler(Component):
 
 
 class DashboardDisplay(Component):
-    """Displays dashboard with menu options"""
+    """Displays dashboard with pure UI validation"""
 
     def __init__(self):
         super().__init__("dashboard")
 
-    def validate(self, value: Any) -> Dict:
-        """Validate dashboard data"""
-        if not isinstance(value, dict):
-            raise ComponentException(
-                message="Invalid dashboard data",
-                component=self.type,
-                field="data",
-                value=str(value)
-            )
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate dashboard data with proper tracking"""
+        # Validate type
+        type_result = self._validate_type(value, dict, "object")
+        if not type_result.valid:
+            return type_result
 
         # Validate required fields
         required = {"member_id"}
         missing = required - set(value.keys())
         if missing:
-            raise ComponentException(
-                message=f"Missing required fields: {missing}",
-                component=self.type,
+            return ValidationResult.failure(
+                message="Missing required dashboard fields",
                 field="data",
-                value=str(value)
+                details={
+                    "missing_fields": list(missing),
+                    "received_fields": list(value.keys())
+                }
             )
 
-        return {"valid": True}
+        return ValidationResult.success(value)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified dashboard data"""
-        # Get state manager from context
-        if not hasattr(self, "state_manager"):
-            raise ComponentException(
-                message="State manager required",
-                component=self.type,
-                field="state_manager",
-                value="None"
-            )
-
-        # Get required state data
-        accounts = self.state_manager.get("accounts")
-        active_id = self.state_manager.get("active_account_id")
-        member_data = self.state_manager.get("member_data")
-
-        # Get active account
-        active_account = next(
-            account for account in accounts
-            if account["accountID"] == active_id
-        )
-
-        # Count pending offers
-        pending_count = len(active_account.get("pendingInData", []))
-        outgoing_count = len(active_account.get("pendingOutData", []))
-
-        # Format tier limit if applicable
-        tier_display = ""
-        if member_data["memberTier"] < 3 and member_data.get("remainingAvailableUSD") is not None:
-            tier_name = "OPEN" if member_data["memberTier"] == 1 else "VERIFIED"
-            tier_display = f"DAILY {tier_name} TIER LIMIT: {member_data['remainingAvailableUSD']} USD"
-
+        # Note: Business validation (account data, tier limits) happens in service layer
         return {
-            "account": active_account["accountName"],
-            "handle": active_account["accountHandle"],
-            "balances": active_account["balanceData"]["securedNetBalancesByDenom"],
-            "net_assets": active_account["balanceData"]["netCredexAssetsInDefaultDenom"],
-            "tier_limit": tier_display,
-            "pending_count": pending_count,
-            "outgoing_count": outgoing_count
+            "member_id": value["member_id"],
+            "display_type": "dashboard"
         }

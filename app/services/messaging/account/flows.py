@@ -3,39 +3,24 @@ import logging
 from typing import Any, Dict, Optional
 
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import Message, MessageRecipient
+from core.messaging.types import Message
 from core.utils.exceptions import FlowException, SystemException
+from core.messaging.registry import FlowRegistry
+
+from ..utils import get_recipient
 
 logger = logging.getLogger(__name__)
 
 
-class AccountFlow:
-    """Base class for account-related flows"""
-
-    def __init__(self, messaging_service: MessagingServiceInterface):
-        self.messaging = messaging_service
-
-    def get_step_content(self, step: str, data: Optional[Dict] = None) -> str:
-        """Get step content without channel formatting"""
-        raise NotImplementedError("Flow must implement get_step_content")
-
-    def process_step(self, state_manager: Any, step: str, input_value: Any) -> Message:
-        """Process flow step using messaging service"""
-        raise NotImplementedError("Flow must implement process_step")
-
-    def _get_recipient(self, state_manager: Any) -> MessageRecipient:
-        """Get message recipient from state"""
-        return MessageRecipient(
-            channel_id=state_manager.get_channel_id(),
-            member_id=state_manager.get("member_id")
-        )
-
-
-class LedgerFlow(AccountFlow):
+class LedgerFlow:
     """Account ledger flow"""
 
-    def get_step_content(self, step: str, data: Optional[Dict] = None) -> str:
+    @staticmethod
+    def get_step_content(step: str, data: Optional[Dict] = None) -> str:
         """Get ledger step content"""
+        # Validate step through registry
+        FlowRegistry.validate_flow_step("account_ledger", step)
+
         if step == "select":
             return (
                 "📊 View Account Ledger\n"
@@ -59,10 +44,13 @@ class LedgerFlow(AccountFlow):
             return "\n".join(result)
         return ""
 
-    def process_step(self, state_manager: Any, step: str, input_value: Any) -> Message:
+    @staticmethod
+    def process_step(messaging_service: MessagingServiceInterface, state_manager: Any, step: str, input_value: Any) -> Message:
         """Process ledger step"""
         try:
-            recipient = self._get_recipient(state_manager)
+            # Validate step through registry
+            FlowRegistry.validate_flow_step("account_ledger", step)
+            recipient = get_recipient(state_manager)
 
             if step == "select":
                 # Validate account selection
@@ -85,9 +73,9 @@ class LedgerFlow(AccountFlow):
                 ledger_data = {"entries": []}  # Placeholder
 
                 # Send ledger display
-                return self.messaging.send_text(
+                return messaging_service.send_text(
                     recipient=recipient,
-                    text=self.get_step_content("display", ledger_data)
+                    text=LedgerFlow.get_step_content("display", ledger_data)
                 )
 
             else:

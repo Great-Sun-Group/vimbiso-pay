@@ -1,48 +1,57 @@
-"""Action components with validation"""
+"""Action components with pure UI validation
+
+This module implements action-specific components with pure UI validation.
+Business validation happens in services.
+"""
 from typing import Any, Dict, List
 
+from core.utils.error_types import ValidationResult
 from .base import InputComponent
 
 
 class SelectInput(InputComponent):
-    """Selection input with validation"""
+    """Selection input with pure UI validation"""
 
     def __init__(self, items: List[Dict[str, Any]]):
         super().__init__("select_input")
         self.items = items
 
-    def validate(self, value: Any) -> Dict:
-        """Validate selection value"""
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate selection value with proper tracking"""
+        # Validate type
+        type_result = self._validate_type(value, str, "text")
+        if not type_result.valid:
+            return type_result
+
+        # Validate required
+        required_result = self._validate_required(value)
+        if not required_result.valid:
+            return required_result
+
+        # Convert to int and validate range
         try:
-            # Validate type
-            type_validation = self._validate_type(value, str, "text")
-            if "error" in type_validation:
-                return type_validation
-
-            # Convert to int and validate range
-            try:
-                index = int(value)
-                if not (1 <= index <= len(self.items)):
-                    return self._handle_validation_error(
-                        value=str(value),
-                        message=f"Selection must be between 1 and {len(self.items)}",
-                        field="selection"
-                    )
-            except ValueError:
-                return self._handle_validation_error(
-                    value=str(value),
-                    message="Selection must be a number",
-                    field="selection"
+            index = int(value)
+            if not (1 <= index <= len(self.items)):
+                return ValidationResult.failure(
+                    message=f"Selection must be between 1 and {len(self.items)}",
+                    field="selection",
+                    details={
+                        "min": 1,
+                        "max": len(self.items),
+                        "received": index
+                    }
                 )
-
-            return {"valid": True}
-
-        except Exception:
-            return self._handle_validation_error(
-                value=str(value),
-                message="Invalid selection",
-                field="selection"
+        except ValueError:
+            return ValidationResult.failure(
+                message="Selection must be a number",
+                field="selection",
+                details={
+                    "expected_type": "number",
+                    "received": value
+                }
             )
+
+        return ValidationResult.success(value)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified data"""
@@ -56,15 +65,15 @@ class SelectInput(InputComponent):
 
 
 class ActionConfirmInput(InputComponent):
-    """Action confirmation input with validation"""
+    """Action confirmation input with pure UI validation"""
 
     def __init__(self, action: str, credex_id: str):
         super().__init__("action_confirm_input")
         self.action = action
         self.credex_id = credex_id
 
-    def validate(self, value: Any) -> Dict:
-        """Validate confirmation value"""
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate confirmation value with proper tracking"""
         # Handle string inputs
         if isinstance(value, str):
             value = value.lower()
@@ -73,18 +82,21 @@ class ActionConfirmInput(InputComponent):
             elif value in ("no", "false", "0"):
                 value = False
             else:
-                return self._handle_validation_error(
-                    value=str(value),
+                return ValidationResult.failure(
                     message="Please respond with yes or no",
-                    field="confirmation"
+                    field="confirmation",
+                    details={
+                        "valid_values": ["yes", "no", "true", "false", "1", "0"],
+                        "received": value
+                    }
                 )
 
         # Validate type
-        type_validation = self._validate_type(value, bool, "boolean")
-        if "error" in type_validation:
-            return type_validation
+        type_result = self._validate_type(value, bool, "boolean")
+        if not type_result.valid:
+            return type_result
 
-        return {"valid": True}
+        return ValidationResult.success(value)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified data"""

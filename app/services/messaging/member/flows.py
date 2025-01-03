@@ -4,38 +4,36 @@ from typing import Any, Dict, Optional
 
 from core.messaging.interface import MessagingServiceInterface
 from core.messaging.types import Message, MessageRecipient
-from core.utils.exceptions import FlowException, SystemException
+from core.utils.exceptions import ComponentException, FlowException, SystemException
+from core.messaging.registry import FlowRegistry
 
 logger = logging.getLogger(__name__)
 
 
-class MemberFlow:
-    """Base class for member-related flows"""
-
-    def __init__(self, messaging_service: MessagingServiceInterface):
-        self.messaging = messaging_service
-
-    def get_step_content(self, step: str, data: Optional[Dict] = None) -> str:
-        """Get step content without channel formatting"""
-        raise NotImplementedError("Flow must implement get_step_content")
-
-    def process_step(self, state_manager: Any, step: str, input_value: Any) -> Message:
-        """Process flow step using messaging service"""
-        raise NotImplementedError("Flow must implement process_step")
-
-    def _get_recipient(self, state_manager: Any) -> MessageRecipient:
-        """Get message recipient from state"""
+def get_recipient(state_manager: Any) -> MessageRecipient:
+    """Get message recipient from state with validation"""
+    try:
         return MessageRecipient(
             channel_id=state_manager.get_channel_id(),
-            member_id=state_manager.get("member_id")
+            member_id=state_manager.get_member_id()
+        )
+    except ComponentException:
+        # If member_id fails, still return with channel_id
+        return MessageRecipient(
+            channel_id=state_manager.get_channel_id(),
+            member_id=None
         )
 
 
-class UpgradeFlow(MemberFlow):
+class UpgradeFlow:
     """Member tier upgrade flow"""
 
-    def get_step_content(self, step: str, data: Optional[Dict] = None) -> str:
+    @staticmethod
+    def get_step_content(step: str, data: Optional[Dict] = None) -> str:
         """Get upgrade step content"""
+        # Validate step through registry
+        FlowRegistry.validate_flow_step("upgrade", step)
+
         if step == "confirm":
             return (
                 "⭐ Upgrade Member Tier\n"
@@ -48,10 +46,13 @@ class UpgradeFlow(MemberFlow):
             return "✅ Upgrade completed successfully!"
         return ""
 
-    def process_step(self, state_manager: Any, step: str, input_value: Any) -> Message:
+    @staticmethod
+    def process_step(messaging_service: MessagingServiceInterface, state_manager: Any, step: str, input_value: Any) -> Message:
         """Process upgrade step"""
         try:
-            recipient = self._get_recipient(state_manager)
+            # Validate step through registry
+            FlowRegistry.validate_flow_step("upgrade", step)
+            recipient = get_recipient(state_manager)
 
             if step == "confirm":
                 # Validate confirmation
@@ -65,7 +66,7 @@ class UpgradeFlow(MemberFlow):
 
                 confirmed = input_value.lower() in ["yes", "y"]
                 if not confirmed:
-                    return self.messaging.send_text(
+                    return messaging_service.send_text(
                         recipient=recipient,
                         text="❌ Upgrade cancelled."
                     )
@@ -78,9 +79,9 @@ class UpgradeFlow(MemberFlow):
                 })
 
                 # Send completion message
-                return self.messaging.send_text(
+                return messaging_service.send_text(
                     recipient=recipient,
-                    text=self.get_step_content("complete")
+                    text=UpgradeFlow.get_step_content("complete")
                 )
 
             else:
@@ -105,11 +106,15 @@ class UpgradeFlow(MemberFlow):
             )
 
 
-class RegistrationFlow(MemberFlow):
+class RegistrationFlow:
     """Member registration flow"""
 
-    def get_step_content(self, step: str, data: Optional[Dict] = None) -> str:
+    @staticmethod
+    def get_step_content(step: str, data: Optional[Dict] = None) -> str:
         """Get registration step content"""
+        # Validate step through registry
+        FlowRegistry.validate_flow_step("registration", step)
+
         if step == "welcome":
             return (
                 "👋 Welcome to VimbisoPay!\n"
@@ -129,14 +134,13 @@ class RegistrationFlow(MemberFlow):
             return "✅ Registration complete!"
         return ""
 
-    def process_step(self, state_manager: Any, step: str, input_value: Any) -> Message:
+    @staticmethod
+    def process_step(messaging_service: MessagingServiceInterface, state_manager: Any, step: str, input_value: Any) -> Message:
         """Process registration step"""
         try:
-            # Get recipient from state
-            recipient = MessageRecipient(
-                channel_id=state_manager.get_channel_id(),
-                member_id=state_manager.get("member_id")
-            )
+            # Validate step through registry
+            FlowRegistry.validate_flow_step("registration", step)
+            recipient = get_recipient(state_manager)
 
             # Process step
             if step == "firstname":
@@ -157,9 +161,9 @@ class RegistrationFlow(MemberFlow):
                 })
 
                 # Send next step
-                return self.messaging.send_text(
+                return messaging_service.send_text(
                     recipient=recipient,
-                    text=self.get_step_content("lastname")
+                    text=RegistrationFlow.get_step_content("lastname")
                 )
 
             elif step == "lastname":
@@ -180,9 +184,9 @@ class RegistrationFlow(MemberFlow):
                 })
 
                 # Send completion message
-                return self.messaging.send_text(
+                return messaging_service.send_text(
                     recipient=recipient,
-                    text=self.get_step_content("complete", {
+                    text=RegistrationFlow.get_step_content("complete", {
                         "firstname": state_manager.get_flow_data().get("firstname"),
                         "lastname": input_value
                     })

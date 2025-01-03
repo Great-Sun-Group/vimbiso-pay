@@ -8,12 +8,13 @@ from datetime import datetime
 from typing import Any
 
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import Message, MessageRecipient
+from core.messaging.types import Message
 from core.utils.exceptions import FlowException, SystemException
 from core.messaging.flow import initialize_flow
 from core.utils.error_handler import ErrorHandler
 
 from .flows import RegistrationFlow, UpgradeFlow
+from ..utils import get_recipient
 
 logger = logging.getLogger(__name__)
 
@@ -23,15 +24,6 @@ class MemberHandler:
 
     def __init__(self, messaging_service: MessagingServiceInterface):
         self.messaging = messaging_service
-        self.registration = RegistrationFlow(messaging_service)
-        self.upgrade = UpgradeFlow(messaging_service)
-
-    def _get_recipient(self, state_manager: Any) -> MessageRecipient:
-        """Get message recipient from state"""
-        return MessageRecipient(
-            channel_id=state_manager.get_channel_id(),
-            member_id=state_manager.get("member_id")
-        )
 
     def start_registration(self, state_manager: Any) -> Message:
         """Start registration flow with proper state initialization"""
@@ -46,11 +38,11 @@ class MemberHandler:
             )
 
             # Get recipient and flow state
-            recipient = self._get_recipient(state_manager)
+            recipient = get_recipient(state_manager)
             flow_state = state_manager.get_flow_state()
 
-            # Get step content with progress
-            step_content = self.registration.get_step_content("welcome")
+            # Get step content through flow class
+            step_content = RegistrationFlow.get_step_content("welcome")
             progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
 
             # Send welcome message with progress
@@ -76,7 +68,7 @@ class MemberHandler:
             )
 
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
 
@@ -93,11 +85,11 @@ class MemberHandler:
             )
 
             # Get recipient and flow state
-            recipient = self._get_recipient(state_manager)
+            recipient = get_recipient(state_manager)
             flow_state = state_manager.get_flow_state()
 
-            # Get step content with progress
-            step_content = self.upgrade.get_step_content("confirm")
+            # Get step content through flow class
+            step_content = UpgradeFlow.get_step_content("confirm")
             progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
 
             # Send confirmation message with progress
@@ -123,7 +115,7 @@ class MemberHandler:
             )
 
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
 
@@ -140,11 +132,11 @@ class MemberHandler:
                     data={"flow_type": flow_type}
                 )
 
-            # Process step with proper flow
+            # Process step through appropriate flow class
             if flow_type == "registration":
-                result = self.registration.process_step(state_manager, step, input_value)
+                result = RegistrationFlow.process_step(self.messaging, state_manager, step, input_value)
             elif flow_type == "upgrade":
-                result = self.upgrade.process_step(state_manager, step, input_value)
+                result = UpgradeFlow.process_step(self.messaging, state_manager, step, input_value)
             else:
                 raise FlowException(
                     message=f"Invalid flow type: {flow_type}",
@@ -174,7 +166,7 @@ class MemberHandler:
                 flow_state=flow_state
             )
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
 
@@ -188,7 +180,7 @@ class MemberHandler:
                 error=e
             )
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
 
@@ -202,6 +194,6 @@ class MemberHandler:
                 error=e
             )
             return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
+                recipient=get_recipient(state_manager),
                 text=f"❌ {error_response['error']['message']}"
             )
