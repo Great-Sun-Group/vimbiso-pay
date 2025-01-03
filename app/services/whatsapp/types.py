@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict
 
 from core.messaging.types import Message as CoreMessage
-from core.utils.exceptions import MessageValidationError
+from core.messaging.exceptions import MessageValidationError
 
 logger = logging.getLogger(__name__)
 

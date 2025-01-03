@@ -7,7 +7,7 @@ from core.messaging.types import (
     AudioContent, Button, DocumentContent, ImageContent,
     Message, MessageRecipient, VideoContent
 )
-from core.utils.exceptions import MessageValidationError
+from core.messaging.exceptions import MessageValidationError
 
 from .types import WhatsAppMessage
 
