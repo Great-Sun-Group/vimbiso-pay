@@ -48,12 +48,37 @@
 
     # Flow state
     "flow_data": {
-        "flow_type": str,  # offer, accept, etc
-        "step": str,       # current step id
-        "data": {          # verified step data
-            "amount": float,
-            "handle": str,
-            "confirmed": bool
+        # Flow identification
+        "flow_type": str,        # registration, upgrade, ledger, offer, accept
+        "handler_type": str,     # member, account, credex
+        "step": str,            # current step id
+        "step_index": int,      # current step index
+
+        # Component state
+        "active_component": {
+            "type": str,        # component type
+            "value": Any,       # current value
+            "validation": {     # validation state
+                "in_progress": bool,
+                "error": Optional[Dict]
+            }
+        },
+
+        # Verified data by domain
+        "data": {
+            # Member data
+            "firstname": str,    # Registration
+            "lastname": str,     # Registration
+            "confirmed": bool,   # Upgrade
+
+            # Account data
+            "period": str,      # Ledger period
+            "transactions": List, # Transaction history
+
+            # Credex data
+            "amount": float,    # Offer amount
+            "handle": str,      # Offer recipient
+            "offer_id": str     # Selected offer
         }
     }
 }
@@ -137,8 +162,22 @@ class StateValidator:
         if flow_data is None:
             return True
 
-        required = ["flow_type", "step"]
-        return all(field in flow_data for field in required)
+        # Validate required fields
+        required = ["flow_type", "handler_type", "step", "step_index"]
+        if not all(field in flow_data for field in required):
+            return False
+
+        # Validate handler type
+        if flow_data["handler_type"] not in ["member", "account", "credex"]:
+            return False
+
+        # Validate component state if present
+        if "active_component" in flow_data:
+            component = flow_data["active_component"]
+            if not all(field in component for field in ["type", "validation"]):
+                return False
+
+        return True
 ```
 
 ### 3. State Usage
@@ -146,21 +185,40 @@ class StateValidator:
 # Initialize state
 state_manager = StateManager("channel:123")
 
-# Update flow state
+# Update flow state with handler type
 state_manager.update_state({
     "flow_data": {
-        "flow_type": "offer",
-        "step": "amount",
-        "data": {
-            "amount": 100.00
+        "flow_type": "registration",
+        "handler_type": "member",
+        "step": "firstname",
+        "step_index": 0,
+        "active_component": {
+            "type": "TextInput",
+            "validation": {"in_progress": False}
         }
     }
 })
 
-# Get flow state
+# Get flow state and route to handler
 flow_state = state_manager.get_flow_state()
+handler_type = flow_state["handler_type"]
 
-# Clear flow state
+if handler_type == "member":
+    handler = MemberHandler(messaging_service)
+elif handler_type == "account":
+    handler = AccountHandler(messaging_service)
+elif handler_type == "credex":
+    handler = CredexHandler(messaging_service)
+
+# Process through handler
+result = handler.handle_flow_step(
+    state_manager,
+    flow_state["flow_type"],
+    flow_state["step"],
+    input_value
+)
+
+# Clear flow state when complete
 state_manager.clear_flow_state()
 ```
 

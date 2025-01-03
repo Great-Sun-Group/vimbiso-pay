@@ -7,6 +7,7 @@ from core.messaging.types import Message, MessageRecipient
 from core.messaging.registry import FlowRegistry
 
 from .member.handlers import MemberHandler
+from .member.auth import AuthHandler
 from .account.handlers import AccountHandler
 from .credex.handlers import CredexHandler
 
@@ -20,6 +21,7 @@ class MessagingService:
         """Initialize with channel-specific messaging service"""
         self.messaging = messaging_service
         self.member = MemberHandler(messaging_service)
+        self.auth = AuthHandler(messaging_service)
         self.account = AccountHandler(messaging_service)
         self.credex = CredexHandler(messaging_service)
 
@@ -68,7 +70,10 @@ class MessagingService:
 
             # Not in flow - handle member operations
             if not state_manager.get("authenticated"):
-                # Unauthenticated - only allow registration
+                # Attempt login first
+                if message_text.lower() in ["hi", "hello"]:
+                    return self.auth.handle_greeting(state_manager)
+                # Otherwise start registration
                 return self.member.start_registration(state_manager)
 
             # Handle member operations

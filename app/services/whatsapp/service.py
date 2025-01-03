@@ -1,10 +1,11 @@
 """WhatsApp messaging service implementation"""
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from core.messaging.base import BaseMessagingService
 from core.messaging.types import (
-    Message, MessageRecipient
+    AudioContent, Button, DocumentContent, ImageContent,
+    Message, MessageRecipient, VideoContent
 )
 from core.utils.exceptions import MessageValidationError
 
@@ -43,24 +44,131 @@ class WhatsAppMessagingService(BaseMessagingService):
     ) -> Dict[str, Any]:
         """Send template message through WhatsApp"""
         try:
-            message = {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": recipient.channel_id.value,
-                "type": "template",
-                "template": {
-                    "name": template_name,
-                    "language": language
+            # Create template message
+            message = Message(
+                recipient=recipient,
+                content={
+                    "type": "template",
+                    "template": {
+                        "name": template_name,
+                        "language": language,
+                        "components": components or []
+                    }
                 }
-            }
-
-            if components:
-                message["template"]["components"] = components
-
-            return self.api_client.send_message(message)
+            )
+            return self.send_message(message)
         except Exception as e:
             logger.error(f"Error sending template {template_name}: {str(e)}")
             raise MessageValidationError(f"Failed to send template: {str(e)}")
+
+    def send_interactive(
+        self,
+        recipient: MessageRecipient,
+        body: str,
+        buttons: List[Button],
+        header: Optional[str] = None,
+        footer: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Send interactive message through WhatsApp"""
+        try:
+            # Create interactive message
+            message = Message(
+                recipient=recipient,
+                content={
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "button",
+                        "body": {"text": body},
+                        "action": {
+                            "buttons": [
+                                {
+                                    "type": "reply",
+                                    "reply": {
+                                        "id": btn.id,
+                                        "title": btn.title[:20]  # WhatsApp limit
+                                    }
+                                }
+                                for btn in buttons
+                            ]
+                        }
+                    }
+                }
+            )
+            if header:
+                message.content["interactive"]["header"] = {
+                    "type": "text",
+                    "text": header
+                }
+            if footer:
+                message.content["interactive"]["footer"] = {
+                    "text": footer
+                }
+            return self.send_message(message)
+        except Exception as e:
+            logger.error(f"Error sending interactive message: {str(e)}")
+            raise MessageValidationError(f"Failed to send interactive message: {str(e)}")
+
+    def send_media(
+        self,
+        recipient: MessageRecipient,
+        content: Union[ImageContent, DocumentContent, AudioContent, VideoContent],
+    ) -> Dict[str, Any]:
+        """Send media message through WhatsApp"""
+        try:
+            # Create media message
+            message = Message(
+                recipient=recipient,
+                content={
+                    "type": content.type,
+                    content.type.value: {
+                        "link": content.url,
+                        **({"caption": content.caption} if content.caption else {}),
+                        **({"filename": content.filename} if content.filename else {})
+                    }
+                }
+            )
+            return self.send_message(message)
+        except Exception as e:
+            logger.error(f"Error sending media message: {str(e)}")
+            raise MessageValidationError(f"Failed to send media message: {str(e)}")
+
+    def send_location(
+        self,
+        recipient: MessageRecipient,
+        latitude: float,
+        longitude: float,
+        name: Optional[str] = None,
+        address: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Send location message through WhatsApp"""
+        try:
+            # Create location message
+            message = Message(
+                recipient=recipient,
+                content={
+                    "type": "location",
+                    "location": {
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        **({"name": name} if name else {}),
+                        **({"address": address} if address else {})
+                    }
+                }
+            )
+            return self.send_message(message)
+        except Exception as e:
+            logger.error(f"Error sending location message: {str(e)}")
+            raise MessageValidationError(f"Failed to send location message: {str(e)}")
+
+    def authenticate_user(self, channel_type: str, channel_id: str) -> Dict[str, Any]:
+        """Authenticate user with phone number"""
+        try:
+            # Attempt authentication through API
+            response = self.api_client.authenticate_user(phone=channel_id)
+            return response
+        except Exception as e:
+            logger.error(f"Error authenticating user: {str(e)}")
+            raise MessageValidationError(f"Failed to authenticate: {str(e)}")
 
     def get_template(self, template_name: str) -> Dict[str, Any]:
         """Get template from WhatsApp"""

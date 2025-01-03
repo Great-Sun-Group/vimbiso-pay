@@ -24,128 +24,205 @@ The service architecture follows these key principles:
 
 ## Service Layer
 
-### Base Service
+### Messaging Service
 ```python
-def make_credex_request(
-    group: str,
-    action: str,
-    method: str = "POST",
-    payload: Dict[str, Any] = None,
-    state_manager: Any = None
-) -> requests.Response:
-    """Make API request through state validation"""
-    # Get endpoint info
-    path = CredExEndpoints.get_path(group, action)
+class MessagingService:
+    """Coordinates messaging operations across channels"""
 
-    # Let StateManager validate through flow state update
-    state_manager.update_state({
-        "flow_data": {
-            "flow_type": group,
-            "step": 1,
-            "current_step": action,
-            "data": {
-                "request": {
-                    "method": method,
-                    "payload": payload
-                }
-            }
-        }
-    })
+    def __init__(self, messaging_service: MessagingServiceInterface):
+        """Initialize with channel-specific messaging service"""
+        self.messaging = messaging_service
+        self.member = MemberHandler(messaging_service)
+        self.auth = AuthHandler(messaging_service)
+        self.account = AccountHandler(messaging_service)
+        self.credex = CredexHandler(messaging_service)
 
-    # Extract credentials from state ONLY when needed
-    jwt_token = state_manager.get("jwt_token")
-    if jwt_token:
-        headers["Authorization"] = f"Bearer {jwt_token}"
+    def handle_message(self, state_manager: Any, message_type: str, message_text: str) -> Message:
+        """Handle incoming message using appropriate handler"""
+        try:
+            # Check if we're in a flow
+            flow_data = state_manager.get("flow_data")
+            if flow_data:
+                flow_type = flow_data.get("flow_type")
+                handler_type = flow_data.get("handler_type")
+                current_step = flow_data.get("step")
 
-    # For auth endpoints, ensure phone from state
-    if group == 'auth' and action == 'login':
-        channel = state_manager.get("channel")
-        if not channel or not channel.get("identifier"):
-            raise ConfigurationException("Missing channel identifier")
-        payload = {"phone": channel["identifier"]}
+                # Route to appropriate handler
+                if handler_type == "member":
+                    return self.member.handle_flow_step(
+                        state_manager,
+                        flow_type,
+                        current_step,
+                        message_text
+                    )
+                elif handler_type == "account":
+                    return self.account.handle_flow_step(
+                        state_manager,
+                        flow_type,
+                        current_step,
+                        message_text
+                    )
+                elif handler_type == "credex":
+                    return self.credex.handle_flow_step(
+                        state_manager,
+                        flow_type,
+                        current_step,
+                        message_text
+                    )
 
-    # Make request
-    return requests.request(method, url, headers=headers, json=payload)
+            # Not in flow - handle initial operations
+            if not state_manager.get("authenticated"):
+                # Attempt login first
+                if message_text.lower() in ["hi", "hello"]:
+                    return self.auth.handle_greeting(state_manager)
+                # Otherwise start registration
+                return self.member.start_registration(state_manager)
+
+            # Route authenticated commands
+            if message_text == "upgrade":
+                return self.member.start_upgrade(state_manager)
+            elif message_text == "ledger":
+                return self.account.start_ledger(state_manager)
+            elif message_text == "offer":
+                return self.credex.start_offer(state_manager)
 ```
 
-### Service Implementation
+### Handler Implementation
 ```python
-def handle_login(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
-    """Handle login through state validation"""
-    try:
-        # Initial login just needs phone number
-        success, result = auth_login(state_manager)
-        if not success:
-            return False, result
+class AuthHandler:
+    """Handler for authentication operations"""
 
-        # Extract auth data from response
-        data = result.get("data", {})
-        action = data.get("action", {})
+    def __init__(self, messaging_service: MessagingServiceInterface):
+        self.messaging = messaging_service
 
-        # Verify login succeeded
-        if action.get("type") != "MEMBER_LOGIN":
-            return False, {
-                "message": "Invalid login response"
-            }
+    def handle_greeting(self, state_manager: Any) -> Message:
+        """Handle initial greeting with login attempt"""
+        try:
+            # Attempt login through messaging service
+            success, response = self.attempt_login(state_manager)
 
-        # Update complete member state
-        update_member_state(state_manager, result)
+            if success:
+                # Update auth state
+                state_manager.update_state({
+                    "member_id": response["memberID"],
+                    "jwt_token": response["token"],
+                    "authenticated": True
+                })
 
-        return True, result
+                # Update flow state
+                state_manager.update_state({
+                    "flow_data": {
+                        "flow_type": "dashboard",
+                        "handler_type": "member",
+                        "step": "main",
+                        "step_index": 0
+                    }
+                })
 
-    except StateException as e:
-        logger.error(f"Login error: {str(e)}")
-        return False, {"message": str(e)}
+                return self.messaging.send_dashboard(
+                    recipient=self._get_recipient(state_manager),
+                    dashboard_data=response["dashboard"]
+                )
+
+            else:
+                # Start registration for new users
+                return self.messaging.send_text(
+                    recipient=self._get_recipient(state_manager),
+                    text="👋 Welcome! Let's get you registered."
+                )
+
+        except Exception as e:
+            return self.messaging.send_error(
+                recipient=self._get_recipient(state_manager),
+                error=str(e)
+            )
 ```
 
 ## Service Interactions
 
-### 1. Flow Control
+### 1. Handler Routing
 ```python
-# Flow makes API call through state
-response = make_credex_request(
-    'credex', 'create',
-    payload=payload,
-    state_manager=state_manager  # Provides credentials
+# Get flow state with handler type
+flow_state = state_manager.get_flow_state()
+handler_type = flow_state.get("handler_type")
+
+# Route to appropriate handler
+if handler_type == "member":
+    handler = MemberHandler(messaging_service)
+elif handler_type == "account":
+    handler = AccountHandler(messaging_service)
+elif handler_type == "credex":
+    handler = CredexHandler(messaging_service)
+
+# Process through handler
+result = handler.handle_flow_step(
+    state_manager,
+    flow_state["flow_type"],
+    flow_state["step"],
+    input_value
 )
 
-# Update flow state with response
+# Update flow state with result
 state_manager.update_state({
     "flow_data": {
-        "next_step": "complete",
-        "data": {
-            "response": response.json()
+        "data": result.data,
+        "step_index": flow_state["step_index"] + 1,
+        "active_component": {
+            "type": result.next_component,
+            "validation": {"in_progress": False}
         }
     }
 })
 ```
 
-### 2. State Updates
+### 2. Handler State Management
 ```python
-def update_member_state(state_manager: Any, result: Dict[str, Any]) -> None:
-    """Update member state from API response"""
-    data = result.get("data", {})
-    action = data.get("action", {})
-    details = action.get("details", {})
-    dashboard = data.get("dashboard", {})
+class MemberHandler:
+    """Handler for member operations"""
 
-    # Update complete state
-    if dashboard.get("member") or dashboard.get("accounts"):
-        state_manager.update_state({
-            # Auth data
-            "jwt_token": details.get("token"),
-            "authenticated": True,
-            "member_id": details.get("memberID"),
-            # Member data
-            "member_data": dashboard.get("member"),
-            # Account data
-            "accounts": dashboard.get("accounts", []),
-            "active_account_id": next(
-                (account["accountID"] for account in dashboard.get("accounts", [])
-                 if account["accountType"] == "PERSONAL"),
-                None
+    def handle_flow_step(self, state_manager: Any, flow_type: str, step: str, input_value: Any) -> Message:
+        """Handle flow step"""
+        try:
+            # Validate input through component
+            component = self.get_component(flow_type, step)
+            validation = component.validate(input_value)
+            if not validation.valid:
+                return self.messaging.send_error(
+                    recipient=self._get_recipient(state_manager),
+                    error=validation.error
+                )
+
+            # Update flow state with verified data
+            state_manager.update_state({
+                "flow_data": {
+                    "data": component.to_verified_data(input_value),
+                    "step_index": state_manager.get_flow_state()["step_index"] + 1
+                }
+            })
+
+            # Get next step
+            next_step = self.get_next_step(flow_type, step)
+            if not next_step:
+                return self.complete_flow(state_manager)
+
+            # Update step state
+            state_manager.update_state({
+                "flow_data": {
+                    "step": next_step,
+                    "active_component": {
+                        "type": self.get_component_type(flow_type, next_step),
+                        "validation": {"in_progress": False}
+                    }
+                }
+            })
+
+            return self.get_step_message(next_step)
+
+        except Exception as e:
+            return self.messaging.send_error(
+                recipient=self._get_recipient(state_manager),
+                error=str(e)
             )
-        })
 ```
 
 ### 3. Error Handling

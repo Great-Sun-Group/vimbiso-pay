@@ -34,6 +34,28 @@
 - NO local state
 - NO mixed concerns
 
+## Handler Types
+
+The system uses domain-specific handlers to process flows:
+
+1. **Member Handler**
+- Registration flows
+- Authentication flows
+- Profile upgrade flows
+- Uses MemberHandler class
+
+2. **Account Handler**
+- Ledger operations
+- Balance inquiries
+- Transaction history
+- Uses AccountHandler class
+
+3. **Credex Handler**
+- Credit offers
+- Offer acceptance
+- Offer management
+- Uses CredexHandler class
+
 ## Flow Types
 
 ```python
@@ -41,7 +63,36 @@ class FlowRegistry:
     """Central flow type management"""
 
     FLOWS = {
+        # Member flows
+        "registration": {
+            "handler_type": "member",
+            "steps": ["firstname", "lastname"],
+            "components": {
+                "firstname": "TextInput",
+                "lastname": "TextInput"
+            }
+        },
+        "upgrade": {
+            "handler_type": "member",
+            "steps": ["confirm"],
+            "components": {
+                "confirm": "ConfirmInput"
+            }
+        },
+
+        # Account flows
+        "ledger": {
+            "handler_type": "account",
+            "steps": ["period", "confirm"],
+            "components": {
+                "period": "PeriodInput",
+                "confirm": "ConfirmInput"
+            }
+        },
+
+        # Credex flows
         "offer": {
+            "handler_type": "credex",
             "steps": ["amount", "handle", "confirm"],
             "components": {
                 "amount": "AmountInput",
@@ -50,13 +101,7 @@ class FlowRegistry:
             }
         },
         "accept": {
-            "steps": ["select", "confirm"],
-            "components": {
-                "select": "SelectInput",
-                "confirm": "ConfirmInput"
-            }
-        },
-        "decline": {
+            "handler_type": "credex",
             "steps": ["select", "confirm"],
             "components": {
                 "select": "SelectInput",
@@ -71,14 +116,36 @@ class FlowRegistry:
 ```python
 {
     # Flow identification
-    "flow_type": str,     # offer, accept, decline
-    "step": str,          # current step id
+    "flow_type": str,        # registration, upgrade, ledger, offer, accept
+    "handler_type": str,     # member, account, credex
+    "step": str,            # current step id
+    "step_index": int,      # current step index
+
+    # Component state
+    "active_component": {
+        "type": str,        # component type
+        "value": Any,       # current value
+        "validation": {     # validation state
+            "in_progress": bool,
+            "error": Optional[Dict]
+        }
+    },
 
     # Verified data
     "data": {
-        "amount": float,      # Validated amount
-        "handle": str,        # Validated handle
-        "confirmed": bool     # Confirmation status
+        # Member data
+        "firstname": str,    # Registration
+        "lastname": str,     # Registration
+        "confirmed": bool,   # Upgrade
+
+        # Account data
+        "period": str,      # Ledger period
+        "transactions": List, # Transaction history
+
+        # Credex data
+        "amount": float,    # Offer amount
+        "handle": str,      # Offer recipient
+        "offer_id": str     # Selected offer
     }
 }
 ```
@@ -136,13 +203,23 @@ def process_flow_input(
     # Get flow state
     flow_state = state_manager.get_flow_state()
     flow_type = flow_state["flow_type"]
+    handler_type = flow_state["handler_type"]
     current_step = flow_state["step"]
 
-    # Get flow manager
-    flow_manager = FlowManager(flow_type)
+    # Get appropriate handler
+    if handler_type == "member":
+        handler = MemberHandler(messaging_service)
+    elif handler_type == "account":
+        handler = AccountHandler(messaging_service)
+    elif handler_type == "credex":
+        handler = CredexHandler(messaging_service)
+    else:
+        raise FlowException(f"Invalid handler type: {handler_type}")
 
-    # Process step
-    result = flow_manager.process_step(
+    # Process through handler
+    result = handler.handle_flow_step(
+        state_manager,
+        flow_type,
         current_step,
         input_data
     )
@@ -154,23 +231,28 @@ def process_flow_input(
     # Update state
     state_manager.update_state({
         "flow_data": {
-            "data": result
+            "data": result.data,
+            "step_index": flow_state["step_index"] + 1
         }
     })
 
     # Get next step
     next_step = get_next_step(flow_type, current_step)
     if not next_step:
-        return complete_flow(state_manager)
+        return handler.complete_flow(state_manager)
 
     # Update step
     state_manager.update_state({
         "flow_data": {
-            "step": next_step
+            "step": next_step,
+            "active_component": {
+                "type": get_component_type(flow_type, next_step),
+                "validation": {"in_progress": False}
+            }
         }
     })
 
-    return get_step_message(next_step)
+    return handler.get_step_message(next_step)
 ```
 
 ### 3. Flow Completion

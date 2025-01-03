@@ -22,7 +22,45 @@
 
 ## Component Patterns
 
-### 1. Input Validation
+### 1. Handler Components
+```python
+# CORRECT - Handler uses messaging service
+class AuthHandler:
+    """Handler for authentication operations"""
+
+    def __init__(self, messaging_service: MessagingServiceInterface):
+        self.messaging = messaging_service
+
+    def handle_greeting(self, state_manager: Any) -> Message:
+        """Handle initial greeting with login attempt"""
+        try:
+            # Validate and attempt login
+            success, response = self.attempt_login(state_manager)
+
+            if success:
+                # Update state through manager
+                state_manager.update_state({
+                    "authenticated": True,
+                    "member_data": response.get("member")
+                })
+                return self.messaging.send_dashboard(...)
+            else:
+                return self.messaging.send_text(...)
+
+        except Exception as e:
+            return self.messaging.send_error(...)
+
+# WRONG - Direct message handling
+def handle_greeting(state_manager: Any) -> Dict:
+    try:
+        response = make_api_call()  # Don't call API directly!
+        state_manager.state["auth"] = True  # Don't modify state directly!
+        return {"message": "Welcome!"}  # Don't format messages here!
+    except:
+        return {"error": "Failed"}  # Don't handle errors directly!
+```
+
+### 2. Input Validation
 ```python
 # CORRECT - Component handles validation
 class AmountDenomInput(InputComponent):
