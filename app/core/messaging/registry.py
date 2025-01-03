@@ -12,7 +12,18 @@ from core.utils.exceptions import FlowException
 class FlowRegistry:
     """Central flow type management"""
 
-    # Flow type definitions matching API structure
+    # Common flow configurations
+    COMMON_FLOWS = {
+        "action": {
+            "steps": ["select", "confirm"],
+            "components": {
+                "select": "SelectInput",
+                "confirm": "ConfirmInput"
+            }
+        }
+    }
+
+    # Flow type definitions with metadata
     FLOWS: Dict[str, Dict] = {
         # Member flows
         "registration": {
@@ -52,9 +63,10 @@ class FlowRegistry:
             }
         },
 
-        # Credex flows
+        # Credex flows with metadata
         "credex_offer": {
             "handler_type": "credex",
+            "flow_type": "offer",
             "steps": ["amount", "handle", "confirm"],
             "components": {
                 "amount": "AmountInput",
@@ -62,35 +74,43 @@ class FlowRegistry:
                 "confirm": "ConfirmInput"
             }
         },
+        # Action flows use common configuration
         "credex_accept": {
             "handler_type": "credex",
-            "steps": ["select", "confirm"],
-            "components": {
-                "select": "SelectInput",
-                "confirm": "ConfirmInput"
-            }
+            "flow_type": "action",
+            "action_type": "accept",
+            **COMMON_FLOWS["action"]
         },
         "credex_decline": {
             "handler_type": "credex",
-            "steps": ["select", "confirm"],
-            "components": {
-                "select": "SelectInput",
-                "confirm": "ConfirmInput"
-            }
+            "flow_type": "action",
+            "action_type": "decline",
+            **COMMON_FLOWS["action"]
         },
         "credex_cancel": {
             "handler_type": "credex",
-            "steps": ["select", "confirm"],
-            "components": {
-                "select": "SelectInput",
-                "confirm": "ConfirmInput"
-            }
+            "flow_type": "action",
+            "action_type": "cancel",
+            **COMMON_FLOWS["action"]
         }
     }
 
+    # Valid action types
+    ACTION_TYPES = {"accept", "decline", "cancel"}
+
     @classmethod
     def get_flow_config(cls, flow_type: str) -> Dict:
-        """Get flow configuration"""
+        """Get flow configuration with validation
+
+        Args:
+            flow_type: Flow type identifier
+
+        Returns:
+            Dict with flow configuration
+
+        Raises:
+            FlowException: If flow type invalid or action type invalid
+        """
         if flow_type not in cls.FLOWS:
             raise FlowException(
                 message=f"Invalid flow type: {flow_type}",
@@ -98,37 +118,77 @@ class FlowRegistry:
                 action="get_config",
                 data={"flow_type": flow_type}
             )
-        return cls.FLOWS[flow_type]
+
+        config = cls.FLOWS[flow_type]
+
+        # Validate action type if present
+        if config.get("flow_type") == "action":
+            action_type = config.get("action_type")
+            if not action_type or action_type not in cls.ACTION_TYPES:
+                raise FlowException(
+                    message=f"Invalid action type: {action_type}",
+                    step="init",
+                    action="get_config",
+                    data={
+                        "flow_type": flow_type,
+                        "action_type": action_type
+                    }
+                )
+
+        return config
 
     @classmethod
     def get_flow_steps(cls, flow_type: str) -> List[str]:
-        """Get flow step sequence"""
+        """Get flow step sequence with validation"""
         config = cls.get_flow_config(flow_type)
+
+        # Get steps from common flow if needed
+        if config.get("flow_type") in cls.COMMON_FLOWS:
+            return cls.COMMON_FLOWS[config["flow_type"]]["steps"]
+
         return config["steps"]
 
     @classmethod
     def get_step_component(cls, flow_type: str, step: str) -> str:
-        """Get component type for step"""
+        """Get component type for step with validation"""
         config = cls.get_flow_config(flow_type)
-        if step not in config["components"]:
+
+        # Get components from common flow if needed
+        if config.get("flow_type") in cls.COMMON_FLOWS:
+            components = cls.COMMON_FLOWS[config["flow_type"]]["components"]
+        else:
+            components = config["components"]
+
+        if step not in components:
             raise FlowException(
                 message=f"Invalid step: {step}",
                 step=step,
                 action="get_component",
                 data={"flow_type": flow_type}
             )
-        return config["components"][step]
+
+        return components[step]
 
     @classmethod
     def validate_flow_step(cls, flow_type: str, step: str) -> None:
-        """Validate flow step"""
+        """Validate flow step with proper error context"""
         config = cls.get_flow_config(flow_type)
-        if step not in config["steps"]:
+
+        # Get steps from common flow if needed
+        if config.get("flow_type") in cls.COMMON_FLOWS:
+            steps = cls.COMMON_FLOWS[config["flow_type"]]["steps"]
+        else:
+            steps = config["steps"]
+
+        if step not in steps:
             raise FlowException(
                 message=f"Invalid step {step} for flow {flow_type}",
                 step=step,
                 action="validate",
-                data={"flow_type": flow_type}
+                data={
+                    "flow_type": flow_type,
+                    "valid_steps": steps
+                }
             )
 
     @classmethod

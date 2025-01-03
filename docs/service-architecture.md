@@ -27,7 +27,7 @@ The service architecture follows these key principles:
 ### Messaging Service
 ```python
 class MessagingService:
-    """Coordinates messaging operations across channels"""
+    """Coordinates messaging operations with proper tracking"""
 
     def __init__(self, messaging_service: MessagingServiceInterface):
         """Initialize with channel-specific messaging service"""
@@ -38,47 +38,101 @@ class MessagingService:
         self.credex = CredexHandler(messaging_service)
 
     def handle_message(self, state_manager: Any, message_type: str, message_text: str) -> Message:
-        """Handle incoming message using appropriate handler"""
+        """Handle incoming message with proper tracking"""
         try:
             # Check if we're in a flow
-            flow_data = state_manager.get("flow_data")
+            flow_data = state_manager.get_flow_state()
             if flow_data:
                 flow_type = flow_data.get("flow_type")
                 handler_type = flow_data.get("handler_type")
                 current_step = flow_data.get("step")
 
-                # Route to appropriate handler
+                # Track message handling
+                state_manager.update_state({
+                    "flow_data": {
+                        "active_component": {
+                            "type": "message_handler",
+                            "validation": {
+                                "in_progress": True,
+                                "attempts": flow_data.get("message_attempts", 0) + 1,
+                                "last_attempt": datetime.utcnow().isoformat()
+                            }
+                        }
+                    }
+                })
+
+                # Route to appropriate handler with progress
                 if handler_type == "member":
-                    return self.member.handle_flow_step(
+                    result = self.member.handle_flow_step(
                         state_manager,
                         flow_type,
                         current_step,
                         message_text
                     )
                 elif handler_type == "account":
-                    return self.account.handle_flow_step(
+                    result = self.account.handle_flow_step(
                         state_manager,
                         flow_type,
                         current_step,
                         message_text
                     )
                 elif handler_type == "credex":
-                    return self.credex.handle_flow_step(
+                    result = self.credex.handle_flow_step(
                         state_manager,
                         flow_type,
                         current_step,
                         message_text
                     )
+                else:
+                    error_response = ErrorHandler.handle_flow_error(
+                        step=current_step,
+                        action="route",
+                        data={"handler_type": handler_type},
+                        message=f"Invalid handler type: {handler_type}",
+                        flow_state=flow_data
+                    )
+                    return self.messaging.send_text(
+                        recipient=self._get_recipient(state_manager),
+                        text=f"❌ {error_response['error']['message']}"
+                    )
 
-            # Not in flow - handle initial operations
+                # Update message handling state
+                state_manager.update_state({
+                    "flow_data": {
+                        "active_component": {
+                            "type": "message_handler",
+                            "validation": {
+                                "in_progress": False,
+                                "error": None
+                            }
+                        }
+                    }
+                })
+
+                return result
+
+            # Not in flow - handle initial operations with tracking
             if not state_manager.get("authenticated"):
+                # Track authentication attempt
+                state_manager.update_state({
+                    "auth_attempts": state_manager.get("auth_attempts", 0) + 1,
+                    "last_auth_attempt": datetime.utcnow().isoformat()
+                })
+
                 # Attempt login first
                 if message_text.lower() in ["hi", "hello"]:
                     return self.auth.handle_greeting(state_manager)
                 # Otherwise start registration
                 return self.member.start_registration(state_manager)
 
-            # Route authenticated commands
+            # Route authenticated commands with tracking
+            state_manager.update_state({
+                "command_history": {
+                    "last_command": message_text,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            })
+
             if message_text == "upgrade":
                 return self.member.start_upgrade(state_manager)
             elif message_text == "ledger":

@@ -7,181 +7,184 @@
 - Credentials exist ONLY in state
 - No direct passing of sensitive data
 - State validation through updates
+- Progress tracking through state
+- Validation tracking through state
 
 2. **Pure Functions**
 - Services use stateless functions
 - No stored instance variables
 - No service-level state
 - Clear input/output contracts
+- Standard validation patterns
+- Standard error handling
 
 3. **Single Source of Truth**
 - Member ID ONLY at top level
 - Channel info ONLY at top level
 - JWT token ONLY in state
 - No credential duplication
+- No state duplication
+- No manual transformation
 
 ## Component Patterns
 
 ### 1. Handler Components
 ```python
-# CORRECT - Handler uses messaging service
-class AuthHandler:
-    """Handler for authentication operations"""
+# CORRECT - Handler uses messaging service with proper tracking
+class CredexHandler:
+    """Handler for credex operations"""
 
     def __init__(self, messaging_service: MessagingServiceInterface):
         self.messaging = messaging_service
+        self.offer = OfferFlow(messaging_service)
+        self.actions = {
+            "accept": ActionFlow(messaging_service, "accept"),
+            "decline": ActionFlow(messaging_service, "decline"),
+            "cancel": ActionFlow(messaging_service, "cancel")
+        }
 
-    def handle_greeting(self, state_manager: Any) -> Message:
-        """Handle initial greeting with login attempt"""
+    def handle_flow_step(self, state_manager: Any, flow_type: str, step: str, input_value: Any) -> Message:
+        """Handle flow step with proper tracking"""
         try:
-            # Validate and attempt login
-            success, response = self.attempt_login(state_manager)
+            # Get flow state for context
+            flow_state = state_manager.get_flow_state()
 
-            if success:
-                # Update state through manager
-                state_manager.update_state({
-                    "authenticated": True,
-                    "member_data": response.get("member")
-                })
-                return self.messaging.send_dashboard(...)
-            else:
-                return self.messaging.send_text(...)
+            # Process through appropriate flow
+            if flow_type == "credex_offer":
+                result = self.offer.process_step(state_manager, step, input_value)
+            elif flow_type.startswith("credex_"):
+                action_type = flow_type.split("_", 1)[1]
+                result = self.actions[action_type].process_step(state_manager, step, input_value)
+
+            # Add progress to message
+            if "message" in result:
+                progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
+                result["message"] = f"{result['message']}\n\n{progress}"
+
+            return result
 
         except Exception as e:
             return self.messaging.send_error(...)
 
-# WRONG - Direct message handling
-def handle_greeting(state_manager: Any) -> Dict:
+# WRONG - Direct message handling without tracking
+def handle_flow_step(state_manager: Any, step: str, value: Any) -> Dict:
     try:
-        response = make_api_call()  # Don't call API directly!
-        state_manager.state["auth"] = True  # Don't modify state directly!
-        return {"message": "Welcome!"}  # Don't format messages here!
+        result = process_step(value)  # Don't process directly!
+        return {"message": result}  # Don't return without progress!
     except:
         return {"error": "Failed"}  # Don't handle errors directly!
 ```
 
 ### 2. Component Validation
 ```python
-# CORRECT - Component handles UI validation only
+# CORRECT - Component with proper validation tracking
 class TextInput(InputComponent):
     """Pure UI validation component"""
 
     def validate(self, value: Any) -> ValidationResult:
-        """Validate input format"""
+        """Validate input format with tracking"""
+        # Track validation attempt
+        self.validation_state["attempts"] += 1
+        self.validation_state["last_attempt"] = value
+
         # Type validation
         if not isinstance(value, str):
             return ValidationResult.failure(
                 message="Input must be text",
-                field="value"
+                field="value",
+                details={
+                    "expected_type": "text",
+                    "actual_type": str(type(value)),
+                    "attempts": self.validation_state["attempts"]
+                }
             )
 
         # Basic format validation
         if not value.strip():
             return ValidationResult.failure(
                 message="Input required",
-                field="value"
+                field="value",
+                details={
+                    "error": "empty_string",
+                    "attempts": self.validation_state["attempts"]
+                }
             )
 
         # Update component state
         self.update_state(value, ValidationResult.success(value))
         return ValidationResult.success(value)
 
-# WRONG - Component with business logic
+# WRONG - Component without validation tracking
 class TextInput(InputComponent):
     def validate(self, value: Any) -> ValidationResult:
-        if self.check_database(value):  # Don't do this!
-            return ValidationResult.success(value)
-        return ValidationResult.failure("Already exists")
-```
-
-### 2. Service Layer
-```python
-# CORRECT - Services handle business logic
-def process_input(value: str, state_manager: Any) -> Result:
-    """Handle business validation and processing"""
-    # Business validation
-    if not is_valid_for_business(value):
-        return Result(success=False, error="Invalid for business")
-
-    # API operations
-    response = api_client.submit(value)
-    if not response.success:
-        return Result(success=False, error=response.error)
-
-    return Result(success=True, data=response.data)
-
-# WRONG - Business logic in components/flows
-def handle_input(value: str) -> None:
-    if is_valid_for_business(value):  # Don't do business validation here!
-        api_client.submit(value)  # Don't call APIs here!
+        if not value.strip():  # Don't validate without tracking!
+            return ValidationResult.failure("Required")  # Don't return without context!
+        return ValidationResult.success(value)  # Don't update without tracking!
 ```
 
 ### 3. Component State
 ```python
-# CORRECT - Component state in flow_data
+# CORRECT - Component state with proper tracking
 state_manager.update_state({
     "flow_data": {
         "active_component": {
             "type": "amount_input",
             "value": "100.00",
             "validation": {
-                "in_progress": True
+                "in_progress": False,
+                "error": None,
+                "attempts": 1,
+                "last_attempt": "100.00"
             }
-        }
+        },
+        "step_index": 1,
+        "total_steps": 3
     }
 })
 
-# WRONG - Component state outside flow_data
+# WRONG - Component state without tracking
 state_manager.update_state({
-    "input_value": "100.00",  # Don't store outside!
-    "validation": {...}       # Don't separate validation!
+    "input_value": "100.00",  # Don't store outside flow_data!
+    "validation": {           # Don't store without tracking!
+        "error": None
+    }
 })
 ```
 
 ### 4. Error Boundaries
 ```python
-# CORRECT - Clear error boundaries
-# Component error (validation)
-result = component.validate("invalid")
-if not result.valid:
-    state_manager.update_state({
-        "flow_data": {
-            "active_component": {
-                "error": result.error  # Component-level error
-            }
-        }
-    })
-
-# Flow error (business logic)
+# CORRECT - Error handling with proper context
 try:
-    if amount > balance:
-        raise FlowException("Insufficient balance")
+    # Validate with tracking
+    validation = component.validate(value)
+    if not validation.valid:
+        error_response = ErrorHandler.handle_component_error(
+            component=component.type,
+            field=validation.error["field"],
+            value=value,
+            message=validation.error["message"],
+            validation_state=component.validation_state
+        )
+        return error_response
+
 except FlowException as e:
-    error_context = ErrorContext(
-        error_type="flow",  # Flow-level error
+    # Flow error with context
+    error_response = ErrorHandler.handle_flow_error(
+        step=e.step,
+        action=e.action,
+        data=e.data,
         message=str(e),
-        details={...}
+        flow_state=flow_state
     )
-    ErrorHandler.handle_error(e, state_manager, error_context)
+    return error_response
 
-# System error (top level)
+# WRONG - Mixed error handling without context
 try:
-    response = make_api_call()
-except APIException as e:
-    error_context = ErrorContext(
-        error_type="system",  # System-level error
-        message="Service unavailable",
-        details={...}
-    )
-    ErrorHandler.handle_error(e, state_manager, error_context)
-
-# WRONG - Mixed error handling
-try:
-    result = validate_input(value)  # Don't mix validation!
+    result = validate_input(value)  # Don't validate without tracking!
     if not result.valid:
         raise APIException(result.error)  # Don't mix error types!
 except Exception as e:
-    return {"error": str(e)}  # Don't handle directly!
+    return {"error": str(e)}  # Don't handle without context!
 ```
 
 ## Common Anti-Patterns
@@ -194,9 +197,10 @@ class MessageHandler:
         self.state = state_manager  # NO instance state!
         self.channel = state_manager.get("channel")  # NO stored state!
 
-# CORRECT - Pure functions
+# CORRECT - Pure functions with tracking
 def handle_message(state_manager: Any, message: str) -> Response:
-    return process(state_manager.get("data"))
+    flow_state = state_manager.get_flow_state()  # Get current state
+    return process_with_tracking(state_manager, message, flow_state)
 ```
 
 ### 2. State Transformation
@@ -210,7 +214,7 @@ def process_response(state_manager: Any, response: Dict[str, Any]) -> None:
 def process_response(state_manager: Any, response: Dict[str, Any]) -> None:
     state_manager.update_state({
         "flow_data": {
-            "response": response  # Raw response
+            "data": response  # Raw response
         }
     })
 ```
@@ -221,8 +225,9 @@ def process_response(state_manager: Any, response: Dict[str, Any]) -> None:
 def handle_action(state_manager: Any, stored_data: Dict) -> None:
     return process_action(state_manager, stored_data)  # Don't pass state!
 
-# CORRECT - Only state_manager
+# CORRECT - Only state_manager with tracking
 def handle_action(state_manager: Any) -> None:
+    flow_state = state_manager.get_flow_state()  # Get current state
     return process_action(state_manager)  # Only state_manager
 ```
 
@@ -238,7 +243,8 @@ def verify_state(state_manager: Any) -> None:
 def process_state(state_manager: Any) -> None:
     state_manager.update_state({
         "flow_data": {
-            "step": "verify"
+            "step": "verify",
+            "step_index": current_index + 1  # Track progress
         }
     })
 ```
@@ -255,8 +261,8 @@ STOP and verify before ANY code change:
 
 2. State Access
    - [ ] Using appropriate access patterns?
-     * state.get() for core state (member_id, channel, jwt_token)
-     * get_flow_step_data() for flow state
+     * state.get() for core state
+     * get_flow_state() for flow state
      * get_flow_type() for flow identification
      * get_current_step() for flow routing
      * get_channel_id() for channel operations
@@ -267,23 +273,29 @@ STOP and verify before ANY code change:
    - [ ] NO state duplication?
    - [ ] NO state transformation?
    - [ ] NO state passing?
+   - [ ] Proper progress tracking?
+   - [ ] Proper validation tracking?
 
 4. Handler Implementation
    - [ ] Using pure functions?
    - [ ] NO class state?
    - [ ] NO handler instantiation?
    - [ ] Clear module boundaries?
+   - [ ] Proper progress tracking?
 
 5. Validation
    - [ ] Validating through updates?
    - [ ] NO manual validation?
    - [ ] NO cleanup code?
+   - [ ] Proper attempt tracking?
+   - [ ] Proper error context?
 
 6. Error Handling
    - [ ] Using ErrorHandler?
    - [ ] Clear error context?
    - [ ] Relevant details?
    - [ ] NO manual handling?
+   - [ ] Proper validation state?
 
 ## Validation
 
@@ -299,6 +311,8 @@ These patterns ensure:
 - Proper validation
 - Clear error handling
 - Maintainable code
+- Progress tracking
+- Validation tracking
 
 For more details on:
 - Service architecture: [Service Architecture](service-architecture.md)

@@ -11,18 +11,32 @@ The system follows these key principles:
 - Credentials exist ONLY in state
 - No direct passing of sensitive data
 - State validation through updates
+- Progress tracking through state
+- Validation tracking through state
 
 2. **Pure Functions**
 - Services use stateless functions
 - No stored instance variables
 - No service-level state
 - Clear input/output contracts
+- Standard validation patterns
+- Standard error handling
 
 3. **Single Source of Truth**
 - Member ID ONLY at top level
 - Channel info ONLY at top level
 - JWT token ONLY in state
 - No credential duplication
+- No state duplication
+- No manual transformation
+
+4. **Flow Framework**
+- Common flow configurations
+- Clear flow types
+- Standard components
+- Flow type metadata
+- Progress tracking
+- Validation tracking
 
 For detailed implementation patterns, see:
 - [Service Architecture](docs/service-architecture.md) - Core service patterns and best practices
@@ -33,6 +47,7 @@ For detailed implementation patterns, see:
 - [Standardization](docs/standardization.md) - Summary of centralized solution for state, flow, and error management.
 - [State Management](docs/state-management.md) - Conversation and session management
 - [Flow Framework](docs/flow-framework.md) - Progressive interaction framework
+- [Components](docs/components.md) - UI components
 - [WhatsApp Integration](docs/whatsapp.md) - WhatsApp bot implementation
 - [API Integration](docs/api-integration.md) - Integration with credex-core API
 - [Testing Guide](docs/testing.md) - Testing infrastructure and tools
@@ -163,25 +178,41 @@ Usage:
 
 ### Core Patterns
 ```python
-# CORRECT - Extract credentials only when needed
-jwt_token = state_manager.get("jwt_token")
-if jwt_token:
-    headers["Authorization"] = f"Bearer {jwt_token}"
+# CORRECT - Flow with proper tracking
+class ActionFlow(BaseFlow):
+    """Flow for accept/decline/cancel actions"""
 
-# WRONG - Store credentials in variables
-token = state_manager.get("jwt_token")  # Don't store!
-make_request(token)  # Don't pass credentials!
-
-# CORRECT - Update through state_manager
-state_manager.update_state({
-    "flow_data": {
-        "data": response.json()
+    ACTIONS = {
+        "accept": {
+            "service_method": "accept_credex",
+            "confirm_prompt": "accept",
+            "cancel_message": "Acceptance cancelled",
+            "complete_message": "✅ Offer accepted successfully."
+        }
     }
-})
 
-# WRONG - Transform state manually
-data = transform_response(response)  # Don't transform!
-state_manager.update_state({"data": data})
+    def process_step(self, state_manager: Any, step: str, input_value: Any) -> Message:
+        """Process action step with proper tracking"""
+        # Get flow state for context
+        flow_state = state_manager.get_flow_state()
+
+        # Validate input with tracking
+        component = self._get_component(step)
+        value = self._validate_input(state_manager, step, input_value, component)
+
+        # Update progress
+        progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
+
+        # Return result with progress
+        return {
+            "success": True,
+            "message": f"{self.get_step_content(step)}\n\n{progress}"
+        }
+
+# WRONG - Flow without tracking
+def process_step(state_manager: Any, step: str, value: Any) -> Dict:
+    result = validate_input(value)  # Don't validate without tracking!
+    return {"message": result}  # Don't return without progress!
 ```
 
 ### Mock WhatsApp Interface

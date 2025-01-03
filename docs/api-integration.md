@@ -59,20 +59,54 @@ def make_credex_request(
 def handle_offer(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
     """Handle offer creation through state validation"""
     try:
-        # Get validated business data from flow state
-        flow_data = state_manager.get_flow_step_data()
+        # Get flow state for context
+        flow_state = state_manager.get_flow_state()
+        if not flow_state:
+            raise StateException("No active flow")
+
+        # Get validated business data
+        flow_data = flow_state.get("data", {})
         amount_data = flow_data.get("amount", {})
         handle = flow_data.get("handle")
+
+        # Track API attempt
+        state_manager.update_state({
+            "flow_data": {
+                "active_component": {
+                    "type": "api_call",
+                    "validation": {
+                        "in_progress": True,
+                        "attempts": flow_state.get("api_attempts", 0) + 1,
+                        "last_attempt": datetime.utcnow().isoformat()
+                    }
+                }
+            }
+        })
 
         # Make API call (service layer handles implementation details)
         success, result = create_credex_offer(state_manager, amount_data, handle)
         if not success:
-            return False, result
+            error_response = ErrorHandler.handle_flow_error(
+                step="api_call",
+                action="create_offer",
+                data={"amount": amount_data, "handle": handle},
+                message=result.get("message", "API error"),
+                flow_state=flow_state
+            )
+            return False, error_response
 
-        # Update flow state with business response data
+        # Update flow state with business response data and progress
         state_manager.update_state({
             "flow_data": {
                 "step": "complete",
+                "step_index": flow_state["total_steps"],
+                "active_component": {
+                    "type": "api_call",
+                    "validation": {
+                        "in_progress": False,
+                        "error": None
+                    }
+                },
                 "data": {
                     "offer_id": result.get("data", {}).get("offer", {}).get("id")
                 }
@@ -89,29 +123,72 @@ def handle_offer(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
 ### 3. State Updates
 ```python
 def update_member_state(state_manager: Any, result: Dict[str, Any]) -> None:
-    """Update member state from API response"""
-    data = result.get("data", {})
-    action = data.get("action", {})
-    details = action.get("details", {})
-    dashboard = data.get("dashboard", {})
+    """Update member state from API response with validation tracking"""
+    try:
+        # Get flow state for context
+        flow_state = state_manager.get_flow_state()
+        if not flow_state:
+            raise StateException("No active flow")
 
-    # Update complete state
-    if dashboard.get("member") or dashboard.get("accounts"):
+        # Extract response data
+        data = result.get("data", {})
+        action = data.get("action", {})
+        details = action.get("details", {})
+        dashboard = data.get("dashboard", {})
+
+        # Track API response processing
         state_manager.update_state({
-            # Auth data
-            "jwt_token": details.get("token"),
-            "authenticated": True,
-            "member_id": details.get("memberID"),
-            # Member data
-            "member_data": dashboard.get("member"),
-            # Account data
-            "accounts": dashboard.get("accounts", []),
-            "active_account_id": next(
-                (account["accountID"] for account in dashboard.get("accounts", [])
-                 if account["accountType"] == "PERSONAL"),
-                None
-            )
+            "flow_data": {
+                "active_component": {
+                    "type": "api_response",
+                    "validation": {
+                        "in_progress": True,
+                        "attempts": flow_state.get("api_attempts", 0) + 1,
+                        "last_attempt": datetime.utcnow().isoformat()
+                    }
+                }
+            }
         })
+
+        # Update complete state with validation
+        if dashboard.get("member") or dashboard.get("accounts"):
+            state_manager.update_state({
+                # Auth data
+                "jwt_token": details.get("token"),
+                "authenticated": True,
+                "member_id": details.get("memberID"),
+                # Member data
+                "member_data": dashboard.get("member"),
+                # Account data
+                "accounts": dashboard.get("accounts", []),
+                "active_account_id": next(
+                    (account["accountID"] for account in dashboard.get("accounts", [])
+                     if account["accountType"] == "PERSONAL"),
+                    None
+                ),
+                # Flow state
+                "flow_data": {
+                    "step": "complete",
+                    "step_index": flow_state["total_steps"],
+                    "active_component": {
+                        "type": "api_response",
+                        "validation": {
+                            "in_progress": False,
+                            "error": None
+                        }
+                    }
+                }
+            })
+
+    except Exception as e:
+        error_response = ErrorHandler.handle_system_error(
+            code="STATE_UPDATE_ERROR",
+            service="member",
+            action="update_state",
+            message="Failed to update member state",
+            error=e
+        )
+        raise StateException(error_response["error"]["message"])
 ```
 
 ## Common Patterns

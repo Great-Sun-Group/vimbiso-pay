@@ -11,12 +11,12 @@
 - NO transformation
 
 2. **Simple Structure**
-- Minimal nesting
+- Common configurations
 - Clear boundaries
 - Standard validation
+- Flow metadata
 - NO complex hierarchies
 - NO redundant wrapping
-- NO state duplication
 
 3. **Pure Functions**
 - Stateless operations
@@ -30,9 +30,9 @@
 - Single state manager
 - Standard validation
 - Clear boundaries
+- Progress tracking
 - NO manual updates
 - NO local state
-- NO mixed concerns
 
 ## State Structure
 
@@ -53,6 +53,11 @@
         "handler_type": str,     # member, account, credex
         "step": str,            # current step id
         "step_index": int,      # current step index
+        "total_steps": int,     # total steps in flow
+
+        # Flow metadata
+        "started_at": str,      # ISO timestamp
+        "action_type": str,     # For action flows
 
         # Component state
         "active_component": {
@@ -60,26 +65,14 @@
             "value": Any,       # current value
             "validation": {     # validation state
                 "in_progress": bool,
-                "error": Optional[Dict]
+                "error": Optional[Dict],
+                "attempts": int,
+                "last_attempt": Any
             }
         },
 
-        # Verified data by domain
-        "data": {
-            # Member data
-            "firstname": str,    # Registration
-            "lastname": str,     # Registration
-            "confirmed": bool,   # Upgrade
-
-            # Account data
-            "period": str,      # Ledger period
-            "transactions": List, # Transaction history
-
-            # Credex data
-            "amount": float,    # Offer amount
-            "handle": str,      # Offer recipient
-            "offer_id": str     # Selected offer
-        }
+        # Business data
+        "data": Dict           # Flow-specific data
     }
 }
 ```
@@ -91,15 +84,12 @@
 class StateManager:
     """Manages state updates and validation"""
 
-    def __init__(self, key_prefix: str):
-        self.key_prefix = key_prefix
-        self._state = self._initialize()
-
     def update_state(self, updates: Dict) -> None:
         """Update state with validation"""
         # Validate updates
-        if not self._validate_updates(updates):
-            raise StateError("Invalid state update")
+        validation = StateValidator.validate_updates(self._state, updates)
+        if not validation.is_valid:
+            raise StateError(validation.error_message)
 
         # Apply updates
         self._state.update(updates)
@@ -107,19 +97,14 @@ class StateManager:
         # Store state
         self._store_state()
 
-    def get_state(self) -> Dict:
-        """Get current state"""
-        return self._state
-
     def get_flow_state(self) -> Dict:
-        """Get flow state section"""
-        return self._state.get("flow_data", {})
-
-    def clear_flow_state(self) -> None:
-        """Clear flow state"""
-        self.update_state({
-            "flow_data": None
-        })
+        """Get flow state with validation"""
+        flow_data = self._state.get("flow_data", {})
+        if flow_data:
+            validation = StateValidator.validate_flow_state(flow_data)
+            if not validation.is_valid:
+                raise StateError(validation.error_message)
+        return flow_data
 ```
 
 ### 2. State Validation
@@ -127,99 +112,91 @@ class StateManager:
 class StateValidator:
     """Validates state updates"""
 
-    @classmethod
-    def validate_updates(cls, current: Dict, updates: Dict) -> bool:
-        """Validate state updates"""
-        # Check core fields
-        if not cls._validate_core_fields(current, updates):
-            return False
+    # Flow validation rules
+    FLOW_RULES = {
+        # Required fields in flow_data
+        "required_fields": {
+            "flow_type": str,
+            "handler_type": str,
+            "step": str,
+            "step_index": int,
+            "total_steps": int
+        },
 
-        # Check flow state
-        if "flow_data" in updates:
-            if not cls._validate_flow_state(updates["flow_data"]):
-                return False
+        # Required fields in active_component
+        "component_fields": {
+            "type": str,
+            "validation": {
+                "in_progress": bool,
+                "error": (type(None), dict),
+                "attempts": int,
+                "last_attempt": (type(None), str, int, float, bool, dict, list)
+            }
+        },
 
-        return True
-
-    @classmethod
-    def _validate_core_fields(cls, current: Dict, updates: Dict) -> bool:
-        """Validate core field updates"""
-        core_fields = ["member_id", "channel", "jwt_token"]
-
-        for field in core_fields:
-            if (
-                field in updates and
-                field in current and
-                updates[field] != current[field]
-            ):
-                return False
-
-        return True
+        # Valid handler types
+        "handler_types": {"member", "account", "credex"}
+    }
 
     @classmethod
-    def _validate_flow_state(cls, flow_data: Dict) -> bool:
+    def validate_flow_state(cls, flow_data: Dict) -> ValidationResult:
         """Validate flow state structure"""
-        if flow_data is None:
-            return True
-
         # Validate required fields
-        required = ["flow_type", "handler_type", "step", "step_index"]
-        if not all(field in flow_data for field in required):
-            return False
+        for field, field_type in cls.FLOW_RULES["required_fields"].items():
+            if field not in flow_data:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Missing required field: {field}"
+                )
 
-        # Validate handler type
-        if flow_data["handler_type"] not in ["member", "account", "credex"]:
-            return False
+        # Validate component state
+        component = flow_data.get("active_component")
+        if component:
+            for field, field_type in cls.FLOW_RULES["component_fields"].items():
+                if field not in component:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"Missing component field: {field}"
+                    )
 
-        # Validate component state if present
-        if "active_component" in flow_data:
-            component = flow_data["active_component"]
-            if not all(field in component for field in ["type", "validation"]):
-                return False
-
-        return True
+        return ValidationResult(is_valid=True)
 ```
 
 ### 3. State Usage
 ```python
-# Initialize state
-state_manager = StateManager("channel:123")
+# Initialize flow with metadata
+initialize_flow(
+    state_manager=state_manager,
+    flow_type="credex_accept",
+    initial_data={
+        "started_at": datetime.utcnow().isoformat(),
+        "action_type": "accept"
+    }
+)
 
-# Update flow state with handler type
+# Update component state with tracking
 state_manager.update_state({
     "flow_data": {
-        "flow_type": "registration",
-        "handler_type": "member",
-        "step": "firstname",
-        "step_index": 0,
         "active_component": {
-            "type": "TextInput",
-            "validation": {"in_progress": False}
+            "type": "SelectInput",
+            "value": "123",
+            "validation": {
+                "in_progress": False,
+                "error": None,
+                "attempts": 1,
+                "last_attempt": "123"
+            }
         }
     }
 })
 
-# Get flow state and route to handler
-flow_state = state_manager.get_flow_state()
-handler_type = flow_state["handler_type"]
-
-if handler_type == "member":
-    handler = MemberHandler(messaging_service)
-elif handler_type == "account":
-    handler = AccountHandler(messaging_service)
-elif handler_type == "credex":
-    handler = CredexHandler(messaging_service)
-
-# Process through handler
-result = handler.handle_flow_step(
-    state_manager,
-    flow_state["flow_type"],
-    flow_state["step"],
-    input_value
-)
-
-# Clear flow state when complete
-state_manager.clear_flow_state()
+# Update progress
+state_manager.update_state({
+    "flow_data": {
+        "step_index": current_index + 1,
+        "step": next_step
+    }
+})
 ```
 
 ## Best Practices
@@ -227,15 +204,15 @@ state_manager.clear_flow_state()
 1. **State Updates**
 - Use StateManager
 - Validate updates
-- Clear structure
+- Track progress
+- Track validation
 - NO manual updates
-- NO state duplication
 - NO transformation
 
 2. **State Access**
 - Use getter methods
 - Check existence
-- Handle missing data
+- Validate state
 - NO direct access
 - NO assumptions
 - NO default values
@@ -243,15 +220,15 @@ state_manager.clear_flow_state()
 3. **Flow State**
 - Clear boundaries
 - Standard structure
-- Minimal nesting
+- Track progress
+- Track validation
 - NO mixed concerns
-- NO redundant data
 - NO manual handling
 
 4. **Error Handling**
 - Use ErrorHandler
 - Clear boundaries
-- Standard formats
+- Track attempts
 - NO manual handling
 - NO local recovery
 - NO state fixing

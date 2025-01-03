@@ -70,61 +70,147 @@ class ComponentRegistry:
 ### 1. Base Component
 ```python
 class Component:
-    """Base component interface"""
+    """Base component interface with validation tracking"""
 
     def __init__(self, component_type: str):
         self.type = component_type
+        self.validation_state = {
+            "in_progress": False,
+            "error": None,
+            "attempts": 0,
+            "last_attempt": None
+        }
 
-    def validate(self, value: Any) -> Dict:
-        """Validate component input
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate component input with tracking
+
+        Args:
+            value: Value to validate
 
         Returns:
-            On success: {"valid": True}
-            On error: {
-                "error": {
-                    "type": "component",
-                    "message": str,
-                    "details": {...}
-                }
-            }
+            ValidationResult with validation state
+
+        Example:
+            >>> component = TextInput()
+            >>> result = component.validate("test")
+            >>> result.valid
+            True
+            >>> result.value
+            'test'
+            >>> component.validation_state["attempts"]
+            1
         """
+        # Track validation attempt
+        self.validation_state["attempts"] += 1
+        self.validation_state["last_attempt"] = value
+        self.validation_state["in_progress"] = True
+
+        try:
+            # Validate input (implemented by subclasses)
+            result = self._validate_input(value)
+
+            # Update validation state
+            self.validation_state.update({
+                "in_progress": False,
+                "error": None if result.valid else result.error
+            })
+
+            return result
+
+        except Exception as e:
+            # Handle validation error
+            self.validation_state.update({
+                "in_progress": False,
+                "error": {
+                    "message": str(e),
+                    "details": {
+                        "type": "validation_error",
+                        "attempts": self.validation_state["attempts"]
+                    }
+                }
+            })
+            return ValidationResult.failure(
+                message=str(e),
+                field="value",
+                details={"attempts": self.validation_state["attempts"]}
+            )
+
+    def _validate_input(self, value: Any) -> ValidationResult:
+        """Validate input (implemented by subclasses)"""
         raise NotImplementedError
 
+    def get_ui_state(self) -> Dict[str, Any]:
+        """Get component UI state with validation"""
+        return {
+            "type": self.type,
+            "validation": self.validation_state
+        }
+
     def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified data"""
+        """Convert to verified data with validation state"""
+        if self.validation_state["error"]:
+            raise ValueError("Cannot convert invalid data")
+        return self._convert_value(value)
+
+    def _convert_value(self, value: Any) -> Dict:
+        """Convert value (implemented by subclasses)"""
         raise NotImplementedError
 ```
 
 ### 2. Input Components
 ```python
 class AmountInput(Component):
-    """Amount input with validation"""
+    """Amount input with validation tracking"""
 
-    def validate(self, value: Any) -> Dict:
+    def _validate_input(self, value: Any) -> ValidationResult:
+        """Validate amount with tracking"""
         try:
-            # Validate amount
-            amount = float(value)
-            if amount <= 0:
-                return ErrorHandler.handle_component_error(
-                    component="amount_input",
+            # Type validation
+            if not isinstance(value, (str, int, float)):
+                return ValidationResult.failure(
+                    message="Invalid amount type",
                     field="amount",
-                    value=value,
-                    message="Amount must be positive"
+                    details={
+                        "expected_type": "number",
+                        "actual_type": type(value).__name__,
+                        "attempts": self.validation_state["attempts"]
+                    }
                 )
 
-            return {"valid": True}
+            # Convert to float
+            amount = float(value)
+
+            # Value validation
+            if amount <= 0:
+                return ValidationResult.failure(
+                    message="Amount must be positive",
+                    field="amount",
+                    details={
+                        "value": amount,
+                        "attempts": self.validation_state["attempts"]
+                    }
+                )
+
+            return ValidationResult.success(amount)
 
         except ValueError:
-            return ErrorHandler.handle_component_error(
-                component="amount_input",
+            return ValidationResult.failure(
+                message="Invalid amount format",
                 field="amount",
-                value=value,
-                message="Invalid amount format"
+                details={
+                    "value": value,
+                    "attempts": self.validation_state["attempts"]
+                }
             )
 
-    def to_verified_data(self, value: Any) -> Dict:
+    def _convert_value(self, value: Any) -> Dict:
+        """Convert amount with validation"""
         return {
-            "amount": float(value)
+            "amount": float(value),
+            "validation": {
+                "attempts": self.validation_state["attempts"],
+                "last_valid": datetime.utcnow().isoformat()
+            }
         }
 
 

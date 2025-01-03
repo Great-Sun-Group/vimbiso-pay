@@ -58,7 +58,8 @@ class FlowManager:
 def initialize_flow(
     state_manager: Any,
     flow_type: str,
-    step: Optional[str] = None
+    step: Optional[str] = None,
+    initial_data: Optional[Dict] = None
 ) -> None:
     """Initialize flow state with proper structure
 
@@ -66,18 +67,30 @@ def initialize_flow(
         state_manager: State manager instance
         flow_type: Type of flow
         step: Optional starting step (defaults to first step)
+        initial_data: Optional initial business data
 
     Raises:
         FlowException: If flow type invalid
     """
     # Get flow config
     config = FlowRegistry.get_flow_config(flow_type)
+    steps = config["steps"]
 
-    # Get initial step
+    # Get initial step and index
     if not step:
-        step = config["steps"][0]
+        step = steps[0]
+        step_index = 0
     else:
         FlowRegistry.validate_flow_step(flow_type, step)
+        try:
+            step_index = steps.index(step)
+        except ValueError:
+            raise FlowException(
+                message=f"Invalid step {step} for flow {flow_type}",
+                step=step,
+                action="initialize",
+                data={"flow_type": flow_type}
+            )
 
     # Get component type for step
     component_type = FlowRegistry.get_step_component(flow_type, step)
@@ -89,7 +102,8 @@ def initialize_flow(
             "flow_type": flow_type,
             "handler_type": config.get("handler_type", "member"),
             "step": step,
-            "step_index": 0,
+            "step_index": step_index,
+            "total_steps": len(steps),
 
             # Component state
             "active_component": {
@@ -97,12 +111,14 @@ def initialize_flow(
                 "value": None,
                 "validation": {
                     "in_progress": False,
-                    "error": None
+                    "error": None,
+                    "attempts": 0,
+                    "last_attempt": None
                 }
             },
 
             # Business data
-            "data": {}
+            "data": initial_data or {}
         }
     }
 
@@ -138,6 +154,8 @@ def process_flow_input(
 
     flow_type = flow_data["flow_type"]
     current_step = flow_data["step"]
+    current_index = flow_data["step_index"]
+    total_steps = flow_data["total_steps"]
 
     # Get handler type
     handler_type = flow_data.get("handler_type", "member")
@@ -146,21 +164,35 @@ def process_flow_input(
     flow_manager = FlowManager(flow_type)
     validation = flow_manager.process_step(current_step, input_data)
 
+    # Update validation state
+    component_state = flow_data["active_component"]
+    component_state["validation"]["attempts"] += 1
+    component_state["validation"]["last_attempt"] = input_data
+
     # Handle validation error
     if not validation.valid:
+        component_state["validation"]["error"] = validation.error
+        component_state["validation"]["in_progress"] = False
+        state_manager.update_state({
+            "flow_data": {
+                "active_component": component_state
+            }
+        })
         return {"error": validation.error}
 
-    # Update component state
+    # Update component state with valid value
+    component_state.update({
+        "value": validation.value,
+        "validation": {
+            "in_progress": False,
+            "error": None,
+            "attempts": component_state["validation"]["attempts"],
+            "last_attempt": input_data
+        }
+    })
     state_manager.update_state({
         "flow_data": {
-            "active_component": {
-                "type": flow_data["active_component"]["type"],
-                "value": validation.value,
-                "validation": {
-                    "in_progress": False,
-                    "error": None
-                }
-            }
+            "active_component": component_state
         }
     })
 
@@ -176,12 +208,15 @@ def process_flow_input(
     state_manager.update_state({
         "flow_data": {
             "step": next_step,
+            "step_index": current_index + 1,
             "active_component": {
                 "type": next_component_type,
                 "value": None,
                 "validation": {
                     "in_progress": False,
-                    "error": None
+                    "error": None,
+                    "attempts": 0,
+                    "last_attempt": None
                 }
             }
         }
@@ -189,7 +224,11 @@ def process_flow_input(
 
     return {
         "step": next_step,
-        "handler_type": handler_type
+        "handler_type": handler_type,
+        "progress": {
+            "current": current_index + 1,
+            "total": total_steps
+        }
     }
 
 
