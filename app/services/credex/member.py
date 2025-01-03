@@ -2,7 +2,7 @@
 import logging
 from typing import Any, Dict, Tuple
 
-from core.utils.exceptions import StateException
+from core.utils.exceptions import FlowException, SystemException
 
 from .base import make_credex_request
 
@@ -39,14 +39,17 @@ def get_member_accounts(state_manager: Any) -> Tuple[bool, Dict[str, Any]]:
             }
         }
 
-    except StateException as e:
-        # Re-raise with additional context
-        raise StateException(
-            str(e),
-            details={
-                "operation": "get_member_accounts",
-                "state": state_manager.get_flow_step_data()
-            }
+    except FlowException:
+        # Let flow errors propagate up
+        raise
+
+    except Exception as e:
+        # Wrap other errors as system errors
+        raise SystemException(
+            message=str(e),
+            code="ACCOUNT_ERROR",
+            service="credex_member",
+            action="get_member_accounts"
         )
 
 
@@ -62,14 +65,19 @@ def validate_account_handle(handle: str, state_manager: Any) -> Tuple[bool, Dict
 
         return True, response_data
 
-    except StateException as e:
-        # Re-raise with additional context
-        raise StateException(
-            str(e),
+    except FlowException:
+        # Let flow errors propagate up
+        raise
+
+    except Exception as e:
+        # Wrap other errors as system errors
+        raise SystemException(
+            message=str(e),
+            code="HANDLE_ERROR",
+            service="credex_member",
+            action="validate_account_handle",
             details={
-                "operation": "validate_account_handle",
-                "handle": handle,
-                "state": state_manager.get_flow_step_data()
+                "handle": handle
             }
         )
 
@@ -106,12 +114,15 @@ def refresh_member_info(state_manager: Any) -> None:
 
         return None
 
-    except StateException as e:
-        # Re-raise with additional context
-        raise StateException(
-            str(e),
-            details={
-                "operation": "refresh_member_info",
-                "state": state_manager.get_flow_step_data()
-            }
+    except FlowException:
+        # Let flow errors propagate up
+        raise
+
+    except Exception as e:
+        # Wrap other errors as system errors
+        raise SystemException(
+            message=str(e),
+            code="REFRESH_ERROR",
+            service="credex_member",
+            action="refresh_member_info"
         )

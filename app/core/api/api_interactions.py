@@ -16,10 +16,47 @@ from .credex import get_credex as get_credex_details
 from .credex import offer_credex as create_credex
 from .dashboard_client import get_dashboard as get_member_dashboard
 from .dashboard_client import get_ledger as get_account_ledger
-from .dashboard_client import process_dashboard_response
 from .dashboard_client import validate_account_handle as validate_member_handle
 
 logger = logging.getLogger(__name__)
+
+
+def process_dashboard_response(current_state: Dict[str, Any], data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Process dashboard response with state validation
+
+    Args:
+        current_state: Current state fields
+        data: Dashboard response data
+
+    Returns:
+        Processed dashboard data or None if invalid
+    """
+    try:
+        # Validate response format
+        if not isinstance(data, dict):
+            logger.error("Invalid dashboard data format")
+            return None
+
+        dashboard_data = data.get("data", {}).get("dashboard")
+        member_details = data.get("data", {}).get("action", {}).get("details", {})
+
+        if not dashboard_data or not member_details:
+            logger.error("Missing required dashboard data")
+            return None
+
+        # Return validated response
+        return {
+            "data": {
+                "dashboard": dashboard_data,
+                "action": {
+                    "details": member_details
+                }
+            }
+        }
+
+    except Exception:
+        logger.exception("Error processing dashboard response")
+        return None
 
 
 def send_delay_message(state_manager: Any) -> None:
@@ -153,8 +190,8 @@ def refresh_member_info(
 
         return process_dashboard_response(current_state, data)
 
-    except Exception as e:
-        logger.exception(f"Error during refresh: {str(e)}")
+    except Exception:
+        logger.exception("Error during refresh")
         return None
 
 

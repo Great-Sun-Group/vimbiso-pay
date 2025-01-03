@@ -2,10 +2,8 @@
 import logging
 from datetime import datetime, timedelta
 
-from core.utils.error_types import ErrorContext
-from core.utils.exceptions import StateException
+from core.utils.exceptions import SystemException
 from core.utils.redis_atomic import AtomicStateManager
-from django.conf import settings
 from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -15,20 +13,25 @@ try:
     # Test cache connection
     cache.set('test_key', 'test_value', timeout=5)
     if cache.get('test_key') != 'test_value':
-        raise StateException("Cache test failed")
+        raise SystemException(
+            message="Cache test failed",
+            code="CACHE_TEST_ERROR",
+            service="config",
+            action="test_cache"
+        )
     logger.info("Cache connection established successfully")
 
 except Exception as e:
-    error_context = ErrorContext(
-        error_type="system",
-        message="Failed to connect to cache",
-        details={"error": str(e)}
-    )
     logger.error(
         "Cache connection error",
-        extra={"error": str(e), "error_context": error_context.__dict__}
+        extra={"error": str(e)}
     )
-    raise StateException("Cache connection failed") from e
+    raise SystemException(
+        message="Failed to connect to cache",
+        code="CACHE_CONNECT_ERROR",
+        service="config",
+        action="initialize_cache"
+    ) from e
 
 # Initialize atomic state manager
 atomic_state = AtomicStateManager(cache)
@@ -60,7 +63,7 @@ def get_greeting(name: str) -> str:
         Time-appropriate greeting message
 
     Raises:
-        StateException: If greeting generation fails
+        SystemException: If greeting generation fails
     """
     try:
         current_time = datetime.now() + timedelta(hours=2)
@@ -76,17 +79,17 @@ def get_greeting(name: str) -> str:
             return f"Hello There {name} 🌙"
 
     except Exception as e:
-        error_context = ErrorContext(
-            error_type="system",
-            message="Failed to generate greeting",
-            details={
-                "name": name,
-                "hour": hour if 'hour' in locals() else None,
-                "error": str(e)
-            }
-        )
         logger.error(
             "Greeting generation error",
-            extra={"error": str(e), "error_context": error_context.__dict__}
+            extra={
+                "error": str(e),
+                "name": name,
+                "hour": hour if 'hour' in locals() else None
+            }
         )
-        raise StateException("Failed to generate greeting") from e
+        raise SystemException(
+            message="Failed to generate greeting",
+            code="GREETING_ERROR",
+            service="config",
+            action="get_greeting"
+        ) from e

@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from core.utils.error_handler import ErrorHandler
 from core.utils.error_types import ErrorContext
-from core.utils.exceptions import StateException
+from core.utils.exceptions import FlowException
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,12 @@ def _structure_profile_data(
         # Get channel through state validation
         channel = state_manager.get("channel")
         if not channel or not channel.get("identifier"):
-            raise StateException("Invalid channel state")
+            raise FlowException(
+                message="Channel required for profile update",
+                step="profile",
+                action="validate",
+                data={"channel": channel}
+            )
 
         return {
             "action": {
@@ -54,10 +59,11 @@ def _structure_profile_data(
 
     except Exception as e:
         error_context = ErrorContext(
-            error_type="state",
+            error_type="flow",
             message=str(e),
             details={
-                "operation": "structure_profile",
+                "step": "profile",
+                "action": "structure_data",
                 "action_type": action_type
             }
         )
@@ -74,7 +80,12 @@ def _handle_account_setup(
         # Extract and validate accounts
         accounts = dashboard_data.get("accounts", [])
         if not isinstance(accounts, list) or not accounts:
-            raise StateException("No valid accounts found")
+            raise FlowException(
+                message="No valid accounts found",
+                step="profile",
+                action="validate_accounts",
+                data={"accounts": accounts}
+            )
 
         # Process accounts while maintaining structure
         processed_accounts = []
@@ -100,12 +111,22 @@ def _handle_account_setup(
             processed_accounts.append(account_data)
 
         if not processed_accounts:
-            raise StateException("No valid accounts after processing")
+            raise FlowException(
+                message="No valid accounts after processing",
+                step="profile",
+                action="process_accounts",
+                data={"processed": processed_accounts}
+            )
 
         # Find personal account through validation
         channel = state_manager.get("channel")
         if not channel or not channel.get("identifier"):
-            raise StateException("Invalid channel state")
+            raise FlowException(
+                message="Channel required for account setup",
+                step="profile",
+                action="setup_account",
+                data={"channel": channel}
+            )
 
         # Prioritize personal account, fallback to channel match
         personal_account = next(
@@ -117,7 +138,12 @@ def _handle_account_setup(
         )
 
         if not personal_account:
-            raise StateException("No valid personal account found")
+            raise FlowException(
+                message="No valid personal account found",
+                step="profile",
+                action="find_account",
+                data={"accounts": processed_accounts}
+            )
 
         # Update state through validation
         state_update = {
@@ -127,16 +153,24 @@ def _handle_account_setup(
 
         success, error = state_manager.update_state(state_update)
         if not success:
-            raise StateException(f"Failed to update account state: {error}")
+            raise FlowException(
+                message=f"Failed to update account state: {error}",
+                step="profile",
+                action="update_state",
+                data=state_update
+            )
 
         logger.info(f"Successfully set up account: {personal_account['accountHandle']}")
         return True
 
     except Exception as e:
         error_context = ErrorContext(
-            error_type="state",
+            error_type="flow",
             message=str(e),
-            details={"operation": "account_setup"}
+            details={
+                "step": "profile",
+                "action": "setup_account"
+            }
         )
         ErrorHandler.handle_error(e, state_manager, error_context)
         return False
@@ -153,7 +187,12 @@ def update_profile_from_response(
     try:
         # Validate response format
         if not isinstance(api_response, dict):
-            raise StateException("Invalid API response format")
+            raise FlowException(
+                message="Invalid API response format",
+                step="profile",
+                action="validate_response",
+                data={"response": api_response}
+            )
 
         # Structure profile data through validation
         profile_data = _structure_profile_data(
@@ -162,7 +201,12 @@ def update_profile_from_response(
             action_type
         )
         if not profile_data:
-            raise StateException("Failed to structure profile data")
+            raise FlowException(
+                message="Failed to structure profile data",
+                step="profile",
+                action="structure_data",
+                data={"profile": profile_data}
+            )
 
         # Prepare state update
         state_update = {"flow_data": {"data": profile_data}}
@@ -174,23 +218,34 @@ def update_profile_from_response(
         # Update state through validation
         success, error = state_manager.update_state(state_update)
         if not success:
-            raise StateException(f"Failed to update state: {error}")
+            raise FlowException(
+                message=f"Failed to update state: {error}",
+                step="profile",
+                action="update_state",
+                data=state_update
+            )
 
         # Handle account setup if needed
         dashboard_data = api_response.get("data", {}).get("dashboard")
         if dashboard_data:
             if not _handle_account_setup(dashboard_data, state_manager):
-                raise StateException("Failed to set up accounts")
+                raise FlowException(
+                    message="Failed to set up accounts",
+                    step="profile",
+                    action="setup_accounts",
+                    data={"dashboard": dashboard_data}
+                )
 
         logger.info(f"State updated from {update_from}")
         return True
 
     except Exception as e:
         error_context = ErrorContext(
-            error_type="state",
+            error_type="flow",
             message=str(e),
             details={
-                "operation": "update_profile",
+                "step": "profile",
+                "action": "update_profile",
                 "update_from": update_from
             }
         )
@@ -206,12 +261,22 @@ def handle_successful_refresh(
     try:
         # Validate member info
         if not isinstance(member_info, dict):
-            raise StateException("Invalid member info format")
+            raise FlowException(
+                message="Invalid member info format",
+                step="profile",
+                action="validate_member",
+                data={"member_info": member_info}
+            )
 
         # Extract dashboard data
         dashboard_data = member_info.get("data", {}).get("dashboard")
         if not dashboard_data:
-            raise StateException("Missing dashboard data")
+            raise FlowException(
+                message="Missing dashboard data",
+                step="profile",
+                action="validate_dashboard",
+                data={"dashboard": dashboard_data}
+            )
 
         # Structure profile data through validation
         profile_data = _structure_profile_data(
@@ -220,7 +285,12 @@ def handle_successful_refresh(
             "refresh"
         )
         if not profile_data:
-            raise StateException("Failed to structure profile data")
+            raise FlowException(
+                message="Failed to structure profile data",
+                step="profile",
+                action="structure_data",
+                data={"profile": profile_data}
+            )
 
         # Update profile data
         profile_data["dashboard"] = dashboard_data
@@ -230,20 +300,33 @@ def handle_successful_refresh(
             "flow_data": {"data": profile_data}
         })
         if not success:
-            raise StateException(f"Failed to update profile: {error}")
+            raise FlowException(
+                message=f"Failed to update profile: {error}",
+                step="profile",
+                action="update_profile",
+                data={"profile": profile_data}
+            )
 
         # Handle account setup
         if not _handle_account_setup(dashboard_data, state_manager):
-            raise StateException("Failed to set up accounts")
+            raise FlowException(
+                message="Failed to set up accounts",
+                step="profile",
+                action="setup_accounts",
+                data={"dashboard": dashboard_data}
+            )
 
         logger.info("Successfully refreshed member info")
         return None
 
     except Exception as e:
         error_context = ErrorContext(
-            error_type="state",
+            error_type="flow",
             message=str(e),
-            details={"operation": "handle_refresh"}
+            details={
+                "step": "profile",
+                "action": "handle_refresh"
+            }
         )
         ErrorHandler.handle_error(e, state_manager, error_context)
         return str(e)

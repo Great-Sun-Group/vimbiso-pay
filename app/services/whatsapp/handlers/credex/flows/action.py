@@ -1,12 +1,8 @@
 """Action flow implementation enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, Optional
 
-from core.messaging.types import (ChannelIdentifier, ChannelType, Message,
-                                  MessageRecipient, TextContent)
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
-from core.utils.exceptions import StateException
+from core.utils.exceptions import FlowException, SystemException
 from services.credex.service import get_credex_service
 
 from .steps import process_step
@@ -14,47 +10,34 @@ from .steps import process_step
 logger = logging.getLogger(__name__)
 
 
-def create_message(channel_id: str, text: str) -> Message:
-    """Create core message type"""
-    return Message(
-        recipient=MessageRecipient(
-            channel_id=ChannelIdentifier(
-                channel=ChannelType.WHATSAPP,
-                value=channel_id
-            )
-        ),
-        content=TextContent(body=text)
-    )
+def get_step_content(step: str, action: str, data: Optional[Dict] = None) -> str:
+    """Get step content without channel formatting"""
+    if step == "select":
+        if not data or not data.get("items"):
+            return f"❌ No {action} offers available"
 
+        message_parts = [f"📋 Select offer to {action}:"]
+        for i, item in enumerate(data["items"], 1):
+            amount = item.get("formattedInitialAmount", "Unknown amount")
+            counterparty = item.get("counterpartyAccountName", "Unknown")
+            message_parts.append(f"{i}. 💸 {amount} with 👤 {counterparty}")
 
-def create_list_message(channel_id: str, action: str, items: List[Dict[str, Any]] = None) -> Message:
-    """Create list selection message"""
-    if not items:
-        return create_message(
-            channel_id,
-            f"No {action} offers available"
+        return "\n".join(message_parts)
+
+    elif step == "confirm" and data:
+        return (
+            f"📝 Confirm {action}:\n"
+            f"🆔 CredEx ID: {data.get('credex_id')}\n\n"
+            "✅ Please confirm (yes/no):"
         )
 
-    message_parts = [f"Select offer to {action}:\n"]
-    for i, item in enumerate(items, 1):
-        amount = item.get("formattedInitialAmount", "Unknown amount")
-        counterparty = item.get("counterpartyAccountName", "Unknown")
-        message_parts.append(f"{i}. {amount} with {counterparty}")
+    elif step == "complete":
+        return "✅ Your request has been processed."
 
-    return create_message(channel_id, "\n".join(message_parts))
+    return ""
 
 
-def create_action_confirmation(channel_id: str, credex_id: str, action: str) -> Message:
-    """Create action confirmation message"""
-    return create_message(
-        channel_id,
-        f"Confirm {action}:\n"
-        f"CredEx ID: {credex_id}\n\n"
-        "Please confirm (yes/no):"
-    )
-
-
-def process_action_step(state_manager: Any, step: str, action: str, input_data: Any = None) -> Message:
+def process_action_step(state_manager: Any, step: str, action: str, input_data: Any = None) -> Dict:
     """Process action step with validation"""
     try:
         # Let StateManager validate channel
@@ -65,112 +48,90 @@ def process_action_step(state_manager: Any, step: str, action: str, input_data: 
             }
         })
 
-        # Get validated channel data
-        channel_id = state_manager.get_channel_id()
-
         # Process step input through generic step processor
         result = process_step(state_manager, step, input_data, action)
 
-        # Initial prompts or responses based on step
-        if step == "select":
-            if not input_data:
-                return create_list_message(channel_id, action)
-
-            # Show confirmation with credex ID
-            return create_action_confirmation(
-                channel_id,
-                result["credex_id"],
-                action
-            )
-
-        elif step == "confirm":
-            if not input_data:
-                # Let StateManager validate flow state
-                state_manager.update_state({
-                    "validation": {
-                        "type": "flow_state",
-                        "step": "confirm",
-                        "action": action
-                    }
-                })
-
-                # Get validated flow state
-                flow_state = state_manager.get_flow_state()
-                return create_action_confirmation(
-                    channel_id,
-                    flow_state["credex_id"],
-                    action
-                )
-
-            # Process confirmation result
-            if result["confirmed"]:
-                # Let StateManager validate action request
-                state_manager.update_state({
-                    "validation": {
-                        "type": "action_request",
-                        "action": action
-                    }
-                })
-
-                # Submit action through credex service
+        # Handle initial prompts
+        if not input_data:
+            if step == "select":
+                # Get pending offers through service
                 credex_service = get_credex_service(state_manager)
-                success, response = credex_service[f"{action}_credex"](state_manager)
+                success, response = credex_service["get_pending_offers"](state_manager)
 
                 if not success:
-                    raise StateException(response.get("message", "Failed to create offer"))
+                    raise SystemException(
+                        message=response.get("message", "Failed to get offers"),
+                        code="OFFER_FETCH_FAILED",
+                        service="credex",
+                        action="get_offers"
+                    )
 
-                # Log success
-                logger.info(
-                    f"Action {action} completed",
-                    extra={
-                        "channel_id": channel_id,
-                        "response": response
-                    }
-                )
-                return create_message(channel_id, "✅ Your request has been processed.")
-
-            # Not confirmed - let StateManager validate flow state
-            state_manager.update_state({
-                "validation": {
-                    "type": "flow_state",
-                    "step": "confirm",
-                    "action": action
+                return {
+                    "success": True,
+                    "content": get_step_content("select", action, {"items": response["offers"]})
                 }
-            })
 
-            # Get validated flow state
-            flow_state = state_manager.get_flow_state()
-            return create_action_confirmation(
-                channel_id,
-                flow_state["credex_id"],
-                action
+            elif step == "confirm":
+                flow_state = state_manager.get_flow_state()
+                return {
+                    "success": True,
+                    "content": get_step_content("confirm", action, flow_state),
+                    "actions": ["confirm", "cancel"]
+                }
+
+            elif step == "complete":
+                return {
+                    "success": True,
+                    "content": get_step_content("complete", action)
+                }
+
+            raise FlowException(
+                message="Invalid step for prompt",
+                step=step,
+                action="prompt",
+                data={"action": action}
             )
 
-        raise StateException(f"Invalid step: {step}")
+        # Process step result
+        if result:
+            return result
+
+        # Invalid step if we get here
+        raise FlowException(
+            message=f"Invalid step: {step}",
+            step=step,
+            action="validate_step",
+            data={"action": action}
+        )
+
+    except (FlowException, SystemException):
+        # Let flow and system errors propagate up
+        raise
 
     except Exception as e:
-        error_context = ErrorContext(
-            error_type="flow",
+        # Wrap unexpected errors as system errors
+        raise SystemException(
             message=str(e),
-            step_id=step,
+            code="ACTION_ERROR",
+            service="credex_action",
+            action=action,
             details={
-                "action": action,
+                "step": step,
                 "input": input_data
             }
         )
-        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
 
 
-def process_cancel_step(state_manager: Any, step: str, input_data: Any = None) -> Message:
+def process_cancel_step(state_manager: Any, step: str, input_data: Any = None) -> Dict:
     """Process cancel step"""
     return process_action_step(state_manager, step, "cancel", input_data)
 
 
-def process_accept_step(state_manager: Any, step: str, input_data: Any = None) -> Message:
+def process_accept_step(state_manager: Any, step: str, input_data: Any = None) -> Dict:
     """Process accept step"""
     return process_action_step(state_manager, step, "accept", input_data)
 
 
-def process_decline_step(state_manager: Any, step: str, input_data: Any = None) -> Message:
+def process_decline_step(state_manager: Any, step: str, input_data: Any = None) -> Dict:
     """Process decline step"""
     return process_action_step(state_manager, step, "decline", input_data)

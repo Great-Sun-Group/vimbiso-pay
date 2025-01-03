@@ -1,12 +1,12 @@
+"""WhatsApp state management delegating to core StateManager"""
 import logging
 from typing import Any, Dict, Tuple
 
 from core.config.state_manager import StateManager as CoreStateManager
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
-from core.utils.exceptions import StateException
+from core.utils.exceptions import SystemException
 
 logger = logging.getLogger(__name__)
+
 
 class StateManager:
     """WhatsApp state management delegating to core StateManager"""
@@ -25,17 +25,21 @@ class StateManager:
             State value for key
 
         Raises:
-            StateException: If state access fails
+            SystemException: If state access fails
         """
         try:
             return self._core.get(key)
         except Exception as e:
-            error_context = ErrorContext(
-                error_type="state",
+            raise SystemException(
                 message=f"Failed to get state value for key: {key}",
-                details={"key": key, "error": str(e)}
+                code="STATE_GET_ERROR",
+                service="whatsapp_state",
+                action="get_state",
+                details={
+                    "key": key,
+                    "error": str(e)
+                }
             )
-            raise StateException(ErrorHandler.handle_error(e, self, error_context))
 
     def update_state(self, updates: Dict[str, Any]) -> Tuple[bool, str]:
         """Update state using core state manager
@@ -47,17 +51,27 @@ class StateManager:
             Tuple of (success, error_message)
 
         Raises:
-            StateException: If state update fails
+            SystemException: If state update fails
         """
         try:
-            logger.debug("Updating state", extra={"update_keys": list(updates.keys())})
+            logger.debug(
+                "Updating state",
+                extra={"update_keys": list(updates.keys())}
+            )
             result = self._core.update_state(updates)
-            logger.info("State updated successfully", extra={"update_keys": list(updates.keys())})
+            logger.info(
+                "State updated successfully",
+                extra={"update_keys": list(updates.keys())}
+            )
             return result
         except Exception as e:
-            error_context = ErrorContext(
-                error_type="state",
+            raise SystemException(
                 message="Failed to update state",
-                details={"update_keys": list(updates.keys()), "error": str(e)}
+                code="STATE_UPDATE_ERROR",
+                service="whatsapp_state",
+                action="update_state",
+                details={
+                    "update_keys": list(updates.keys()),
+                    "error": str(e)
+                }
             )
-            raise StateException(ErrorHandler.handle_error(e, self, error_context))

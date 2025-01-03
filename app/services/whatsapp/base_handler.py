@@ -2,9 +2,7 @@
 import logging
 from typing import Any
 
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
-from core.utils.exceptions import StateException
+from core.utils.exceptions import ComponentException, SystemException
 from core.utils.state_validator import StateValidator
 from core.utils.utils import wrap_text
 
@@ -22,68 +20,63 @@ def handle_default_action(state_manager: Any) -> WhatsAppMessage:
 
     Returns:
         WhatsAppMessage: Error message for invalid actions
-
-    Raises:
-        StateException: If state validation fails
     """
     try:
+        # Validate state manager
         if not state_manager:
-            error_context = ErrorContext(
-                error_type="state",
+            raise ComponentException(
                 message="State manager is required",
-                details={"state_manager": None}
-            )
-            raise StateException(ErrorHandler.handle_error(
-                StateException("Missing state manager"),
-                None,
-                error_context
-            ))
-
-        try:
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {"channel": state_manager.get("channel")},
-                {"channel"}
-            )
-            if not validation.is_valid:
-                error_context = ErrorContext(
-                    error_type="state",
-                    message="Invalid state for default action",
-                    details={"error": validation.error_message}
-                )
-                raise StateException(ErrorHandler.handle_error(
-                    StateException(validation.error_message),
-                    state_manager,
-                    error_context
-                ))
-
-            channel = state_manager.get("channel")
-            return WhatsAppMessage.create_text(
-                channel["identifier"],
-                wrap_text(INVALID_ACTION, channel["identifier"])
+                component="base_handler",
+                field="state_manager",
+                value="None"
             )
 
-        except Exception as e:
-            error_context = ErrorContext(
-                error_type="state",
-                message="Failed to validate state",
-                details={"error": str(e)}
-            )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
-
-    except Exception as e:
-        error_context = ErrorContext(
-            error_type="system",
-            message="Failed to handle default action",
-            details={"error": str(e)}
+        # Validate state access at boundary
+        validation = StateValidator.validate_before_access(
+            {"channel": state_manager.get("channel")},
+            {"channel"}
         )
+        if not validation.is_valid:
+            raise ComponentException(
+                message=validation.error_message,
+                component="base_handler",
+                field="channel",
+                value=str(state_manager.get("channel"))
+            )
+
+        # Create response
+        channel = state_manager.get("channel")
+        return WhatsAppMessage.create_text(
+            channel["identifier"],
+            wrap_text(INVALID_ACTION, channel["identifier"])
+        )
+
+    except ComponentException as e:
+        # Component errors become error messages
         logger.error(
-            "Default action error",
-            extra={"error_context": error_context.__dict__}
+            "Default action validation error",
+            extra={"error": str(e)}
         )
         return WhatsAppMessage.create_text(
             "unknown",  # Fallback identifier
-            f"❌ {error_context.message}"
+            f"❌ {str(e)}"
+        )
+
+    except Exception as e:
+        # Wrap unexpected errors
+        error = SystemException(
+            message=str(e),
+            code="DEFAULT_ACTION_ERROR",
+            service="base_handler",
+            action="handle_default"
+        )
+        logger.error(
+            "Default action error",
+            extra={"error": str(error)}
+        )
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"❌ {str(error)}"
         )
 
 
@@ -126,73 +119,69 @@ def get_response_template(state_manager: Any, message_text: str) -> WhatsAppMess
 
     Returns:
         WhatsAppMessage: Basic formatted WhatsApp message
-
-    Raises:
-        StateException: If state validation fails
     """
     try:
         # Validate inputs
         if not state_manager:
-            error_context = ErrorContext(
-                error_type="state",
+            raise ComponentException(
                 message="State manager is required",
-                details={"state_manager": None}
+                component="base_handler",
+                field="state_manager",
+                value="None"
             )
-            raise StateException(error_context.message)
 
         if not message_text:
-            error_context = ErrorContext(
-                error_type="input",
+            raise ComponentException(
                 message="Message text is required",
-                details={"message_text": None}
+                component="base_handler",
+                field="message_text",
+                value="None"
             )
-            raise StateException(error_context.message)
 
-        try:
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {"channel": state_manager.get("channel")},
-                {"channel"}
-            )
-            if not validation.is_valid:
-                error_context = ErrorContext(
-                    error_type="state",
-                    message="Invalid state for message template",
-                    details={"error": validation.error_message}
-                )
-                raise StateException(ErrorHandler.handle_error(
-                    StateException(validation.error_message),
-                    state_manager,
-                    error_context
-                ))
-
-            channel = state_manager.get("channel")
-            return WhatsAppMessage.create_text(channel["identifier"], message_text)
-
-        except Exception as e:
-            error_context = ErrorContext(
-                error_type="state",
-                message="Failed to validate state",
-                details={"error": str(e)}
-            )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
-
-    except Exception as e:
-        error_context = ErrorContext(
-            error_type="system",
-            message="Failed to create response template",
-            details={
-                "message_text": message_text,
-                "error": str(e)
-            }
+        # Validate state access at boundary
+        validation = StateValidator.validate_before_access(
+            {"channel": state_manager.get("channel")},
+            {"channel"}
         )
+        if not validation.is_valid:
+            raise ComponentException(
+                message=validation.error_message,
+                component="base_handler",
+                field="channel",
+                value=str(state_manager.get("channel"))
+            )
+
+        # Create response
+        channel = state_manager.get("channel")
+        return WhatsAppMessage.create_text(channel["identifier"], message_text)
+
+    except ComponentException as e:
+        # Component errors become error messages
         logger.error(
-            "Response template error",
-            extra={"error_context": error_context.__dict__}
+            "Response template validation error",
+            extra={"error": str(e)}
         )
         return WhatsAppMessage.create_text(
             "unknown",  # Fallback identifier
-            f"❌ {error_context.message}"
+            f"❌ {str(e)}"
+        )
+
+    except Exception as e:
+        # Wrap unexpected errors
+        error = SystemException(
+            message=str(e),
+            code="TEMPLATE_ERROR",
+            service="base_handler",
+            action="get_template",
+            details={"message_text": message_text}
+        )
+        logger.error(
+            "Response template error",
+            extra={"error": str(error)}
+        )
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"❌ {str(error)}"
         )
 
 
@@ -205,69 +194,65 @@ def format_error_response(state_manager: Any, error_message: str) -> WhatsAppMes
 
     Returns:
         WhatsAppMessage: Formatted error message
-
-    Raises:
-        StateException: If state validation fails
     """
     try:
         # Validate inputs
         if not state_manager:
-            error_context = ErrorContext(
-                error_type="state",
+            raise ComponentException(
                 message="State manager is required",
-                details={"state_manager": None}
+                component="base_handler",
+                field="state_manager",
+                value="None"
             )
-            raise StateException(error_context.message)
 
         if not error_message:
             error_message = "An unknown error occurred"
 
-        try:
-            # Validate state access at boundary
-            validation = StateValidator.validate_before_access(
-                {"channel": state_manager.get("channel")},
-                {"channel"}
-            )
-            if not validation.is_valid:
-                error_context = ErrorContext(
-                    error_type="state",
-                    message="Invalid state for error response",
-                    details={"error": validation.error_message}
-                )
-                raise StateException(ErrorHandler.handle_error(
-                    StateException(validation.error_message),
-                    state_manager,
-                    error_context
-                ))
-
-            channel = state_manager.get("channel")
-            return WhatsAppMessage.create_text(
-                channel["identifier"],
-                f"❌ {error_message}"
-            )
-
-        except Exception as e:
-            error_context = ErrorContext(
-                error_type="state",
-                message="Failed to validate state",
-                details={"error": str(e)}
-            )
-            raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))
-
-    except Exception as e:
-        error_context = ErrorContext(
-            error_type="system",
-            message="Failed to format error response",
-            details={
-                "error_message": error_message,
-                "error": str(e)
-            }
+        # Validate state access at boundary
+        validation = StateValidator.validate_before_access(
+            {"channel": state_manager.get("channel")},
+            {"channel"}
         )
+        if not validation.is_valid:
+            raise ComponentException(
+                message=validation.error_message,
+                component="base_handler",
+                field="channel",
+                value=str(state_manager.get("channel"))
+            )
+
+        # Create response
+        channel = state_manager.get("channel")
+        return WhatsAppMessage.create_text(
+            channel["identifier"],
+            f"❌ {error_message}"
+        )
+
+    except ComponentException as e:
+        # Component errors become error messages
         logger.error(
-            "Error response formatting failed",
-            extra={"error_context": error_context.__dict__}
+            "Error response validation error",
+            extra={"error": str(e)}
         )
         return WhatsAppMessage.create_text(
             "unknown",  # Fallback identifier
-            f"❌ {error_context.message}"
+            f"❌ {str(e)}"
+        )
+
+    except Exception as e:
+        # Wrap unexpected errors
+        error = SystemException(
+            message=str(e),
+            code="ERROR_FORMAT_ERROR",
+            service="base_handler",
+            action="format_error",
+            details={"error_message": error_message}
+        )
+        logger.error(
+            "Error response formatting failed",
+            extra={"error": str(error)}
+        )
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"❌ {str(error)}"
         )

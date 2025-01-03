@@ -1,54 +1,80 @@
-"""Error types and context for state management"""
+"""Error type definitions and constants
+
+This module defines the core error types and structures used by the error handling system.
+All error types follow a simple, flat structure with clear boundaries.
+
+Error Context:
+- Standardized error context structure
+- Used for passing error information
+- Maintains clear error boundaries
+"""
+
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from enum import Enum, auto
+from typing import Dict, Optional
 
 
 @dataclass
 class ErrorContext:
-    """Error context for state updates
+    """Standardized error context structure
 
-    Required for ALL errors to ensure consistent handling.
-    Components should NOT create error messages directly.
+    Used for passing error information between layers while maintaining
+    clear error boundaries and consistent error handling patterns.
 
-    Fields:
-        error_type: Type of error (must be one of: flow, state, input, api, system)
-        message: Clear user-facing message
-        step_id: Only required for flow errors, should be None for other types
-        details: Additional context (required for debugging)
-
-    Rules:
-        1. error_type must be one of the standard types
-        2. step_id is ONLY required when error_type is "flow"
-        3. For all other error types, step_id must be None
-        4. details must include relevant debugging information
-        5. message must be user-friendly and actionable
+    Attributes:
+        error_type: Type of error (component, flow, system, state)
+        message: User-facing or system message
+        details: Error-specific context details
     """
-
-    # Standard error types
-    VALID_ERROR_TYPES = {"flow", "state", "input", "api", "system"}
     error_type: str
     message: str
-    step_id: Optional[str] = None
-    details: Optional[Dict[str, Any]] = None
+    details: Optional[Dict] = None
 
-    def __post_init__(self):
-        """Validate error context requirements"""
-        # Validate error type
-        if self.error_type not in self.VALID_ERROR_TYPES:
-            raise ValueError(f"error_type must be one of: {', '.join(self.VALID_ERROR_TYPES)}")
 
-        # Validate step_id requirements
-        if self.error_type == "flow" and not self.step_id:
-            raise ValueError("step_id is required for flow errors")
-        if self.error_type != "flow" and self.step_id:
-            raise ValueError("step_id should only be set for flow errors")
+class ErrorType(Enum):
+    """Core error types with clear boundaries"""
+    COMPONENT = auto()  # Component validation errors
+    FLOW = auto()      # Flow business logic errors
+    SYSTEM = auto()    # System technical errors
 
-        # Validate message
-        if not self.message or not isinstance(self.message, str):
-            raise ValueError("message must be a non-empty string")
 
-        # Validate details
-        if not self.details:
-            raise ValueError("details are required for debugging context")
-        if not isinstance(self.details, dict):
-            raise ValueError("details must be a dictionary")
+@dataclass
+class ErrorResponse:
+    """Standard error response structure"""
+    type: str           # Error type (component, flow, system)
+    message: str        # User-facing message
+    details: Dict       # Error-specific details
+
+
+# Component error codes
+COMPONENT_ERRORS = {
+    "INVALID_AMOUNT": "invalid_amount",
+    "INVALID_FORMAT": "invalid_format",
+    "INVALID_HANDLE": "invalid_handle",
+    "MISSING_HANDLE": "missing_handle",
+    "INVALID_SELECTION": "invalid_selection",
+    "INVALID_CONFIRM": "invalid_confirm"
+}
+
+# Flow error codes
+FLOW_ERRORS = {
+    "INVALID_STEP": "invalid_step",
+    "INVALID_ACTION": "invalid_action",
+    "MISSING_DATA": "missing_data",
+    "INVALID_STATE": "invalid_state"
+}
+
+# System error codes
+SYSTEM_ERRORS = {
+    "SERVICE_ERROR": "service_error",
+    "CONFIG_ERROR": "config_error",
+    "API_ERROR": "api_error",
+    "UNKNOWN_ERROR": "unknown_error"
+}
+
+# HTTP status code mappings
+ERROR_STATUS_CODES = {
+    "component": 400,  # Bad Request
+    "flow": 400,      # Bad Request
+    "system": 500     # Internal Server Error
+}

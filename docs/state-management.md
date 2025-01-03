@@ -1,258 +1,213 @@
 # State Management
 
-## Overview
-
-VimbisoPay uses a centralized state management system that strictly enforces SINGLE SOURCE OF TRUTH:
-- Member ID exists ONLY at top level
-- Channel info exists ONLY at top level
-- JWT token exists ONLY in state
-- Minimal metadata and nesting
-
 ## Core Principles
 
-1. **SINGLE SOURCE OF TRUTH**
-   - Member ID ONLY at top level
-   - Channel info ONLY at top level
-   - JWT token ONLY in state
-   - NO duplication anywhere
-   - NO state passing
-   - NO state transformation
+1. **Single Source of Truth**
+- Member ID at top level
+- Channel info at top level
+- JWT token in state
+- NO duplication
+- NO state passing
+- NO transformation
 
-2. **Validation Through State**
-   - ALL validation through state updates
-   - NO manual validation
-   - NO validation helpers
-   - NO validation state
-   - NO error recovery
-   - NO state fixing
+2. **Simple Structure**
+- Minimal nesting
+- Clear boundaries
+- Standard validation
+- NO complex hierarchies
+- NO redundant wrapping
+- NO state duplication
 
-3. **Clear Responsibilities**
-   - StateManager: Validates all updates
-   - StateValidator: Defines valid structure
-   - StateUtils: Provides core structure
-   - ErrorHandler: Manages all errors
-   - NO mixed concerns
-   - NO manual validation
-   - NO error handling
+3. **Pure Functions**
+- Stateless operations
+- Clear validation
+- Standard updates
+- NO stored state
+- NO side effects
+- NO manual handling
 
-4. **Simple Updates**
-   - Update state to validate
-   - Let StateManager validate
-   - NO manual validation
-   - NO cleanup code
-   - NO error recovery
-   - NO state fixing
+4. **Central Management**
+- Single state manager
+- Standard validation
+- Clear boundaries
+- NO manual updates
+- NO local state
+- NO mixed concerns
 
 ## State Structure
 
-Core state includes:
 ```python
 {
     # Core identity (SINGLE SOURCE OF TRUTH)
-    "member_id": "unique_member_id",
-
-    # Channel information (SINGLE SOURCE OF TRUTH)
+    "member_id": str,
     "channel": {
-        "type": "whatsapp",
-        "identifier": "channel_id"
+        "type": str,      # whatsapp, etc
+        "identifier": str # channel-specific id
     },
-
-    # Authentication (SINGLE SOURCE OF TRUTH)
-    "jwt_token": "token",
-    "authenticated": True,
-
-    # Account state (SINGLE SOURCE OF TRUTH)
-    "accounts": [  # All available accounts
-        {
-            "accountID": "account_id",
-            "accountName": "Account Name",
-            "accountHandle": "@handle",
-            "accountType": "PERSONAL",  # or other types
-            "balances": {...},
-            "offerData": {...}
-        }
-    ],
-    "active_account_id": "current_account_id",  # Currently active account
+    "jwt_token": str,
 
     # Flow state
     "flow_data": {
-        # Framework-level step tracking (required for validation)
-        "step": 0,  # Integer for progression tracking
-
-        # Flow-specific routing
-        "current_step": "amount",  # String for step identification
-
-        # Flow type identifier
-        "flow_type": "flow_type"
+        "flow_type": str,  # offer, accept, etc
+        "step": str,       # current step id
+        "data": {          # verified step data
+            "amount": float,
+            "handle": str,
+            "confirmed": bool
+        }
     }
 }
 ```
 
-### Account State Rules
-
-1. **Registration**
-- Creates single personal account
-- Sets as active account
-- Stores in accounts array
-- NO manual account access
-
-2. **Login**
-- May return multiple accounts
-- Sets personal account as active
-- Stores all accounts
-- NO manual account access
-
-3. **Account Access**
-- Use active_account_id to find current account
-- Get accounts from top level state
-- Let StateManager validate account existence
-- NO manual account validation
-
-Note: This is the COMPLETE structure. If you need more fields, question why.
-
 ## Implementation
 
-### 1. State Utils
-```python
-def create_initial_state() -> Dict[str, Any]:
-    """Create minimal initial state"""
-    return {
-        "member_id": None,  # ONLY at top level
-        "channel": {        # ONLY at top level
-            "type": "whatsapp",
-            "identifier": None
-        },
-        "jwt_token": None,  # ONLY in state
-        "flow_data": None   # NO validation state
-    }
-
-def prepare_state_update(state_manager: Any, updates: Dict[str, Any]) -> Dict[str, Any]:
-    """Update state through StateManager validation
-
-    Args:
-        state_manager: State manager instance
-        updates: State updates to validate
-
-    Returns:
-        Validated state data
-
-    Raises:
-        StateException: If validation fails
-    """
-    # Let StateManager validate updates
-    state_manager.update_state(updates)
-
-    # Get validated state
-    return state_manager.get("flow_data")
-```
-
-### 2. State Manager
+### 1. State Manager
 ```python
 class StateManager:
-    """Manages state while enforcing SINGLE SOURCE OF TRUTH"""
+    """Manages state updates and validation"""
 
     def __init__(self, key_prefix: str):
-        """Initialize state manager
-
-        Args:
-            key_prefix: Redis key prefix
-
-        Raises:
-            StateException: If initialization fails
-        """
         self.key_prefix = key_prefix
-        self._initialize_state()  # Raises StateException if invalid
+        self._state = self._initialize()
 
-    def update_state(self, updates: Dict[str, Any]) -> None:
-        """Update state through validation
+    def update_state(self, updates: Dict) -> None:
+        """Update state with validation"""
+        # Validate updates
+        if not self._validate_updates(updates):
+            raise StateError("Invalid state update")
 
-        Args:
-            updates: State updates to validate
+        # Apply updates
+        self._state.update(updates)
 
-        Raises:
-            StateException: If validation fails
-        """
-        # Let StateValidator validate updates
-        StateValidator.validate_state(updates)
+        # Store state
+        self._store_state()
 
-        # Store validated state (raises StateException if fails)
-        success, error = atomic_state.atomic_update(
-            self.key_prefix,
-            updates,
-            ACTIVITY_TTL
-        )
-        if not success:
-            raise StateException(f"Failed to update state: {error}")
+    def get_state(self) -> Dict:
+        """Get current state"""
+        return self._state
+
+    def get_flow_state(self) -> Dict:
+        """Get flow state section"""
+        return self._state.get("flow_data", {})
+
+    def clear_flow_state(self) -> None:
+        """Clear flow state"""
+        self.update_state({
+            "flow_data": None
+        })
 ```
 
-### 3. Error Handling
+### 2. State Validation
 ```python
-# Handle state error with context
-error_context = ErrorContext(
-    error_type="state",
-    message=str(error),
-    details={
-        "update_type": "account_state",
-        "fields": ["active_account_id", "accounts"]
-    }
-)
-error_response = ErrorHandler.handle_error(
-    error,
-    state_manager,
-    error_context
-)
+class StateValidator:
+    """Validates state updates"""
 
-# Create error message
-return Message(
-    recipient=MessageRecipient(
-        channel_id=ChannelIdentifier(
-            channel=ChannelType.WHATSAPP,
-            value=state_manager.get("channel")["identifier"]
-        )
-    ),
-    content=TextContent(
-        body=f"❌ Error: {error_response['data']['action']['details']['message']}"
-    ),
-    metadata=error_response["data"]["action"]["details"]
-)
+    @classmethod
+    def validate_updates(cls, current: Dict, updates: Dict) -> bool:
+        """Validate state updates"""
+        # Check core fields
+        if not cls._validate_core_fields(current, updates):
+            return False
+
+        # Check flow state
+        if "flow_data" in updates:
+            if not cls._validate_flow_state(updates["flow_data"]):
+                return False
+
+        return True
+
+    @classmethod
+    def _validate_core_fields(cls, current: Dict, updates: Dict) -> bool:
+        """Validate core field updates"""
+        core_fields = ["member_id", "channel", "jwt_token"]
+
+        for field in core_fields:
+            if (
+                field in updates and
+                field in current and
+                updates[field] != current[field]
+            ):
+                return False
+
+        return True
+
+    @classmethod
+    def _validate_flow_state(cls, flow_data: Dict) -> bool:
+        """Validate flow state structure"""
+        if flow_data is None:
+            return True
+
+        required = ["flow_type", "step"]
+        return all(field in flow_data for field in required)
+```
+
+### 3. State Usage
+```python
+# Initialize state
+state_manager = StateManager("channel:123")
+
+# Update flow state
+state_manager.update_state({
+    "flow_data": {
+        "flow_type": "offer",
+        "step": "amount",
+        "data": {
+            "amount": 100.00
+        }
+    }
+})
+
+# Get flow state
+flow_state = state_manager.get_flow_state()
+
+# Clear flow state
+state_manager.clear_flow_state()
 ```
 
 ## Best Practices
 
-1. **State Access**
-   - Member ID ONLY at top level
-   - Channel info ONLY at top level
-   - JWT token ONLY in state
-   - NO state duplication
-   - NO state passing
-   - NO state transformation
+1. **State Updates**
+- Use StateManager
+- Validate updates
+- Clear structure
+- NO manual updates
+- NO state duplication
+- NO transformation
 
-2. **State Updates**
-   - Let StateManager validate
-   - NO manual validation
-   - NO state duplication
-   - NO error recovery
-   - NO state fixing
-   - NO cleanup code
+2. **State Access**
+- Use getter methods
+- Check existence
+- Handle missing data
+- NO direct access
+- NO assumptions
+- NO default values
 
-3. **Flow Integration**
-   - Access through StateManager
-   - NO validation state
-   - NO state duplication
-   - NO state passing
-   - NO state transformation
-   - NO error recovery
+3. **Flow State**
+- Clear boundaries
+- Standard structure
+- Minimal nesting
+- NO mixed concerns
+- NO redundant data
+- NO manual handling
 
 4. **Error Handling**
-   - Use ErrorHandler for all errors
-   - Provide clear error context
-   - Include relevant details
-   - NO manual validation
-   - NO error recovery
-   - NO state fixing
-   - Clear error messages
+- Use ErrorHandler
+- Clear boundaries
+- Standard formats
+- NO manual handling
+- NO local recovery
+- NO state fixing
+
+## Integration
+
+The state system integrates with:
+- Flow framework
+- Component system
+- Error handling
+- Message handling
+- API services
 
 For more details on:
-- Service architecture: [Service Architecture](service-architecture.md)
-- Flow framework: [Flow Framework](flow-framework.md)
-- API integration: [API Integration](api-integration.md)
+- Flow Framework: [Flow Framework](flow-framework.md)
+- Components: [Components](components.md)
+- Error Handling: [Error Handling](error-handling.md)

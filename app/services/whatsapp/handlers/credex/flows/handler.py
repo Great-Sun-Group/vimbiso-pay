@@ -1,13 +1,16 @@
-"""Core message handling for credex flows enforcing SINGLE SOURCE OF TRUTH"""
+"""Core message handling for credex flows using component system"""
 import logging
 from typing import Any, Dict, List, Optional
 
-from core.messaging.types import (ButtonContent, ChannelIdentifier,
-                                  ChannelType, Message, MessageRecipient,
-                                  TextContent)
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
-from core.utils.exceptions import StateException
+from core.messaging.types import (
+    ButtonContent,
+    ChannelIdentifier,
+    ChannelType,
+    Message,
+    MessageRecipient,
+    TextContent
+)
+from core.utils.exceptions import ComponentException, FlowException, SystemException
 
 logger = logging.getLogger(__name__)
 
@@ -34,63 +37,83 @@ def create_message(channel_id: str, text: str, buttons: Optional[List[Dict[str, 
 
 
 def validate_message_state(state_manager: Any, message: Dict[str, Any]) -> None:
-    """Validate message through state manager"""
+    """Validate message structure
 
-    # Let StateManager validate message structure
-    state_manager.update_state({
-        "validation": {
-            "type": "message_structure",
-            "required_fields": ["type", "timestamp", "content"],
-            "message": message
-        }
-    })
+    Raises:
+        ComponentException: If message validation fails
+    """
+    # Validate required fields
+    required_fields = ["type", "timestamp", "content"]
+    missing = [field for field in required_fields if field not in message]
+    if missing:
+        raise ComponentException(
+            message=f"Missing required message fields: {', '.join(missing)}",
+            component="message_handler",
+            field="message",
+            value=str(message)
+        )
 
-    # Let StateManager validate message data
-    state_manager.update_state({
-        "validation": {
-            "type": "message_data",
-            "message_type": message.get("type"),
-            "message_timestamp": message.get("timestamp"),
-            "message_content": message.get("content", {})
-        }
-    })
+    # Validate message data
+    message_type = message.get("type")
+    if not message_type:
+        raise ComponentException(
+            message="Missing message type",
+            component="message_handler",
+            field="type",
+            value=str(message)
+        )
+
+    message_content = message.get("content", {})
+    if not message_content:
+        raise ComponentException(
+            message="Missing message content",
+            component="message_handler",
+            field="content",
+            value=str(message)
+        )
 
 
 def handle_message(state_manager: Any, message: Dict[str, Any], credex_service: Any) -> Message:
-    """Handle incoming message through state validation"""
-    # Initialize tracking variables
-    error_type = "flow"
-    flow_state = None
+    """Handle incoming message with proper validation
 
+    Raises:
+        ComponentException: For message validation errors
+        FlowException: For flow state/type errors
+        SystemException: For infrastructure errors
+    """
     try:
-        # Validate message state
+        # Validate message structure
         validate_message_state(state_manager, message)
 
-        # Let StateManager validate flow state
-        state_manager.update_state({
-            "validation": {
-                "type": "flow_state"
-            }
-        })
-
-        # Get validated flow and channel data
+        # Get flow state
         flow_state = state_manager.get_flow_state()
+        if not flow_state:
+            raise FlowException(
+                message="No active flow",
+                step="unknown",
+                action="handle_message",
+                data={"message": message}
+            )
+
+        # Get channel ID
         channel_id = state_manager.get_channel_id()
 
         # Check if already complete
         if flow_state.get("current_step") == "complete":
             return create_message(channel_id, "✅ Your request has been processed.")
 
-        # Let StateManager validate flow type
-        state_manager.update_state({
-            "validation": {
-                "type": "flow_type",
-                "required": True
-            }
-        })
+        # Validate flow type
+        flow_type = flow_state.get("flow_type")
+        if not flow_type:
+            raise FlowException(
+                message="Missing flow type",
+                step=flow_state.get("current_step"),
+                action="validate_flow",
+                data=flow_state
+            )
 
         # Process message through appropriate handler
-        if flow_state["flow_type"] == "offer":
+        if flow_type == "offer":
             from . import offer
             response = offer.process_offer_step(
                 state_manager,
@@ -99,49 +122,43 @@ def handle_message(state_manager: Any, message: Dict[str, Any], credex_service: 
             )
         else:
             from . import action
-            if flow_state["flow_type"] == "accept":
+            if flow_type == "accept":
                 response = action.process_accept_step(state_manager, flow_state["current_step"], message)
-            elif flow_state["flow_type"] == "decline":
+            elif flow_type == "decline":
                 response = action.process_decline_step(state_manager, flow_state["current_step"], message)
-            elif flow_state["flow_type"] == "cancel":
+            elif flow_type == "cancel":
                 response = action.process_cancel_step(state_manager, flow_state["current_step"], message)
             else:
-                raise StateException(f"Unknown flow type: {flow_state['flow_type']}")
+                raise FlowException(
+                    message=f"Unknown flow type: {flow_type}",
+                    step=flow_state.get("current_step"),
+                    action="process_flow",
+                    data={"flow_type": flow_type}
+                )
 
-        # Let StateManager validate completion state
-        state_manager.update_state({
-            "validation": {
-                "type": "flow_complete",
-                "check_completion": True
-            }
-        })
-
-        # Get validated completion state
-        completion_state = state_manager.get_flow_complete_data()
-        if completion_state.get("is_complete"):
+        # Check completion
+        if flow_state.get("current_step") == "complete":
             logger.info(
                 "Flow completed successfully",
                 extra={
-                    "flow_type": completion_state.get("flow_type"),
+                    "flow_type": flow_type,
                     "channel_id": channel_id,
-                    "steps_taken": completion_state.get("steps_taken", 0),
-                    "final_data": completion_state.get("final_data")
+                    "final_data": flow_state.get("data", {})
                 }
             )
             return create_message(channel_id, "✅ Your request has been processed.")
 
         return response
 
+    except (ComponentException, FlowException):
+        # Let validation/flow errors propagate up
+        raise
+
     except Exception as e:
-        # Create error context with proper step tracking
-        error_context = ErrorContext(
-            error_type=error_type,
-            message="Failed to process message",
-            step_id=flow_state.get("current_step") if flow_state else None,
-            details={
-                "message_type": message.get("type"),
-                "flow_type": flow_state.get("flow_type") if flow_state else None,
-                "error": str(e)
-            }
+        # Wrap unexpected errors as system errors
+        raise SystemException(
+            message=f"Failed to process message: {str(e)}",
+            code="MESSAGE_ERROR",
+            service="message_handler",
+            action="handle_message"
         )
-        raise StateException(ErrorHandler.handle_error(e, state_manager, error_context))

@@ -2,9 +2,7 @@
 import logging
 from typing import Any, Dict, Optional
 
-from core.utils.exceptions import StateException
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
+from core.utils.exceptions import FlowException, SystemException
 from ...types import WhatsAppMessage
 from ..member.dashboard import handle_dashboard_display
 
@@ -35,26 +33,27 @@ def process_flow(
         flow_type = state_manager.get_flow_type()  # StateManager validates flow_data structure
         handler_name = FLOW_HANDLERS.get(flow_type)
         if not handler_name:
-            error_context = ErrorContext(
-                error_type="flow",
+            raise FlowException(
                 message=f"Unsupported flow type: {flow_type}",
-                details={"flow_type": flow_type}
-            )
-            error_response = ErrorHandler.handle_error(
-                StateException(error_context.message),
-                state_manager,
-                error_context
-            )
-            return WhatsAppMessage.create_text(
-                channel_id,
-                error_response['data']['action']['details']['message']
+                step="process",
+                action="validate_flow",
+                data={"flow_type": flow_type}
             )
 
-        handler_module = __import__(
-            f"services.whatsapp.handlers.credex.flows.{flow_type}",
-            fromlist=[handler_name]
-        )
-        handler_func = getattr(handler_module, handler_name)
+        try:
+            handler_module = __import__(
+                f"services.whatsapp.handlers.credex.flows.{flow_type}",
+                fromlist=[handler_name]
+            )
+            handler_func = getattr(handler_module, handler_name)
+        except Exception as e:
+            raise SystemException(
+                message=f"Failed to load flow handler: {str(e)}",
+                code="HANDLER_LOAD_ERROR",
+                service="flow_processor",
+                action="load_handler",
+                details={"flow_type": flow_type}
+            )
 
         # Process step (StateManager validates current_step exists)
         current_step = state_manager.get_current_step()
@@ -71,19 +70,11 @@ def process_flow(
                 }
             })
             if not success:
-                error_context = ErrorContext(
-                    error_type="flow",
+                raise FlowException(
                     message=f"Failed to clear flow state: {error}",
-                    details={"flow_type": flow_type}
-                )
-                error_response = ErrorHandler.handle_error(
-                    StateException(error_context.message),
-                    state_manager,
-                    error_context
-                )
-                return WhatsAppMessage.create_text(
-                    channel_id,
-                    error_response['data']['action']['details']['message']
+                    step="complete",
+                    action="clear_state",
+                    data={"flow_type": flow_type}
                 )
 
             # Show default dashboard display
@@ -93,24 +84,29 @@ def process_flow(
         # This allows steps to return None for initial prompts
         return result
 
-    except StateException as e:
-        error_context = ErrorContext(
-            error_type="flow",
-            message=f"Flow processing error: {str(e)}",
+    except (FlowException, SystemException) as e:
+        # Create error message from exception
+        return WhatsAppMessage.create_text(
+            channel_id,
+            str(e)
+        )
+
+    except Exception as e:
+        # Wrap unexpected errors
+        error = SystemException(
+            message=str(e),
+            code="FLOW_ERROR",
+            service="flow_processor",
+            action="process_flow",
             details={
                 "flow_type": state_manager.get_flow_type(),
                 "step": state_manager.get_current_step(),
                 "input": input_value
             }
         )
-        error_response = ErrorHandler.handle_error(
-            e,
-            state_manager,
-            error_context
-        )
         return WhatsAppMessage.create_text(
-            state_manager.get_channel_id(),
-            error_response['data']['action']['details']['message']
+            channel_id,
+            str(error)
         )
 
 
@@ -129,36 +125,33 @@ def handle_flow_completion(state_manager: Any, success_message: Optional[str] = 
             }
         })
         if not success:
-            error_context = ErrorContext(
-                error_type="flow",
+            raise FlowException(
                 message=f"Failed to clear flow state: {error}",
-                details={"channel_id": channel_id}
-            )
-            error_response = ErrorHandler.handle_error(
-                StateException(error_context.message),
-                state_manager,
-                error_context
-            )
-            return WhatsAppMessage.create_text(
-                channel_id,
-                error_response['data']['action']['details']['message']
+                step="complete",
+                action="clear_state",
+                data={"channel_id": channel_id}
             )
 
         # Show dashboard
         return handle_dashboard_display(state_manager)
 
-    except StateException as e:
-        error_context = ErrorContext(
-            error_type="flow",
-            message=f"Flow completion error: {str(e)}",
-            details={"channel_id": state_manager.get_channel_id()}
+    except (FlowException, SystemException) as e:
+        # Create error message from exception
+        return WhatsAppMessage.create_text(
+            state_manager.get_channel_id(),
+            str(e)
         )
-        error_response = ErrorHandler.handle_error(
-            e,
-            state_manager,
-            error_context
+
+    except Exception as e:
+        # Wrap unexpected errors
+        error = SystemException(
+            message=str(e),
+            code="COMPLETION_ERROR",
+            service="flow_processor",
+            action="handle_completion",
+            details={"channel_id": state_manager.get_channel_id()}
         )
         return WhatsAppMessage.create_text(
             state_manager.get_channel_id(),
-            error_response['data']['action']['details']['message']
+            str(error)
         )

@@ -20,99 +20,126 @@
 - JWT token ONLY in state
 - No credential duplication
 
-## Implementation Patterns
+## Component Patterns
 
-### 1. API Calls
+### 1. Input Validation
 ```python
-# CORRECT - Extract credentials only when needed
-def make_api_call(state_manager: Any) -> None:
-    """Make API call through state validation"""
-    # Let StateManager validate through update
+# CORRECT - Component handles validation
+class AmountDenomInput(InputComponent):
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate through component"""
+        try:
+            amount = float(value)
+            if amount <= 0:
+                return ValidationResult(
+                    valid=False,
+                    error={
+                        "type": "input",
+                        "message": "Amount must be positive"
+                    }
+                )
+            return ValidationResult(valid=True)
+        except ValueError:
+            return ValidationResult(
+                valid=False,
+                error={
+                    "type": "input",
+                    "message": "Invalid amount format"
+                }
+            )
+
+# WRONG - Manual validation in flow
+def handle_amount(state_manager: Any, value: str) -> None:
+    try:
+        amount = float(value)  # Don't validate here!
+        if amount > 0:  # Don't check here!
+            state_manager.update_state({"amount": amount})
+    except ValueError:
+        pass  # Don't handle errors here!
+```
+
+### 2. Data Conversion
+```python
+# CORRECT - Component converts to verified data
+class HandleInput(InputComponent):
+    def to_verified_data(self) -> Dict:
+        """Convert to verified data"""
+        return {
+            "handle": self.value  # Clean handle value
+        }
+
+# WRONG - Flow transforms data
+def process_handle(state_manager: Any, handle: str) -> None:
+    cleaned = handle.strip()  # Don't transform here!
+    state_manager.update_state({
+        "handle": cleaned  # Don't store unverified!
+    })
+```
+
+### 3. Component State
+```python
+# CORRECT - Component state in flow_data
+state_manager.update_state({
+    "flow_data": {
+        "active_component": {
+            "type": "amount_input",
+            "value": "100.00",
+            "validation": {
+                "in_progress": True
+            }
+        }
+    }
+})
+
+# WRONG - Component state outside flow_data
+state_manager.update_state({
+    "input_value": "100.00",  # Don't store outside!
+    "validation": {...}       # Don't separate validation!
+})
+```
+
+### 4. Error Boundaries
+```python
+# CORRECT - Clear error boundaries
+# Component error (validation)
+result = component.validate("invalid")
+if not result.valid:
     state_manager.update_state({
         "flow_data": {
-            "step": "api_call"
+            "active_component": {
+                "error": result.error  # Component-level error
+            }
         }
     })
 
-    # Extract token ONLY when needed
-    jwt_token = state_manager.get("jwt_token")
-    if jwt_token:
-        headers["Authorization"] = f"Bearer {jwt_token}"
-
-    # Make request with validated token
-    response = requests.post(url, headers=headers)
-
-# WRONG - Store credentials in variables
-def make_api_call(state_manager: Any) -> None:
-    token = state_manager.get("jwt_token")  # Don't store!
-    make_request(token)  # Don't pass credentials!
-```
-
-### 2. Channel Info
-```python
-# CORRECT - Extract from state only when needed
-def handle_auth(state_manager: Any) -> None:
-    """Handle auth through state validation"""
-    # Let StateManager validate channel
-    channel = state_manager.get("channel")
-    if not channel or not channel.get("identifier"):
-        raise ConfigurationException("Missing channel identifier")
-
-    # Use phone ONLY for this request
-    payload = {"phone": channel["identifier"]}
-    response = make_request(payload)
-
-# WRONG - Store channel info in variables
-def handle_auth(state_manager: Any) -> None:
-    phone = state_manager.get("channel")["identifier"]  # Don't store!
-    make_auth_call(phone)  # Don't pass phone!
-```
-
-### 3. State Updates
-```python
-# CORRECT - Update through state_manager
-def handle_response(state_manager: Any, response: Dict[str, Any]) -> None:
-    """Handle response through state validation"""
-    # Let StateManager validate response data
-    state_manager.update_state({
-        "flow_data": {
-            "response": response
-        }
-    })
-
-# WRONG - Transform state manually
-def handle_response(state_manager: Any, response: Dict[str, Any]) -> None:
-    data = transform_response(response)  # Don't transform!
-    state_manager.update_state({"data": data})
-```
-
-### 4. Error Handling
-```python
-# CORRECT - Use ErrorHandler with context
+# Flow error (business logic)
 try:
-    response = make_credex_request(
-        'credex', 'create',
-        payload=payload,
-        state_manager=state_manager
-    )
-except Exception as e:
+    if amount > balance:
+        raise FlowException("Insufficient balance")
+except FlowException as e:
     error_context = ErrorContext(
-        error_type="api",
+        error_type="flow",  # Flow-level error
         message=str(e),
-        details={
-            "operation": "create_credex",
-            "payload": payload
-        }
+        details={...}
     )
-    return ErrorHandler.handle_error(
-        e,
-        state_manager,
-        error_context
-    )
+    ErrorHandler.handle_error(e, state_manager, error_context)
 
-# WRONG - Handle errors manually
+# System error (top level)
 try:
-    response = make_request()
+    response = make_api_call()
+except APIException as e:
+    error_context = ErrorContext(
+        error_type="system",  # System-level error
+        message="Service unavailable",
+        details={...}
+    )
+    ErrorHandler.handle_error(e, state_manager, error_context)
+
+# WRONG - Mixed error handling
+try:
+    result = validate_input(value)  # Don't mix validation!
+    if not result.valid:
+        raise APIException(result.error)  # Don't mix error types!
 except Exception as e:
     return {"error": str(e)}  # Don't handle directly!
 ```

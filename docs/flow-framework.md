@@ -1,240 +1,249 @@
 # Flow Framework
 
-## Overview
+## Core Principles
 
-The Flow Framework provides a progressive interaction system for handling complex, multi-step conversations in WhatsApp, extendable to other channels. It enables:
-- Member-centric state management (SINGLE SOURCE OF TRUTH)
-- Multi-channel support
-- Structured data collection
-- Validation through state updates
-- Clear error handling through ErrorHandler
-- Consistent error context
+1. **Clear Boundaries**
+- Flows manage progression
+- Components handle input
+- State validates updates
+- NO mixed responsibilities
+- NO state duplication
+- NO manual validation
 
-## Core Components
+2. **Simple Structure**
+- Minimal nesting
+- Clear flow types
+- Standard components
+- NO complex hierarchies
+- NO redundant wrapping
+- NO state duplication
 
-### 1. Flow Management
+3. **Pure Functions**
+- Stateless operations
+- Clear input/output
+- Standard validation
+- NO stored state
+- NO side effects
+- NO manual handling
 
-The framework consists of three main components:
+4. **Central Management**
+- Single flow registry
+- Standard progression
+- Clear validation
+- NO manual routing
+- NO local state
+- NO mixed concerns
 
-- **Flow Base Class**
-  - Manages member-centric state
-  - Handles channel abstraction
-  - Manages step progression
-  - Processes input through state updates
-  - Integrates with state management
-  - Handles errors through ErrorHandler
-  - Maintains error context
+## Flow Types
 
-- **FlowStateManager**
-  - Validates all state updates
-  - Manages state transitions
-  - Raises StateException for invalid state
-  - Enforces SINGLE SOURCE OF TRUTH
-  - Manages channel information
+```python
+class FlowRegistry:
+    """Central flow type management"""
 
-- **Step Definition**
-  - Defines interaction type
-  - Updates state for validation
-  - Processes input through state
-  - Generates channel-aware messages
+    FLOWS = {
+        "offer": {
+            "steps": ["amount", "handle", "confirm"],
+            "components": {
+                "amount": "AmountInput",
+                "handle": "HandleInput",
+                "confirm": "ConfirmInput"
+            }
+        },
+        "accept": {
+            "steps": ["select", "confirm"],
+            "components": {
+                "select": "SelectInput",
+                "confirm": "ConfirmInput"
+            }
+        },
+        "decline": {
+            "steps": ["select", "confirm"],
+            "components": {
+                "select": "SelectInput",
+                "confirm": "ConfirmInput"
+            }
+        }
+    }
+```
 
-### 2. Step Types
+## Flow State
 
-Supports three interaction types:
-- `TEXT`: Free-form text input
-- `BUTTON`: Button-based responses
-- `LIST`: Selection from a list of options
+```python
+{
+    # Flow identification
+    "flow_type": str,     # offer, accept, decline
+    "step": str,          # current step id
 
-### 3. State Integration
-
-Each flow maintains:
-- Member ID as primary identifier (ONLY at top level)
-- Channel information (ONLY at top level)
-- Step tracking (dual representation):
-  - step (integer): Framework-level progression tracking (0,1,2...)
-  - current_step (string): Flow-specific routing ("amount","handle"...)
-- Collected data
-- NO validation state
-- NO previous state
-- NO recovery paths
-
-The dual step tracking serves distinct purposes:
-- Integer step: Required by framework for validation
-- String current_step: Used by flows for routing and message handling
+    # Verified data
+    "data": {
+        "amount": float,      # Validated amount
+        "handle": str,        # Validated handle
+        "confirmed": bool     # Confirmation status
+    }
+}
+```
 
 ## Implementation
 
-### Flow Creation
-
+### 1. Flow Manager
 ```python
-class CredexFlow(Flow):
-    def __init__(self, flow_type: str, state: Dict = None):
-        # Get member ID and channel info
-        member_id = state.get("member_id")
-        channel_id = self._get_channel_identifier(state)
+class FlowManager:
+    """Manages flow progression"""
 
-        steps = self._create_steps()
-        super().__init__(f"{flow_type}_{member_id}", steps)
+    def __init__(self, flow_type: str):
+        self.config = FlowRegistry.FLOWS[flow_type]
+        self.components = {}
+
+    def get_component(self, step: str) -> Component:
+        """Get component for step"""
+        component_type = self.config["components"][step]
+        if step not in self.components:
+            self.components[step] = create_component(component_type)
+        return self.components[step]
+
+    def validate_step(self, step: str, value: Any) -> Dict:
+        """Validate step input"""
+        component = self.get_component(step)
+        result = component.validate(value)
+        if not result.valid:
+            return ErrorHandler.handle_component_error(
+                component=component.type,
+                field=step,
+                value=value,
+                message=result.message
+            )
+        return None
+
+    def process_step(self, step: str, value: Any) -> Dict:
+        """Process step input"""
+        # Validate input
+        error = self.validate_step(step, value)
+        if error:
+            return error
+
+        # Convert to verified data
+        component = self.get_component(step)
+        return component.to_verified_data(value)
 ```
 
-### Step Definition
-
+### 2. Flow Processing
 ```python
-# WRONG - Using validator and transformer functions
-Step(
-    id="amount",
-    type=StepType.TEXT,
-    message=self._get_amount_prompt,
-    validator=self._validate_amount,  # NO manual validation!
-    transformer=self._transform_amount
-)
+def process_flow_input(
+    state_manager: Any,
+    input_data: Any
+) -> Optional[Dict]:
+    """Process flow input"""
+    # Get flow state
+    flow_state = state_manager.get_flow_state()
+    flow_type = flow_state["flow_type"]
+    current_step = flow_state["step"]
 
-# CORRECT - Let StateManager validate through state updates
-Step(
-    id="amount",
-    type=StepType.TEXT,
-    message=self._get_amount_prompt,
-    process_input=self._process_amount  # Updates state for validation
-)
+    # Get flow manager
+    flow_manager = FlowManager(flow_type)
 
-def _process_amount(self, state_manager: Any, input_data: str) -> None:
-    """Process amount input through state update"""
+    # Process step
+    result = flow_manager.process_step(
+        current_step,
+        input_data
+    )
+
+    # Handle error
+    if "error" in result:
+        return result
+
+    # Update state
     state_manager.update_state({
         "flow_data": {
-            "input": {
-                "amount": input_data  # StateManager validates
-            }
+            "data": result
         }
     })
+
+    # Get next step
+    next_step = get_next_step(flow_type, current_step)
+    if not next_step:
+        return complete_flow(state_manager)
+
+    # Update step
+    state_manager.update_state({
+        "flow_data": {
+            "step": next_step
+        }
+    })
+
+    return get_step_message(next_step)
 ```
 
-### State Structure
-
+### 3. Flow Completion
 ```python
-# Core identity - SINGLE SOURCE OF TRUTH
-state_manager.update_state({
-    # Member ID - ONLY at top level
-    "member_id": member_id,
+def complete_flow(state_manager: Any) -> Dict:
+    """Complete flow processing"""
+    try:
+        # Get flow data
+        flow_data = state_manager.get_flow_state()
 
-    # Channel info - ONLY at top level
-    "channel": {
-        "type": "whatsapp",
-        "identifier": channel_id
-    },
+        # Process completion
+        result = process_completion(flow_data)
 
-    # Flow state - NO validation state
-    "flow_data": {
-        "step": current_step,
-        "flow_type": flow_type
-    }
-})
-```
+        # Clear flow state
+        state_manager.update_state({
+            "flow_data": None
+        })
 
-### Error Handling
+        return result
 
-```python
-# Handle flow error with context
-error_context = ErrorContext(
-    error_type="flow",
-    message=f"Error in step {step_id}: {str(error)}",
-    step_id=step_id,
-    details={
-        "flow_type": flow_type,
-        "input": input_data
-    }
-)
-error_response = ErrorHandler.handle_error(
-    error,
-    state_manager,
-    error_context
-)
-
-# Create error message
-return Message(
-    recipient=MessageRecipient(
-        channel_id=ChannelIdentifier(
-            channel=ChannelType.WHATSAPP,
-            value=state_manager.get("channel")["identifier"]
+    except Exception as e:
+        return ErrorHandler.handle_flow_error(
+            step="complete",
+            action="process",
+            data=flow_data,
+            message="Failed to complete flow"
         )
-    ),
-    content=TextContent(
-        body=f"❌ Error: {error_response['data']['action']['details']['message']}"
-    ),
-    metadata=error_response["data"]["action"]["details"]
-)
 ```
-
-## Message Handling
-
-### 1. Message Types
-- Text messages
-- Button messages
-- List messages
-- Interactive content
-- Template messages
-
-### 2. Template Organization
-- Member-centric templates
-- Channel-aware components
-- Reusable components
-- Type-safe creation
-- Consistent formatting
 
 ## Best Practices
 
-1. **State Management**
-   - Member ID ONLY at top level
-   - Channel info ONLY at top level
-   - NO validation state
-   - NO state duplication
-   - NO state transformation
-   - NO state passing
-   - NO error recovery
+1. **Flow Management**
+- Use FlowRegistry
+- Clear step progression
+- Standard components
+- NO manual routing
+- NO local state
+- NO mixed concerns
 
-2. **Flow Implementation**
-   - Keep flows focused and single-purpose
-   - Let StateManager validate through updates
-   - Handle channel-specific requirements
-   - Process input through state updates
-   - Handle errors through ErrorHandler
-   - Use clear error context
-   - NO manual validation
+2. **State Updates**
+- Minimal updates
+- Clear structure
+- Standard validation
+- NO state duplication
+- NO manual validation
+- NO state fixing
 
-3. **Template Usage**
-   - Use member-centric templates
-   - Handle channel-specific formatting
-   - Keep templates reusable
-   - Follow channel limits
-   - Let StateManager validate templates
+3. **Error Handling**
+- Use ErrorHandler
+- Clear boundaries
+- Standard formats
+- NO manual handling
+- NO local recovery
+- NO state fixing
 
-4. **Error Handling**
-   - Use ErrorHandler for all errors
-   - Provide clear error context
-   - Include step information
-   - Add relevant details
-   - NO manual validation
-   - NO error recovery
-   - NO state fixing
-   - Clear error messages
-
-5. **Error Context**
-   - Include flow type
-   - Include step ID
-   - Add input data
-   - Provide clear messages
-   - Include relevant details
-   - Enable debugging
+4. **Component Usage**
+- Standard components
+- Clear validation
+- Pure functions
+- NO stored state
+- NO side effects
+- NO manual handling
 
 ## Integration
 
 The Flow Framework integrates with:
-- WhatsApp message handling
-- Redis state management
+- Component system
+- State management
+- Error handling
+- Message templates
 - API services
-- User authentication
-- Error handling system
 
 For more details on:
+- Components: [Components](components.md)
 - State Management: [State Management](state-management.md)
-- WhatsApp Integration: [WhatsApp](whatsapp.md)
-- API Integration: [API Integration](api-integration.md)
+- Error Handling: [Error Handling](error-handling.md)

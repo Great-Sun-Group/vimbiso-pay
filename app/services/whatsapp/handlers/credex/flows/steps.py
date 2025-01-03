@@ -1,45 +1,88 @@
-"""Flow step processing with state validation through StateManager"""
+"""Step processing for credex flows enforcing SINGLE SOURCE OF TRUTH"""
 from typing import Any, Dict, Optional
 
+from core.components.input import SelectInput, ConfirmInput
+from core.utils.exceptions import FlowException, SystemException
 
-def process_step(state_manager: Any, step: str, input_data: Optional[Any] = None, action: Optional[str] = None) -> Dict[str, Any]:
-    """Process flow step input with validation through state updates
+
+def process_step(state_manager: Any, step: str, input_data: Any, action: str) -> Optional[Dict]:
+    """Process step input with validation
 
     Args:
-        state_manager: Manages state validation and updates
-        step: Current step name
-        input_data: Step input to validate
-        action: Optional action type for action flows
+        state_manager: State manager instance
+        step: Current step
+        input_data: Input value
+        action: Action type (accept/decline/cancel)
 
     Returns:
-        Validated step data
+        Step result or None if invalid
     """
-    # Skip empty input - let flow handle initial prompts
-    if not input_data:
-        return {}
+    try:
+        # Process step with proper component validation
+        if step == "select":
+            # Get offers from state
+            flow_data = state_manager.get_flow_state()
+            offers = flow_data.get("data", {}).get("offers", [])
 
-    # Let StateManager validate step input
-    state_manager.update_state({
-        "validation": {
-            "type": "step_input",
-            "step": step,
-            "input": input_data,
-            "action": action
-        }
-    })
+            # Validate selection through component
+            select_component = SelectInput([str(i+1) for i in range(len(offers))])
+            result = select_component.validate(input_data)
+            if "error" in result:
+                return result
 
-    # Get validated step data
-    step_data = state_manager.get_step_data()
+            # Convert to verified data
+            select_data = select_component.to_verified_data(input_data)
+            selected_index = int(select_data["selected_id"]) - 1
+            selected_offer = offers[selected_index]
 
-    # Let StateManager validate step state
-    state_manager.update_state({
-        "validation": {
-            "type": "step_state",
-            "step": step,
-            "data": step_data,
-            "action": action
-        }
-    })
+            # Update state with selection
+            state_manager.update_state({
+                "flow_data": {
+                    "data": {
+                        "credex_id": selected_offer["id"],
+                        "amount": selected_offer["formattedInitialAmount"],
+                        "counterparty": selected_offer["counterpartyAccountName"]
+                    },
+                    "step": "confirm"
+                }
+            })
 
-    # Return validated step data
-    return state_manager.get_step_data()
+            return {
+                "success": True,
+                "credex_id": selected_offer["id"]
+            }
+
+        elif step == "confirm":
+            # Validate confirmation through component
+            confirm_component = ConfirmInput()
+            result = confirm_component.validate(input_data)
+            if "error" in result:
+                return result
+
+            # Convert to verified data
+            confirm_data = confirm_component.to_verified_data(input_data)
+
+            # Return confirmation result
+            return {
+                "success": True,
+                "confirmed": confirm_data["confirmed"]
+            }
+
+        return None
+
+    except FlowException:
+        # Let flow errors propagate up
+        raise
+
+    except Exception as e:
+        # Wrap unexpected errors as system errors
+        raise SystemException(
+            message=str(e),
+            code="STEP_ERROR",
+            service="credex_steps",
+            action=f"{action}_{step}",
+            details={
+                "step": step,
+                "input": input_data
+            }
+        )
