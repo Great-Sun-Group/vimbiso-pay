@@ -28,7 +28,15 @@ class BaseMessagingService(MessagingServiceInterface):
     def send_message(self, message: Message) -> Message:
         """Send a message to a recipient"""
         if not self.validate_message(message):
-            raise MessageValidationError("Invalid message")
+            raise MessageValidationError(
+                message="Invalid message",
+                service="messaging",
+                action="send_message",
+                validation_details={
+                    "message_type": message.content.type if message and message.content else None,
+                    "validation_error": "Message validation failed"
+                }
+            )
 
         return self._send_message(message)
 
@@ -37,11 +45,16 @@ class BaseMessagingService(MessagingServiceInterface):
     ) -> Message:
         """Send a text message"""
         if not text:
-            raise MessageFormatError("Text content cannot be empty")
+            raise MessageFormatError(
+                message="Text content cannot be empty",
+                service="messaging",
+                action="send_text",
+                format_details={"field": "text", "error": "empty"}
+            )
 
         message = Message(
             recipient=recipient,
-            content=TextContent(body=text)
+            content=TextContent(body=text, preview_url=preview_url)
         )
         return self.send_message(message)
 
@@ -55,9 +68,19 @@ class BaseMessagingService(MessagingServiceInterface):
     ) -> Message:
         """Send an interactive message"""
         if not body:
-            raise MessageFormatError("Message body cannot be empty")
+            raise MessageFormatError(
+                message="Message body cannot be empty",
+                service="messaging",
+                action="send_interactive",
+                format_details={"field": "body", "error": "empty"}
+            )
         if not buttons:
-            raise MessageFormatError("Interactive message must have buttons")
+            raise MessageFormatError(
+                message="Interactive message must have buttons",
+                service="messaging",
+                action="send_interactive",
+                format_details={"field": "buttons", "error": "empty"}
+            )
 
         content = InteractiveContent(
             interactive_type=InteractiveType.BUTTON,
@@ -92,13 +115,56 @@ class BaseMessagingService(MessagingServiceInterface):
 
     def _validate_content(self, content: MessageContent) -> None:
         """Validate message content"""
+        # Validate content is a MessageContent instance
         if not isinstance(content, MessageContent):
-            raise MessageFormatError("Invalid message content type")
+            raise MessageFormatError(
+                message="Invalid message content type",
+                service="messaging",
+                action="validate_content",
+                format_details={
+                    "expected": "MessageContent",
+                    "received": type(content).__name__
+                }
+            )
 
+        # Validate content has a type
+        if not hasattr(content, 'type'):
+            raise MessageFormatError(
+                message="Message content must have a type field",
+                service="messaging",
+                action="validate_content",
+                format_details={"error": "missing_type_field"}
+            )
+
+        # Validate type is set
         if not content.type:
-            raise MessageFormatError("Message content must have a type")
+            raise MessageFormatError(
+                message="Message content must have a type value",
+                service="messaging",
+                action="validate_content",
+                format_details={"error": "missing_type_value"}
+            )
 
-        # Type-specific validation is handled by the content classes
+        # Type-specific validation
+        if isinstance(content, TextContent):
+            if not hasattr(content, 'body') or not content.body:
+                raise MessageFormatError(
+                    message="Text content must have a body",
+                    service="messaging",
+                    action="validate_content",
+                    format_details={"error": "missing_body"}
+                )
+            if not isinstance(content.body, str):
+                raise MessageFormatError(
+                    message="Text content body must be a string",
+                    service="messaging",
+                    action="validate_content",
+                    format_details={
+                        "error": "invalid_body_type",
+                        "expected": "str",
+                        "received": type(content.body).__name__
+                    }
+                )
 
     def _send_message(self, message: Message) -> Message:
         """Internal method to send the message

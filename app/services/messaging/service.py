@@ -197,25 +197,13 @@ class MessagingService(MessagingServiceInterface):
                 # Get member handler
                 handler = self._get_handler("member")
 
-                # Send greeting first
-                greeting_result = handler.handle_flow_step(
+                # Start with greeting step
+                return handler.handle_flow_step(
                     state_manager=state_manager,
                     flow_type="member_auth",
                     step="greeting",
                     input_value=message_text
                 )
-                self.messaging.send_message(greeting_result)
-
-                # Then process login and return dashboard
-                login_result = handler.handle_flow_step(
-                    state_manager=state_manager,
-                    flow_type="member_auth",
-                    step="login",
-                    input_value=message_text
-                )
-
-                # Return login result after greeting is sent
-                return login_result
 
             # Default response for unhandled messages
             return self.messaging.send_text(

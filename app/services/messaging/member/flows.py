@@ -32,7 +32,7 @@ class AuthFlow:
 
             if step == "greeting":
                 # Create greeting component
-                from core.components.registry import create_component
+                from core.components.registry import create_component, ComponentRegistry
                 component = create_component("Greeting")
 
                 # Validate and get greeting
@@ -45,13 +45,31 @@ class AuthFlow:
                         data={"validation": validation_result.error}
                     )
 
-                # Send greeting with proper message structure
+                # Send greeting and continue to login step
                 recipient = get_recipient(state_manager)
-                return Message(
-                    recipient=recipient,
-                    content=TextContent(
-                        body=component.to_message_content(validation_result.value)
+                # Get greeting content
+                greeting_content = component.to_message_content(validation_result.value)
+                if not isinstance(greeting_content, str):
+                    raise FlowException(
+                        message="Invalid greeting content type",
+                        step="greeting",
+                        action="format_content",
+                        data={"content_type": type(greeting_content).__name__}
                     )
+
+                # Create message with validated content
+                greeting_message = Message(
+                    recipient=recipient,
+                    content=TextContent(body=greeting_content)
+                )
+                messaging_service.send_message(greeting_message)
+
+                # Continue to login step
+                return AuthFlow.process_step(
+                    messaging_service=messaging_service,
+                    state_manager=state_manager,
+                    step="login",
+                    input_value=input_value
                 )
 
             elif step == "login":
@@ -104,21 +122,89 @@ class AuthFlow:
                             action="update_profile",
                             data={"response": response_data}
                         )
-
-                    # Get account handler for dashboard
-                    from ..account.handlers import AccountHandler
-                    account_handler = AccountHandler(messaging_service)
-
-                    # Start dashboard flow
-                    return account_handler.start_dashboard(state_manager)
-
+                    # Continue to login complete step
+                    return AuthFlow.process_step(
+                        messaging_service=messaging_service,
+                        state_manager=state_manager,
+                        step="login_complete",
+                        input_value=input_value
+                    )
                 else:
                     # Return registration message
                     recipient = get_recipient(state_manager)
+                    # Get and validate message content
+                    message_content = auth_details.get("message")
+                    if not isinstance(message_content, str):
+                        raise FlowException(
+                            message="Invalid message content type",
+                            step="login",
+                            action="format_content",
+                            data={"content_type": type(message_content).__name__}
+                        )
+
                     return Message(
                         recipient=recipient,
-                        content=TextContent(body=auth_details.get("message"))
+                        content=TextContent(body=message_content)
                     )
+
+            elif step == "login_complete":
+                # Get dashboard component through account handler
+                component_type = FlowRegistry.get_step_component("account_dashboard", "display")
+                component = ComponentRegistry.create_component(component_type)
+                component.set_state_manager(state_manager)
+
+                # Validate and get dashboard data
+                validation_result = component.validate({})
+                if not validation_result.valid:
+                    raise FlowException(
+                        message=validation_result.error["message"],
+                        step="login_complete",
+                        action="validate_dashboard",
+                        data={
+                            "validation_error": validation_result.error,
+                            "component": "account_dashboard"
+                        }
+                    )
+
+                # Get verified dashboard data with actions
+                verified_data = component.to_verified_data(validation_result.value)
+
+                # Format message using account data
+                from core.messaging.formatters import AccountFormatters
+                from core.messaging.types import Button
+
+                # Get account data and merge with balance data
+                active_account = verified_data["active_account"]
+                balance_data = active_account.get("balanceData", {})
+
+                # Get member tier from dashboard data
+                member_data = verified_data["dashboard"].get("member", {})
+                member_tier = member_data.get("memberTier")
+                tier_limit_display = ""
+                if member_tier < 2:
+                    remaining_usd = balance_data.get("remainingAvailableUSD", "0.00")
+                    tier_limit_display = f"\n⏳ DAILY MEMBER TIER LIMIT: {remaining_usd} USD"
+
+                account_data = {
+                    "accountName": active_account.get("accountName"),
+                    "accountHandle": active_account.get("accountHandle"),
+                    **balance_data,
+                    "tier_limit_display": tier_limit_display
+                }
+                message = AccountFormatters.format_dashboard(account_data)
+
+                # Convert button dictionaries to Button objects
+                buttons = [
+                    Button(id=btn["id"], title=btn["title"])
+                    for btn in verified_data["buttons"]
+                ]
+
+                # Create interactive message with buttons
+                return messaging_service.send_interactive(
+                    recipient=recipient,
+                    body=message,
+                    buttons=buttons
+                )
 
             else:
                 raise FlowException(
@@ -181,9 +267,11 @@ class UpgradeFlow:
 
                 confirmed = input_value.lower() in ["yes", "y"]
                 if not confirmed:
+                    # Create message with static content
+                    cancel_message = "❌ Upgrade cancelled."
                     return Message(
                         recipient=recipient,
-                        content=TextContent(body="❌ Upgrade cancelled.")
+                        content=TextContent(body=cancel_message)
                     )
 
                 # Update state
@@ -194,11 +282,19 @@ class UpgradeFlow:
                 })
 
                 # Return completion message
+                # Get and validate completion content
+                completion_content = UpgradeFlow.get_step_content("complete")
+                if not isinstance(completion_content, str):
+                    raise FlowException(
+                        message="Invalid completion content type",
+                        step="complete",
+                        action="format_content",
+                        data={"content_type": type(completion_content).__name__}
+                    )
+
                 return Message(
                     recipient=recipient,
-                    content=TextContent(
-                        body=UpgradeFlow.get_step_content("complete")
-                    )
+                    content=TextContent(body=completion_content)
                 )
 
             else:
@@ -278,11 +374,19 @@ class RegistrationFlow:
                 })
 
                 # Return next step message
+                # Get and validate next step content
+                next_step_content = RegistrationFlow.get_step_content("lastname")
+                if not isinstance(next_step_content, str):
+                    raise FlowException(
+                        message="Invalid next step content type",
+                        step="firstname",
+                        action="format_content",
+                        data={"content_type": type(next_step_content).__name__}
+                    )
+
                 return Message(
                     recipient=recipient,
-                    content=TextContent(
-                        body=RegistrationFlow.get_step_content("lastname")
-                    )
+                    content=TextContent(body=next_step_content)
                 )
 
             elif step == "lastname":
@@ -303,14 +407,23 @@ class RegistrationFlow:
                 })
 
                 # Return completion message
+                # Get and validate completion content
+                completion_data = {
+                    "firstname": state_manager.get_flow_data().get("firstname"),
+                    "lastname": input_value
+                }
+                completion_content = RegistrationFlow.get_step_content("complete", completion_data)
+                if not isinstance(completion_content, str):
+                    raise FlowException(
+                        message="Invalid completion content type",
+                        step="complete",
+                        action="format_content",
+                        data={"content_type": type(completion_content).__name__}
+                    )
+
                 return Message(
                     recipient=recipient,
-                    content=TextContent(
-                        body=RegistrationFlow.get_step_content("complete", {
-                            "firstname": state_manager.get_flow_data().get("firstname"),
-                            "lastname": input_value
-                        })
-                    )
+                    content=TextContent(body=completion_content)
                 )
 
             else:

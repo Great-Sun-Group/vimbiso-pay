@@ -210,7 +210,15 @@ class WhatsAppMessagingService(BaseMessagingService):
 
         except SystemException as e:
             logger.error(f"Error sending message: {str(e)}")
-            raise MessageValidationError(f"Failed to send message: {str(e)}")
+            raise MessageValidationError(
+                message=f"Failed to send message: {str(e)}",
+                service="whatsapp",
+                action="send_message",
+                validation_details={
+                    "error": str(e),
+                    "message_type": message.content.type if message and message.content else None
+                }
+            )
 
     def send_text(
         self,
@@ -219,6 +227,20 @@ class WhatsAppMessagingService(BaseMessagingService):
         preview_url: bool = False
     ) -> Message:
         """Send a text message"""
+        # Validate text content
+        if not isinstance(text, str):
+            raise MessageValidationError(
+                message="Invalid text content type",
+                service="whatsapp",
+                action="send_text",
+                validation_details={
+                    "error": "invalid_type",
+                    "expected": "str",
+                    "received": type(text).__name__
+                }
+            )
+
+        # Create message with validated content
         message = Message(
             recipient=recipient,
             content=TextContent(body=text, preview_url=preview_url)
@@ -267,4 +289,13 @@ class WhatsAppMessagingService(BaseMessagingService):
             return self.send_message(message)
         except Exception as e:
             logger.error(f"Error sending template {template_name}: {str(e)}")
-            raise MessageValidationError(f"Failed to send template: {str(e)}")
+            raise MessageValidationError(
+                message=f"Failed to send template: {str(e)}",
+                service="whatsapp",
+                action="send_template",
+                validation_details={
+                    "error": str(e),
+                    "template_name": template_name,
+                    "language": language
+                }
+            )
