@@ -7,8 +7,9 @@ All components must be registered here to be used in flows.
 from typing import Dict, Type
 
 from .base import Component
-from .account import AccountSelect, LedgerDisplay
-from .auth import LoginHandler, LoginCompleteHandler, DashboardDisplay
+from .account import AccountDashboard, AccountSelect, LedgerDisplay
+from .auth import LoginHandler, LoginCompleteHandler
+from .greeting import GreetingComponent
 from .input import AmountInput, ConfirmInput, HandleInput, SelectInput, ButtonInput
 from .registration import (
     FirstNameInput, LastNameInput, RegistrationComplete, RegistrationWelcome
@@ -21,6 +22,14 @@ class ComponentRegistry:
 
     # Component type definitions matching service structure
     COMPONENTS: Dict[str, Dict] = {
+        # Greeting component
+        "Greeting": {
+            "type": "greeting",
+            "class": GreetingComponent,
+            "validates": ["greeting"],
+            "converts_to": ["message"]
+        },
+
         # Member components
         "LoginHandler": {
             "type": "auth",
@@ -33,12 +42,6 @@ class ComponentRegistry:
             "class": LoginCompleteHandler,
             "validates": ["auth_response"],
             "converts_to": ["member_data", "accounts"]
-        },
-        "DashboardDisplay": {
-            "type": "display",
-            "class": DashboardDisplay,
-            "validates": ["member_id"],
-            "converts_to": ["dashboard_data"]
         },
 
         # Member registration components
@@ -82,6 +85,12 @@ class ComponentRegistry:
         },
 
         # Account components
+        "AccountDashboard": {
+            "type": "account",
+            "class": AccountDashboard,
+            "validates": ["account_data"],
+            "converts_to": ["dashboard_display"]
+        },
         "AccountSelect": {
             "type": "account",
             "class": AccountSelect,

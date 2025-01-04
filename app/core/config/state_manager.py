@@ -305,35 +305,38 @@ class StateManager:
             )
         return channel["type"]
 
-    def get_member_id(self) -> Optional[str]:
-        """Get member ID from flow data
+    def is_authenticated(self) -> bool:
+        """Check if user is authenticated with valid token
 
         Returns:
-            Member ID string if authenticated, None otherwise
-
-        Raises:
-            ComponentException: If flow data access fails
+            bool: True if authenticated with valid token, False otherwise
         """
         try:
-            flow_data = self.get_flow_data()
-            auth_data = flow_data.get("auth", {})
+            # Check for member_id and token
+            member_id = self.get("member_id")
+            jwt_token = self.get("jwt_token")
+            if not member_id or not jwt_token:
+                return False
 
-            if auth_data.get("authenticated"):
-                member_id = auth_data.get("member_id")
-                if not member_id:
-                    raise ComponentException(
-                        message="Member ID not found in authenticated state",
-                        component="state_manager",
-                        field="auth.member_id",
-                        value=str(auth_data)
-                    )
-                return member_id
-            return None
+            # Validate token expiry locally
+            from jwt import decode, InvalidTokenError
+            from decouple import config
+            try:
+                # Decode token and check expiry
+                decode(jwt_token, config("JWT_SECRET"), algorithms=["HS256"])
+                return True
+            except InvalidTokenError:
+                return False
 
-        except Exception as e:
-            raise ComponentException(
-                message=f"Failed to get member ID: {str(e)}",
-                component="state_manager",
-                field="member_id",
-                value="None"
-            )
+        except Exception:
+            # Any error means not authenticated
+            return False
+
+    def get_member_id(self) -> Optional[str]:
+        """Get member ID if authenticated
+
+        Returns:
+            Member ID string if authenticated with valid token, None otherwise
+        """
+        # Only return member_id if authenticated with valid token
+        return self.get("member_id") if self.is_authenticated() else None

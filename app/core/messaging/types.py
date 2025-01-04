@@ -76,17 +76,23 @@ class MessageRecipient:
 @dataclass
 class MessageContent:
     """Base interface for message content"""
+    type: MessageType = field(init=False)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
         raise NotImplementedError
 
 
 @dataclass
-class TextContent:
+class TextContent(MessageContent):
     """Text message content"""
     body: str
     preview_url: bool = False
     type: MessageType = field(init=False, default=MessageType.TEXT)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
@@ -118,7 +124,7 @@ class Button:
 
 
 @dataclass
-class InteractiveContent:
+class InteractiveContent(MessageContent):
     """Interactive message content"""
     interactive_type: InteractiveType
     body: str
@@ -128,6 +134,10 @@ class InteractiveContent:
     action_items: Dict[str, Any] = field(default_factory=dict)
     preview_url: bool = False
     type: MessageType = field(init=False, default=MessageType.INTERACTIVE)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
@@ -166,13 +176,17 @@ class InteractiveContent:
 
 
 @dataclass
-class TemplateContent:
+class TemplateContent(MessageContent):
     """Template message content"""
     name: str
     language: Dict[str, str]
     components: List[Dict[str, Any]] = field(default_factory=list)
     preview_url: bool = False
     type: MessageType = field(init=False, default=MessageType.TEMPLATE)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
@@ -191,7 +205,7 @@ class TemplateContent:
 
 
 @dataclass
-class ImageContent:
+class ImageContent(MessageContent):
     """Image message content"""
     url: str
     caption: Optional[str] = None
@@ -199,6 +213,10 @@ class ImageContent:
     preview_url: bool = False
     type: MessageType = field(init=False, default=MessageType.IMAGE)
 
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
         result = {
@@ -215,7 +233,7 @@ class ImageContent:
 
 
 @dataclass
-class DocumentContent:
+class DocumentContent(MessageContent):
     """Document message content"""
     url: str
     caption: Optional[str] = None
@@ -223,6 +241,10 @@ class DocumentContent:
     preview_url: bool = False
     type: MessageType = field(init=False, default=MessageType.DOCUMENT)
 
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
         result = {
@@ -239,7 +261,7 @@ class DocumentContent:
 
 
 @dataclass
-class AudioContent:
+class AudioContent(MessageContent):
     """Audio message content"""
     url: str
     caption: Optional[str] = None
@@ -247,6 +269,10 @@ class AudioContent:
     preview_url: bool = False
     type: MessageType = field(init=False, default=MessageType.AUDIO)
 
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
         result = {
@@ -263,7 +289,7 @@ class AudioContent:
 
 
 @dataclass
-class VideoContent:
+class VideoContent(MessageContent):
     """Video message content"""
     url: str
     caption: Optional[str] = None
@@ -271,6 +297,10 @@ class VideoContent:
     preview_url: bool = False
     type: MessageType = field(init=False, default=MessageType.VIDEO)
 
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
         result = {
@@ -287,7 +317,7 @@ class VideoContent:
 
 
 @dataclass
-class LocationContent:
+class LocationContent(MessageContent):
     """Location message content"""
     latitude: float
     longitude: float
@@ -295,6 +325,10 @@ class LocationContent:
     address: Optional[str] = None
     preview_url: bool = False
     type: MessageType = field(init=False, default=MessageType.LOCATION)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""

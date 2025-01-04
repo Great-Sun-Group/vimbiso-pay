@@ -9,6 +9,54 @@ from .base import (BASE_URL, get_headers, handle_error_response,
 logger = logging.getLogger(__name__)
 
 
+def validate_account_handle(handle: str, token: str) -> Dict[str, Any]:
+    """Validate a member's account handle through state validation"""
+    logger.info(f"Validating account handle: {handle}")
+    url = f"{BASE_URL}/validateHandle"
+    logger.info(f"Validation URL: {url}")
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        payload = {"handle": handle}
+
+        # Make request
+        response = make_api_request(url, headers, payload)
+        if isinstance(response, dict) and "error" in response:
+            return response
+
+        if response.status_code == 200:
+            response_data = response.json()
+            if response_data.get("status") == "success":
+                logger.info("Handle validation successful")
+                return {"success": True, "data": response_data}
+
+            logger.error("Handle validation failed")
+            return ErrorHandler.handle_system_error(
+                code="VALIDATION_FAILED",
+                service="credex",
+                action="validate_handle",
+                message=response_data.get("error", "Handle validation failed")
+            )
+
+        return handle_error_response(
+            "Handle validation",
+            response,
+            f"Handle validation failed: Unexpected error (status code: {response.status_code})"
+        )
+
+    except Exception as e:
+        logger.exception(f"Error during handle validation: {str(e)}")
+        return ErrorHandler.handle_system_error(
+            code="VALIDATION_ERROR",
+            service="credex",
+            action="validate_handle",
+            message=f"Handle validation failed: {str(e)}"
+        )
+
+
 def offer_credex(state_manager: Any) -> Dict[str, Any]:
     """Create a new CredEx offer through state validation"""
     logger.info("Attempting to offer CredEx")

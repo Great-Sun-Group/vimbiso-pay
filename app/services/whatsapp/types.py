@@ -25,7 +25,15 @@ class WhatsAppMessage(Dict[str, Any]):
     ) -> Dict[str, Any]:
         """Create a standardized WhatsApp message"""
         if not to:
-            raise MessageValidationError("Recipient (to) is required")
+            raise MessageValidationError(
+                message="Recipient (to) is required",
+                service="whatsapp",
+                action="create_message",
+                validation_details={
+                    "error": "missing_recipient",
+                    "message_type": message_type
+                }
+            )
 
         message = {
             **cls.WHATSAPP_BASE,
@@ -105,7 +113,16 @@ class WhatsAppMessage(Dict[str, Any]):
                     address=getattr(content, "address", None)
                 )
             else:
-                raise MessageValidationError(f"Unsupported message type: {content_type}")
+                raise MessageValidationError(
+                    message=f"Unsupported message type: {content_type}",
+                    service="whatsapp",
+                    action="from_core_message",
+                    validation_details={
+                        "error": "unsupported_type",
+                        "content_type": content_type,
+                        "supported_types": ["text", "interactive", "template", "image", "document", "audio", "video", "location"]
+                    }
+                )
 
         except Exception as e:
             logger.error(f"Message conversion error: {str(e)}")

@@ -37,16 +37,17 @@ def login(phone_number: str) -> Tuple[bool, Dict[str, Any]]:
             response = make_api_request(url, headers, payload)
             if response.status_code == 200:
                 response_data = response.json()
-                details = (
-                    response_data.get("data", {})
-                    .get("action", {})
-                    .get("details", {})
-                )
+                data = response_data.get("data", {})
+                details = data.get("action", {}).get("details", {})
                 if details.get("token") and details.get("memberID"):
                     logger.info("Login successful")
-                    # Store full response for state updates
+                    # Store full response for state manager to inject properly into state
                     _last_login_response = response_data
-                    return True, details
+                    # Return success with auth details only - dashboard goes through state
+                    return True, {
+                        "token": details["token"],
+                        "memberID": details["memberID"]
+                    }
                 else:
                     logger.error("Login response missing required fields")
                     return False, "Login failed: Invalid response data"
@@ -57,12 +58,12 @@ def login(phone_number: str) -> Tuple[bool, Dict[str, Any]]:
                     {"message": "*Welcome!* \n\nIt looks like you're new here. Let's get you \nset up."}
                 )
             else:
-                success, error_msg = handle_error_response(
+                error_response = handle_error_response(
                     "Login",
                     response,
                     f"Login failed: Unexpected error (status code: {response.status_code})"
                 )
-                return False, {"message": error_msg}
+                return False, {"message": error_response.get("error", {}).get("message", "Login failed")}
         except SystemException as e:
             logger.error(f"System error during login: {str(e)}")
             return False, {"message": e.message}
@@ -98,12 +99,12 @@ def register_member(payload: Dict[str, Any], jwt_token: str) -> Tuple[bool, str]
                     return True, "Registration successful"
                 return False, response_data.get("error", "Registration failed")
             else:
-                success, error_msg = handle_error_response(
+                error_response = handle_error_response(
                     "Registration",
                     response,
                     "Registration failed"
                 )
-                return False, error_msg
+                return False, error_response.get("error", {}).get("message", "Registration failed")
         except SystemException as e:
             logger.error(f"System error during registration: {str(e)}")
             return False, e.message

@@ -4,8 +4,8 @@ This module provides central flow type management.
 All flows must be registered here to be used in the system.
 """
 
-from typing import Dict, List
 from datetime import datetime
+from typing import Dict, List
 
 from core.utils.exceptions import FlowException
 
@@ -27,7 +27,7 @@ class FlowRegistry:
     # Flow type definitions with metadata
     FLOWS: Dict[str, Dict] = {
         # Member flows
-        "registration": {
+        "member_registration": {
             "handler_type": "member",
             "steps": ["welcome", "firstname", "lastname", "complete"],
             "components": {
@@ -37,7 +37,7 @@ class FlowRegistry:
                 "complete": "RegistrationComplete"
             }
         },
-        "upgrade": {
+        "member_upgrade": {
             "handler_type": "member",
             "steps": ["confirm", "complete"],
             "components": {
@@ -45,16 +45,24 @@ class FlowRegistry:
                 "complete": "UpgradeComplete"
             }
         },
-        "auth": {
+        "member_auth": {
             "handler_type": "member",
-            "steps": ["login", "login_complete"],
+            "steps": ["greeting", "login", "login_complete"],
             "components": {
+                "greeting": "Greeting",
                 "login": "LoginHandler",
                 "login_complete": "LoginCompleteHandler"
             }
         },
 
         # Account flows
+        "account_dashboard": {
+            "handler_type": "account",
+            "steps": ["display"],
+            "components": {
+                "display": "AccountDashboard"
+            }
+        },
         "account_ledger": {
             "handler_type": "account",
             "steps": ["select", "display"],

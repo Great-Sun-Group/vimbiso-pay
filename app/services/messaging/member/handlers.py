@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import Message, TextContent
+from core.messaging.types import Message
 from core.utils.exceptions import FlowException, SystemException
 from core.messaging.flow import initialize_flow
 from core.utils.error_handler import ErrorHandler
@@ -31,24 +31,22 @@ class MemberHandler:
             # Initialize flow with proper structure
             initialize_flow(
                 state_manager=state_manager,
-                flow_type="registration",
+                flow_type="member_registration",
                 initial_data={
                     "started_at": datetime.utcnow().isoformat()
                 }
             )
 
-            # Get recipient and flow state
+            # Get recipient
             recipient = get_recipient(state_manager)
-            flow_state = state_manager.get_flow_state()
 
             # Get step content through flow class
             step_content = RegistrationFlow.get_step_content("welcome")
-            progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
 
-            # Send welcome message with progress
+            # Send welcome message
             return self.messaging.send_text(
                 recipient=recipient,
-                text=f"{step_content}\n\n{progress}"
+                text=step_content
             )
 
         except Exception as e:
@@ -78,24 +76,22 @@ class MemberHandler:
             # Initialize flow with proper structure
             initialize_flow(
                 state_manager=state_manager,
-                flow_type="upgrade",
+                flow_type="member_upgrade",
                 initial_data={
                     "started_at": datetime.utcnow().isoformat()
                 }
             )
 
-            # Get recipient and flow state
+            # Get recipient
             recipient = get_recipient(state_manager)
-            flow_state = state_manager.get_flow_state()
 
             # Get step content through flow class
             step_content = UpgradeFlow.get_step_content("confirm")
-            progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
 
-            # Send confirmation message with progress
+            # Send confirmation message
             return self.messaging.send_text(
                 recipient=recipient,
-                text=f"{step_content}\n\n{progress}"
+                text=step_content
             )
 
         except Exception as e:
@@ -133,11 +129,11 @@ class MemberHandler:
                 )
 
             # Process step through appropriate flow
-            if flow_type == "auth":
+            if flow_type == "member_auth":
                 result = AuthFlow.process_step(self.messaging, state_manager, step, input_value)
-            elif flow_type == "registration":
+            elif flow_type == "member_registration":
                 result = RegistrationFlow.process_step(self.messaging, state_manager, step, input_value)
-            elif flow_type == "upgrade":
+            elif flow_type == "member_upgrade":
                 result = UpgradeFlow.process_step(self.messaging, state_manager, step, input_value)
             else:
                 raise FlowException(
@@ -146,15 +142,6 @@ class MemberHandler:
                     action="handle_flow",
                     data={"flow_type": flow_type}
                 )
-
-            # Handle success with progress
-            if isinstance(result, Message):
-                # Get updated flow state
-                flow_state = state_manager.get_flow_state()
-                if flow_state and isinstance(result.content, TextContent):
-                    # Add progress to message
-                    progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
-                    result.content.body = f"{result.content.body}\n\n{progress}"
 
             return result
 

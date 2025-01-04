@@ -6,11 +6,7 @@ import socketserver
 from http.server import SimpleHTTPRequestHandler
 
 import requests
-
-from whatsapp_utils import (
-    create_whatsapp_payload,
-    extract_message_text
-)
+from whatsapp_utils import create_whatsapp_payload, extract_message_text
 
 logging.basicConfig(
     level=logging.DEBUG,

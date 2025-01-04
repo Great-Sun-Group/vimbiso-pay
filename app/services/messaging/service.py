@@ -3,19 +3,17 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from core.messaging.exceptions import (MessageDeliveryError,
+                                       MessageTemplateError,
+                                       MessageValidationError)
 from core.messaging.flow import initialize_flow
 from core.messaging.interface import MessagingServiceInterface
 from core.messaging.registry import FlowRegistry
 from core.messaging.types import (Button, ChannelIdentifier, ChannelType,
                                   Message, MessageRecipient)
 from core.utils.error_handler import ErrorHandler
-from core.messaging.exceptions import (
-    MessageDeliveryError,
-    MessageHandlerError,
-    MessageTemplateError,
-    MessageValidationError
-)
-from core.utils.exceptions import ComponentException, FlowException, SystemException
+from core.utils.exceptions import (ComponentException, FlowException,
+                                   SystemException)
 
 from .account.handlers import AccountHandler
 from .credex.handlers import CredexHandler
@@ -112,39 +110,45 @@ class MessagingService(MessagingServiceInterface):
     def handle_message(self, state_manager: Any, message_type: str, message_text: str) -> Message:
         """Handle incoming message using appropriate handler"""
         try:
-            # Get current flow state for validation tracking
+            # Parse command if present
+            if "_" in message_text:
+                handler_type, command = message_text.split("_", 1)
+
+                # Ensure token still valid before handling command
+                if not state_manager.is_authenticated():
+                    member_handler = self._get_handler("member")
+                    initialize_flow(
+                        state_manager=state_manager,
+                        flow_type="member_auth",
+                        initial_data={
+                            "started_at": datetime.utcnow().isoformat()
+                        }
+                    )
+                    return member_handler.handle_flow_step(
+                        state_manager=state_manager,
+                        flow_type="member_auth",
+                        step="greeting",
+                        input_value=message_text
+                    )
+
+                # Clear flow state before starting new flow
+                state_manager.clear_flow_state()
+
+                # Get appropriate handler
+                handler = self._get_handler(handler_type)
+
+                # Let handler process command
+                try:
+                    return handler.handle_command(state_manager, command)
+                except FlowException:
+                    return self.messaging.send_text(
+                        recipient=self._get_recipient(state_manager),
+                        text="I don't understand that command."
+                    )
+
+            # Check if in active flow
             flow_state = state_manager.get_flow_state()
             if flow_state:
-                current_validation = flow_state.get("validation", {})
-                current_step_index = flow_state.get("step_index", 0)
-                total_steps = flow_state.get("total_steps", 1)
-
-                # Create standardized validation state
-                validation_state = {
-                    "in_progress": True,
-                    "attempts": current_validation.get("attempts", 0) + 1,
-                    "last_attempt": {
-                        "message": message_text,
-                        "type": message_type,
-                        "timestamp": datetime.utcnow().isoformat()
-                    },
-                    "operation": "handle_message",
-                    "component": "message_handler",
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-
-                # Update state with standardized validation tracking
-                state_manager.update_state({
-                    "flow_data": {
-                        "active_component": {
-                            "type": "message_handler",
-                            "validation": validation_state
-                        },
-                        "step_index": current_step_index,
-                        "total_steps": total_steps
-                    }
-                })
-
                 flow_type = state_manager.get_flow_type()
                 current_step = state_manager.get_current_step()
 
@@ -163,128 +167,48 @@ class MessagingService(MessagingServiceInterface):
                     message_text
                 )
 
-            # Not in flow - validate auth state with tracking
-            flow_data = state_manager.get_flow_data()
-            if not flow_data.get("auth", {}).get("authenticated"):
-                current_validation = flow_data.get("validation", {})
-
-                # Create standardized validation state
-                validation_state = {
-                    "in_progress": True,
-                    "attempts": current_validation.get("attempts", 0) + 1,
-                    "last_attempt": {
-                        "message": message_text,
-                        "type": message_type,
-                        "timestamp": datetime.utcnow().isoformat()
-                    },
-                    "operation": "auth_validation",
-                    "component": "auth_handler",
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-
-                # Update state with standardized validation tracking
-                state_manager.update_state({
-                    "flow_data": {
-                        "active_component": {
-                            "type": "auth_handler",
-                            "validation": validation_state
-                        }
+            # No active flow - check if greeting
+            greetings = [
+                # English greetings
+                "hi", "hello", "hey", "hie", "menu", "dashboard",
+                # Spanish greetings
+                "hola", "menu", "tablero",
+                # French greetings
+                "bonjour", "salut", "menu", "tableau",
+                # Shona greetings
+                "mhoro", "makadii", "maswera sei", "ndeipi", "zvirisei", "wakadini", "manheru", "masikati",
+                # Ndebele greetings
+                "sabona", "salibonani", "sawubona", "unjani",
+                # Swahili greetings
+                "jambo", "habari", "menu", "karibu", "mambo",
+                # Common variations
+                "start", "begin", "help", "get started", "howzit", "yo", "sup"
+            ]
+            if message_text.lower() in greetings:
+                # Initialize auth flow starting with greeting step
+                initialize_flow(
+                    state_manager=state_manager,
+                    flow_type="member_auth",
+                    initial_data={
+                        "started_at": datetime.utcnow().isoformat()
                     }
-                })
+                )
 
-                # Get member handler for both auth and registration
-                member_handler = self._get_handler("member")
+                # Get member handler
+                handler = self._get_handler("member")
 
-                # Initialize auth flow for greeting
-                if message_text.lower() in ["hi", "hello"]:
-                    initialize_flow(
-                        state_manager=state_manager,
-                        flow_type="auth",
-                        initial_data={
-                            "started_at": datetime.utcnow().isoformat()
-                        }
-                    )
-                    return member_handler.handle_flow_step(
-                        state_manager=state_manager,
-                        flow_type="auth",
-                        step="login",
-                        input_value=message_text
-                    )
+                # Start with greeting step
+                return handler.handle_flow_step(
+                    state_manager=state_manager,
+                    flow_type="member_auth",
+                    step="greeting",
+                    input_value=message_text
+                )
 
-                # Start registration for new users
-                return member_handler.start_registration(state_manager)
-
-            # Create standardized command validation state
-            validation_state = {
-                "in_progress": True,
-                "attempts": flow_data.get("command_attempts", 0) + 1,
-                "last_attempt": {
-                    "message": message_text,
-                    "type": message_type,
-                    "timestamp": datetime.utcnow().isoformat()
-                },
-                "operation": "handle_command",
-                "component": "command_handler",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-
-            # Update state with standardized command tracking
-            state_manager.update_state({
-                "flow_data": {
-                    "active_component": {
-                        "type": "command_handler",
-                        "validation": validation_state
-                    },
-                    "command": {
-                        "text": message_text,
-                        "type": "user_command",
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                }
-            })
-
-            # Get appropriate handlers
-            member_handler = self._get_handler("member")
-            account_handler = self._get_handler("account")
-            credex_handler = self._get_handler("credex")
-
-            # Route command through appropriate handler
-            if message_text == "upgrade":
-                return member_handler.start_upgrade(state_manager)
-            elif message_text == "ledger":
-                return account_handler.start_ledger(state_manager)
-            elif message_text == "offer":
-                return credex_handler.start_offer(state_manager)
-            elif message_text == "accept":
-                return credex_handler.start_accept(state_manager)
-
-            # Update validation state for unknown command
-            validation_state.update({
-                "in_progress": False,
-                "error": {
-                    "message": "Unknown command",
-                    "details": {
-                        "command": message_text,
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                },
-                "timestamp": datetime.utcnow().isoformat()
-            })
-
-            # Update state with standardized error tracking
-            state_manager.update_state({
-                "flow_data": {
-                    "active_component": {
-                        "type": "command_handler",
-                        "validation": validation_state
-                    }
-                }
-            })
-
-            # Send error response
+            # Default response for unhandled messages
             return self.messaging.send_text(
                 recipient=self._get_recipient(state_manager),
-                text="I don't understand that command."
+                text="👋 Hello and welcome to VimbisoPay. Send me 'hi/ndeipi/sabona' or another greeting to get started!"
             )
 
         except FlowException as e:
@@ -344,20 +268,6 @@ class MessagingService(MessagingServiceInterface):
 
         except MessageTemplateError as e:
             # Handle template errors
-            error_response = ErrorHandler.handle_system_error(
-                code=e.details["code"],
-                service=e.details["service"],
-                action=e.details["action"],
-                message=str(e),
-                error=e
-            )
-            return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
-                text=f"❌ {error_response['error']['message']}"
-            )
-
-        except MessageHandlerError as e:
-            # Handle handler errors
             error_response = ErrorHandler.handle_system_error(
                 code=e.details["code"],
                 service=e.details["service"],
