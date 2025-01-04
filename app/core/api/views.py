@@ -5,7 +5,7 @@ import sys
 from core.api.models import Message as DBMessage  # Rename to avoid confusion
 from core.config.state_manager import StateManager
 from core.messaging.types import Message as DomainMessage  # Import domain Message type
-from core.utils.utils import send_whatsapp_message
+from services.whatsapp.service import WhatsAppMessagingService
 from decouple import config
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
@@ -171,8 +171,8 @@ class CredexCloudApiWebhook(APIView):
                 if is_mock_testing:
                     return JsonResponse(response_dict, status=status.HTTP_200_OK)
 
-                # For real requests send via WhatsApp
-                whatsapp_response = send_whatsapp_message(
+                # For real requests send via WhatsApp service
+                whatsapp_response = WhatsAppMessagingService.send_whatsapp_message(
                     payload=response_dict,
                     phone_number_id=payload["metadata"]["phone_number_id"]
                 )
@@ -271,7 +271,7 @@ class CredexSendMessageWebhook(APIView):
                     }
                 }
 
-                whatsapp_response = send_whatsapp_message(payload=payload)
+                whatsapp_response = WhatsAppMessagingService.send_whatsapp_message(payload=payload)
                 logger.info(f"WhatsApp API Response: {whatsapp_response}")
                 return JsonResponse(whatsapp_response, status=status.HTTP_200_OK)
         return JsonResponse(

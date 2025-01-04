@@ -48,7 +48,7 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
 def get_bot_service() -> 'BotService':
     """Get bot service instance through proper initialization"""
     # Create WhatsApp messaging service for message formatting
-    whatsapp_service = WhatsAppMessagingService()  # No API client needed - sending handled by send_whatsapp_message utility
+    whatsapp_service = WhatsAppMessagingService()  # Handles message formatting and sending
 
     # Create messaging service with WhatsApp implementation
     messaging_service = MessagingService(whatsapp_service)

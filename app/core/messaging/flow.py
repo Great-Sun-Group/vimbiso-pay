@@ -6,12 +6,13 @@ This module provides flow management using:
 - Proper validation state management
 """
 
-from typing import Any, Dict, Optional
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 from core.components import create_component
-from core.utils.exceptions import FlowException
 from core.utils.error_types import ValidationResult
+from core.utils.exceptions import FlowException
+
 from .registry import FlowRegistry
 
 
@@ -142,8 +143,10 @@ def initialize_flow(
         }
     }
 
-    # Update state
-    state_manager.update_state(flow_state)
+    # Update only flow state, preserving other state
+    state_manager.update_state({
+        "flow_data": flow_state["flow_data"]  # Only update flow_data portion
+    })
 
 
 def process_flow_input(

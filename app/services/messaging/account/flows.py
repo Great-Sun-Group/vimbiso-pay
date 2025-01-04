@@ -2,14 +2,121 @@
 import logging
 from typing import Any, Dict, Optional
 
+from core.components.registry import ComponentRegistry
 from core.messaging.interface import MessagingServiceInterface
+from core.messaging.registry import FlowRegistry
 from core.messaging.types import Message
 from core.utils.exceptions import FlowException, SystemException
-from core.messaging.registry import FlowRegistry
 
 from ..utils import get_recipient
 
 logger = logging.getLogger(__name__)
+
+
+class AccountDashboardFlow:
+    """Account dashboard flow"""
+
+    @staticmethod
+    def get_step_content(step: str, data: Optional[Dict] = None) -> str:
+        """Get dashboard step content"""
+        # Validate step through registry
+        FlowRegistry.validate_flow_step("account_dashboard", step)
+        return ""  # No content needed - component handles display
+
+    @staticmethod
+    def process_step(messaging_service: MessagingServiceInterface, state_manager: Any, step: str, input_value: Any) -> Message:
+        """Process dashboard step"""
+        try:
+            # Validate step through registry
+            FlowRegistry.validate_flow_step("account_dashboard", step)
+            recipient = get_recipient(state_manager)
+
+            if step == "display":
+                # Get dashboard component
+                component_type = FlowRegistry.get_step_component("account_dashboard", step)
+                component = ComponentRegistry.create_component(component_type)
+
+                # Set state manager for account access
+                component.set_state_manager(state_manager)
+
+                # Validate and get dashboard data
+                validation_result = component.validate({})
+                if not validation_result.valid:
+                    raise FlowException(
+                        message=validation_result.error["message"],
+                        step="display",  # Explicit step name
+                        action="validate_dashboard",  # More specific action
+                        data={
+                            "validation_error": validation_result.error,
+                            "component": "account_dashboard"
+                        }
+                    )
+
+                # Get verified dashboard data with actions
+                verified_data = component.to_verified_data(validation_result.value)
+
+                # Format message using account data
+                from core.messaging.formatters import AccountFormatters
+                from core.messaging.types import Button
+
+                # Get account data and merge with balance data
+                active_account = verified_data["active_account"]
+                balance_data = active_account.get("balanceData", {})
+
+                # Get member tier from dashboard data (source of truth)
+                member_data = verified_data["dashboard"].get("member", {})
+                member_tier = member_data.get("memberTier")
+                tier_limit_display = ""  # Default to no display
+                if member_tier < 2:  # only show for memberTier < 2
+                    remaining_usd = balance_data.get("remainingAvailableUSD", "0.00")
+                    tier_limit_display = f"\n⏳ DAILY MEMBER TIER LIMIT: {remaining_usd} USD"
+
+                account_data = {
+                    "accountName": active_account.get("accountName"),
+                    "accountHandle": active_account.get("accountHandle"),
+                    **balance_data,
+                    "tier_limit_display": tier_limit_display
+                }
+                message = AccountFormatters.format_dashboard(account_data)
+
+                # Convert button dictionaries to Button objects
+                buttons = [
+                    Button(id=btn["id"], title=btn["title"])
+                    for btn in verified_data["buttons"]
+                ]
+
+                # Create interactive message with buttons
+                return messaging_service.send_interactive(
+                    recipient=recipient,
+                    body=message,
+                    buttons=buttons
+                )
+
+            else:
+                raise FlowException(
+                    message=f"Invalid step: {step}",
+                    step=step,
+                    action="validate",
+                    data={"value": input_value}
+                )
+
+        except FlowException as e:
+            # Ensure all required attributes are present
+            if not hasattr(e, 'step'):
+                e.step = step
+            if not hasattr(e, 'action'):
+                e.action = 'validate'
+            if not hasattr(e, 'data'):
+                e.data = {}
+            raise e
+
+        except Exception as e:
+            raise SystemException(
+                message=str(e),
+                code="FLOW_ERROR",
+                service="account_flow",
+                action=f"process_{step}"
+            )
 
 
 class LedgerFlow:
@@ -86,9 +193,15 @@ class LedgerFlow:
                     data={"value": input_value}
                 )
 
-        except FlowException:
-            # Let flow errors propagate up
-            raise
+        except FlowException as e:
+            # Ensure all required attributes are present
+            if not hasattr(e, 'step'):
+                e.step = step
+            if not hasattr(e, 'action'):
+                e.action = 'validate'
+            if not hasattr(e, 'data'):
+                e.data = {}
+            raise e
 
         except Exception as e:
             # Wrap other errors

@@ -3,7 +3,6 @@ import logging
 from typing import Any, Dict, Optional
 
 from core.api.auth_client import login
-from core.components.registry import ComponentRegistry
 from core.messaging.interface import MessagingServiceInterface
 from core.messaging.registry import FlowRegistry
 from core.messaging.types import Message, TextContent
@@ -21,12 +20,7 @@ class AuthFlow:
     def get_step_content(step: str, data: Optional[Dict] = None) -> str:
         """Get auth step content"""
         # Validate step through registry
-        FlowRegistry.validate_flow_step("auth", step)
-
-        if step == "login":
-            return "Please enter your credentials"
-        elif step == "login_complete":
-            return "✅ Login successful!"
+        FlowRegistry.validate_flow_step("member_auth", step)
         return ""
 
     @staticmethod
@@ -34,18 +28,47 @@ class AuthFlow:
         """Process auth step"""
         try:
             # Validate step through registry
-            FlowRegistry.validate_flow_step("auth", step)
+            FlowRegistry.validate_flow_step("member_auth", step)
 
-            if step == "login":
+            if step == "greeting":
+                # Create greeting component
+                from core.components.registry import create_component
+                component = create_component("Greeting")
+
+                # Validate and get greeting
+                validation_result = component.validate({})
+                if not validation_result.valid:
+                    raise FlowException(
+                        message="Failed to generate greeting",
+                        step="greeting",
+                        action="validate",
+                        data={"validation": validation_result.error}
+                    )
+
+                # Send greeting with proper message structure
+                recipient = get_recipient(state_manager)
+                return Message(
+                    recipient=recipient,
+                    content=TextContent(
+                        body=component.to_message_content(validation_result.value)
+                    )
+                )
+
+            elif step == "login":
                 # Attempt login
-                success, response = login(state_manager.get_channel_id())
+                success, auth_details = login(state_manager.get_channel_id())
 
                 if success:
-                    # Get member info from response
-                    member_id = response.get("memberID")
-                    token = response.get("token")
+                    # Validate auth details
+                    if not auth_details.get("token") or not auth_details.get("memberID"):
+                        raise FlowException(
+                            message="Invalid auth details",
+                            step="login",
+                            action="validate_auth",
+                            data={"auth": auth_details}
+                        )
 
-                    # Get full response data from auth client
+                    # Get full response data for state update
                     from core.api.auth_client import get_login_response_data
                     response_data = get_login_response_data()
 
@@ -54,8 +77,15 @@ class AuthFlow:
                             message="Failed to get login response data",
                             step="login",
                             action="get_response",
-                            data={"response": response}
+                            data={"auth": auth_details}
                         )
+
+                    # Wipe all existing state before updating with new login
+                    state_manager.update_state({
+                        "flow_data": {},
+                        "dashboard": None,
+                        "active_account_id": None
+                    })
 
                     # Update profile state through proper validation
                     from core.api.profile import update_profile_from_response
@@ -64,7 +94,7 @@ class AuthFlow:
                         state_manager=state_manager,
                         action_type="login",
                         update_from="auth_flow",
-                        token=token
+                        token=auth_details["token"]
                     )
 
                     if not profile_updated:
@@ -75,41 +105,19 @@ class AuthFlow:
                             data={"response": response_data}
                         )
 
-                    # Get component for login completion
-                    component_type = FlowRegistry.get_step_component("auth", "login_complete")
-                    component = ComponentRegistry.create_component(component_type)
+                    # Get account handler for dashboard
+                    from ..account.handlers import AccountHandler
+                    account_handler = AccountHandler(messaging_service)
 
-                    # Set state manager for dashboard access
-                    component.set_state_manager(state_manager)
-
-                    # Component validates UI elements and state access
-                    validation_result = component.validate({
-                        "member_id": member_id,
-                        "token": token
-                    })
-
-                    if not validation_result.valid:
-                        raise FlowException(
-                            message=validation_result.error,
-                            step="login_complete",
-                            action="validate",
-                            data=validation_result.details
-                        )
-
-                    verified_data = component.to_verified_data(validation_result.value)
-                    # Create message with proper recipient
-                    recipient = get_recipient(state_manager)
-                    return Message(
-                        recipient=recipient,
-                        content=TextContent(body=verified_data["message"])
-                    )
+                    # Start dashboard flow
+                    return account_handler.start_dashboard(state_manager)
 
                 else:
                     # Return registration message
                     recipient = get_recipient(state_manager)
                     return Message(
                         recipient=recipient,
-                        content=TextContent(body=response.get("message"))
+                        content=TextContent(body=auth_details.get("message"))
                     )
 
             else:
@@ -139,7 +147,7 @@ class UpgradeFlow:
     def get_step_content(step: str, data: Optional[Dict] = None) -> str:
         """Get upgrade step content"""
         # Validate step through registry
-        FlowRegistry.validate_flow_step("upgrade", step)
+        FlowRegistry.validate_flow_step("member_upgrade", step)
 
         if step == "confirm":
             return (
@@ -158,7 +166,7 @@ class UpgradeFlow:
         """Process upgrade step"""
         try:
             # Validate step through registry
-            FlowRegistry.validate_flow_step("upgrade", step)
+            FlowRegistry.validate_flow_step("member_upgrade", step)
             recipient = get_recipient(state_manager)
 
             if step == "confirm":
@@ -173,9 +181,9 @@ class UpgradeFlow:
 
                 confirmed = input_value.lower() in ["yes", "y"]
                 if not confirmed:
-                    return messaging_service.send_text(
+                    return Message(
                         recipient=recipient,
-                        text="❌ Upgrade cancelled."
+                        content=TextContent(body="❌ Upgrade cancelled.")
                     )
 
                 # Update state
@@ -185,10 +193,12 @@ class UpgradeFlow:
                     }
                 })
 
-                # Send completion message
-                return messaging_service.send_text(
+                # Return completion message
+                return Message(
                     recipient=recipient,
-                    text=UpgradeFlow.get_step_content("complete")
+                    content=TextContent(
+                        body=UpgradeFlow.get_step_content("complete")
+                    )
                 )
 
             else:
@@ -220,7 +230,7 @@ class RegistrationFlow:
     def get_step_content(step: str, data: Optional[Dict] = None) -> str:
         """Get registration step content"""
         # Validate step through registry
-        FlowRegistry.validate_flow_step("registration", step)
+        FlowRegistry.validate_flow_step("member_registration", step)
 
         if step == "welcome":
             return (
@@ -246,7 +256,7 @@ class RegistrationFlow:
         """Process registration step"""
         try:
             # Validate step through registry
-            FlowRegistry.validate_flow_step("registration", step)
+            FlowRegistry.validate_flow_step("member_registration", step)
             recipient = get_recipient(state_manager)
 
             # Process step
@@ -267,10 +277,12 @@ class RegistrationFlow:
                     }
                 })
 
-                # Send next step
-                return messaging_service.send_text(
+                # Return next step message
+                return Message(
                     recipient=recipient,
-                    text=RegistrationFlow.get_step_content("lastname")
+                    content=TextContent(
+                        body=RegistrationFlow.get_step_content("lastname")
+                    )
                 )
 
             elif step == "lastname":
@@ -290,13 +302,15 @@ class RegistrationFlow:
                     }
                 })
 
-                # Send completion message
-                return messaging_service.send_text(
+                # Return completion message
+                return Message(
                     recipient=recipient,
-                    text=RegistrationFlow.get_step_content("complete", {
-                        "firstname": state_manager.get_flow_data().get("firstname"),
-                        "lastname": input_value
-                    })
+                    content=TextContent(
+                        body=RegistrationFlow.get_step_content("complete", {
+                            "firstname": state_manager.get_flow_data().get("firstname"),
+                            "lastname": input_value
+                        })
+                    )
                 )
 
             else:

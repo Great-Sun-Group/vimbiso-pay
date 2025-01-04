@@ -2,19 +2,17 @@
 import base64
 import logging
 import time
+from datetime import datetime
 from typing import Dict, Any, Optional
 from urllib.parse import urljoin
 
 import requests
 from decouple import config
-from django.core.cache import cache
 from requests.exceptions import RequestException
 
 from core.utils.error_handler import ErrorHandler
 from core.utils.exceptions import SystemException
 from core.utils.state_validator import StateValidator
-from ..utils.utils import send_whatsapp_message
-
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -261,15 +259,20 @@ def handle_error_response(
         "response_body": response.text[:1000]  # Truncate long responses
     })
 
+    # Create validation state with response details
+    validation_state = {
+        "attempts": 1,
+        "last_attempt": datetime.utcnow().isoformat(),
+        "status_code": response.status_code,
+        "response": error_data if "error_data" in locals() else response.text
+    }
+
     return ErrorHandler.handle_system_error(
         code="API_ERROR",
         service="api_client",
         action=operation,
         message=error_msg,
-        details={
-            "status_code": response.status_code,
-            "response": error_data if "error_data" in locals() else response.text
-        }
+        validation_state=validation_state
     )
 
 
@@ -283,75 +286,3 @@ def get_basic_auth_header(channel_identifier: str) -> str:
         credentials.encode("utf-8")
     ).decode("utf-8")
     return f"Basic {encoded_credentials}"
-
-
-def send_delay_message(state_manager: Any) -> None:
-    """Send delay message to user"""
-    # Get required state fields with validation at boundary
-    validation = StateValidator.validate_before_access(
-        {
-            "stage": state_manager.get("stage"),
-            "channel": state_manager.get("channel")
-        },
-        {"stage", "channel"}
-    )
-    if not validation.is_valid:
-        logger.error(f"Invalid state: {validation.error_message}")
-        return
-
-    stage = state_manager.get("stage")
-    channel = state_manager.get("channel", {})
-    channel_id = channel.get("identifier")
-
-    if (
-        stage != "handle_action_register"
-        and not cache.get(f"{channel_id}_interracted")
-    ):
-        try:
-            send_whatsapp_message(payload={
-                "messaging_product": "whatsapp",
-                "preview_url": False,
-                "recipient_type": "individual",
-                "to": channel_id,
-                "type": "text",
-                "text": {"body": "Please wait while we process your request..."},
-            })
-
-            cache.set(f"{channel_id}_interracted", True, 60 * 15)
-        except Exception as e:
-            logger.error(f"Failed to send delay message: {str(e)}")
-
-
-def send_first_message(state_manager: Any) -> None:
-    """Send welcome message to user"""
-    try:
-        # Validate channel info at boundary
-        validation = StateValidator.validate_before_access(
-            {"channel": state_manager.get("channel")},
-            {"channel"}
-        )
-        if not validation.is_valid:
-            logger.error(f"Invalid state: {validation.error_message}")
-            return
-
-        channel = state_manager.get("channel", {})
-        channel_id = channel.get("identifier")
-
-        first_message = "Welcome to CredEx! How can I assist you today?"
-        send_whatsapp_message(payload={
-            "messaging_product": "whatsapp",
-            "preview_url": False,
-            "recipient_type": "individual",
-            "to": channel_id,
-            "type": "text",
-            "text": {"body": first_message},
-        })
-    except Exception as e:
-        logger.error(f"Failed to send welcome message: {str(e)}")
-
-
-def handle_reset_and_init(state_manager: Any, reset: bool, silent: bool, init: bool) -> None:
-    """Handle reset and initialization messages"""
-    if reset and not silent or init:
-        send_delay_message(state_manager)
-        send_first_message(state_manager)

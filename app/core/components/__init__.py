@@ -7,7 +7,7 @@ This package provides the component system with:
 - Component registry
 """
 
-from .auth import DashboardDisplay, LoginCompleteHandler, LoginHandler
+from .auth import LoginCompleteHandler, LoginHandler
 from .base import Component, InputComponent
 from .input import AmountInput, ConfirmInput, HandleInput, SelectInput
 from .registration import (
@@ -23,7 +23,6 @@ __all__ = [
     # Auth components
     "LoginHandler",
     "LoginCompleteHandler",
-    "DashboardDisplay",
 
     # Input components
     "AmountInput",

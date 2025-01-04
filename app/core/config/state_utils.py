@@ -8,11 +8,9 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from core.utils.exceptions import (
-    ComponentException,
-    FlowException,
-    SystemException
-)
+from core.utils.exceptions import (ComponentException, FlowException,
+                                   SystemException)
+
 from .config import ACTIVITY_TTL
 
 logger = logging.getLogger(__name__)

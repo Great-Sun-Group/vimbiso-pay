@@ -1,12 +1,11 @@
 """Base handler enforcing SINGLE SOURCE OF TRUTH"""
 import logging
-from datetime import datetime
 from typing import Any
 
 from core.utils.exceptions import ComponentException, SystemException
 from core.utils.utils import wrap_text
 
-from .screens import INVALID_ACTION
+from core.messaging.formatters import ErrorFormatters
 from .types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -34,24 +33,10 @@ def handle_default_action(state_manager: Any) -> WhatsAppMessage:
         # Get channel info through proper method
         channel_id = state_manager.get_channel_id()
 
-        # Update state with action handling
-        state_manager.update_state({
-            "flow_data": {
-                "active_component": {
-                    "type": "default_handler",
-                    "validation": {
-                        "in_progress": True,
-                        "attempts": state_manager.get_flow_data().get("action_attempts", 0) + 1,
-                        "last_attempt": datetime.utcnow().isoformat()
-                    }
-                }
-            }
-        })
-
-        # Create response
+        # Create error response
         return WhatsAppMessage.create_text(
             channel_id,
-            wrap_text(INVALID_ACTION, channel_id)
+            wrap_text(ErrorFormatters.format_invalid_action(), channel_id)
         )
 
     except ComponentException as e:
@@ -144,21 +129,7 @@ def get_response_template(state_manager: Any, message_text: str) -> WhatsAppMess
         # Get channel info through proper methods
         channel_id = state_manager.get_channel_id()
 
-        # Update state with template handling
-        state_manager.update_state({
-            "flow_data": {
-                "active_component": {
-                    "type": "template_handler",
-                    "validation": {
-                        "in_progress": True,
-                        "attempts": state_manager.get_flow_data().get("template_attempts", 0) + 1,
-                        "last_attempt": datetime.utcnow().isoformat()
-                    }
-                }
-            }
-        })
-
-        # Create response
+        # Create template response
         return WhatsAppMessage.create_text(channel_id, message_text)
 
     except ComponentException as e:
@@ -217,21 +188,7 @@ def format_error_response(state_manager: Any, error_message: str) -> WhatsAppMes
         # Get channel info through proper methods
         channel_id = state_manager.get_channel_id()
 
-        # Update state with error handling
-        state_manager.update_state({
-            "flow_data": {
-                "active_component": {
-                    "type": "error_handler",
-                    "validation": {
-                        "in_progress": True,
-                        "attempts": state_manager.get_flow_data().get("error_attempts", 0) + 1,
-                        "last_attempt": datetime.utcnow().isoformat()
-                    }
-                }
-            }
-        })
-
-        # Create response
+        # Create error response
         return WhatsAppMessage.create_text(
             channel_id,
             f"❌ {error_message}"

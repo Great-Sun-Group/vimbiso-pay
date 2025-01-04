@@ -6,10 +6,8 @@ from .auth import login as auth_login
 from .auth import register_member as auth_register
 from .credex import (accept_bulk_credex, accept_credex, cancel_credex,
                      decline_credex, get_credex, offer_credex)
-from .dashboard_client import get_dashboard as get_member_dashboard
-from .dashboard_client import get_ledger as get_account_ledger
-from .dashboard_client import validate_account_handle as validate_member_handle
-from .api_interactions import refresh_member_info as refresh_member
+from .credex import get_ledger as get_account_ledger
+from .credex import validate_account_handle as validate_member_handle
 from .profile import update_profile_from_response
 
 logger = logging.getLogger(__name__)
@@ -33,18 +31,7 @@ def create_api_service(state_manager: Any, channel_id: str) -> Dict[str, Callabl
             state_manager.get_flow_data().get("auth", {}).get("token")
         ),
 
-        # Dashboard operations
-        "get_dashboard": lambda: get_member_dashboard(
-            channel_id,
-            state_manager.get_flow_data().get("auth", {}).get("token")
-        ),
-        "refresh_member_info": lambda reset=True, silent=True, init=False: refresh_member(
-            state_manager,
-            channel_id,
-            reset,
-            silent,
-            init
-        ),
+        # Account operations
         "validate_account_handle": lambda handle: validate_member_handle(
             handle,
             state_manager.get_flow_data().get("auth", {}).get("token")
