@@ -1,60 +1,30 @@
-# Vimbiso Chatbot Server
+# Vimbiso ChatServer
 
-A server that facilitates financial transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in secure WhatsApp and SMS chats.
+Facilitates transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in secure WhatsApp and SMS chats:
+- Multi-denominational balance display
+- Offer secured credex with settlement on demand
+- Offer unsecured credex with configurable due date
+- Accept/decline/cancel credex offers
+- Account ledgers with pagination
+- Multiple account management
 
-## Core Architecture
+## Architecture
 
-The system follows these key principles:
-
-1. **State-Based Design**
-- All operations go through state_manager
-- Credentials exist ONLY in state
-- No direct passing of sensitive data
-- State validation through updates
-- Progress tracking through state
-- Validation tracking through state
-
-2. **Pure Functions**
-- Services use stateless functions
-- No stored instance variables
-- No service-level state
-- Clear input/output contracts
-- Standard validation patterns
-- Standard error handling
-
-3. **Single Source of Truth**
-- Member ID ONLY at top level
-- Channel info ONLY at top level
-- JWT token ONLY in state
-- No credential duplication
-- No state duplication
-- No manual transformation
-
-4. **Flow Framework**
-- Common flow configurations
-- Clear flow types
-- Standard components
-- Flow type metadata
-- Progress tracking
-- Validation tracking
-
-For detailed implementation patterns, see:
-- [Service Architecture](docs/service-architecture.md) - Core service patterns and best practices
-- [API Integration](docs/api-integration.md) - API interaction patterns and state management
-- [State Management](docs/state-management.md) - State validation and flow control
+See [Core Architecture](docs/architecture.md) for detailed architectural principles, patterns, and implementation guidelines.
 
 ## Documentation
-- [Standardization](docs/standardization.md) - Summary of centralized solution for state, flow, and error management.
-- [State Management](docs/state-management.md) - Conversation and session management
+
+### Core Implementation
+- [Core Architecture](docs/ARCHITECTURE.md) - Architectural principles and patterns
+- [Service & API](docs/service-architecture.md) - Service and API integration patterns
+- [State Management](docs/state-management.md) - State validation and flow control
 - [Flow Framework](docs/flow-framework.md) - Progressive interaction framework
-- [Components](docs/components.md) - UI components
-- [WhatsApp Integration](docs/whatsapp.md) - WhatsApp bot implementation
-- [API Integration](docs/api-integration.md) - Integration with credex-core API
-- [Testing Guide](docs/testing.md) - Testing infrastructure and tools
-- [Security](docs/security.md) - Security measures and best practices
-- [Docker](docs/docker.md) - Docker configuration and services
-- [Deployment](docs/deployment.md) - Deployment process and infrastructure
-- [Redis Management](docs/redis-memory-management.md) - Redis configuration and management
+
+### Infrastructure
+- [Security](docs/infrastructure/security.md) - Security measures and best practices
+- [Docker](docs/infrastructure/docker.md) - Container configuration and services
+- [Deployment](docs/infrastructure/deployment.md) - Deployment process and infrastructure
+- [Redis](docs/infrastructure/redis-memory-management.md) - Redis configuration and management
 
 ## Quick Start
 
@@ -103,13 +73,10 @@ Requirements:
 Usage:
 ```bash
 # Stream logs in real-time
-./scripts/fetchlogs.sh
+fetchlogs
 
 # Fetch historical logs in seconds
-./scripts/fetchlogs.sh 60
-
-# Show help
-./scripts/fetchlogs.sh --help
+fetchlogs 60
 ```
 
 ## Core Features
@@ -126,24 +93,8 @@ Usage:
 - Form-based data collection
 - Rich message formatting
 - State-based conversation flow
-- Time-aware greetings
 - Navigation commands
 - Custom message templates
-
-### Financial Operations
-- State-validated transactions
-- Credential management through state
-- Flow-based operation handling
-- Consistent error handling
-- Secured credex transactions with immediate settlement
-- Unsecured credex with configurable due dates
-- Multi-tier account system:
-  - Personal accounts with basic features
-  - Business accounts with advanced capabilities
-  - Member authorization management
-- Balance tracking with denomination support
-- Transaction history with pagination
-- Pending offers management
 
 ### API & Integration
 - State-based API integration
@@ -151,14 +102,6 @@ Usage:
 - Flow state management
 - Consistent error handling
 - Direct integration with CredEx core API
-- Webhook support for real-time updates:
-  - Company updates
-  - Member updates
-  - Offer status changes
-- Internal API endpoints for:
-  - Company management
-  - Member operations
-  - Offer handling
 - Comprehensive validation and error handling
 - Type-safe request/response handling
 
@@ -176,84 +119,18 @@ Usage:
 
 ## Development Tools
 
-### Core Patterns
-```python
-# CORRECT - Flow with proper tracking
-class ActionFlow(BaseFlow):
-    """Flow for accept/decline/cancel actions"""
-
-    ACTIONS = {
-        "accept": {
-            "service_method": "accept_credex",
-            "confirm_prompt": "accept",
-            "cancel_message": "Acceptance cancelled",
-            "complete_message": "✅ Offer accepted successfully."
-        }
-    }
-
-    def process_step(self, state_manager: Any, step: str, input_value: Any) -> Message:
-        """Process action step with proper tracking"""
-        # Get flow state for context
-        flow_state = state_manager.get_flow_state()
-
-        # Validate input with tracking
-        component = self._get_component(step)
-        value = self._validate_input(state_manager, step, input_value, component)
-
-        # Update progress
-        progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
-
-        # Return result with progress
-        return {
-            "success": True,
-            "message": f"{self.get_step_content(step)}\n\n{progress}"
-        }
-
-# WRONG - Flow without tracking
-def process_step(state_manager: Any, step: str, value: Any) -> Dict:
-    result = validate_input(value)  # Don't validate without tracking!
-    return {"message": result}  # Don't return without progress!
-```
-
 ### Mock WhatsApp Interface
-Test the WhatsApp bot without real WhatsApp credentials:
+Test the WhatsApp chatserver without hitting WhastApp:
 
 ```bash
 # Start all services including mock server
 make dev
 
-# CLI testing (from host machine)
-./mock/cli.py "Hello, world!"
-./mock/cli.py --type button "button_1"
-```
-
 ### API Testing
 Test API endpoints and webhooks:
 
-```bash
-# Test webhook endpoint
-curl -X POST http://localhost:8000/api/webhooks/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "metadata": {
-      "webhook_id": "test",
-      "event_type": "company_update",
-      "timestamp": "2024-01-01T00:00:00Z"
-    },
-    "payload": {
-      "company_id": "123",
-      "name": "Test Company",
-      "status": "active"
-    }
-  }'
-
-# Test internal API (requires authentication)
-curl -X GET http://localhost:8000/api/companies/ \
-  -H "Authorization: Bearer your-token"
-```
-
 ### AI-Assisted Merge Summaries
-Generate branch comparison summaries:
+Generate diffs for AI-assisted summarization in merge requests:
 
 ```bash
 make diff <source_branch> <target_branch>
@@ -268,4 +145,4 @@ make diff <source_branch> <target_branch>
 
 ## License
 
-Have at it.
+Public domain.

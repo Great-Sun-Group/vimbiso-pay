@@ -6,7 +6,9 @@ Components handle pure UI validation with clear boundaries.
 
 from datetime import datetime
 from typing import Any, Dict, Type, Union
+
 from core.utils.error_types import ValidationResult
+from core.utils.exceptions import ComponentException
 
 
 class Component:
@@ -69,28 +71,21 @@ class Component:
             return result
 
         except Exception as e:
-            # Handle unexpected errors with validation tracking
-            error = {
-                "message": "Validation failed",
-                "field": "value",
-                "details": {
-                    "error": str(e),
-                    "validation": {
-                        "attempts": self.validation_state["attempts"],
-                        "last_attempt": value,
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                }
-            }
+            # Update validation state
             self.validation_state.update({
                 "in_progress": False,
-                "error": error,
-                "operation": "validate_error"
+                "error": str(e),
+                "operation": "validate_error",
+                "timestamp": datetime.utcnow().isoformat()
             })
-            return ValidationResult.failure(
-                message=error["message"],
-                field=error["field"],
-                details=error["details"]
+
+            # Raise ComponentException with validation context
+            raise ComponentException(
+                message="Validation failed",
+                component=self.type,
+                field="value",
+                value=str(value),
+                validation=self.validation_state
             )
 
     def _validate(self, value: Any) -> ValidationResult:

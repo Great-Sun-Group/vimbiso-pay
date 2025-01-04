@@ -154,8 +154,3 @@ Common issues:
    - Check memory usage
    - Verify configuration
    - See [Redis Management](redis-memory-management.md)
-
-For more details on:
-- Testing: [Testing Guide](testing.md)
-- Deployment: [Deployment](deployment.md)
-- Security: [Security](security.md)

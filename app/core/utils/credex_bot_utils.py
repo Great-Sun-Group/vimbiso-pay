@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict
 
 from core.utils import wrap_text
-from core.utils.error_handler import ErrorHandler
+from core.utils.exceptions import FlowException
 from core.utils.state_validator import StateValidator
 
 from ..config.constants import REGISTER
@@ -19,9 +19,20 @@ def handle_successful_refresh(state_manager: Any) -> Dict[str, Any]:
 
     Returns:
         Response from action handler
+
+    Raises:
+        FlowException: If refresh handling fails
     """
-    logger.info("Refresh successful")
-    return handle_action_select_profile(state_manager)
+    try:
+        logger.info("Refresh successful")
+        return handle_action_select_profile(state_manager)
+    except Exception as e:
+        raise FlowException(
+            message=f"Failed to handle successful refresh: {str(e)}",
+            step="refresh",
+            action="handle_success",
+            data={"error": str(e)}
+        )
 
 
 def handle_failed_refresh(state_manager: Any, error_message: str) -> Dict[str, Any]:
@@ -33,39 +44,53 @@ def handle_failed_refresh(state_manager: Any, error_message: str) -> Dict[str, A
 
     Returns:
         Error response message
+
+    Raises:
+        FlowException: If state validation fails
     """
-    logger.error(f"Refresh failed: {error_message}")
+    try:
+        logger.error(f"Refresh failed: {error_message}")
 
-    # Validate at boundary
-    validation = StateValidator.validate_before_access(
-        {"channel": state_manager.get("channel")},
-        {"channel"}
-    )
-    if not validation.is_valid:
-        logger.error(f"Invalid state: {validation.error_message}")
+        # Validate at boundary
+        validation = StateValidator.validate_before_access(
+            {"channel": state_manager.get("channel")},
+            {"channel"}
+        )
+        if not validation.is_valid:
+            logger.error(f"Invalid state: {validation.error_message}")
+            raise FlowException(
+                message=validation.error_message,
+                step="refresh",
+                action="validate_state",
+                data={"error": error_message}
+            )
+
+        channel = state_manager.get("channel")
+        if not isinstance(channel, dict) or not channel.get("identifier"):
+            logger.error("Invalid channel structure")
+            raise FlowException(
+                message="Invalid channel structure",
+                step="refresh",
+                action="validate_channel",
+                data={"error": error_message}
+            )
+
         return wrap_text(
             REGISTER.format(message=error_message),
-            "unknown",
+            channel["identifier"],
             extra_rows=[{"id": "1", "title": "Become a member"}],
             include_menu=False,
         )
 
-    channel = state_manager.get("channel")
-    if not isinstance(channel, dict) or not channel.get("identifier"):
-        logger.error("Invalid channel structure")
-        return wrap_text(
-            REGISTER.format(message=error_message),
-            "unknown",
-            extra_rows=[{"id": "1", "title": "Become a member"}],
-            include_menu=False,
+    except FlowException:
+        raise
+    except Exception as e:
+        raise FlowException(
+            message=f"Failed to handle refresh error: {str(e)}",
+            step="refresh",
+            action="handle_error",
+            data={"error": error_message}
         )
-
-    return wrap_text(
-        REGISTER.format(message=error_message),
-        channel["identifier"],
-        extra_rows=[{"id": "1", "title": "Become a member"}],
-        include_menu=False,
-    )
 
 
 def handle_message(state_manager: Any) -> Dict[str, Any]:
@@ -76,9 +101,20 @@ def handle_message(state_manager: Any) -> Dict[str, Any]:
 
     Returns:
         Response from default action handler
+
+    Raises:
+        FlowException: If message handling fails
     """
-    logger.info("Handling default action")
-    return handle_default_action(state_manager)
+    try:
+        logger.info("Handling default action")
+        return handle_default_action(state_manager)
+    except Exception as e:
+        raise FlowException(
+            message=f"Failed to handle message: {str(e)}",
+            step="message",
+            action="handle_default",
+            data={"error": str(e)}
+        )
 
 
 def handle_offer_credex(state_manager: Any) -> Dict[str, Any]:
@@ -89,19 +125,22 @@ def handle_offer_credex(state_manager: Any) -> Dict[str, Any]:
 
     Returns:
         Response from offer credex handler
+
+    Raises:
+        FlowException: If state update fails
     """
     logger.info("Handling offer credex action")
-    # Update action in state
-    success, error = state_manager.update_state({"action": "offer_credex"})
-    if not success:
-        return ErrorHandler.handle_flow_error(
+    try:
+        # Update action in state
+        state_manager.update_state({"action": "offer_credex"})
+        return handle_action_offer_credex(state_manager)
+    except Exception as e:
+        raise FlowException(
+            message=f"Failed to handle credex offer: {str(e)}",
             step="offer_credex",
             action="update_state",
-            data={"error": error},
-            message=f"Failed to update action state: {error}",
-            flow_state=state_manager.get_flow_state()
+            data={"error": str(e)}
         )
-    return handle_action_offer_credex(state_manager)
 
 
 def handle_action(state_manager: Any, action: str) -> Dict[str, Any]:
@@ -113,6 +152,9 @@ def handle_action(state_manager: Any, action: str) -> Dict[str, Any]:
 
     Returns:
         Response from action handler
+
+    Raises:
+        FlowException: If state update fails or action not found
     """
     # Map of action names to handler functions
     action_handlers = {
@@ -123,21 +165,21 @@ def handle_action(state_manager: Any, action: str) -> Dict[str, Any]:
     }
 
     handler = action_handlers.get(action)
-    if handler:
-        logger.info(f"Handling action: {action}")
-        success, error = state_manager.update_state({"action": action})
-        if not success:
-            return ErrorHandler.handle_flow_error(
-                step="action",
-                action=action,
-                data={"error": error},
-                message=f"Failed to update action state: {error}",
-                flow_state=state_manager.get_flow_state()
-            )
-        return handler(state_manager)
-    else:
+    if not handler:
         logger.warning(f"Action method {action} not found")
         return handle_default_action(state_manager)
+
+    try:
+        logger.info(f"Handling action: {action}")
+        state_manager.update_state({"action": action})
+        return handler(state_manager)
+    except Exception as e:
+        raise FlowException(
+            message=f"Failed to handle action: {str(e)}",
+            step="action",
+            action=action,
+            data={"error": str(e)}
+        )
 
 
 def handle_greeting(state_manager: Any) -> Dict[str, Any]:
@@ -148,40 +190,115 @@ def handle_greeting(state_manager: Any) -> Dict[str, Any]:
 
     Returns:
         Response from greeting handler
+
+    Raises:
+        FlowException: If state update fails
     """
     logger.info("Handling greeting")
-    success, error = state_manager.update_state({"action": "greeting"})
-    if not success:
-        return ErrorHandler.handle_flow_error(
+    try:
+        state_manager.update_state({"action": "greeting"})
+        return handle_action_greeting(state_manager)
+    except Exception as e:
+        raise FlowException(
+            message=f"Failed to handle greeting: {str(e)}",
             step="greeting",
             action="update_state",
-            data={"error": error},
-            message=f"Failed to update action state: {error}",
-            flow_state=state_manager.get_flow_state()
+            data={"error": str(e)}
         )
-    return handle_action_greeting(state_manager)
 
 
 # Handler function implementations
 def handle_action_select_profile(state_manager: Any) -> Dict[str, Any]:
-    """Handle select profile action"""
-    # Implementation would go here
-    pass
+    """Handle select profile action
+
+    Args:
+        state_manager: State manager instance
+
+    Returns:
+        Response from profile handler
+
+    Raises:
+        FlowException: If profile handling fails
+    """
+    try:
+        # Implementation would go here
+        raise NotImplementedError("Profile selection not implemented")
+    except Exception as e:
+        raise FlowException(
+            message=f"Failed to handle profile selection: {str(e)}",
+            step="profile",
+            action="select",
+            data={"error": str(e)}
+        )
 
 
 def handle_default_action(state_manager: Any) -> Dict[str, Any]:
-    """Handle default action"""
-    # Implementation would go here
-    pass
+    """Handle default action
+
+    Args:
+        state_manager: State manager instance
+
+    Returns:
+        Response from default handler
+
+    Raises:
+        FlowException: If default handling fails
+    """
+    try:
+        # Implementation would go here
+        raise NotImplementedError("Default action not implemented")
+    except Exception as e:
+        raise FlowException(
+            message=f"Failed to handle default action: {str(e)}",
+            step="default",
+            action="handle",
+            data={"error": str(e)}
+        )
 
 
 def handle_action_greeting(state_manager: Any) -> Dict[str, Any]:
-    """Handle greeting action"""
-    # Implementation would go here
-    pass
+    """Handle greeting action
+
+    Args:
+        state_manager: State manager instance
+
+    Returns:
+        Response from greeting handler
+
+    Raises:
+        FlowException: If greeting handling fails
+    """
+    try:
+        # Implementation would go here
+        raise NotImplementedError("Greeting action not implemented")
+    except Exception as e:
+        raise FlowException(
+            message=f"Failed to handle greeting action: {str(e)}",
+            step="greeting",
+            action="handle",
+            data={"error": str(e)}
+        )
 
 
 def handle_action_offer_credex(state_manager: Any) -> Dict[str, Any]:
-    """Handle offer credex action"""
-    # Implementation would go here
-    pass
+    """Handle offer credex action
+
+    Args:
+        state_manager: State manager instance
+
+    Returns:
+        Response from credex handler
+
+    Raises:
+        FlowException: If credex handling fails
+    """
+    try:
+        # Implementation would go here
+        raise NotImplementedError("Credex offer not implemented")
+    except Exception as e:
+        raise FlowException(
+            message=f"Failed to handle credex offer: {str(e)}",
+            step="credex",
+            action="offer",
+            data={"error": str(e)}
+        )

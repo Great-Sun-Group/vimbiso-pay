@@ -59,10 +59,12 @@ class StateManager:
         }
 
         # Get existing state
-        state_data, error = self.atomic_state.atomic_get(self.key_prefix)
-        if error:
+        try:
+            state_data = self.atomic_state.atomic_get(self.key_prefix)
+        except SystemException as e:
+            # Re-raise with initialization context
             raise SystemException(
-                message=f"Failed to get state: {error}",
+                message=str(e),
                 code="STATE_INIT_ERROR",
                 service="state_manager",
                 action="initialize"
@@ -89,10 +91,12 @@ class StateManager:
                 value=str(type(updates))
             )
 
-        success, error = update_state_core(self, updates)
-        if not success:
+        try:
+            update_state_core(self, updates)
+        except SystemException as e:
+            # Re-raise with update context
             raise SystemException(
-                message=f"Failed to update state: {error}",
+                message=str(e),
                 code="STATE_UPDATE_ERROR",
                 service="state_manager",
                 action="update"

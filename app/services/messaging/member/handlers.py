@@ -8,12 +8,12 @@ from datetime import datetime
 from typing import Any
 
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import Message
+from core.messaging.types import Message, TextContent
 from core.utils.exceptions import FlowException, SystemException
 from core.messaging.flow import initialize_flow
 from core.utils.error_handler import ErrorHandler
 
-from .flows import RegistrationFlow, UpgradeFlow
+from .flows import AuthFlow, RegistrationFlow, UpgradeFlow
 from ..utils import get_recipient
 
 logger = logging.getLogger(__name__)
@@ -132,8 +132,10 @@ class MemberHandler:
                     data={"flow_type": flow_type}
                 )
 
-            # Process step through appropriate flow class
-            if flow_type == "registration":
+            # Process step through appropriate flow
+            if flow_type == "auth":
+                result = AuthFlow.process_step(self.messaging, state_manager, step, input_value)
+            elif flow_type == "registration":
                 result = RegistrationFlow.process_step(self.messaging, state_manager, step, input_value)
             elif flow_type == "upgrade":
                 result = UpgradeFlow.process_step(self.messaging, state_manager, step, input_value)
@@ -146,22 +148,22 @@ class MemberHandler:
                 )
 
             # Handle success with progress
-            if not isinstance(result, FlowException):
+            if isinstance(result, Message):
                 # Get updated flow state
                 flow_state = state_manager.get_flow_state()
-                if flow_state and "message" in result:
+                if flow_state and isinstance(result.content, TextContent):
                     # Add progress to message
                     progress = f"Step {flow_state['step_index'] + 1} of {flow_state['total_steps']}"
-                    result["message"] = f"{result['message']}\n\n{progress}"
+                    result.content.body = f"{result.content.body}\n\n{progress}"
 
             return result
 
         except FlowException as e:
             # Enhanced flow error handling
             error_response = ErrorHandler.handle_flow_error(
-                step=e.step,
-                action=e.action,
-                data=e.data,
+                step=e.details['step'],
+                action=e.details['action'],
+                data=e.details['data'],
                 message=str(e),
                 flow_state=flow_state
             )
@@ -173,9 +175,9 @@ class MemberHandler:
         except SystemException as e:
             # Enhanced system error handling
             error_response = ErrorHandler.handle_system_error(
-                code=e.code,
-                service=e.service,
-                action=e.action,
+                code=e.details['code'],
+                service=e.details['service'],
+                action=e.details['action'],
                 message=str(e),
                 error=e
             )

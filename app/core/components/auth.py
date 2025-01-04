@@ -7,10 +7,10 @@ Business validation happens in services.
 from typing import Any, Dict
 
 from core.utils.error_types import ValidationResult
-from .base import Component
+from .base import InputComponent
 
 
-class LoginHandler(Component):
+class LoginHandler(InputComponent):
     """Handles login attempts with pure UI validation"""
 
     def __init__(self):
@@ -45,11 +45,16 @@ class LoginHandler(Component):
         }
 
 
-class LoginCompleteHandler(Component):
+class LoginCompleteHandler(InputComponent):
     """Handles successful login completion with pure UI validation"""
 
     def __init__(self):
         super().__init__("login_complete")
+        self.state_manager = None
+
+    def set_state_manager(self, state_manager: Any) -> None:
+        """Set state manager for accessing dashboard data"""
+        self.state_manager = state_manager
 
     def validate(self, value: Any) -> ValidationResult:
         """Validate login response with proper tracking"""
@@ -59,7 +64,7 @@ class LoginCompleteHandler(Component):
             return type_result
 
         # Validate required fields
-        required = {"memberID", "token", "member", "accounts"}
+        required = {"member_id", "token"}
         missing = required - set(value.keys())
         if missing:
             return ValidationResult.failure(
@@ -71,21 +76,38 @@ class LoginCompleteHandler(Component):
                 }
             )
 
+        # Validate state manager is set
+        if not self.state_manager:
+            return ValidationResult.failure(
+                message="State manager not set",
+                field="state_manager",
+                details={"component": "login_complete"}
+            )
+
         return ValidationResult.success(value)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert login response to verified data"""
+        from services.whatsapp.screens import ACCOUNT_DASHBOARD
+
+        # Get dashboard data from state
+        flow_data = self.state_manager.get_flow_data()
+        dashboard = flow_data.get("data", {}).get("dashboard", {})
+
+        # Format dashboard with actual values
         return {
-            "member_id": value["memberID"],
+            "member_id": value["member_id"],
             "jwt_token": value["token"],
             "authenticated": True,
-            "member_data": value["member"],
-            "accounts": value["accounts"],
-            "active_account_id": value["accounts"][0]["accountID"] if value["accounts"] else None
+            "message": ACCOUNT_DASHBOARD.format(
+                securedNetBalancesByDenom=dashboard.get("securedNetBalancesByDenom", "0 USD"),
+                netCredexAssetsInDefaultDenom=dashboard.get("netCredexAssetsInDefaultDenom", "0 USD"),
+                tier_limit_display=dashboard.get("tier_limit_display", "Tier 1")
+            )
         }
 
 
-class DashboardDisplay(Component):
+class DashboardDisplay(InputComponent):
     """Displays dashboard with pure UI validation"""
 
     def __init__(self):

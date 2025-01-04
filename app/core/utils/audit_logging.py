@@ -1,53 +1,98 @@
+"""Audit logging with proper error handling and boundaries"""
 import logging
-from datetime import datetime
+import os
+from typing import Any, Dict, Optional
+
+from .exceptions import SystemException
 
 # Configure the logger
 logger = logging.getLogger("audit")
 logger.setLevel(logging.INFO)
 
-# Create a file handler
-handler = logging.FileHandler("audit.log")
-handler.setLevel(logging.INFO)
+try:
+    # Ensure log directory exists
+    log_dir = os.path.join(os.path.dirname(__file__), '../../data/logs')
+    os.makedirs(log_dir, exist_ok=True)
 
-# Create a logging format
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-handler.setFormatter(formatter)
+    # Create a file handler with proper path
+    handler = logging.FileHandler(os.path.join(log_dir, "audit.log"))
+    handler.setLevel(logging.INFO)
 
-# Add the handler to the logger
-logger.addHandler(handler)
+    # Create a logging format
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+
+    # Add the handler to the logger
+    logger.addHandler(handler)
+
+except Exception as e:
+    raise SystemException(
+        message=f"Failed to initialize audit logging: {str(e)}",
+        code="AUDIT_INIT_ERROR",
+        service="audit_logging",
+        action="initialize"
+    )
 
 
-def log_auth_event(event_type, user, status, details=None):
+def log_auth_event(
+    event_type: str,
+    user: str,
+    status: str,
+    details: Optional[Dict[str, Any]] = None
+) -> None:
+    """Log an authentication event with proper error handling
+
+    Args:
+        event_type: Type of the event (e.g., 'login', 'logout', 'password_change')
+        user: User associated with the event
+        status: Status of the event (e.g., 'success', 'failure')
+        details: Additional details about the event
+
+    Raises:
+        SystemException: If logging fails
     """
-    Log an authentication event.
+    try:
+        message = f"Auth event: {event_type} - User: {user} - Status: {status}"
+        if details:
+            message += f" - Details: {details}"
+        logger.info(message)
+    except Exception as e:
+        raise SystemException(
+            message=f"Failed to log auth event: {str(e)}",
+            code="AUDIT_LOG_ERROR",
+            service="audit_logging",
+            action="log_auth"
+        )
 
-    :param event_type: Type of the event (e.g., 'login', 'logout', 'password_change')
-    :param user: User associated with the event
-    :param status: Status of the event (e.g., 'success', 'failure')
-    :param details: Additional details about the event
+
+def log_authorization_event(
+    user: str,
+    resource: str,
+    action: str,
+    status: str,
+    details: Optional[Dict[str, Any]] = None
+) -> None:
+    """Log an authorization event with proper error handling
+
+    Args:
+        user: User attempting the action
+        resource: Resource being accessed
+        action: Action being performed
+        status: Status of the authorization (e.g., 'granted', 'denied')
+        details: Additional details about the event
+
+    Raises:
+        SystemException: If logging fails
     """
-    message = f"Auth event: {event_type} - User: {user} - Status: {status}"
-    if details:
-        message += f" - Details: {details}"
-    logger.info(message)
-
-
-def log_authorization_event(user, resource, action, status, details=None):
-    """
-    Log an authorization event.
-
-    :param user: User attempting the action
-    :param resource: Resource being accessed
-    :param action: Action being performed
-    :param status: Status of the authorization (e.g., 'granted', 'denied')
-    :param details: Additional details about the event
-    """
-    message = f"Authorization event: User: {user} - Resource: {resource} - Action: {action} - Status: {status}"
-    if details:
-        message += f" - Details: {details}"
-    logger.info(message)
-
-
-# Example usage:
-# log_auth_event('login', 'john_doe', 'success')
-# log_authorization_event('john_doe', 'sensitive_data', 'read', 'denied', 'Insufficient permissions')
+    try:
+        message = f"Authorization event: User: {user} - Resource: {resource} - Action: {action} - Status: {status}"
+        if details:
+            message += f" - Details: {details}"
+        logger.info(message)
+    except Exception as e:
+        raise SystemException(
+            message=f"Failed to log authorization event: {str(e)}",
+            code="AUDIT_LOG_ERROR",
+            service="audit_logging",
+            action="log_authorization"
+        )
