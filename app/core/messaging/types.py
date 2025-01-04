@@ -75,27 +75,28 @@ class MessageRecipient:
 
 @dataclass
 class MessageContent:
-    """Base class for message content"""
-    type: MessageType
-    body: Optional[str] = None
-    preview_url: bool = False
-
+    """Base interface for message content"""
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
-        result = {"type": self.type.value}
-        if self.body:
-            result[self.type.value] = {"body": self.body}
-        if self.preview_url:
-            result["preview_url"] = self.preview_url
-        return result
+        raise NotImplementedError
 
 
 @dataclass
-class TextContent(MessageContent):
+class TextContent:
     """Text message content"""
-    def __init__(self, body: str):
-        super().__init__(type=MessageType.TEXT)
-        self.body = body
+    body: str
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.TEXT)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization"""
+        result = {
+            "type": self.type.value,
+            self.type.value: {"body": self.body}
+        }
+        if self.preview_url:
+            result["preview_url"] = self.preview_url
+        return result
 
 
 @dataclass
@@ -121,12 +122,12 @@ class InteractiveContent:
     """Interactive message content"""
     interactive_type: InteractiveType
     body: str
-    type: MessageType = field(default=MessageType.INTERACTIVE)
-    preview_url: bool = False
     header: Optional[str] = None
     footer: Optional[str] = None
     buttons: List[Button] = field(default_factory=list)
     action_items: Dict[str, Any] = field(default_factory=dict)
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.INTERACTIVE)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
@@ -169,9 +170,9 @@ class TemplateContent:
     """Template message content"""
     name: str
     language: Dict[str, str]
-    type: MessageType = field(default=MessageType.TEMPLATE)
-    preview_url: bool = False
     components: List[Dict[str, Any]] = field(default_factory=list)
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.TEMPLATE)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
@@ -190,13 +191,13 @@ class TemplateContent:
 
 
 @dataclass
-class MediaContent:
-    """Base class for media message content"""
+class ImageContent:
+    """Image message content"""
     url: str
-    type: MessageType
-    preview_url: bool = False
     caption: Optional[str] = None
     filename: Optional[str] = None
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.IMAGE)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
@@ -214,31 +215,75 @@ class MediaContent:
 
 
 @dataclass
-class ImageContent(MediaContent):
-    """Image message content"""
-    def __init__(self, url: str, **kwargs):
-        super().__init__(url=url, type=MessageType.IMAGE, **kwargs)
-
-
-@dataclass
-class DocumentContent(MediaContent):
+class DocumentContent:
     """Document message content"""
-    def __init__(self, url: str, **kwargs):
-        super().__init__(url=url, type=MessageType.DOCUMENT, **kwargs)
+    url: str
+    caption: Optional[str] = None
+    filename: Optional[str] = None
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.DOCUMENT)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization"""
+        result = {
+            "type": self.type.value,
+            self.type.value: {"url": self.url}
+        }
+        if self.caption:
+            result[self.type.value]["caption"] = self.caption
+        if self.filename:
+            result[self.type.value]["filename"] = self.filename
+        if self.preview_url:
+            result["preview_url"] = self.preview_url
+        return result
 
 
 @dataclass
-class AudioContent(MediaContent):
+class AudioContent:
     """Audio message content"""
-    def __init__(self, url: str, **kwargs):
-        super().__init__(url=url, type=MessageType.AUDIO, **kwargs)
+    url: str
+    caption: Optional[str] = None
+    filename: Optional[str] = None
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.AUDIO)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization"""
+        result = {
+            "type": self.type.value,
+            self.type.value: {"url": self.url}
+        }
+        if self.caption:
+            result[self.type.value]["caption"] = self.caption
+        if self.filename:
+            result[self.type.value]["filename"] = self.filename
+        if self.preview_url:
+            result["preview_url"] = self.preview_url
+        return result
 
 
 @dataclass
-class VideoContent(MediaContent):
+class VideoContent:
     """Video message content"""
-    def __init__(self, url: str, **kwargs):
-        super().__init__(url=url, type=MessageType.VIDEO, **kwargs)
+    url: str
+    caption: Optional[str] = None
+    filename: Optional[str] = None
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.VIDEO)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization"""
+        result = {
+            "type": self.type.value,
+            self.type.value: {"url": self.url}
+        }
+        if self.caption:
+            result[self.type.value]["caption"] = self.caption
+        if self.filename:
+            result[self.type.value]["filename"] = self.filename
+        if self.preview_url:
+            result["preview_url"] = self.preview_url
+        return result
 
 
 @dataclass
@@ -246,10 +291,10 @@ class LocationContent:
     """Location message content"""
     latitude: float
     longitude: float
-    type: MessageType = field(default=MessageType.LOCATION)
-    preview_url: bool = False
     name: Optional[str] = None
     address: Optional[str] = None
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.LOCATION)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
@@ -283,21 +328,16 @@ class Message:
         VideoContent,
         LocationContent,
     ]
-    messaging_product: str = "whatsapp"
-    recipient_type: str = "individual"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
         result = {
-            "messaging_product": self.messaging_product,
-            "recipient_type": self.recipient_type,
-            "to": self.recipient.channel_value,  # Use channel-specific identifier
+            "recipient": self.recipient.to_dict(),
             **self.content.to_dict()
         }
-        # Only include non-state metadata if present
         if self.metadata:
-            result["metadata"] = self.metadata.copy()  # Create copy to avoid modifying original
+            result["metadata"] = self.metadata.copy()
         return result
 
     def __str__(self) -> str:

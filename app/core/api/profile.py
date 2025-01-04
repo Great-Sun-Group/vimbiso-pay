@@ -67,7 +67,13 @@ def _structure_profile_data(
                 "action_type": action_type
             }
         )
-        ErrorHandler.handle_error(e, state_manager, error_context)
+        ErrorHandler.handle_flow_error(
+            step=error_context.details["step"],
+            action=error_context.details["action"],
+            data={"action_type": error_context.details["action_type"]},
+            message=error_context.message,
+            flow_state={}
+        )
         return {}
 
 
@@ -151,13 +157,14 @@ def _handle_account_setup(
             "active_account_id": personal_account["accountID"]  # Reference by ID
         }
 
-        success, error = state_manager.update_state(state_update)
-        if not success:
+        try:
+            state_manager.update_state(state_update)
+        except Exception as e:
             raise FlowException(
-                message=f"Failed to update account state: {error}",
+                message="Failed to update account state",
                 step="profile",
                 action="update_state",
-                data=state_update
+                data={"error": str(e), "update": state_update}
             )
 
         logger.info(f"Successfully set up account: {personal_account['accountHandle']}")
@@ -172,7 +179,13 @@ def _handle_account_setup(
                 "action": "setup_account"
             }
         )
-        ErrorHandler.handle_error(e, state_manager, error_context)
+        ErrorHandler.handle_flow_error(
+            step=error_context.details["step"],
+            action=error_context.details["action"],
+            data={},
+            message=error_context.message,
+            flow_state={}
+        )
         return False
 
 
@@ -216,13 +229,14 @@ def update_profile_from_response(
             state_update["jwt_token"] = token
 
         # Update state through validation
-        success, error = state_manager.update_state(state_update)
-        if not success:
+        try:
+            state_manager.update_state(state_update)
+        except Exception as e:
             raise FlowException(
-                message=f"Failed to update state: {error}",
+                message="Failed to update state",
                 step="profile",
                 action="update_state",
-                data=state_update
+                data={"error": str(e), "update": state_update}
             )
 
         # Handle account setup if needed
@@ -249,7 +263,13 @@ def update_profile_from_response(
                 "update_from": update_from
             }
         )
-        ErrorHandler.handle_error(e, state_manager, error_context)
+        ErrorHandler.handle_flow_error(
+            step=error_context.details["step"],
+            action=error_context.details["action"],
+            data={"update_from": error_context.details["update_from"]},
+            message=error_context.message,
+            flow_state={}
+        )
         return False
 
 
@@ -296,15 +316,16 @@ def handle_successful_refresh(
         profile_data["dashboard"] = dashboard_data
 
         # Update state through validation
-        success, error = state_manager.update_state({
-            "flow_data": {"data": profile_data}
-        })
-        if not success:
+        try:
+            state_manager.update_state({
+                "flow_data": {"data": profile_data}
+            })
+        except Exception as e:
             raise FlowException(
-                message=f"Failed to update profile: {error}",
+                message="Failed to update profile",
                 step="profile",
                 action="update_profile",
-                data={"profile": profile_data}
+                data={"error": str(e), "profile": profile_data}
             )
 
         # Handle account setup
@@ -328,5 +349,11 @@ def handle_successful_refresh(
                 "action": "handle_refresh"
             }
         )
-        ErrorHandler.handle_error(e, state_manager, error_context)
+        ErrorHandler.handle_flow_error(
+            step=error_context.details["step"],
+            action=error_context.details["action"],
+            data={},
+            message=error_context.message,
+            flow_state={}
+        )
         return str(e)

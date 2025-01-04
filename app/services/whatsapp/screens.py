@@ -6,8 +6,8 @@ ACCOUNT_HOME = """*💳 {account}*
 
 {balance}"""
 
-# Balance templates
-BALANCE = """*💰 SECURED BALANCES*
+# Dashboard template
+ACCOUNT_DASHBOARD = """*💰 SECURED BALANCES*
 {securedNetBalancesByDenom}
 
 *📊 NET ASSETS*
@@ -29,13 +29,13 @@ Send "hi" to log back in."""
 
 
 # Message formatting helpers
-def format_balance(balance_data: dict) -> str:
-    """Format balance display"""
+def format_dashboard(balance_data: dict) -> str:
+    """Format dashboard display"""
     secured = balance_data.get("securedNetBalancesByDenom", "")
     net_assets = balance_data.get("netCredexAssetsInDefaultDenom", "")
     tier_limit = balance_data.get("tier_limit_display", "")
 
-    return BALANCE.format(
+    return ACCOUNT_DASHBOARD.format(
         securedNetBalancesByDenom=secured,
         netCredexAssetsInDefaultDenom=net_assets,
         tier_limit_display=tier_limit
@@ -46,7 +46,7 @@ def format_account(account_data: dict) -> str:
     """Format account display"""
     account = account_data.get("account", "")
     handle = account_data.get("handle", "")
-    balance = format_balance(account_data)
+    balance = format_dashboard(account_data)
 
     return ACCOUNT_HOME.format(
         account=account,

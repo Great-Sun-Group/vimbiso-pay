@@ -16,6 +16,8 @@ import traceback
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from .exceptions import SystemException
+
 logger = logging.getLogger(__name__)
 
 
@@ -325,13 +327,12 @@ def error_decorator(service: str):
             try:
                 return f(*args, **kwargs)
             except Exception as e:
-                # Return tuple format expected by service functions with context
-                return False, ErrorHandler.handle_system_error(
+                # Raise SystemException with proper context
+                raise SystemException(
+                    message=str(e),
                     code="REQUEST_ERROR",
                     service=service,
-                    action=f.__name__,
-                    message=str(e),
-                    error=e
+                    action=f.__name__
                 )
         return wrapper
     return decorator

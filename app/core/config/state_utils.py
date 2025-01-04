@@ -6,7 +6,7 @@ and minimal nesting.
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from core.utils.exceptions import (
     ComponentException,
@@ -18,15 +18,16 @@ from .config import ACTIVITY_TTL
 logger = logging.getLogger(__name__)
 
 
-def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
     """Update state with validation tracking and progress monitoring
 
     Args:
         state_manager: State manager instance
         updates: Dictionary of updates to apply
 
-    Returns:
-        Tuple of (success, error_message)
+    Raises:
+        ComponentException: If updates format is invalid
+        SystemException: If state update fails
     """
     try:
         # Get current state with validation tracking
@@ -96,29 +97,15 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> Tuple[bool
                 current_state[key] = value
 
         # Store state atomically with validation
-        success, error = state_manager.atomic_state.atomic_update(
+        state_manager.atomic_state.atomic_update(
             state_manager.key_prefix,
             current_state,
             ACTIVITY_TTL
         )
 
-        if not success:
-            validation_state.update({
-                "in_progress": False,
-                "error": error
-            })
-            raise SystemException(
-                message=f"Failed to update state: {error}",
-                code="STATE_UPDATE_ERROR",
-                service="state_utils",
-                action="update_state",
-                validation=validation_state
-            )
-
         # Update internal state with validation
         current_state["update_attempts"] = validation_state["attempts"]
         state_manager._state = current_state
-        return True, None
 
     except Exception as e:
         validation_state = {
@@ -135,7 +122,12 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> Tuple[bool
                 "validation": validation_state
             }
         )
-        return False, str(e)
+        raise SystemException(
+            message=f"Failed to update state: {str(e)}",
+            code="STATE_UPDATE_ERROR",
+            service="state_utils",
+            action="update_state"
+        )
 
 
 def update_flow_state(
@@ -143,7 +135,7 @@ def update_flow_state(
     flow_type: str,
     step: str,
     data: Optional[Dict] = None
-) -> Tuple[bool, Optional[str]]:
+) -> None:
     """Update flow state with validation and progress tracking
 
     Args:
@@ -152,8 +144,8 @@ def update_flow_state(
         step: Current step
         data: Optional flow data
 
-    Returns:
-        Tuple of (success, error_message)
+    Raises:
+        SystemException: If flow state update fails
     """
     try:
         # Get current flow state for progress
@@ -176,17 +168,9 @@ def update_flow_state(
         }
 
         # Update state with validation
-        success, error = update_state_core(state_manager, {
+        update_state_core(state_manager, {
             "flow_data": flow_data
         })
-
-        if not success:
-            flow_data["validation"].update({
-                "in_progress": False,
-                "error": error
-            })
-
-        return success, error
 
     except Exception as e:
         validation_state = {
@@ -204,21 +188,27 @@ def update_flow_state(
                 "validation": validation_state
             }
         )
-        return False, str(e)
+        raise SystemException(
+            message=f"Failed to update flow state: {str(e)}",
+            code="FLOW_STATE_ERROR",
+            service="state_utils",
+            action="update_flow_state"
+        )
 
 
 def update_flow_data(
     state_manager: Any,
     data: Dict[str, Any]
-) -> Tuple[bool, Optional[str]]:
+) -> None:
     """Update flow data
 
     Args:
         state_manager: State manager instance
         data: Flow data updates
 
-    Returns:
-        Tuple of (success, error_message)
+    Raises:
+        FlowException: If no active flow
+        SystemException: If flow data update fails
     """
     try:
         # Get current flow state
@@ -232,7 +222,7 @@ def update_flow_data(
             )
 
         # Update flow data
-        return update_state_core(state_manager, {
+        update_state_core(state_manager, {
             "flow_data": {
                 "data": data
             }
@@ -246,20 +236,25 @@ def update_flow_data(
                 "data_keys": list(data.keys())
             }
         )
-        return False, str(e)
+        raise SystemException(
+            message=f"Failed to update flow data: {str(e)}",
+            code="FLOW_DATA_ERROR",
+            service="state_utils",
+            action="update_flow_data"
+        )
 
 
-def clear_flow_state(state_manager: Any) -> Tuple[bool, Optional[str]]:
+def clear_flow_state(state_manager: Any) -> None:
     """Clear flow state
 
     Args:
         state_manager: State manager instance
 
-    Returns:
-        Tuple of (success, error_message)
+    Raises:
+        SystemException: If flow state clear fails
     """
     try:
-        return update_state_core(state_manager, {
+        update_state_core(state_manager, {
             "flow_data": None
         })
 
@@ -268,4 +263,9 @@ def clear_flow_state(state_manager: Any) -> Tuple[bool, Optional[str]]:
             "Clear flow state error",
             extra={"error": str(e)}
         )
-        return False, str(e)
+        raise SystemException(
+            message=f"Failed to clear flow state: {str(e)}",
+            code="FLOW_CLEAR_ERROR",
+            service="state_utils",
+            action="clear_flow_state"
+        )

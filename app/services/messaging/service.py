@@ -1,19 +1,21 @@
 """Channel-agnostic messaging service"""
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Optional
 
-from core.messaging.interface import MessagingServiceInterface
 from core.messaging.flow import initialize_flow
+from core.messaging.interface import MessagingServiceInterface
 from core.messaging.registry import FlowRegistry
-from core.messaging.types import (
-    ChannelIdentifier,
-    ChannelType,
-    Message,
-    MessageRecipient
-)
+from core.messaging.types import (Button, ChannelIdentifier, ChannelType,
+                                  Message, MessageRecipient)
 from core.utils.error_handler import ErrorHandler
-from core.utils.exceptions import ComponentException, FlowException
+from core.messaging.exceptions import (
+    MessageDeliveryError,
+    MessageHandlerError,
+    MessageTemplateError,
+    MessageValidationError
+)
+from core.utils.exceptions import ComponentException, FlowException, SystemException
 
 from .account.handlers import AccountHandler
 from .credex.handlers import CredexHandler
@@ -22,12 +24,61 @@ from .member.handlers import MemberHandler
 logger = logging.getLogger(__name__)
 
 
-class MessagingService:
+class MessagingService(MessagingServiceInterface):
     """Coordinates messaging operations across channels"""
 
     def __init__(self, messaging_service: MessagingServiceInterface):
         """Initialize with channel-specific messaging service"""
         self.messaging = messaging_service
+
+    def send_message(self, message: Message) -> Message:
+        """Send a message to a recipient"""
+        return self.messaging.send_message(message)
+
+    def send_text(
+        self,
+        recipient: MessageRecipient,
+        text: str,
+        preview_url: bool = False
+    ) -> Message:
+        """Send a text message"""
+        return self.messaging.send_text(recipient, text, preview_url)
+
+    def send_interactive(
+        self,
+        recipient: MessageRecipient,
+        body: str,
+        buttons: List[Button],
+        header: Optional[str] = None,
+        footer: Optional[str] = None,
+    ) -> Message:
+        """Send an interactive message"""
+        return self.messaging.send_interactive(
+            recipient=recipient,
+            body=body,
+            buttons=buttons,
+            header=header,
+            footer=footer
+        )
+
+    def send_template(
+        self,
+        recipient: MessageRecipient,
+        template_name: str,
+        language: Dict[str, str],
+        components: Optional[List[Dict[str, Any]]] = None,
+    ) -> Message:
+        """Send a template message"""
+        return self.messaging.send_template(
+            recipient=recipient,
+            template_name=template_name,
+            language=language,
+            components=components
+        )
+
+    def validate_message(self, message: Message) -> bool:
+        """Validate a message before sending"""
+        return self.messaging.validate_message(message)
 
     def _get_handler(self, handler_type: str) -> Any:
         """Get appropriate handler instance"""
@@ -263,8 +314,64 @@ class MessagingService:
                 text=f"❌ {error_response['error']['message']}"
             )
 
-        except Exception as e:
-            # Handle system errors
+        except MessageValidationError as e:
+            # Handle message validation errors
+            error_response = ErrorHandler.handle_system_error(
+                code=e.details["code"],
+                service=e.details["service"],
+                action=e.details["action"],
+                message=str(e),
+                error=e
+            )
+            return self.messaging.send_text(
+                recipient=self._get_recipient(state_manager),
+                text=f"❌ {error_response['error']['message']}"
+            )
+
+        except MessageDeliveryError as e:
+            # Handle message delivery errors
+            error_response = ErrorHandler.handle_system_error(
+                code=e.details["code"],
+                service=e.details["service"],
+                action=e.details["action"],
+                message=str(e),
+                error=e
+            )
+            return self.messaging.send_text(
+                recipient=self._get_recipient(state_manager),
+                text=f"❌ {error_response['error']['message']}"
+            )
+
+        except MessageTemplateError as e:
+            # Handle template errors
+            error_response = ErrorHandler.handle_system_error(
+                code=e.details["code"],
+                service=e.details["service"],
+                action=e.details["action"],
+                message=str(e),
+                error=e
+            )
+            return self.messaging.send_text(
+                recipient=self._get_recipient(state_manager),
+                text=f"❌ {error_response['error']['message']}"
+            )
+
+        except MessageHandlerError as e:
+            # Handle handler errors
+            error_response = ErrorHandler.handle_system_error(
+                code=e.details["code"],
+                service=e.details["service"],
+                action=e.details["action"],
+                message=str(e),
+                error=e
+            )
+            return self.messaging.send_text(
+                recipient=self._get_recipient(state_manager),
+                text=f"❌ {error_response['error']['message']}"
+            )
+
+        except (Exception, SystemException) as e:
+            # Handle unexpected errors
             error_response = ErrorHandler.handle_system_error(
                 code="MESSAGE_ERROR",
                 service="messaging",

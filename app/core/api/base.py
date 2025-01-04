@@ -11,6 +11,7 @@ from django.core.cache import cache
 from requests.exceptions import RequestException
 
 from core.utils.error_handler import ErrorHandler
+from core.utils.exceptions import SystemException
 from core.utils.state_validator import StateValidator
 from ..utils.utils import send_whatsapp_message
 
@@ -161,26 +162,26 @@ def make_api_request(
                 if retries < MAX_RETRIES:
                     time.sleep(RETRY_DELAY)
                     continue
-                return ErrorHandler.handle_system_error(
+                raise SystemException(
+                    message=f"Request failed after {MAX_RETRIES} retries: {str(e)}",
                     code="REQUEST_FAILED",
                     service="api_client",
-                    action=f"{method}_{url}",
-                    message=f"Request failed after {MAX_RETRIES} retries: {str(e)}"
+                    action=f"{method}_{url}"
                 )
 
-        return ErrorHandler.handle_system_error(
+        raise SystemException(
+            message=f"Failed after {MAX_RETRIES} retries",
             code="MAX_RETRIES_EXCEEDED",
             service="api_client",
-            action=f"{method}_{url}",
-            message=f"Failed after {MAX_RETRIES} retries"
+            action=f"{method}_{url}"
         )
 
     except Exception as e:
-        return ErrorHandler.handle_system_error(
+        raise SystemException(
+            message=f"Error making API request: {str(e)}",
             code="REQUEST_ERROR",
             service="api_client",
-            action=f"{method}_{url}",
-            message=f"Error making API request: {str(e)}"
+            action=f"{method}_{url}"
         )
 
 

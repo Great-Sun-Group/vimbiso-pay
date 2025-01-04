@@ -2,8 +2,8 @@
 import logging
 from typing import Any, Dict
 
-from core.messaging.types import Message as CoreMessage
 from core.messaging.exceptions import MessageValidationError
+from core.messaging.types import Message as CoreMessage
 
 logger = logging.getLogger(__name__)
 
@@ -66,14 +66,46 @@ class WhatsAppMessage(Dict[str, Any]):
     def from_core_message(cls, message: CoreMessage) -> Dict[str, Any]:
         """Convert core Message to WhatsApp format"""
         try:
-            content_type = message.content.type.value
-            content_dict = message.content.to_dict()
+            content = message.content
+            content_type = content.type.value
 
-            return cls.create_message(
-                to=message.recipient.channel_value,
-                message_type=content_type,
-                **content_dict
-            )
+            if content_type == "text":
+                return cls.create_message(
+                    to=message.recipient.channel_value,
+                    message_type="text",
+                    text=content.body
+                )
+            elif content_type == "interactive":
+                return cls.create_message(
+                    to=message.recipient.channel_value,
+                    message_type="interactive",
+                    interactive=content.to_dict()["interactive"]
+                )
+            elif content_type == "template":
+                return cls.create_message(
+                    to=message.recipient.channel_value,
+                    message_type="template",
+                    template=content.to_dict()["template"]
+                )
+            elif content_type in ["image", "document", "audio", "video"]:
+                return cls.create_message(
+                    to=message.recipient.channel_value,
+                    message_type=content_type,
+                    url=content.url,
+                    caption=getattr(content, "caption", None),
+                    filename=getattr(content, "filename", None)
+                )
+            elif content_type == "location":
+                return cls.create_message(
+                    to=message.recipient.channel_value,
+                    message_type="location",
+                    latitude=content.latitude,
+                    longitude=content.longitude,
+                    name=getattr(content, "name", None),
+                    address=getattr(content, "address", None)
+                )
+            else:
+                raise MessageValidationError(f"Unsupported message type: {content_type}")
 
         except Exception as e:
             logger.error(f"Message conversion error: {str(e)}")

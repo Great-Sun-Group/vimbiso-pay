@@ -2,27 +2,134 @@
 import logging
 from typing import Any, Dict, Optional
 
+from core.api.auth_client import login
+from core.components.registry import ComponentRegistry
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import Message, MessageRecipient
-from core.utils.exceptions import ComponentException, FlowException, SystemException
 from core.messaging.registry import FlowRegistry
+from core.messaging.types import Message, TextContent
+from core.utils.exceptions import FlowException, SystemException
+
+from ..utils import get_recipient
 
 logger = logging.getLogger(__name__)
 
 
-def get_recipient(state_manager: Any) -> MessageRecipient:
-    """Get message recipient from state with validation"""
-    try:
-        return MessageRecipient(
-            channel_id=state_manager.get_channel_id(),
-            member_id=state_manager.get_member_id()
-        )
-    except ComponentException:
-        # If member_id fails, still return with channel_id
-        return MessageRecipient(
-            channel_id=state_manager.get_channel_id(),
-            member_id=None
-        )
+class AuthFlow:
+    """Authentication flow"""
+
+    @staticmethod
+    def get_step_content(step: str, data: Optional[Dict] = None) -> str:
+        """Get auth step content"""
+        # Validate step through registry
+        FlowRegistry.validate_flow_step("auth", step)
+
+        if step == "login":
+            return "Please enter your credentials"
+        elif step == "login_complete":
+            return "✅ Login successful!"
+        return ""
+
+    @staticmethod
+    def process_step(messaging_service: MessagingServiceInterface, state_manager: Any, step: str, input_value: Any) -> Message:
+        """Process auth step"""
+        try:
+            # Validate step through registry
+            FlowRegistry.validate_flow_step("auth", step)
+
+            if step == "login":
+                # Attempt login
+                success, response = login(state_manager.get_channel_id())
+
+                if success:
+                    # Get member info from response
+                    member_id = response.get("memberID")
+                    token = response.get("token")
+
+                    # Get full response data from auth client
+                    from core.api.auth_client import get_login_response_data
+                    response_data = get_login_response_data()
+
+                    if not response_data:
+                        raise FlowException(
+                            message="Failed to get login response data",
+                            step="login",
+                            action="get_response",
+                            data={"response": response}
+                        )
+
+                    # Update profile state through proper validation
+                    from core.api.profile import update_profile_from_response
+                    profile_updated = update_profile_from_response(
+                        api_response=response_data,
+                        state_manager=state_manager,
+                        action_type="login",
+                        update_from="auth_flow",
+                        token=token
+                    )
+
+                    if not profile_updated:
+                        raise FlowException(
+                            message="Failed to update profile state",
+                            step="login",
+                            action="update_profile",
+                            data={"response": response_data}
+                        )
+
+                    # Get component for login completion
+                    component_type = FlowRegistry.get_step_component("auth", "login_complete")
+                    component = ComponentRegistry.create_component(component_type)
+
+                    # Set state manager for dashboard access
+                    component.set_state_manager(state_manager)
+
+                    # Component validates UI elements and state access
+                    validation_result = component.validate({
+                        "member_id": member_id,
+                        "token": token
+                    })
+
+                    if not validation_result.valid:
+                        raise FlowException(
+                            message=validation_result.error,
+                            step="login_complete",
+                            action="validate",
+                            data=validation_result.details
+                        )
+
+                    verified_data = component.to_verified_data(validation_result.value)
+                    # Create message with proper recipient
+                    recipient = get_recipient(state_manager)
+                    return Message(
+                        recipient=recipient,
+                        content=TextContent(body=verified_data["message"])
+                    )
+
+                else:
+                    # Return registration message
+                    recipient = get_recipient(state_manager)
+                    return Message(
+                        recipient=recipient,
+                        content=TextContent(body=response.get("message"))
+                    )
+
+            else:
+                raise FlowException(
+                    message=f"Invalid step: {step}",
+                    step=step,
+                    action="validate",
+                    data={"value": input_value}
+                )
+
+        except FlowException:
+            raise
+
+        except Exception as e:
+            raise SystemException(
+                message=f"Error in auth flow: {str(e)}",
+                code="FLOW_ERROR",
+                service="auth_flow",
+                action=f"process_{step}"
+            )
 
 
 class UpgradeFlow:
@@ -99,7 +206,7 @@ class UpgradeFlow:
         except Exception as e:
             # Wrap other errors
             raise SystemException(
-                message=str(e),
+                message=f"Error in upgrade flow: {str(e)}",
                 code="FLOW_ERROR",
                 service="member_flow",
                 action=f"process_{step}"
@@ -207,7 +314,7 @@ class RegistrationFlow:
         except Exception as e:
             # Wrap other errors
             raise SystemException(
-                message=str(e),
+                message=f"Error in registration flow: {str(e)}",
                 code="FLOW_ERROR",
                 service="member_flow",
                 action=f"process_{step}"
