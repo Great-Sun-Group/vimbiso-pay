@@ -19,23 +19,38 @@ from .registry import FlowRegistry
 class FlowManager:
     """Manages flow progression and component state"""
 
-    def __init__(self, flow_type: str):
+    def __init__(self, flow_type: str, state_manager: Any):
         """Initialize flow manager"""
         self.flow_type = flow_type
+        self.state_manager = state_manager
         self.config = FlowRegistry.get_flow_config(flow_type)
         self.components = {}
 
-    def get_component(self, step: str) -> Any:
-        """Get component for step with validation"""
+    def get_component(self, step: str, component_type: str = None) -> Any:
+        """Get component for step with validation
+
+        Args:
+            step: Step identifier
+            component_type: Optional specific component type to get.
+                          If not provided, gets component types from registry.
+        """
         # Validate step
         FlowRegistry.validate_flow_step(self.flow_type, step)
 
-        # Get/create component
-        if step not in self.components:
-            component_type = FlowRegistry.get_step_component(self.flow_type, step)
-            self.components[step] = create_component(component_type)
+        # Get component type if not provided
+        if not component_type:
+            registry_type = FlowRegistry.get_step_component(self.flow_type, step)
+            if isinstance(registry_type, list):
+                component_type = registry_type[0]
+            else:
+                component_type = registry_type
 
-        return self.components[step]
+        # Get/create component using cache key
+        cache_key = f"{step}_{component_type}"
+        if cache_key not in self.components:
+            self.components[cache_key] = create_component(component_type)
+
+        return self.components[cache_key]
 
     def process_step(self, step: str, value: Any) -> ValidationResult:
         """Process step input with pure validation
@@ -50,11 +65,64 @@ class FlowManager:
         Raises:
             FlowException: If step invalid
         """
-        # Get component
-        component = self.get_component(step)
+        # Get component types for step
+        component_types = FlowRegistry.get_step_component(self.flow_type, step)
+        if not isinstance(component_types, list):
+            component_types = [component_types]
 
-        # Only handle UI validation
-        return component.validate(value)
+        # Get current component state from state manager
+        flow_state = self.state_manager.get_flow_state()
+        if not flow_state:
+            raise FlowException(
+                message="No active flow state",
+                step=step,
+                action="process",
+                data={}
+            )
+
+        component_state = flow_state.get("active_component", {})
+        current_index = component_state.get("component_index", 0)
+
+        # Get current component type
+        if current_index >= len(component_types):
+            raise FlowException(
+                message=f"Invalid component index {current_index} for step {step}",
+                step=step,
+                action="process",
+                data={"component_index": current_index}
+            )
+
+        current_type = component_types[current_index]
+
+        # Get and validate current component
+        component = self.get_component(step, current_type)
+        validation = component.validate(value)
+
+        # If valid and not last component, move to next component
+        if validation.valid and current_index < len(component_types) - 1:
+            # Update component index in state manager
+            next_component = component_types[current_index + 1]
+            self.state_manager.update_state({
+                "flow_data": {
+                    "active_component": {
+                        **component_state,
+                        "component_index": current_index + 1,
+                        "type": next_component,
+                        "value": None,  # Reset value for new component
+                        "validation": {  # Initialize validation for new component
+                            "in_progress": False,
+                            "error": None,
+                            "attempts": 0,
+                            "last_attempt": None,
+                            "operation": "initialize_component",
+                            "component": next_component,
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                    }
+                }
+            })
+
+        return validation
 
 
 def initialize_flow(
@@ -94,8 +162,13 @@ def initialize_flow(
                 data={"flow_type": flow_type}
             )
 
-    # Get component type for step
-    component_type = FlowRegistry.get_step_component(flow_type, step)
+    # Get component type(s) for step
+    component_types = FlowRegistry.get_step_component(flow_type, step)
+    if not isinstance(component_types, list):
+        component_types = [component_types]
+
+    # Use first component for initial state
+    initial_component = component_types[0]
 
     # Create flow state with standardized validation tracking
     validation_state = {
@@ -103,7 +176,8 @@ def initialize_flow(
         "attempts": 0,
         "last_attempt": None,
         "operation": "initialize_flow",
-        "component": component_type,
+        "component": initial_component,
+        "components": component_types,  # Store all components
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -119,7 +193,9 @@ def initialize_flow(
 
             # Component state with tracking
             "active_component": {
-                "type": component_type,
+                "type": initial_component,
+                "components": component_types,  # Store all components
+                "component_index": 0,  # Track current component
                 "value": None,
                 "validation": {
                     "in_progress": False,
@@ -127,7 +203,7 @@ def initialize_flow(
                     "attempts": 0,
                     "last_attempt": None,
                     "operation": "initialize_component",
-                    "component": component_type,
+                    "component": initial_component,
                     "timestamp": datetime.utcnow().isoformat()
                 }
             },
@@ -184,7 +260,7 @@ def process_flow_input(
     handler_type = flow_data.get("handler_type", "member")
 
     # Process through flow manager
-    flow_manager = FlowManager(flow_type)
+    flow_manager = FlowManager(flow_type, state_manager)
     validation = flow_manager.process_step(current_step, input_data)
 
     # Update validation state with tracking
@@ -231,14 +307,21 @@ def process_flow_input(
         "timestamp": datetime.utcnow().isoformat()
     })
 
-    component_state.update({
-        "value": validation.value,
-        "validation": validation_state,
-        "updated_at": datetime.utcnow().isoformat()
-    })
+    # Get current components array and index
+    components = component_state.get("components", [])
+    component_index = component_state.get("component_index", 0)
+
+    # Update state preserving component tracking
     state_manager.update_state({
         "flow_data": {
-            "active_component": component_state
+            "active_component": {
+                **component_state,
+                "value": validation.value,
+                "validation": validation_state,
+                "components": components,  # Preserve components array
+                "component_index": component_index,  # Preserve current index
+                "updated_at": datetime.utcnow().isoformat()
+            }
         }
     })
 
@@ -247,8 +330,13 @@ def process_flow_input(
     if next_step == "complete":
         return None
 
-    # Get next component type
-    next_component_type = FlowRegistry.get_step_component(flow_type, next_step)
+    # Get next component type(s)
+    next_component_types = FlowRegistry.get_step_component(flow_type, next_step)
+    if not isinstance(next_component_types, list):
+        next_component_types = [next_component_types]
+
+    # Use first component for initial state
+    initial_component = next_component_types[0]
 
     # Create next component validation state
     next_validation_state = {
@@ -257,7 +345,7 @@ def process_flow_input(
         "attempts": 0,
         "last_attempt": None,
         "operation": "initialize_component",
-        "component": next_component_type,
+        "component": initial_component,
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -267,7 +355,9 @@ def process_flow_input(
             "step": next_step,
             "step_index": current_index + 1,
             "active_component": {
-                "type": next_component_type,
+                "type": initial_component,
+                "components": next_component_types,  # Store all components
+                "component_index": 0,  # Reset index for new step
                 "value": None,
                 "validation": next_validation_state,
                 "created_at": datetime.utcnow().isoformat()

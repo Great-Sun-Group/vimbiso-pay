@@ -5,7 +5,7 @@ All flows must be registered here to be used in the system.
 """
 
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Union
 
 from core.utils.exceptions import FlowException
 
@@ -47,10 +47,9 @@ class FlowRegistry:
         },
         "member_auth": {
             "handler_type": "member",
-            "steps": ["greeting", "login", "login_complete"],
+            "steps": ["login", "login_complete"],
             "components": {
-                "greeting": "Greeting",
-                "login": "LoginHandler",
+                "login": ["Greeting", "LoginHandler"],
                 "login_complete": "LoginCompleteHandler"
             }
         },
@@ -219,8 +218,12 @@ class FlowRegistry:
         return config["steps"]
 
     @classmethod
-    def get_step_component(cls, flow_type: str, step: str) -> str:
-        """Get component type for step with validation"""
+    def get_step_component(cls, flow_type: str, step: str) -> Union[str, List[str]]:
+        """Get component type(s) for step with validation
+
+        Returns either a single component type string or a list of component types
+        if multiple components are configured for the step.
+        """
         config = cls.get_flow_config(flow_type)
 
         # Get components from common flow if needed

@@ -12,15 +12,12 @@ Facilitates transactions through the [credex-core](https://github.com/Great-Sun-
 
 See [Core Architecture](docs/architecture.md) for detailed architectural principles, patterns, and implementation guidelines.
 
-## Documentation
-
-### Core Implementation
-- [Core Architecture](docs/ARCHITECTURE.md) - Architectural principles and patterns
+## Core Implementation
 - [Service & API](docs/service-architecture.md) - Service and API integration patterns
 - [State Management](docs/state-management.md) - State validation and flow control
 - [Flow Framework](docs/flow-framework.md) - Progressive interaction framework
 
-### Infrastructure
+## Infrastructure
 - [Security](docs/infrastructure/security.md) - Security measures and best practices
 - [Docker](docs/infrastructure/docker.md) - Container configuration and services
 - [Deployment](docs/infrastructure/deployment.md) - Deployment process and infrastructure
@@ -101,7 +98,7 @@ fetchlogs 60
 - Credential extraction only when needed
 - Flow state management
 - Consistent error handling
-- Direct integration with CredEx core API
+- Direct integration with credex-core API
 - Comprehensive validation and error handling
 - Type-safe request/response handling
 

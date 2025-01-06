@@ -4,13 +4,9 @@ import sys
 
 from core.api.models import Message as DBMessage  # Rename to avoid confusion
 from core.config.state_manager import StateManager
-from core.messaging.types import (
-    ChannelIdentifier,
-    ChannelType,
-    Message as DomainMessage,
-    MessageRecipient,
-    TemplateContent
-)
+from core.messaging.types import ChannelIdentifier, ChannelType
+from core.messaging.types import Message as DomainMessage
+from core.messaging.types import MessageRecipient, TemplateContent
 from decouple import config
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse

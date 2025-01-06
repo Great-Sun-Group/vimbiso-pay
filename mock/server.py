@@ -59,32 +59,65 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
         logger.info(f"WhatsApp webhook payload: {json.dumps(whatsapp_payload, indent=2)}")
 
         try:
-            # Forward to app with WhatsApp webhook format
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "X-Mock-Testing": "true"  # Indicate this is from mock
-            }
+            # Add message context for interactive messages
+            if mock_request.get("type") == "interactive":
+                # Get original message that triggered this interaction
+                context_id = mock_request.get("context_id")
+                if context_id:
+                    whatsapp_payload["entry"][0]["changes"][0]["value"]["messages"][0]["context"] = {
+                        "from": mock_request.get("context_from", "15550783881"),
+                        "id": context_id
+                    }
 
-            logger.info(f"\nSending request to app: {json.dumps(whatsapp_payload, indent=2)}")
-            response = requests.post(
-                APP_ENDPOINT,
-                json=whatsapp_payload,
-                headers=headers,
-                timeout=30
-            )
-            response.raise_for_status()
-            response_data = response.json()
-            logger.info(f"\nReceived raw response from app: {json.dumps(response_data, indent=2)}")
+            # Only forward to app if this is a user message (not an app response)
+            if "recipient" not in mock_request:
+                # Forward to app with WhatsApp webhook format
+                headers = {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-Mock-Testing": "true",  # Indicate this is from mock
+                    "X-Mock-Context": json.dumps({  # Include context for response handling
+                        "message_type": mock_request.get("type"),
+                        "has_context": bool(mock_request.get("context_id"))
+                    })
+                }
 
-            # Send response with app's response data
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
+                logger.info(f"\nSending request to app: {json.dumps(whatsapp_payload, indent=2)}")
+                try:
+                    response = requests.post(
+                        APP_ENDPOINT,
+                        json=whatsapp_payload,
+                        headers=headers,
+                        timeout=30
+                    )
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"Request error: {str(e)}")
+                    if hasattr(e, 'response'):
+                        logger.error(f"Response text: {e.response.text}")
+                    raise
+                response.raise_for_status()
+                response_data = response.json()
+                logger.info(f"\nReceived raw response from app: {json.dumps(response_data, indent=2)}")
 
-            # Return app's response data directly
-            logger.info(f"\nSending response to client: {json.dumps(response_data, indent=2)}")
-            self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                # Send response with app's response data
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+
+                # If this is a text message response, send it immediately
+                if response_data.get("type") == "text":
+                    logger.info(f"\nSending text response to client: {json.dumps(response_data, indent=2)}")
+                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                # If this is an interactive message (dashboard), send it in a separate response
+                elif response_data.get("type") == "interactive":
+                    logger.info(f"\nSending interactive response to client: {json.dumps(response_data, indent=2)}")
+                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
+            else:
+                # This is an app response, just acknowledge it
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
 
             logger.info("=== WEBHOOK REQUEST END ===\n")
 
