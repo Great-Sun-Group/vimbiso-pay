@@ -18,30 +18,12 @@ class LoginHandler(InputComponent):
         super().__init__("login")
 
     def validate(self, value: Any) -> ValidationResult:
-        """Validate login attempt with proper tracking"""
-        # Validate type
-        type_result = self._validate_type(value, str, "text")
-        if not type_result.valid:
-            return type_result
-
-        # Validate greeting format
-        greeting = value.strip().lower()
-        if greeting not in ["hi", "hello"]:
-            return ValidationResult.failure(
-                message="Please start with a greeting (hi/hello)",
-                field="greeting",
-                details={
-                    "valid_values": ["hi", "hello"],
-                    "received": greeting
-                }
-            )
-
-        return ValidationResult.success(greeting)
+        """No validation needed - component is self-sufficient"""
+        return ValidationResult.success({})
 
     def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified login data"""
+        """No data needed - component handles login internally"""
         return {
-            "greeting": value.strip().lower(),
             "action": "login"
         }
 

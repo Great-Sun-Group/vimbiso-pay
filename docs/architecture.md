@@ -144,21 +144,13 @@ STOP and verify before ANY code change:
    - [ ] NO manual handling?
    - [ ] Proper validation state?
 
-## Implementation Guide
+## Core Implementation
+- [Service & API](docs/service-architecture.md) - Service and API integration patterns
+- [State Management](docs/state-management.md) - State validation and flow control
+- [Flow Framework](docs/flow-framework.md) - Progressive interaction framework
 
-For detailed implementation patterns, see:
-- [Service Architecture](service-architecture.md) - Core service patterns and best practices
-- [API Integration](api-integration.md) - API interaction patterns and state management
-- [State Management](state-management.md) - State validation and flow control
-- [Flow Framework](flow-framework.md) - Progressive interaction framework
-- [Components](components.md) - UI components
-- [Error Handling](error-handling.md) - Error handling patterns
-- [Testing](testing.md) - Testing infrastructure and tools
-
-## Deployment & Infrastructure
-
-For deployment and infrastructure details, see:
-- [Docker](docker.md) - Docker configuration and services
-- [Deployment](deployment.md) - Deployment process and infrastructure
-- [Redis Management](redis-memory-management.md) - Redis configuration and management
-- [Security](security.md) - Security measures and best practices
+## Infrastructure
+- [Security](docs/infrastructure/security.md) - Security measures and best practices
+- [Docker](docs/infrastructure/docker.md) - Container configuration and services
+- [Deployment](docs/infrastructure/deployment.md) - Deployment process and infrastructure
+- [Redis](docs/infrastructure/redis-memory-management.md) - Redis configuration and management

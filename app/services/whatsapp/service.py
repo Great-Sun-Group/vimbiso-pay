@@ -102,20 +102,54 @@ class WhatsAppMessagingService(BaseMessagingService):
 
         rows = extra_rows
 
+        sections = []
+        control_rows = []
+
+        # Add any extra rows as a section if provided
+        if extra_rows:
+            # Ensure each row has required fields
+            validated_rows = []
+            for row in extra_rows:
+                if "id" in row and "title" in row:
+                    validated_row = {
+                        "id": row["id"],
+                        "title": row["title"]
+                    }
+                    if "description" in row:
+                        validated_row["description"] = row["description"]
+                    validated_rows.append(validated_row)
+
+            if validated_rows:
+                sections.append({
+                    "title": "Actions",
+                    "rows": validated_rows
+                })
+
+        # Add proceed option if requested
         if proceed_option:
-            rows.append({"id": "Y", "title": "✅ Continue"})
+            control_rows.append({
+                "id": "Y",
+                "title": "✅ Continue",
+                "description": "Proceed with the current action"
+            })
 
+        # Add menu option if requested
         if include_menu:
-            rows.append({"id": "X", "title": "🏡 Menu"})
+            control_rows.append({
+                "id": "X",
+                "title": "🏡 Menu",
+                "description": "Return to main menu"
+            })
 
-        row_data = []
-        keystore = []
-        for row in rows:
-            if row.get("id") not in keystore:
-                row_data.append(row)
-                keystore.append(row.get("id"))
+        # Add control section if we have control rows
+        if control_rows:
+            sections.append({
+                "title": "Control",
+                "rows": control_rows
+            })
 
-        return {
+        # Build the message
+        message_data = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": channel_identifier,
@@ -125,10 +159,18 @@ class WhatsAppMessagingService(BaseMessagingService):
                 "body": {"text": message},
                 "action": {
                     "button": f"🕹️ {navigate_is}",
-                    "sections": [{"title": "Control", "rows": row_data}],
-                },
-            },
+                    "sections": sections
+                }
+            }
         }
+
+        # Add footer if we have sections
+        if sections:
+            message_data["interactive"]["footer"] = {
+                "text": "Choose an option from the list"
+            }
+
+        return message_data
 
     @classmethod
     def send_whatsapp_message(cls, payload: Dict, phone_number_id: Optional[str] = None) -> Dict:
@@ -170,12 +212,23 @@ class WhatsAppMessagingService(BaseMessagingService):
             if response.status_code != 200:
                 error_msg = f"WhatsApp API Error [{response.status_code}]: {response.text}"
                 logger.error(error_msg)
-                raise SystemException(
-                    message=error_msg,
-                    code="WHATSAPP_API_ERROR",
-                    service="whatsapp",
-                    action="send_message"
-                )
+
+                # Check for rate limit error
+                response_data = response.json()
+                if (response.status_code == 400 and response_data.get("error", {}).get("code") == 131056):
+                    raise SystemException(
+                        message=error_msg,
+                        code="WHATSAPP_RATE_LIMIT",
+                        service="whatsapp",
+                        action="send_message"
+                    )
+                else:
+                    raise SystemException(
+                        message=error_msg,
+                        code="WHATSAPP_API_ERROR",
+                        service="whatsapp",
+                        action="send_message"
+                    )
             return response.json()
 
         except requests.RequestException as e:
@@ -251,21 +304,63 @@ class WhatsAppMessagingService(BaseMessagingService):
         self,
         recipient: MessageRecipient,
         body: str,
-        buttons: List[Button],
+        buttons: Optional[List[Button]] = None,
+        sections: Optional[List[Dict[str, Any]]] = None,
         header: Optional[str] = None,
         footer: Optional[str] = None,
+        button_text: Optional[str] = None,
     ) -> Message:
-        """Send an interactive message"""
-        message = Message(
-            recipient=recipient,
-            content=InteractiveContent(
-                interactive_type=InteractiveType.BUTTON,
-                body=body,
-                buttons=buttons,
-                header=header,
-                footer=footer
+        """Send an interactive message
+
+        Args:
+            recipient: Message recipient
+            body: Message body text
+            buttons: Optional list of buttons for button type messages
+            sections: Optional list of sections for list type messages
+            header: Optional header text
+            footer: Optional footer text
+            button_text: Optional custom button text for list messages
+
+        Returns:
+            Message: Sent message
+        """
+        if buttons and sections:
+            raise MessageValidationError(
+                message="Cannot specify both buttons and sections",
+                service="whatsapp",
+                action="send_interactive",
+                validation_details={
+                    "error": "invalid_params",
+                    "detail": "buttons and sections are mutually exclusive"
+                }
             )
-        )
+
+        interactive_type = InteractiveType.BUTTON if buttons else InteractiveType.LIST
+        if buttons:
+            message = Message(
+                recipient=recipient,
+                content=InteractiveContent(
+                    interactive_type=interactive_type,
+                    body=body,
+                    buttons=buttons or [],
+                    sections=[],  # Empty sections for button messages
+                    header=header,
+                    footer=footer
+                )
+            )
+        elif sections:
+            message = Message(
+                recipient=recipient,
+                content=InteractiveContent(
+                    interactive_type=interactive_type,
+                    body=body,
+                    buttons=[],  # Empty buttons for list messages
+                    sections=sections,
+                    button_text=button_text or "Select",
+                    header=header,
+                    footer=footer
+                )
+            )
         return self.send_message(message)
 
     def send_template(

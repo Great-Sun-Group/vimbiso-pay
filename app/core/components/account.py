@@ -76,15 +76,47 @@ class AccountDashboard(Component):
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified dashboard data with actions"""
         # Use the active account that validate() found
-        return {
+        dashboard_data = {
             "dashboard": value["dashboard"],
-            "active_account": value["active_account"],
-            "buttons": [
-                {"id": "credex_offer", "title": "Offer Secured Credex"},
-                {"id": "credex_accept", "title": "Accept Credex"},
-                {"id": "account_ledger", "title": "View Account Ledger"},
-                {"id": "member_upgrade", "title": "Upgrade Member Tier"}
-            ]
+            "active_account": value["active_account"]
+        }
+
+        # Get pending offers counts
+        dashboard = value["dashboard"]
+        incoming_offers = len(dashboard.get("incomingOffers", []))
+        outgoing_offers = len(dashboard.get("outgoingOffers", []))
+
+        # Define sections with menu items
+        sections = [
+            {
+                "title": "Credex Actions",
+                "rows": [
+                    {"id": "credex_offer", "title": "🔒 Offer Secured Credex", "description": "Create a new secured Credex offer"},
+                    {"id": "credex_accept", "title": f"✅ Accept Credex ({incoming_offers})", "description": "Accept incoming Credex offers"},
+                    {"id": "credex_decline", "title": f"❌ Decline Credex ({incoming_offers})", "description": "Decline incoming Credex offers"},
+                    {"id": "credex_cancel", "title": f"🚫 Cancel Credex ({outgoing_offers})", "description": "Cancel your outgoing Credex offers"}
+                ]
+            },
+            {
+                "title": "Account Actions",
+                "rows": [
+                    {"id": "account_ledger", "title": "📊 View Account Ledger", "description": "See your account transaction history"}
+                ]
+            },
+            {
+                "title": "Member Actions",
+                "rows": [
+                    {"id": "member_upgrade", "title": "⭐ Upgrade Member Tier", "description": "Upgrade your membership level"}
+                ]
+            }
+        ]
+
+        # Return data with sections for list display
+        return {
+            **dashboard_data,
+            "sections": sections,
+            "use_list": True,  # Signal to use list format
+            "button_text": "Action"  # Custom button text for list
         }
 
 

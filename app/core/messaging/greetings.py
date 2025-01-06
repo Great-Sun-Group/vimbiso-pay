@@ -93,9 +93,7 @@ GREETINGS: List[Tuple[str, str, List[str], float]] = [
     # Ndebele greetings (secondary focus)
     # Formal greetings
     ("Sawubona", "Ndebele", ["anytime"], 0.5),
-    ("Sawubona kakhulu", "Ndebele", ["anytime"], 0.9),
     ("Salibonani", "Ndebele", ["anytime"], 0.6),
-    ("Salibonani kakhulu", "Ndebele", ["anytime"], 0.9),
 
     # Time-specific
     ("Livukile", "Ndebele", ["morning"], 0.6),
