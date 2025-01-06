@@ -7,7 +7,6 @@ This module provides message formatting for all content types:
 """
 from typing import Dict
 
-
 from .greetings import get_random_greeting
 
 
@@ -22,7 +21,7 @@ class AccountFormatters:
 {securedNetBalancesByDenom}
 
 *📊 NET ASSETS*
-  {netCredexAssetsInDefaultDenom}{tier_limit_display}"""
+{netCredexAssetsInDefaultDenom}{tier_limit_display}"""
 
     @staticmethod
     def format_dashboard(balance_data: Dict) -> str:
@@ -31,11 +30,22 @@ class AccountFormatters:
         secured_balances = balance_data.get("securedNetBalancesByDenom", [])
         secured = "\n".join(secured_balances) if secured_balances else "0.00 USD"
 
-        # Format net assets with proper default
-        net_assets = balance_data.get("netCredexAssetsInDefaultDenom", "0.00 USD")
+        # Format net assets with proper default and denomination
+        try:
+            net_value = float(balance_data.get("netCredexAssetsInDefaultDenom", "0.00"))
+            denom = balance_data.get("defaultDenom", "USD")
+            net_assets = f"  {net_value:.2f} {denom}"
+        except (ValueError, TypeError):
+            net_assets = f"  0.00 {balance_data.get('defaultDenom', 'USD')}"
 
-        # Optional tier limit display
-        tier_limit = balance_data.get("tier_limit_display", "")
+        # Format tier limit with 2 decimal places if present
+        tier_limit = ""
+        if "tier_limit_raw" in balance_data:
+            try:
+                limit_value = float(balance_data["tier_limit_raw"])
+                tier_limit = f"\n\n⏳ DAILY MEMBER TIER LIMIT: {limit_value:.2f} USD"
+            except (ValueError, TypeError):
+                tier_limit = "\n\n⏳ DAILY MEMBER TIER LIMIT: 0.00 USD"
 
         return AccountFormatters.ACCOUNT_DASHBOARD.format(
             account=balance_data.get("accountName"),
