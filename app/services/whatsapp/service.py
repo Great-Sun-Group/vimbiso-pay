@@ -2,6 +2,7 @@
 import json
 import logging
 from typing import Any, Dict, List, Optional
+from datetime import datetime
 
 import requests
 from decouple import config
@@ -256,8 +257,28 @@ class WhatsAppMessagingService(BaseMessagingService):
             # Convert core Message to WhatsApp Cloud API format
             whatsapp_message = WhatsAppMessage.from_core_message(message)
 
-            # Use class method to send message
-            self.send_whatsapp_message(whatsapp_message)
+            # Use class method to send message and get response
+            response = self.send_whatsapp_message(whatsapp_message)
+
+            # Verify WhatsApp accepted the message
+            if not response.get("messages", []):
+                logger.error("Message not accepted by WhatsApp: %s", response)
+                raise SystemException(
+                    message="Message not accepted by WhatsApp",
+                    code="WHATSAPP_ACCEPTANCE_ERROR",
+                    service="whatsapp",
+                    action="send_message"
+                )
+
+            # Log successful acceptance
+            message_id = response["messages"][0].get("id")
+            logger.info("Message accepted by WhatsApp with ID: %s", message_id)
+
+            # Add acceptance info to message
+            message.metadata = {
+                "whatsapp_message_id": message_id,
+                "accepted_at": datetime.utcnow().isoformat()
+            }
 
             return message
 

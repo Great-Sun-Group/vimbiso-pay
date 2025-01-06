@@ -1,6 +1,7 @@
 """Authentication flow implementation"""
 import logging
 from typing import Any, Dict, Optional
+from datetime import datetime
 
 from core.api.auth_client import login, get_login_response_data
 from core.api.profile import update_profile_from_response
@@ -44,9 +45,69 @@ class AuthFlow:
             content=TextContent(body=content)
         )
 
+        # Initialize flow state with proper structure
+        now = datetime.utcnow().isoformat()
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "member_auth",
+                "step": "login",
+                "step_index": 0,
+                "total_steps": 2,
+                "active_component": {
+                    "type": "greeting",
+                    "component_index": 0,
+                    "validation": {
+                        "in_progress": True,
+                        "attempts": 0,
+                        "last_attempt": now
+                    }
+                },
+                "validation": {
+                    "in_progress": True,
+                    "attempts": 0,
+                    "last_attempt": now,
+                    "operation": "greeting_start"
+                }
+            }
+        })
+
         # Send greeting and wait for response
         greeting_response = messaging_service.send_message(message)
         if not greeting_response:
+            now = datetime.utcnow().isoformat()
+            state_manager.update_state({
+                "flow_data": {
+                    "flow_type": "member_auth",
+                    "step": "login",
+                    "step_index": 0,
+                    "total_steps": 2,
+                    "active_component": {
+                        "type": "greeting",
+                        "component_index": 0,
+                        "validation": {
+                            "in_progress": False,
+                            "completed": False,
+                            "error": {
+                                "message": "Failed to send greeting",
+                                "timestamp": now
+                            },
+                            "attempts": 1,
+                            "last_attempt": now
+                        }
+                    },
+                    "validation": {
+                        "in_progress": False,
+                        "completed": False,
+                        "error": {
+                            "message": "Failed to send greeting",
+                            "timestamp": now
+                        },
+                        "attempts": 1,
+                        "last_attempt": now,
+                        "operation": "greeting_failed"
+                    }
+                }
+            })
             raise FlowException(
                 message="Failed to send greeting",
                 step="login",
@@ -54,17 +115,87 @@ class AuthFlow:
                 data={}
             )
 
-        # After greeting sent successfully, advance to next component
+        # Verify WhatsApp accepted the message
+        if not greeting_response.metadata or not greeting_response.metadata.get("whatsapp_message_id"):
+            logger.error("WhatsApp did not accept greeting message")
+            now = datetime.utcnow().isoformat()
+            state_manager.update_state({
+                "flow_data": {
+                    "flow_type": "member_auth",
+                    "step": "login",
+                    "step_index": 0,
+                    "total_steps": 2,
+                    "active_component": {
+                        "type": "greeting",
+                        "component_index": 0,
+                        "validation": {
+                            "in_progress": False,
+                            "completed": False,
+                            "error": {
+                                "message": "WhatsApp did not accept greeting",
+                                "timestamp": now
+                            },
+                            "attempts": 1,
+                            "last_attempt": now
+                        }
+                    },
+                    "validation": {
+                        "in_progress": False,
+                        "completed": False,
+                        "error": {
+                            "message": "WhatsApp did not accept greeting",
+                            "timestamp": now
+                        },
+                        "attempts": 1,
+                        "last_attempt": now,
+                        "operation": "greeting_acceptance_failed"
+                    }
+                }
+            })
+            raise FlowException(
+                message="WhatsApp did not accept greeting",
+                step="login",
+                action="verify_acceptance",
+                data={"response": greeting_response}
+            )
+
+        # Update state with completed validation and consistent structure
+        now = datetime.utcnow().isoformat()
         state_manager.update_state({
             "flow_data": {
+                "flow_type": "member_auth",  # Maintain consistent flow type
                 "active_component": {
-                    "component_index": current_index + 1,
-                    "type": components[current_index + 1]
+                    "type": "greeting",  # Keep current component type
+                    "component_index": current_index + 1,  # Advance index
+                    "next_type": components[current_index + 1],  # Track next component
+                    "validation": {
+                        "in_progress": False,
+                        "completed": True,
+                        "attempts": 1,
+                        "last_attempt": now
+                    }
+                },
+                "step": "login",
+                "step_index": 0,
+                "total_steps": 2,
+                "validation": {
+                    "in_progress": False,
+                    "completed": True,
+                    "attempts": 1,
+                    "last_attempt": now,
+                    "operation": "greeting_complete"
+                },
+                "data": {  # Include data field for consistency
+                    "updated_at": now
                 }
             }
         })
 
-        return message
+        # Log successful acceptance
+        logger.info("Greeting accepted by WhatsApp with ID: %s",
+                    greeting_response.metadata.get("whatsapp_message_id") if greeting_response.metadata else "No message ID")
+
+        return greeting_response
 
     @staticmethod
     def _handle_login(state_manager: Any) -> tuple[bool, Dict]:
@@ -219,32 +350,53 @@ class AuthFlow:
                 # Handle component based on type
                 if current_type == "Greeting":
                     try:
-                        # Get greeting content
-                        content = component.to_message_content(validation.value)
-                        if not isinstance(content, str):
+                        logger.info("Starting greeting sequence")
+
+                        # Handle greeting and wait for confirmation
+                        greeting_response = AuthFlow._handle_greeting(
+                            messaging_service=messaging_service,
+                            state_manager=state_manager,
+                            component=component,
+                            current_index=current_index,
+                            components=components
+                        )
+
+                        logger.info("Greeting sent with content: %s",
+                                    greeting_response.content.body if greeting_response and greeting_response.content else "None")
+                        logger.info("Verifying completion")
+
+                        # Get updated flow state after greeting
+                        flow_state = state_manager.get_flow_state()
+                        logger.debug("Flow state after greeting: %s", flow_state)
+                        if not flow_state:
                             raise FlowException(
-                                message="Invalid greeting content type",
+                                message="Lost flow state after greeting",
                                 step="login",
-                                action="format_content",
-                                data={"content_type": type(content).__name__}
+                                action="verify_state",
+                                data={}
                             )
 
-                        # Send greeting first
-                        greeting = Message(
-                            recipient=get_recipient(state_manager),
-                            content=TextContent(body=content)
-                        )
-                        messaging_service.send_message(greeting)
+                        # Verify greeting was completed
+                        component_state = flow_state.get("active_component", {})
+                        if not component_state.get("validation", {}).get("completed"):
+                            raise FlowException(
+                                message="Greeting was not completed",
+                                step="login",
+                                action="verify_completion",
+                                data={"component_state": component_state}
+                            )
 
-                        # After greeting sent, advance to next component and proceed with login
-                        state_manager.update_state({
-                            "flow_data": {
-                                "active_component": {
-                                    "component_index": current_index + 1,
-                                    "type": components[current_index + 1]
-                                }
-                            }
-                        })
+                        # Verify WhatsApp accepted the message
+                        if not greeting_response.metadata or not greeting_response.metadata.get("whatsapp_message_id"):
+                            logger.error("WhatsApp did not accept greeting message")
+                            raise FlowException(
+                                message="WhatsApp did not accept greeting",
+                                step="login",
+                                action="verify_acceptance",
+                                data={"response": greeting_response}
+                            )
+
+                        logger.info("Greeting accepted by WhatsApp, proceeding to login")
 
                         try:
                             success, auth_details = AuthFlow._handle_login(state_manager)
