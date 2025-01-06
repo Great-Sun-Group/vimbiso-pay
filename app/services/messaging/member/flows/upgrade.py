@@ -65,7 +65,16 @@ class UpgradeFlow:
             recipient = get_recipient(state_manager)
 
             if step == "confirm":
-                # Handle confirmation step
+                # If no input value, this is the initial confirm step
+                if input_value is None:
+                    # Get and send initial confirmation message
+                    confirm_content = UpgradeFlow.get_step_content("confirm")
+                    return Message(
+                        recipient=recipient,
+                        content=TextContent(body=confirm_content)
+                    )
+
+                # Otherwise handle the confirmation response
                 confirmed = UpgradeFlow._handle_confirm(state_manager, input_value)
                 if not confirmed:
                     # Create message with static content

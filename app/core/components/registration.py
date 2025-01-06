@@ -4,17 +4,13 @@ This module implements registration-specific components following the component 
 Each component handles a specific part of registration with clear validation and conversion.
 """
 
-from typing import Any, Dict, Set
+from typing import Any, Dict
 
-from core.messaging.types import (
-    ChannelIdentifier,
-    ChannelType,
-    InteractiveContent,
-    InteractiveType,
-    Message,
-    MessageRecipient
-)
+from core.messaging.types import (Button, ChannelIdentifier, ChannelType,
+                                  InteractiveContent, InteractiveType, Message,
+                                  MessageRecipient)
 from core.utils.error_types import ValidationResult
+
 from .base import Component, InputComponent
 
 
@@ -64,15 +60,12 @@ class RegistrationWelcome(Component):
             content=InteractiveContent(
                 interactive_type=InteractiveType.BUTTON,
                 body="Welcome to VimbisoPay 💰\n\nWe're your portal 🚪to the credex ecosystem 🌱\n\nBecome a member 🌐 and open a free account 💳 to get started 📈",
-                action_items={
-                    "buttons": [{
-                        "type": "reply",
-                        "reply": {
-                            "id": "start_registration",
-                            "title": "Become a Member"
-                        }
-                    }]
-                }
+                buttons=[
+                    Button(
+                        id="start_registration",
+                        title="Become a Member"
+                    )
+                ]
             )
         )
 
@@ -157,40 +150,98 @@ class LastNameInput(InputComponent):
         }
 
 
-class RegistrationComplete(Component):
-    """Handles registration completion"""
+class OnBoardMember(Component):
+    """Handles member onboarding by calling the onboardMember endpoint"""
 
     def __init__(self):
-        super().__init__("registration_complete")
+        super().__init__("onboard_member")
+        self.state_manager = None
+        self.bot_service = None
+
+    def set_state_manager(self, state_manager: Any) -> None:
+        """Set state manager for accessing registration data"""
+        self.state_manager = state_manager
+
+    def set_bot_service(self, bot_service: Any) -> None:
+        """Set bot service for API access"""
+        self.bot_service = bot_service
 
     def validate(self, value: Any) -> ValidationResult:
-        """Validate registration response with proper tracking"""
-        # Validate type
-        type_result = self._validate_type(value, dict, "object")
-        if not type_result.valid:
-            return type_result
-
-        # Validate required fields
-        required: Set[str] = {"member_id", "token", "accounts"}
-        missing = required - set(value.keys())
-        if missing:
+        """Call onboardMember endpoint and validate response"""
+        # Validate state manager and bot service are set
+        if not self.state_manager:
             return ValidationResult.failure(
-                message="Missing required fields in response",
-                field="response",
-                details={
-                    "missing_fields": list(missing),
-                    "received_fields": list(value.keys())
-                }
+                message="State manager not set",
+                field="state_manager",
+                details={"component": "onboard_member"}
             )
 
-        return ValidationResult.success(value)
+        if not self.bot_service:
+            return ValidationResult.failure(
+                message="Bot service not set",
+                field="bot_service",
+                details={"component": "onboard_member"}
+            )
+
+        # Get registration data from state
+        flow_data = self.state_manager.get_flow_state()
+        if not flow_data or "data" not in flow_data:
+            return ValidationResult.failure(
+                message="No registration data found",
+                field="flow_data",
+                details={"component": "onboard_member"}
+            )
+
+        # Get registration data
+        registration_data = flow_data["data"]
+
+        # Get channel info from state manager
+        channel = self.state_manager.get("channel")
+        if not channel or not channel.get("identifier"):
+            return ValidationResult.failure(
+                message="No channel identifier found",
+                field="channel",
+                details={"component": "onboard_member"}
+            )
+
+        member_data = {
+            "firstname": registration_data.get("firstname"),
+            "lastname": registration_data.get("lastname"),
+            "phone": channel["identifier"],
+            "defaultDenom": "USD"  # Default denomination required by API
+        }
+
+        # Call onboardMember endpoint
+        from core.api.auth import onboard_member
+        success, message = onboard_member(
+            bot_service=self.bot_service,
+            member_data=member_data
+        )
+
+        if not success:
+            return ValidationResult.failure(
+                message=f"Registration failed: {message}",
+                field="api_call",
+                details={"error": message}
+            )
+
+        # Get updated state after registration
+        flow_data = self.state_manager.get_flow_state()
+        if not flow_data or "data" not in flow_data:
+            return ValidationResult.failure(
+                message="No state data after registration",
+                field="flow_data",
+                details={"component": "onboard_member"}
+            )
+
+        return ValidationResult.success(flow_data["data"])
 
     def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified member data"""
+        """Convert registration data to verified data"""
         return {
-            "member_id": value["member_id"],
-            "jwt_token": value["token"],
+            "member_id": value.get("member_id"),
+            "jwt_token": value.get("token"),
             "authenticated": True,
-            "accounts": value["accounts"],
-            "active_account_id": value["accounts"][0]["accountID"] if value["accounts"] else None
+            "accounts": value.get("accounts", []),
+            "active_account_id": value.get("accounts", [{}])[0].get("accountID") if value.get("accounts") else None
         }

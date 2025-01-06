@@ -29,7 +29,7 @@ class AccountFormatters:
         """Format dashboard display"""
         # Format secured balances with proper line breaks
         secured_balances = balance_data.get("securedNetBalancesByDenom", [])
-        secured = "\n".join(secured_balances) if secured_balances else "No secured balances"
+        secured = "\n".join(secured_balances) if secured_balances else "0.00 USD"
 
         # Format net assets with proper default
         net_assets = balance_data.get("netCredexAssetsInDefaultDenom", "0.00")

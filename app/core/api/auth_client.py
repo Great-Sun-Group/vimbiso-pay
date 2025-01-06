@@ -1,10 +1,10 @@
 """Authentication-related API operations using pure functions"""
 import logging
-from typing import Any, Dict, Tuple, Optional
-
-from decouple import config
+from typing import Any, Dict, Optional, Tuple
 
 from core.utils.exceptions import SystemException
+from decouple import config
+
 from .base import BASE_URL, handle_error_response, make_api_request
 
 logger = logging.getLogger(__name__)
@@ -51,12 +51,10 @@ def login(phone_number: str) -> Tuple[bool, Dict[str, Any]]:
                 else:
                     logger.error("Login response missing required fields")
                     return False, "Login failed: Invalid response data"
-            elif response.status_code == 400:
-                logger.info("Login failed: New user or invalid phone")
-                return (
-                    False,
-                    {"message": "*Welcome!* \n\nIt looks like you're new here. Let's get you \nset up."}
-                )
+            elif response.status_code in [400, 404]:
+                # Both 400 and 404 indicate a new user
+                logger.info("Login failed: New user")
+                return False, {}
             else:
                 error_response = handle_error_response(
                     "Login",
@@ -77,13 +75,13 @@ def get_login_response_data() -> Optional[Dict[str, Any]]:
     return _last_login_response
 
 
-def register_member(payload: Dict[str, Any], jwt_token: str) -> Tuple[bool, str]:
-    """Sends a registration request to the CredEx API"""
-    logger.info("Attempting to register member")
+def onboard_member(payload: Dict[str, Any], jwt_token: str) -> Tuple[bool, str]:
+    """Sends an onboarding request to the CredEx API"""
+    logger.info("Attempting to onboard member")
     url = f"{BASE_URL}/onboardMember"
-    logger.info(f"Register URL: {url}")
+    logger.info(f"Onboard URL: {url}")
 
-    # Create headers with state manager for registration
+    # Create headers with state manager for onboarding
     headers = {
         "Content-Type": "application/json",
         "x-client-api-key": config("CLIENT_API_KEY"),
@@ -95,19 +93,19 @@ def register_member(payload: Dict[str, Any], jwt_token: str) -> Tuple[bool, str]
             response = make_api_request(url, headers, payload)
             if response.status_code == 200:
                 response_data = response.json()
-                if response_data.get("data", {}).get("action", {}).get("type") == "MEMBER_REGISTERED":
-                    return True, "Registration successful"
-                return False, response_data.get("error", "Registration failed")
+                if response_data.get("data", {}).get("action", {}).get("type") == "MEMBER_ONBOARDED":
+                    return True, "Onboarding successful"
+                return False, response_data.get("error", "Onboarding failed")
             else:
                 error_response = handle_error_response(
-                    "Registration",
+                    "Onboarding",
                     response,
-                    "Registration failed"
+                    "Onboarding failed"
                 )
-                return False, error_response.get("error", {}).get("message", "Registration failed")
+                return False, error_response.get("error", {}).get("message", "Onboarding failed")
         except SystemException as e:
-            logger.error(f"System error during registration: {str(e)}")
+            logger.error(f"System error during onboarding: {str(e)}")
             return False, e.message
     except Exception as e:
-        logger.exception(f"Error during registration: {str(e)}")
-        return False, f"Registration failed: {str(e)}"
+        logger.exception(f"Error during onboarding: {str(e)}")
+        return False, f"Onboarding failed: {str(e)}"

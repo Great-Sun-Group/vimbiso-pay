@@ -11,7 +11,7 @@ from .auth import LoginCompleteHandler, LoginHandler
 from .base import Component, InputComponent
 from .input import AmountInput, ConfirmInput, HandleInput, SelectInput
 from .registration import (
-    FirstNameInput, LastNameInput, RegistrationComplete, RegistrationWelcome
+    FirstNameInput, LastNameInput, OnBoardMember, RegistrationWelcome
 )
 from .registry import ComponentRegistry, create_component
 
@@ -34,7 +34,7 @@ __all__ = [
     "RegistrationWelcome",
     "FirstNameInput",
     "LastNameInput",
-    "RegistrationComplete",
+    "OnBoardMember",
 
     # Registry
     "ComponentRegistry",

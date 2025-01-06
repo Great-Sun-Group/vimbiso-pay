@@ -25,7 +25,7 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
     """
     try:
         # Get bot service instance through proper initialization
-        bot_service = get_bot_service()
+        bot_service = get_bot_service(state_manager)
 
         # Process through bot service
         return bot_service.process_message(payload, state_manager)
@@ -45,7 +45,7 @@ def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
         return Message(recipient=recipient, content=content)
 
 
-def get_bot_service() -> 'BotService':
+def get_bot_service(state_manager: Any) -> 'BotService':
     """Get bot service instance through proper initialization"""
     # Create WhatsApp messaging service for message formatting
     whatsapp_service = WhatsAppMessagingService()  # Handles message formatting and sending
@@ -54,15 +54,16 @@ def get_bot_service() -> 'BotService':
     messaging_service = MessagingService(whatsapp_service)
 
     # Create and return bot service
-    return BotService(messaging_service)
+    return BotService(messaging_service, state_manager)
 
 
 class BotService:
     """WhatsApp bot service using messaging service interface"""
 
-    def __init__(self, messaging_service: MessagingService):
-        """Initialize with messaging service"""
+    def __init__(self, messaging_service: MessagingService, state_manager: Any):
+        """Initialize with messaging service and state manager"""
         self.messaging = messaging_service
+        self.state_manager = state_manager
 
     def process_message(self, payload: Dict[str, Any], state_manager: Any) -> Message:
         """Process bot message using messaging service

@@ -29,12 +29,13 @@ class FlowRegistry:
         # Member flows
         "member_registration": {
             "handler_type": "member",
-            "steps": ["welcome", "firstname", "lastname", "complete"],
+            "steps": ["welcome", "firstname", "lastname", "registration_attempt", "dashboard"],
             "components": {
                 "welcome": "RegistrationWelcome",
                 "firstname": "FirstNameInput",
                 "lastname": "LastNameInput",
-                "complete": "RegistrationComplete"
+                "registration_attempt": ["Greeting", "OnBoardMember"],
+                "dashboard": "AccountDashboard"
             }
         },
         "member_upgrade": {

@@ -3,7 +3,7 @@ import logging
 from typing import Any, Callable, Dict, Optional
 
 from .auth_client import login as auth_login
-from .auth_client import register_member as auth_register
+from .auth_client import onboard_member as auth_onboard
 from .credex import accept_bulk_credex as accept_bulk_credex_offers
 from .credex import accept_credex as accept_credex_offer
 from .credex import cancel_credex as cancel_credex_offer
@@ -67,7 +67,7 @@ def create_api_interactions(state_manager: Any, channel_id: str) -> Dict[str, Ca
     return {
         # Auth operations
         "login": lambda: auth_login(channel_id),
-        "register_member": lambda payload: auth_register(
+        "onboard_member": lambda payload: auth_onboard(
             payload,
             state_manager.get("jwt_token")
         ),

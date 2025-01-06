@@ -33,21 +33,18 @@ class MemberHandler:
             initialize_flow(
                 state_manager=state_manager,
                 flow_type="member_registration",
+                step="welcome",  # Set initial step properly
                 initial_data={
                     "started_at": datetime.utcnow().isoformat()
                 }
             )
 
-            # Get recipient
-            recipient = get_recipient(state_manager)
-
-            # Get step content through flow class
-            step_content = RegistrationFlow.get_step_content("welcome")
-
-            # Send welcome message
-            return self.messaging.send_text(
-                recipient=recipient,
-                text=step_content
+            # Process welcome step through registration flow
+            return RegistrationFlow.process_step(
+                messaging_service=self.messaging,
+                state_manager=state_manager,
+                step="welcome",
+                input_value=None
             )
 
         except Exception as e:
@@ -78,21 +75,18 @@ class MemberHandler:
             initialize_flow(
                 state_manager=state_manager,
                 flow_type="member_upgrade",
+                step="confirm",  # Set initial step properly
                 initial_data={
                     "started_at": datetime.utcnow().isoformat()
                 }
             )
 
-            # Get recipient
-            recipient = get_recipient(state_manager)
-
-            # Get step content through flow class
-            step_content = UpgradeFlow.get_step_content("confirm")
-
-            # Send confirmation message
-            return self.messaging.send_text(
-                recipient=recipient,
-                text=step_content
+            # Process confirm step through upgrade flow
+            return UpgradeFlow.process_step(
+                messaging_service=self.messaging,
+                state_manager=state_manager,
+                step="confirm",
+                input_value=None
             )
 
         except Exception as e:

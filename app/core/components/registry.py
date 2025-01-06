@@ -9,10 +9,10 @@ from typing import Dict, Type
 from .base import Component
 from .account import AccountDashboard, AccountSelect, LedgerDisplay
 from .auth import LoginHandler, LoginCompleteHandler
-from .greeting import GreetingComponent
+from .greeting import Greeting
 from .input import AmountInput, ConfirmInput, HandleInput, SelectInput, ButtonInput
 from .registration import (
-    FirstNameInput, LastNameInput, RegistrationComplete, RegistrationWelcome
+    FirstNameInput, LastNameInput, OnBoardMember, RegistrationWelcome
 )
 from .upgrade import UpgradeConfirm, UpgradeComplete
 
@@ -25,7 +25,7 @@ class ComponentRegistry:
         # Greeting component
         "Greeting": {
             "type": "greeting",
-            "class": GreetingComponent,
+            "class": Greeting,
             "validates": ["greeting"],
             "converts_to": ["message"]
         },
@@ -63,10 +63,10 @@ class ComponentRegistry:
             "validates": ["lastname"],
             "converts_to": ["verified_lastname"]
         },
-        "RegistrationComplete": {
+        "OnBoardMember": {
             "type": "registration",
-            "class": RegistrationComplete,
-            "validates": ["registration_response"],
+            "class": OnBoardMember,
+            "validates": ["onboarding_response"],
             "converts_to": ["member_data"]
         },
 

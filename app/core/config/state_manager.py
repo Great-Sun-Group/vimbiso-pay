@@ -8,11 +8,13 @@ This module provides state management with:
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Dict, Optional
 
-from core.utils.exceptions import (ComponentException, FlowException,
-                                   SystemException)
-from django.core.cache import cache
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ErrorContext
+from core.utils.exceptions import ComponentException
+from django.core.cache import caches
 
 from .atomic_state import AtomicStateManager
 from .state_utils import (clear_flow_state, update_flow_data,
@@ -42,7 +44,7 @@ class StateManager:
             )
 
         self.key_prefix = key_prefix
-        self.atomic_state = AtomicStateManager(cache)
+        self.atomic_state = AtomicStateManager(caches['state'])
         self._state = self._initialize_state()
 
     def _initialize_state(self) -> Dict[str, Any]:
@@ -50,28 +52,41 @@ class StateManager:
         # Get channel ID from prefix
         channel_id = self.key_prefix.split(":", 1)[1]
 
-        # Create initial state
+        # Create initial state with metadata
         initial_state = {
             "channel": {
                 "type": "whatsapp",
                 "identifier": channel_id
+            },
+            "_metadata": {
+                "initialized_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
             }
         }
 
         # Get existing state
         try:
+            logger.debug(f"Attempting to get state for key: {self.key_prefix}")
             state_data = self.atomic_state.atomic_get(self.key_prefix)
-        except SystemException as e:
-            # Re-raise with initialization context
-            raise SystemException(
+            logger.debug(f"Retrieved state data: {state_data}")
+        except Exception as e:
+            # Handle error through ErrorHandler
+            error_context = ErrorContext(
+                error_type="system",
                 message=str(e),
-                code="STATE_INIT_ERROR",
-                service="state_manager",
-                action="initialize"
+                details={
+                    "code": "STATE_INIT_ERROR",
+                    "service": "state_manager",
+                    "action": "initialize",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
             )
+            ErrorHandler.handle_error(e, self, error_context)
 
         # Use existing or initial state
-        return state_data or initial_state
+        result = state_data or initial_state
+        logger.debug(f"Using state: {result}")
+        return result
 
     def update_state(self, updates: Dict[str, Any]) -> None:
         """Update state with validation
@@ -81,7 +96,6 @@ class StateManager:
 
         Raises:
             ComponentException: If updates format is invalid
-            SystemException: If state update fails
         """
         if not isinstance(updates, dict):
             raise ComponentException(
@@ -92,15 +106,32 @@ class StateManager:
             )
 
         try:
+            # Add metadata to updates
+            updates["_metadata"] = {
+                "updated_at": datetime.utcnow().isoformat()
+            }
+
+            # Update local state
             update_state_core(self, updates)
-        except SystemException as e:
-            # Re-raise with update context
-            raise SystemException(
+
+            # Persist to Redis
+            logger.debug(f"Persisting state to Redis for key {self.key_prefix}: {self._state}")
+            self.atomic_state.atomic_update(self.key_prefix, self._state)
+            logger.debug("State persisted successfully")
+        except Exception as e:
+            # Handle error through ErrorHandler
+            error_context = ErrorContext(
+                error_type="system",
                 message=str(e),
-                code="STATE_UPDATE_ERROR",
-                service="state_manager",
-                action="update"
+                details={
+                    "code": "STATE_UPDATE_ERROR",
+                    "service": "state_manager",
+                    "action": "update",
+                    "updates": list(updates.keys()),
+                    "timestamp": datetime.utcnow().isoformat()
+                }
             )
+            ErrorHandler.handle_error(e, self, error_context)
 
     def get(self, key: str) -> Any:
         """Get state value with validation tracking
@@ -124,7 +155,7 @@ class StateManager:
                     "in_progress": False,
                     "error": "Invalid key format",
                     "attempts": self._state.get("validation_attempts", {}).get(key, 0) + 1,
-                    "last_attempt": key
+                    "last_attempt": datetime.utcnow().isoformat()
                 }
             )
 
@@ -170,7 +201,7 @@ class StateManager:
             data: Optional flow data
 
         Raises:
-            FlowException: If flow state update fails
+            Exception: If flow state update fails (handled by ErrorHandler)
         """
         # Get current flow state for progress tracking
         current_flow = self.get_flow_state() or {}
@@ -184,53 +215,44 @@ class StateManager:
             "last_attempt": {
                 "flow_type": flow_type,
                 "step": step,
-                "data": data
+                "data": data,
+                "timestamp": datetime.utcnow().isoformat()
             }
         }
 
         try:
-            success, error = update_flow_state(self, flow_type, step, {
+            # Update flow state - will raise exception on failure
+            update_flow_state(self, flow_type, step, {
                 **(data or {}),
                 "step_index": current_step_index + 1,
                 "total_steps": total_steps,
-                "validation": validation_state
+                "validation": validation_state,
+                "_metadata": {
+                    "updated_at": datetime.utcnow().isoformat()
+                }
             })
-
-            if not success:
-                validation_state.update({
-                    "in_progress": False,
-                    "error": error
-                })
-                raise FlowException(
-                    message=f"Failed to update flow state: {error}",
-                    step=step,
-                    action="update_state",
-                    data={
-                        "flow_type": flow_type,
-                        "validation": validation_state
-                    }
-                )
 
             # Update validation state on success
             validation_state.update({
                 "in_progress": False,
-                "error": None
+                "error": None,
+                "completed_at": datetime.utcnow().isoformat()
             })
 
         except Exception as e:
-            validation_state.update({
-                "in_progress": False,
-                "error": str(e)
-            })
-            raise FlowException(
+            # Handle error through ErrorHandler
+            error_context = ErrorContext(
+                error_type="flow",
                 message=str(e),
-                step=step,
-                action="update_state",
-                data={
+                details={
+                    "step": step,
+                    "action": "update_state",
                     "flow_type": flow_type,
-                    "validation": validation_state
+                    "validation": validation_state,
+                    "timestamp": datetime.utcnow().isoformat()
                 }
             )
+            ErrorHandler.handle_error(e, self, error_context)
 
     def update_flow_data(self, data: Dict[str, Any]) -> None:
         """Update flow data
@@ -239,31 +261,60 @@ class StateManager:
             data: Flow data updates
 
         Raises:
-            FlowException: If flow data update fails
+            Exception: If flow data update fails (handled by ErrorHandler)
         """
-        success, error = update_flow_data(self, data)
-        if not success:
-            raise FlowException(
-                message=f"Failed to update flow data: {error}",
-                step="update_data",
-                action="update",
-                data=data
-            )
+        # Update flow data - will raise exception on failure
+        update_flow_data(self, data)
 
     def clear_flow_state(self) -> None:
         """Clear flow state
 
         Raises:
-            FlowException: If flow state clear fails
+            Exception: If flow state clear fails (handled by ErrorHandler)
         """
-        success, error = clear_flow_state(self)
-        if not success:
-            raise FlowException(
-                message=f"Failed to clear flow state: {error}",
-                step="clear",
-                action="clear_state",
-                data={}
+        # Clear flow state - will raise exception on failure
+        clear_flow_state(self)
+
+    def clear_all_state(self) -> None:
+        """Clear all state data except channel info
+
+        Resets state to initial with just channel info.
+        Clears all other data including flow state, validation state, metadata, etc.
+
+        Raises:
+            Exception: If state clear fails (handled by ErrorHandler)
+        """
+        try:
+            # Get channel info to preserve
+            channel = self.get("channel")
+
+            # Reset to initial state
+            self._state = {
+                "channel": channel,
+                "_metadata": {
+                    "initialized_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            }
+
+            # Persist to Redis
+            logger.debug(f"Persisting cleared state to Redis for key {self.key_prefix}: {self._state}")
+            self.atomic_state.atomic_update(self.key_prefix, self._state)
+            logger.debug("State cleared successfully")
+
+        except Exception as e:
+            # Handle error through ErrorHandler
+            error_context = ErrorContext(
+                error_type="system",
+                message=str(e),
+                details={
+                    "code": "STATE_CLEAR_ERROR",
+                    "service": "state_manager",
+                    "action": "clear_all",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
             )
+            ErrorHandler.handle_error(e, self, error_context)
 
     # Channel methods
 

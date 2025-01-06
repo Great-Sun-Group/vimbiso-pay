@@ -177,7 +177,7 @@ class AuthFlow:
         tier_limit_display = ""
         if member_tier < 2:
             remaining_usd = balance_data.get("remainingAvailableUSD", "0.00")
-            tier_limit_display = f"\n⏳ DAILY MEMBER TIER LIMIT: {remaining_usd} USD"
+            tier_limit_display = f"\n\n⏳ DAILY MEMBER TIER LIMIT: {remaining_usd} USD"
 
         account_data = {
             "accountName": active_account.get("accountName"),

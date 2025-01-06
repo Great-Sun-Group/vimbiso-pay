@@ -110,7 +110,28 @@ class MessagingService(MessagingServiceInterface):
     def handle_message(self, state_manager: Any, message_type: str, message_text: str) -> Message:
         """Handle incoming message using appropriate handler"""
         try:
-            # Parse command if present
+            # Check if in active flow first
+            flow_state = state_manager.get_flow_state()
+            if flow_state:
+                flow_type = state_manager.get_flow_type()
+                current_step = state_manager.get_current_step()
+
+                # Get flow config through registry
+                config = FlowRegistry.get_flow_config(flow_type)
+                handler_type = config.get("handler_type", "member")
+
+                # Get handler instance
+                handler = self._get_handler(handler_type)
+
+                # Route to handler
+                return handler.handle_flow_step(
+                    state_manager,
+                    flow_type,
+                    current_step,
+                    message_text
+                )
+
+            # Parse command if no active flow
             if "_" in message_text:
                 handler_type, command = message_text.split("_", 1)
 
@@ -146,7 +167,7 @@ class MessagingService(MessagingServiceInterface):
                         text="I don't understand that command."
                     )
 
-            # Check if in active flow
+            # Check if in active flow again for non-command messages
             flow_state = state_manager.get_flow_state()
             if flow_state:
                 flow_type = state_manager.get_flow_type()
@@ -185,6 +206,9 @@ class MessagingService(MessagingServiceInterface):
                 "start", "begin", "help", "get started", "howzit", "yo", "sup"
             ]
             if message_text.lower() in greetings:
+                # Clear all state for fresh start
+                state_manager.clear_all_state()
+
                 # Initialize auth flow starting with greeting step
                 initialize_flow(
                     state_manager=state_manager,
@@ -280,7 +304,21 @@ class MessagingService(MessagingServiceInterface):
                 text=f"❌ {error_response['error']['message']}"
             )
 
-        except (Exception, SystemException) as e:
+        except SystemException as e:
+            # Handle system errors
+            error_response = ErrorHandler.handle_system_error(
+                code="MESSAGE_ERROR",
+                service="messaging",
+                action="handle_message",
+                message=str(e),
+                error=e
+            )
+            return self.messaging.send_text(
+                recipient=self._get_recipient(state_manager),
+                text=f"❌ {error_response['error']['message']}"
+            )
+
+        except Exception as e:
             # Handle unexpected errors
             error_response = ErrorHandler.handle_system_error(
                 code="MESSAGE_ERROR",

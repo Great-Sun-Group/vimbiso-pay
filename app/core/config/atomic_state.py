@@ -1,7 +1,10 @@
+import logging
 from typing import Any, Dict, Optional
 from datetime import datetime
 
 from core.utils.exceptions import SystemException
+
+logger = logging.getLogger(__name__)
 
 
 class AtomicStateManager:
@@ -57,11 +60,14 @@ class AtomicStateManager:
             SystemException: If cache operation fails
         """
         try:
+            logger.debug(f"Attempting to get state from Redis for key: {key}")
             state_data = self.cache.get(key)
+            logger.debug(f"Retrieved state data from Redis: {state_data}")
             validation = self._track_attempt(key, "get")
 
             if state_data:
                 state_data["_validation"] = validation
+                logger.debug(f"Added validation to state data: {state_data}")
 
             return state_data
 
@@ -116,8 +122,10 @@ class AtomicStateManager:
         try:
             # Add validation state
             value["_validation"] = self._track_attempt(key, "update")
+            logger.debug(f"Attempting to update Redis state for key {key} with value: {value}")
 
             self.cache.set(key, value, timeout=ttl)
+            logger.debug(f"Successfully updated Redis state for key: {key}")
 
         except Exception as e:
             error = str(e)
