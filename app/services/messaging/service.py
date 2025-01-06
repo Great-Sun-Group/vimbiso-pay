@@ -28,6 +28,7 @@ class MessagingService(MessagingServiceInterface):
     def __init__(self, messaging_service: MessagingServiceInterface):
         """Initialize with channel-specific messaging service"""
         self.messaging = messaging_service
+        self.state_manager = None  # Will be set during handle_message
 
     def send_message(self, message: Message) -> Message:
         """Send a message to a recipient"""
@@ -110,7 +111,53 @@ class MessagingService(MessagingServiceInterface):
     def handle_message(self, state_manager: Any, message_type: str, message_text: str) -> Message:
         """Handle incoming message using appropriate handler"""
         try:
-            # Check if in active flow first
+            # Store state manager for use by messaging service
+            self.state_manager = state_manager
+            if hasattr(self.messaging, 'state_manager'):
+                self.messaging.state_manager = state_manager
+            greetings = [
+                # English greetings
+                "hi", "hello", "hey", "hie", "menu", "dashboard",
+                # Spanish greetings
+                "hola", "menu", "tablero",
+                # French greetings
+                "bonjour", "salut", "menu", "tableau",
+                # Shona greetings
+                "mhoro", "makadii", "maswera sei", "ndeipi", "zvirisei", "wakadini", "manheru", "masikati",
+                # Ndebele greetings
+                "sabona", "salibonani", "sawubona", "unjani",
+                # Swahili greetings
+                "jambo", "habari", "menu", "karibu", "mambo",
+                # Common variations
+                "start", "begin", "help", "get started", "howzit", "yo", "sup"
+            ]
+
+            # Check for greeting first - always reset and start auth flow
+            if message_text.lower() in greetings:
+                # Clear all state for fresh start
+                state_manager.clear_all_state()
+
+                # Initialize auth flow starting with greeting step
+                initialize_flow(
+                    state_manager=state_manager,
+                    flow_type="member_auth",
+                    initial_data={
+                        "started_at": datetime.utcnow().isoformat()
+                    }
+                )
+
+                # Get member handler
+                handler = self._get_handler("member")
+
+                # Start with login step which includes greeting
+                return handler.handle_flow_step(
+                    state_manager=state_manager,
+                    flow_type="member_auth",
+                    step="login",
+                    input_value=message_text
+                )
+
+            # Then check if in active flow
             flow_state = state_manager.get_flow_state()
             if flow_state:
                 flow_type = state_manager.get_flow_type()
@@ -186,47 +233,6 @@ class MessagingService(MessagingServiceInterface):
                     flow_type,
                     current_step,
                     message_text
-                )
-
-            # No active flow - check if greeting
-            greetings = [
-                # English greetings
-                "hi", "hello", "hey", "hie", "menu", "dashboard",
-                # Spanish greetings
-                "hola", "menu", "tablero",
-                # French greetings
-                "bonjour", "salut", "menu", "tableau",
-                # Shona greetings
-                "mhoro", "makadii", "maswera sei", "ndeipi", "zvirisei", "wakadini", "manheru", "masikati",
-                # Ndebele greetings
-                "sabona", "salibonani", "sawubona", "unjani",
-                # Swahili greetings
-                "jambo", "habari", "menu", "karibu", "mambo",
-                # Common variations
-                "start", "begin", "help", "get started", "howzit", "yo", "sup"
-            ]
-            if message_text.lower() in greetings:
-                # Clear all state for fresh start
-                state_manager.clear_all_state()
-
-                # Initialize auth flow starting with greeting step
-                initialize_flow(
-                    state_manager=state_manager,
-                    flow_type="member_auth",
-                    initial_data={
-                        "started_at": datetime.utcnow().isoformat()
-                    }
-                )
-
-                # Get member handler
-                handler = self._get_handler("member")
-
-                # Start with login step which includes greeting
-                return handler.handle_flow_step(
-                    state_manager=state_manager,
-                    flow_type="member_auth",
-                    step="login",
-                    input_value=message_text
                 )
 
             # Default response for unhandled messages

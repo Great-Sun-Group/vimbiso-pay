@@ -49,9 +49,11 @@ def get_bot_service(state_manager: Any) -> 'BotService':
     """Get bot service instance through proper initialization"""
     # Create WhatsApp messaging service for message formatting
     whatsapp_service = WhatsAppMessagingService()  # Handles message formatting and sending
+    whatsapp_service.state_manager = state_manager  # Set state manager for mock mode
 
     # Create messaging service with WhatsApp implementation
     messaging_service = MessagingService(whatsapp_service)
+    messaging_service.state_manager = state_manager  # Set state manager for messaging service
 
     # Create and return bot service
     return BotService(messaging_service, state_manager)

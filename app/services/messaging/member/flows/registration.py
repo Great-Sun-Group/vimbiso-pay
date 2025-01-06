@@ -18,89 +18,146 @@ logger = logging.getLogger(__name__)
 class RegistrationFlow:
     """Member registration flow"""
 
-    # Flow configuration from registry
-    FLOW_TYPE = "member_registration"
-    HANDLER_TYPE = "member"
-
     @staticmethod
     def _handle_greeting(messaging_service: MessagingServiceInterface, state_manager: Any, component: Any, current_index: int, components: list) -> Message:
         """Handle greeting component"""
-        try:
-            # Get validation result first
-            validation_result = component.validate({})
-            if not validation_result.valid:
-                raise FlowException(
-                    message="Failed to validate greeting",
-                    step="registration_attempt",
-                    action="validate",
-                    data={"validation": validation_result.error}
-                )
-
-            # Create greeting message
-            content = component.to_message_content(validation_result.value)
-            if not isinstance(content, str):
-                raise FlowException(
-                    message="Invalid greeting content type",
-                    step="registration_attempt",
-                    action="format_content",
-                    data={"content_type": type(content).__name__}
-                )
-
-            message = Message(
-                recipient=get_recipient(state_manager),
-                content=TextContent(body=content)
+        # Get validation result first
+        validation_result = component.validate({})
+        if not validation_result.valid:
+            raise FlowException(
+                message="Failed to validate greeting",
+                step="registration_attempt",
+                action="validate",
+                data={"validation": validation_result.error}
             )
 
-            # Get component state
-            component_state = component.get_ui_state()
+        # Create greeting message
+        content = component.to_message_content(validation_result.value)
+        if not isinstance(content, str):
+            raise FlowException(
+                message="Invalid greeting content type",
+                step="registration_attempt",
+                action="format_content",
+                data={"content_type": type(content).__name__}
+            )
 
-            # Mark component as completed
-            component_state["validation"].update({
-                "in_progress": False,
-                "completed": True,
-                "error": None
-            })
+        message = Message(
+            recipient=get_recipient(state_manager),
+            content=TextContent(body=content)
+        )
 
-            # Get current flow state
-            flow_state = state_manager.get_flow_state()
-            if not flow_state:
+        # Get component state
+        component_state = component.get_ui_state()
+
+        # Initialize flow state
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": "member_registration",
+                "step": "registration_attempt",
+                "step_index": 0,
+                "total_steps": 3,  # welcome, registration, dashboard
+                "active_component": component_state
+            }
+        })
+
+        # Mark component as completed
+        component_state["validation"].update({
+            "in_progress": False,
+            "completed": True,
+            "error": None
+        })
+
+        # Get current flow state
+        flow_state = state_manager.get_flow_state()
+        if not flow_state:
+            raise FlowException(
+                message="Lost flow state",
+                step="registration_attempt",
+                action="update_state",
+                data={}
+            )
+
+        # Advance to next component while preserving flow state
+        next_component = components[current_index + 1]
+        flow_state.update({
+            "active_component": {
+                "type": next_component,
+                "component_index": current_index + 1,
+                "validation": {
+                    "in_progress": False,
+                    "completed": False,
+                    "attempts": 0
+                }
+            }
+        })
+
+        # Update state preserving structure
+        state_manager.update_state({
+            "flow_data": flow_state
+        })
+
+        # Return greeting message to be sent through proper path
+        return message
+
+    @staticmethod
+    def _handle_onboarding(state_manager: Any) -> tuple[bool, Dict]:
+        """Handle onboarding attempt"""
+        try:
+            # Get registration data from state through proper accessor
+            flow_data = state_manager.get_flow_state()
+            if not flow_data or "data" not in flow_data:
                 raise FlowException(
-                    message="Lost flow state",
+                    message="No registration data found",
                     step="registration_attempt",
-                    action="update_state",
+                    action="get_data",
                     data={}
                 )
 
-            # Advance to next component while preserving flow state
-            next_component = components[current_index + 1]
-            flow_state.update({
-                "active_component": {
-                    "type": next_component,
-                    "component_index": current_index + 1,
-                    "validation": {
-                        "in_progress": False,
-                        "completed": False,
-                        "attempts": 0
-                    }
-                }
-            })
+            registration_data = flow_data["data"]
 
-            # Update state preserving structure
-            state_manager.update_state({
-                "flow_data": flow_state
-            })
+            # Get channel info through proper accessor method
+            channel_id = state_manager.get_channel_id()
+            if not channel_id:
+                raise FlowException(
+                    message="No channel identifier found",
+                    step="registration_attempt",
+                    action="get_channel",
+                    data={}
+                )
 
-            # Return greeting message to be sent through proper path
-            return message
+            member_data = {
+                "firstname": registration_data.get("firstname"),
+                "lastname": registration_data.get("lastname"),
+                "phone": channel_id,
+                "defaultDenom": "USD"  # Default denomination required by API
+            }
+
+            # Get properly initialized bot service
+            from services.whatsapp.bot_service import get_bot_service
+            bot_service = get_bot_service(state_manager)
+
+            # Call onboardMember endpoint
+            from core.api.auth import onboard_member
+            success, auth_details = onboard_member(bot_service, member_data)
+
+            if not success:
+                return False, auth_details
+
+            # State updates handled in onboard_member
+            return True, auth_details
 
         except FlowException:
+            # Flow errors stay in flows
             raise
+
         except Exception as e:
-            raise FlowException(
-                message=f"Error handling greeting: {str(e)}",
-                step="registration_attempt",
-                action="handle_greeting",
-                data={"error": str(e)}
+            # System errors propagate to top level
+            logger.error(f"Error in registration handler: {str(e)}")
+            raise SystemException(
+                message=f"Error in registration flow: {str(e)}",
+                code="FLOW_ERROR",
+                service="member_flow",
+                action="registration_attempt"
             )
 
     @staticmethod
@@ -119,16 +176,16 @@ class RegistrationFlow:
         """
         try:
             # Validate step through registry
-            FlowRegistry.validate_flow_step(RegistrationFlow.FLOW_TYPE, step)
+            FlowRegistry.validate_flow_step("member_registration", step)
 
-            # Get step content
-            if step == "firstname":
+            # Get step content through registry
+            component_type = FlowRegistry.get_step_component("member_registration", step)
+            if component_type == "FirstNameInput":
                 return "👤 What is your first name?"
-            elif step == "lastname":
+            elif component_type == "LastNameInput":
                 return "👤 What is your last name?"
-            # No default step content needed - components handle their own messages
 
-            # Empty string for unknown steps (should be caught by validation)
+            # Components handle their own messages
             return ""
 
         except FlowException as e:
@@ -157,25 +214,29 @@ class RegistrationFlow:
         try:
             recipient = get_recipient(state_manager)
 
+            # Get flow type from registry
+            flow_type = "member_registration"
+
             # Process step
             if step == "welcome":
-                # Get welcome component
-                welcome_component = create_component("RegistrationWelcome")
+                # Get welcome component through registry
+                component_type = FlowRegistry.get_step_component(flow_type, "welcome")
+                welcome_component = create_component(component_type)
 
                 if input_value:
-                    # Component handles validation - will raise exception if invalid
-                    welcome_component.to_verified_data(input_value)
+                    # User clicked button, move to next step
+                    next_step = FlowRegistry.get_next_step(flow_type, "welcome")
 
-                    # Get next step
-                    next_step = FlowRegistry.get_next_step(RegistrationFlow.FLOW_TYPE, "welcome")
+                    # Get next component through registry
+                    next_component = FlowRegistry.get_step_component(flow_type, next_step)
 
                     # Update flow progression
                     state_manager.update_flow_state(
-                        flow_type=RegistrationFlow.FLOW_TYPE,
+                        flow_type=flow_type,
                         step=next_step,
                         data={
                             "active_component": {
-                                "type": "FirstNameInput",
+                                "type": next_component,
                                 "validation": {
                                     "in_progress": False,
                                     "attempts": 0,
@@ -192,25 +253,13 @@ class RegistrationFlow:
                         content=TextContent(body=next_step_content)
                     )
 
-                # If no input, return welcome message
-                validation_result = welcome_component.validate({})
-                if not validation_result.valid:
-                    raise FlowException(
-                        message=validation_result.error["message"],
-                        step="welcome",
-                        action="validate_welcome",
-                        data={"validation": validation_result.error}
-                    )
-
-                content = welcome_component.to_message_content(validation_result.value)
-                return Message(
-                    recipient=recipient,
-                    content=TextContent(body=content)
-                )
+                # No input, show welcome message with button
+                return welcome_component.get_message(recipient.channel_id.value)
 
             elif step == "firstname":
-                # Get firstname component
-                firstname_component = create_component("FirstNameInput")
+                # Get component through registry
+                component_type = FlowRegistry.get_step_component(flow_type, "firstname")
+                firstname_component = create_component(component_type)
 
                 # Component handles validation and returns verified data
                 verified_data = firstname_component.to_verified_data(input_value)
@@ -218,16 +267,17 @@ class RegistrationFlow:
                 # Store verified input data
                 state_manager.update_flow_data(verified_data)
 
-                # Get next step and update flow progression
-                next_step = FlowRegistry.get_next_step(RegistrationFlow.FLOW_TYPE, "firstname")
+                # Get next step and component through registry
+                next_step = FlowRegistry.get_next_step(flow_type, "firstname")
+                next_component = FlowRegistry.get_step_component(flow_type, next_step)
 
                 # Update flow progression
                 state_manager.update_flow_state(
-                    flow_type=RegistrationFlow.FLOW_TYPE,
+                    flow_type=flow_type,
                     step=next_step,
                     data={
                         "active_component": {
-                            "type": "LastNameInput",
+                            "type": next_component,
                             "validation": {
                                 "in_progress": False,
                                 "attempts": 0,
@@ -245,8 +295,9 @@ class RegistrationFlow:
                 )
 
             elif step == "lastname":
-                # Get lastname component
-                lastname_component = create_component("LastNameInput")
+                # Get component through registry
+                component_type = FlowRegistry.get_step_component(flow_type, "lastname")
+                lastname_component = create_component(component_type)
 
                 # Component handles validation and returns verified data
                 verified_data = lastname_component.to_verified_data(input_value)
@@ -254,15 +305,20 @@ class RegistrationFlow:
                 # Store verified input data
                 state_manager.update_flow_data(verified_data)
 
-                # Move to registration attempt step
-                next_step = FlowRegistry.get_next_step(RegistrationFlow.FLOW_TYPE, "lastname")
+                # Get next step and components through registry
+                next_step = FlowRegistry.get_next_step(flow_type, "lastname")
+                next_components = FlowRegistry.get_step_component(flow_type, next_step)
+                if not isinstance(next_components, list):
+                    next_components = [next_components]
+
+                # Update flow progression
                 state_manager.update_flow_state(
-                    flow_type=RegistrationFlow.FLOW_TYPE,
+                    flow_type=flow_type,
                     step=next_step,
                     data={
                         "active_component": {
-                            "type": "Greeting",
-                            "components": ["Greeting", "OnBoardMember"],
+                            "type": next_components[0],
+                            "components": next_components,
                             "component_index": 0,
                             "validation": {
                                 "in_progress": False,
@@ -282,93 +338,84 @@ class RegistrationFlow:
                 )
 
             elif step == "registration_attempt":
-                # Get current component from state
-                flow_data = state_manager.get_flow_state() or {}
-                active_component = flow_data.get("data", {}).get("active_component", {})
-                component_type = active_component.get("type")
-                components = active_component.get("components", [])
-                component_index = active_component.get("component_index", 0)
+                # Get components for this step
+                components = FlowRegistry.get_step_component("member_registration", "registration_attempt")
+                if not isinstance(components, list):
+                    components = [components]
 
-                if component_type == "Greeting":
-                    # Handle greeting component
-                    greeting_component = create_component("Greeting")
-                    greeting_message = RegistrationFlow._handle_greeting(
-                        messaging_service=messaging_service,
-                        state_manager=state_manager,
-                        component=greeting_component,
-                        current_index=component_index,
-                        components=components
+                # Get current component info from state
+                flow_state = state_manager.get_flow_state()
+                if not flow_state:
+                    raise FlowException(
+                        message="No active flow state",
+                        step="registration_attempt",
+                        action="process",
+                        data={}
                     )
 
-                    # Send greeting through messaging service
-                    messaging_service.send_message(greeting_message)
+                component_state = flow_state.get("active_component", {})
+                current_index = component_state.get("component_index", 0)
+                current_type = components[current_index]
 
-                    # Let flow progress to next component (OnBoardMember)
-                    return RegistrationFlow.process_step(
-                        messaging_service=messaging_service,
-                        state_manager=state_manager,
-                        step=step,
-                        input_value=None
-                    )
+                # Create component
+                component = create_component(current_type)
 
-                elif component_type == "OnBoardMember":
-                    # Handle onboarding
-                    onboard_component = create_component("OnBoardMember")
-                    onboard_component.set_state_manager(state_manager)
-                    # Get properly initialized bot service
-                    from services.whatsapp.bot_service import get_bot_service
-                    bot_service = get_bot_service(state_manager)
-                    onboard_component.set_bot_service(bot_service)
+                # Handle component based on type
+                if current_type == "Greeting":
+                    try:
+                        logger.info("Starting registration greeting sequence")
 
-                    # Process onboarding
-                    validation_result = onboard_component.validate(None)
-                    if not validation_result.valid:
-                        raise FlowException(
-                            message=validation_result.error.get("message", "Validation failed"),
-                            step="registration_attempt",
-                            action="validate_onboarding",
-                            data={"validation": validation_result.error}
+                        # Get and send greeting message
+                        greeting_message = RegistrationFlow._handle_greeting(
+                            messaging_service=messaging_service,
+                            state_manager=state_manager,
+                            component=component,
+                            current_index=current_index,
+                            components=components
                         )
 
-                    # Update state with verified data
-                    state_manager.update_flow_data(onboard_component.to_verified_data(validation_result.value))
+                        # Send greeting through messaging service
+                        messaging_service.send_message(greeting_message)
 
-                    # Move to dashboard step
-                    next_step = FlowRegistry.get_next_step(RegistrationFlow.FLOW_TYPE, "registration_attempt")
-                    state_manager.update_flow_state(
-                        flow_type=RegistrationFlow.FLOW_TYPE,
-                        step=next_step,
-                        data={
-                            "active_component": {
-                                "type": "AccountDashboard",
-                                "validation": {
-                                    "in_progress": False,
-                                    "attempts": 0,
-                                    "last_attempt": None
-                                }
-                            }
-                        }
-                    )
+                        # Proceed to onboard member handler
+                        success, auth_details = RegistrationFlow._handle_onboarding(state_manager)
+                        if success:
+                            # Continue to dashboard step
+                            return RegistrationFlow.process_step(
+                                messaging_service=messaging_service,
+                                state_manager=state_manager,
+                                step="dashboard",
+                                input_value=None
+                            )
+                        else:
+                            # Registration failed
+                            return Message(
+                                recipient=get_recipient(state_manager),
+                                content=TextContent(body=auth_details.get("message", "Registration failed"))
+                            )
 
-                    # Let flow progress to dashboard step
-                    return RegistrationFlow.process_step(
-                        messaging_service=messaging_service,
-                        state_manager=state_manager,
-                        step=next_step,
-                        input_value=None
-                    )
+                    except SystemException as e:
+                        if "rate limit" in str(e).lower():
+                            return Message(
+                                recipient=get_recipient(state_manager),
+                                content=TextContent(
+                                    body="⚠️ Too many messages sent. Please wait a moment before trying again."
+                                )
+                            )
+                        raise
 
                 else:
                     raise FlowException(
-                        message=f"Invalid component type: {component_type}",
+                        message=f"Invalid component type: {current_type}",
                         step="registration_attempt",
                         action="validate",
-                        data={"component": component_type}
+                        data={"component": current_type}
                     )
 
             elif step == "dashboard":
-                # Get dashboard component
-                dashboard_component = create_component("AccountDashboard")
+                # Get dashboard component through registry
+                component_type = FlowRegistry.get_step_component("account_dashboard", "display")
+                dashboard_component = create_component(component_type)
                 dashboard_component.set_state_manager(state_manager)
 
                 # Validate and get dashboard data
@@ -380,48 +427,7 @@ class RegistrationFlow:
                         action="validate_dashboard",
                         data={
                             "validation_error": validation_result.error,
-                            "component": "account_dashboard"
-                        }
-                    )
-
-                # Get verified dashboard data with actions
-                verified_data = dashboard_component.to_verified_data(validation_result.value)
-
-                # Handle dashboard display using auth flow formatter
-                return AuthFlow._handle_dashboard(
-                    messaging_service=messaging_service,
-                    state_manager=state_manager,
-                    verified_data=verified_data
-                )
-
-            else:
-                raise FlowException(
-                    message=f"Invalid step: {step}",
-                    step=step,
-                    action="validate",
-                    data={"value": input_value}
-                )
-
-        except ComponentException as e:
-            # Component validation errors stay in components
-            logger.debug(f"Component validation error: {str(e)}")
-            raise FlowException(
-                message=str(e),
-                step=step,
-                action="validate_component",
-                data={"error": str(e)}
-            )
-
-        except FlowException:
-            # Flow errors stay in flows but ensure they have step
-            raise
-
-        except Exception as e:
-            # System errors propagate to top level
-                        action="validate_dashboard",
-                        data={
-                            "validation_error": validation_result.error,
-                            "component": "account_dashboard"
+                            "component": component_type
                         }
                     )
 

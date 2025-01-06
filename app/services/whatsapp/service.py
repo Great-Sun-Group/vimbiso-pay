@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 class WhatsAppMessagingService(BaseMessagingService):
     """WhatsApp implementation of messaging service"""
 
+    def __init__(self):
+        """Initialize WhatsApp messaging service"""
+        super().__init__()
+        self.state_manager = None  # Will be set by MessagingService
+
     @classmethod
     def wrap_text(
         cls,
@@ -173,8 +178,7 @@ class WhatsAppMessagingService(BaseMessagingService):
 
         return message_data
 
-    @classmethod
-    def send_whatsapp_message(cls, payload: Dict, phone_number_id: Optional[str] = None) -> Dict:
+    def send_whatsapp_message(self, payload: Dict, phone_number_id: Optional[str] = None) -> Dict:
         """Send message to WhatsApp Cloud API with detailed logging.
 
         Args:
@@ -187,24 +191,38 @@ class WhatsAppMessagingService(BaseMessagingService):
         Raises:
             SystemException: If message sending fails
         """
-        # Get configuration
-        phone_number_id = phone_number_id or config("WHATSAPP_PHONE_NUMBER_ID")
-        api_url = config("WHATSAPP_API_URL", default="https://graph.facebook.com/v20.0/")
-        url = f"{api_url}{phone_number_id}/messages"
-
-        headers = {
-            "Authorization": f"Bearer {config('WHATSAPP_ACCESS_TOKEN')}",
-            "Content-Type": "application/json",
-        }
-
-        # Log the exact request we're sending
+        # Log the request payload
         logger.info("WhatsApp request: %s", json.dumps({
-            "url": url,
-            "headers": {k: v for k, v in headers.items() if k != "Authorization"},
             "payload": payload
         }, indent=2))
 
         try:
+            # Check if we're in mock mode
+            if hasattr(self, 'state_manager') and self.state_manager.get('mock_testing'):
+                # Return mock success response
+                response_data = {
+                    "messaging_product": "whatsapp",
+                    "contacts": [{
+                        "input": payload.get("to"),
+                        "wa_id": payload.get("to")
+                    }],
+                    "messages": [{
+                        "id": f"mock_message_{datetime.utcnow().timestamp()}"
+                    }]
+                }
+                logger.info("Mock WhatsApp response: %s", json.dumps(response_data, indent=2))
+                return response_data
+
+            # Real API call for non-mock mode
+            phone_number_id = phone_number_id or config("WHATSAPP_PHONE_NUMBER_ID")
+            api_url = config("WHATSAPP_API_URL", default="https://graph.facebook.com/v20.0/")
+            url = f"{api_url}{phone_number_id}/messages"
+
+            headers = {
+                "Authorization": f"Bearer {config('WHATSAPP_ACCESS_TOKEN')}",
+                "Content-Type": "application/json",
+            }
+
             response = requests.post(url, json=payload, headers=headers)
 
             # Log the complete response

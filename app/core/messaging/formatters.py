@@ -32,7 +32,7 @@ class AccountFormatters:
         secured = "\n".join(secured_balances) if secured_balances else "0.00 USD"
 
         # Format net assets with proper default
-        net_assets = balance_data.get("netCredexAssetsInDefaultDenom", "0.00")
+        net_assets = balance_data.get("netCredexAssetsInDefaultDenom", "0.00 USD")
 
         # Optional tier limit display
         tier_limit = balance_data.get("tier_limit_display", "")

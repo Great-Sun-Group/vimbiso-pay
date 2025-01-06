@@ -75,37 +75,71 @@ def get_login_response_data() -> Optional[Dict[str, Any]]:
     return _last_login_response
 
 
-def onboard_member(payload: Dict[str, Any], jwt_token: str) -> Tuple[bool, str]:
-    """Sends an onboarding request to the CredEx API"""
+# Store last onboarding response for state updates
+_last_onboarding_response = None
+
+
+def onboard_member(member_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    """Sends an onboarding request to the CredEx API
+
+    Args:
+        member_data: Dictionary containing member registration data
+            Required fields:
+            - firstname: Member's first name
+            - lastname: Member's last name
+            - phone: Member's phone number
+            - defaultDenom: Default denomination for member (e.g. "USD")
+
+    Returns:
+        Tuple[bool, Dict[str, Any]]: Success flag and either:
+            - On success: Dict with "token" and "memberID"
+            - On failure: Dict with "message" error string
+    """
+    global _last_onboarding_response
     logger.info("Attempting to onboard member")
     url = f"{BASE_URL}/onboardMember"
     logger.info(f"Onboard URL: {url}")
 
-    # Create headers with state manager for onboarding
+    # Use get_headers without state_manager for onboarding
     headers = {
         "Content-Type": "application/json",
         "x-client-api-key": config("CLIENT_API_KEY"),
-        "Authorization": f"Bearer {jwt_token}"
     }
 
     try:
         try:
-            response = make_api_request(url, headers, payload)
-            if response.status_code == 200:
+            response = make_api_request(url, headers, member_data)
+            if response.status_code == 201:  # Onboarding creates new member
                 response_data = response.json()
-                if response_data.get("data", {}).get("action", {}).get("type") == "MEMBER_ONBOARDED":
-                    return True, "Onboarding successful"
-                return False, response_data.get("error", "Onboarding failed")
+                data = response_data.get("data", {})
+                details = data.get("action", {}).get("details", {})
+                if details.get("token") and details.get("memberID"):
+                    logger.info("Onboarding successful")
+                    # Store full response for state manager to inject properly into state
+                    _last_onboarding_response = response_data
+                    # Return success with auth details only - dashboard goes through state
+                    return True, {
+                        "token": details["token"],
+                        "memberID": details["memberID"]
+                    }
+                else:
+                    logger.error("Onboarding response missing required fields")
+                    return False, {"message": "Onboarding failed: Invalid response data"}
             else:
                 error_response = handle_error_response(
                     "Onboarding",
                     response,
-                    "Onboarding failed"
+                    f"Onboarding failed: Unexpected error (status code: {response.status_code})"
                 )
-                return False, error_response.get("error", {}).get("message", "Onboarding failed")
+                return False, {"message": error_response.get("error", {}).get("message", "Onboarding failed")}
         except SystemException as e:
             logger.error(f"System error during onboarding: {str(e)}")
-            return False, e.message
+            return False, {"message": e.message}
     except Exception as e:
         logger.exception(f"Error during onboarding: {str(e)}")
-        return False, f"Onboarding failed: {str(e)}"
+        return False, {"message": f"Onboarding failed: {str(e)}"}
+
+
+def get_onboarding_response_data() -> Optional[Dict[str, Any]]:
+    """Get last onboarding response data for state updates"""
+    return _last_onboarding_response

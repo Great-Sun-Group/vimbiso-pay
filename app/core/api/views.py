@@ -1,6 +1,7 @@
 """Cloud API webhook views"""
 import logging
 import sys
+from datetime import datetime
 
 from core.api.models import Message as DBMessage  # Rename to avoid confusion
 from core.config.state_manager import StateManager
@@ -166,9 +167,17 @@ class CredexCloudApiWebhook(APIView):
                 logger.warning("Missing required message information")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Initialize state manager with channel info (SINGLE SOURCE OF TRUTH)
+            # Initialize state manager with channel info and mock status (SINGLE SOURCE OF TRUTH)
             logger.info(f"Initializing state manager for {channel_type.value} channel: {channel_id}")
             state_manager = StateManager(f"channel:{channel_id}")
+
+            # Store mock testing status in state
+            state_manager.update_state({
+                "mock_testing": is_mock_testing,
+                "_metadata": {
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            })
 
             # Log message details
             logger.info(f"Processing {channel_type.value} message: {message_text}")

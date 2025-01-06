@@ -14,39 +14,15 @@ from core.utils.error_types import ValidationResult
 from .base import Component, InputComponent
 
 
-class RegistrationWelcome(Component):
+class RegistrationWelcome(InputComponent):
     """Handles registration welcome screen"""
 
     def __init__(self):
         super().__init__("registration_welcome")
 
     def validate(self, value: Any) -> ValidationResult:
-        """Validate welcome response with proper tracking"""
-        # Validate type
-        type_result = self._validate_type(value, str, "text")
-        if not type_result.valid:
-            return type_result
-
-        # Validate action
-        action = value.strip().lower()
-        if action != "start_registration":
-            return ValidationResult.failure(
-                message="Please use the Become a Member button",
-                field="response",
-                details={
-                    "expected": "start_registration",
-                    "received": action
-                }
-            )
-
-        return ValidationResult.success(action)
-
-    def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified welcome data"""
-        return {
-            "action": "start_registration",
-            "confirmed": True
-        }
+        """Simple validation for welcome step"""
+        return ValidationResult.success(value)
 
     def get_message(self, channel_id: str) -> Message:
         """Get welcome message"""
@@ -225,7 +201,7 @@ class OnBoardMember(Component):
                 details={"error": message}
             )
 
-        # Get updated state after registration
+        # Return raw API response from state
         flow_data = self.state_manager.get_flow_state()
         if not flow_data or "data" not in flow_data:
             return ValidationResult.failure(
@@ -234,7 +210,16 @@ class OnBoardMember(Component):
                 details={"component": "onboard_member"}
             )
 
-        return ValidationResult.success(flow_data["data"])
+        # Get API response from state
+        api_response = flow_data["data"].get("api_response")
+        if not api_response:
+            return ValidationResult.failure(
+                message="No API response data found",
+                field="api_response",
+                details={"flow_data": flow_data["data"]}
+            )
+
+        return ValidationResult.success(api_response)
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert registration data to verified data"""

@@ -4,7 +4,7 @@ from typing import Dict, Any, Tuple
 
 from decouple import config
 
-from .base import make_api_request, get_headers, handle_error_response
+from .base import make_api_request, handle_error_response
 from .profile import update_profile_from_response
 
 logger = logging.getLogger(__name__)
@@ -88,26 +88,47 @@ def login(bot_service: Any) -> Tuple[bool, str]:
         return False, f"Login failed: {str(e)}"
 
 
-def onboard_member(bot_service: Any, member_data: Dict[str, Any]) -> Tuple[bool, str]:
-    """Handle member onboarding"""
+def onboard_member(bot_service: Any, member_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    """Handle member onboarding
+
+    Args:
+        bot_service: Bot service instance with state manager
+        member_data: Dictionary containing member registration data
+            Required fields:
+            - firstname: Member's first name
+            - lastname: Member's last name
+            - phone: Member's phone number
+            - defaultDenom: Default denomination for member (e.g. "USD")
+
+    Returns:
+        Tuple[bool, Dict[str, Any]]: Success flag and either:
+            - On success: Dict with "token" and "memberID"
+            - On failure: Dict with "message" error string
+    """
     logger.info("Attempting to onboard member")
     url = "onboardMember"  # Relative URL - base.py will handle making it absolute
     logger.info(f"Onboard URL: {url}")
 
-    headers = get_headers(bot_service.state_manager)
+    headers = {
+        "Content-Type": "application/json",
+        "x-client-api-key": config("CLIENT_API_KEY"),
+    }
+
     try:
         response = make_api_request(url, headers, member_data)
 
         if response.status_code == 201:
             response_data = response.json()
-            token = (
+            details = (
                 response_data.get("data", {})
                 .get("action", {})
                 .get("details", {})
-                .get("token")
             )
 
-            if token:
+            token = details.get("token")
+            member_id = details.get("memberID")
+
+            if token and member_id:
                 # Update profile and state
                 update_profile_from_response(
                     api_response=response_data,
@@ -117,33 +138,23 @@ def onboard_member(bot_service: Any, member_data: Dict[str, Any]) -> Tuple[bool,
                     token=token
                 )
 
-                logger.info("Onboarding successful")
-                return True, "Onboarding successful"
+                logger.info(f"Onboarding successful {token}")
+                return True, {
+                    "token": token,
+                    "memberID": member_id
+                }
             else:
-                logger.error("Onboarding response didn't contain a token")
-                return False, "Onboarding failed: No token received"
-
-        elif response.status_code == 400:
-            return handle_error_response(
-                "Onboarding",
-                response,
-                f"*Onboarding failed (400)*:\n\n{response.json().get('message')}"
-            )
-
-        elif response.status_code == 401:
-            return handle_error_response(
-                "Onboarding",
-                response,
-                f"Onboarding failed: Unauthorized. {response.text}"
-            )
+                logger.error("Onboarding response missing required fields")
+                return False, {"message": "Onboarding failed: Invalid response data"}
 
         else:
-            return handle_error_response(
+            error_response = handle_error_response(
                 "Onboarding",
                 response,
                 f"Onboarding failed: Unexpected error (status code: {response.status_code})"
             )
+            return False, {"message": error_response.get("error", {}).get("message", "Onboarding failed")}
 
     except Exception as e:
         logger.exception(f"Error during onboarding: {str(e)}")
-        return False, f"Onboarding failed: {str(e)}"
+        return False, {"message": f"Onboarding failed: {str(e)}"}
