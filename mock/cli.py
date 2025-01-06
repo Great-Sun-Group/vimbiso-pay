@@ -43,7 +43,8 @@ def format_display_text(response: Dict[str, Any]) -> str:
                 if section.get("title"):
                     text_parts.append(f"\n{section['title']}:")
                 for row in section.get("rows", []):
-                    text_parts.append(f"- {row['title']}")
+                    description = row.get("description", "")
+                    text_parts.append(f"- {row['title']}" + (f" ({description})" if description else ""))
 
         return "\n".join(text_parts)
 
@@ -57,13 +58,29 @@ def format_display_text(response: Dict[str, Any]) -> str:
 
 def send_message(args: argparse.Namespace) -> None:
     """Send message to mock server."""
-    # Create payload
-    payload = create_whatsapp_payload(
-        args.phone,
-        args.type,
-        args.message,
-        args.phone_number_id
+    # Parse message for list selections
+    message = args.message
+    if args.type == "list":
+        try:
+            message = json.loads(message)
+        except json.JSONDecodeError:
+            print("Error: List selection must be valid JSON")
+            sys.exit(1)
+
+    # Create WhatsApp-formatted payload
+    whatsapp_payload = create_whatsapp_payload(
+        phone_number=args.phone,
+        message_type=args.type,
+        message_text=message,
+        phone_number_id=args.phone_number_id
     )
+
+    # Add context for interactive messages
+    if args.context_id:
+        whatsapp_payload["entry"][0]["changes"][0]["value"]["messages"][0]["context"] = {
+            "from": args.context_from or "15550783881",
+            "id": args.context_id
+        }
 
     # Send request
     params = {'target': args.target}
@@ -77,7 +94,7 @@ def send_message(args: argparse.Namespace) -> None:
     try:
         response = requests.post(
             url,
-            json=payload,
+            json=whatsapp_payload,
             headers=headers,
             timeout=30
         )
@@ -116,6 +133,9 @@ Examples:
 
   # Form submission
   %(prog)s --type interactive "form:amount=100,recipientAccountHandle=@user123"
+
+  # List selection
+  %(prog)s --type list '{"id":"credex_offer","title":"Offer Secured Credex","description":"Create a new secured Credex offer"}' --context-id wamid.123 --context-from 15550783881
         """
     )
 
@@ -126,7 +146,7 @@ Examples:
     )
     parser.add_argument(
         "--type",
-        choices=["text", "button", "interactive"],
+        choices=["text", "button", "interactive", "list"],
         default="text",
         help="Message type (default: text)"
     )
@@ -146,6 +166,14 @@ Examples:
         choices=["local", "staging"],
         default="local",
         help="Target environment (default: local)"
+    )
+    parser.add_argument(
+        "--context-id",
+        help="Message ID of the original message that triggered this interaction"
+    )
+    parser.add_argument(
+        "--context-from",
+        help="Phone number that sent the original message"
     )
     parser.add_argument(
         "message",

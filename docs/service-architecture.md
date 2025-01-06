@@ -1,196 +1,106 @@
-# Service Architecture
+# Service & API Architecture
 
-## Overview
+## Core Principles
 
-VimbisoPay's WhatsApp integration uses a layered service architecture to separate concerns:
-- API Communication
-- Message Formatting
-- Flow Management
-- Template System
+1. **State-Based Design**
+- All operations go through state_manager
+- Credentials exist ONLY in state
+- No direct passing of sensitive data
+- State validation through updates
 
-## Service Layers
+2. **Pure Functions**
+- Services use stateless functions
+- No stored instance variables
+- No service-level state
+- Clear input/output contracts
 
-### 1. WhatsApp API Layer (WhatsAppMessagingService)
+3. **Single Source of Truth**
+- Member ID accessed through get_member_id()
+- Channel info accessed through get_channel_id()
+- JWT token accessed through flow_data auth
+- No direct state access
 
-Handles raw API communication with WhatsApp Cloud API:
+## Common Anti-Patterns
+
+### 1. Credential Access
 ```python
-class WhatsAppMessagingService:
-    """WhatsApp-specific implementation of messaging service"""
+# WRONG - Store or pass credentials
+token = state_manager.get("jwt_token")  # Don't store!
+make_request(token)  # Don't pass credentials!
 
-    def _send_message(self, message: Message):
-        """Send message via WhatsApp API"""
-
-    def get_template(self, template_name: str):
-        """Get WhatsApp message template"""
-
-    def send_template(self, recipient, template_name, language):
-        """Send a template message"""
-```
-
-Responsibilities:
-- API authentication
-- Message delivery
-- Template management
-- Status tracking
-- Error handling
-
-### 2. Message Formatting Layer (WhatsAppMessage)
-
-Handles message creation and formatting:
-```python
-class WhatsAppMessage:
-    """WhatsApp message formatting utilities"""
-
-    @classmethod
-    def create_text(cls, to: str, text: str):
-        """Create text message"""
-
-    @classmethod
-    def create_button(cls, to: str, text: str, buttons: list):
-        """Create button message"""
-
-    @classmethod
-    def create_list(cls, to: str, text: str, sections: list):
-        """Create list message"""
-```
-
-Responsibilities:
-- Message format validation
-- WhatsApp Cloud API compliance
-- Character limit enforcement
-- Message type handling
-
-### 3. Flow Management Layer (Flow Framework)
-
-Handles conversation flow and state:
-```python
-class Flow:
-    """Base class for all flows"""
-
-    def process_input(self, input_data: Any):
-        """Process input and manage state"""
-
-    def complete(self):
-        """Complete flow with proper response"""
-```
-
-Responsibilities:
-- Step progression
-- Input validation
-- State management
-- Error recovery
-
-### 4. Template System
-
-Organized in three layers:
-
-1. String Templates (screens.py):
-```python
-BALANCE = """*💰 SECURED BALANCES*
-{securedNetBalancesByDenom}"""
-```
-- Basic text templates
-- Format strings only
-
-2. Message Builders (templates.py):
-```python
-class ProgressiveInput:
-    def create_prompt(text: str, examples: List[str]):
-        """Create formatted prompt"""
-```
-- Common message patterns
-- Reusable components
-
-3. Flow Messages (in flows):
-```python
-def _create_confirmation(self, state: Dict[str, Any]):
-    """Create flow-specific message"""
-```
-- Flow-specific formatting
-- State-aware messages
-
-## Integration Patterns
-
-### 1. Message Flow
-```
-Flow Framework
-    ↓
-Message Formatting (WhatsAppMessage)
-    ↓
-Template System
-    ↓
-API Communication (WhatsAppMessagingService)
-    ↓
-WhatsApp Cloud API
+# CORRECT - Access through flow data
+auth_data = state_manager.get_flow_data().get("auth", {})
+if auth_data.get("token"):
+    headers["Authorization"] = f"Bearer {auth_data['token']}"
 ```
 
 ### 2. State Management
-```
-Flow Framework (member_id ONLY at top level)
-    ↓
-Redis State Service (preserves single source of truth)
-    ↓
-State Validation (enforces member_id at top level)
-    ↓
-Profile Preservation (maintains member context)
+```python
+# WRONG - Direct state access
+channel = state_manager.get("channel")  # Don't access directly!
+phone = channel["identifier"]  # Don't access structure directly!
+
+# CORRECT - Use proper accessor methods
+channel_id = state_manager.get_channel_id()
+member_id = state_manager.get_member_id()
 ```
 
 ### 3. Error Handling
+```python
+# WRONG - Handle errors manually
+if error:
+    return {"error": str(error)}  # Don't handle directly!
+
+# CORRECT - Use ErrorHandler with context
+error_context = ErrorContext(
+    error_type="api",
+    message=str(error),
+    details={"operation": operation}
+)
+ErrorHandler.handle_error(error, state_manager, error_context)
 ```
-API Layer → Service Exceptions
-    ↓
-Flow Layer → State Recovery
-    ↓
-Message Layer → User Feedback
-```
 
-## Best Practices
+## Implementation Guide
 
-1. Service Boundaries
-   - Use appropriate layer for each operation
-   - Maintain clear responsibilities
-   - Follow established patterns
-   - Document integration points
+### Service Layer
+1. Services must be stateless
+2. Use proper accessor methods
+3. Track all operations
+4. Handle errors consistently
 
-2. Message Creation
-   - Use WhatsAppMessage for all messages
-   - Validate formats before sending
-   - Handle all message types
-   - Follow Cloud API specs
+### API Integration
+1. All API calls through state_manager
+2. Extract credentials only when needed
+3. Track validation attempts
+4. Handle errors through ErrorHandler
 
-3. Flow Integration
-   - Use Flow framework for conversations
-   - Manage state properly
-   - Handle errors consistently
-   - Document flow patterns
+### State Updates
+1. Update through state_manager
+2. Include validation tracking
+3. Track operation attempts
+4. Include error context
 
-4. Template Usage
-   - Use appropriate template layer
-   - Keep templates focused
-   - Follow formatting standards
-   - Document template purpose
+### Error Handling
+1. Use ErrorHandler for all errors
+2. Include operation details
+3. Track validation failures
+4. Update state with errors
 
-## Monitoring and Maintenance
+## Code Reading Guide
 
-1. API Monitoring
-   - Track message delivery
-   - Monitor rate limits
-   - Log API errors
-   - Track template usage
+Before modifying service-related functionality, read these files in order:
 
-2. Flow Monitoring
-   - Track completion rates
-   - Monitor state changes
-   - Log validation errors
-   - Track user progress
+1. services/messaging/service.py - Core messaging service
+2. services/whatsapp/service.py - Channel-specific handling
+3. services/whatsapp/bot_service.py - Bot handling
+4. services/whatsapp/types.py - Service types
 
-3. Performance Metrics
-   - Message latency
-   - State operations
-   - Template rendering
-   - Error rates
+Common mistakes to avoid:
+1. DON'T modify services without understanding types
+2. DON'T bypass service interfaces
+3. DON'T mix service responsibilities
+4. DON'T duplicate service functionality
 
-For more details on:
-- Flow framework: [Flow Framework](flow-framework.md)
-- WhatsApp integration: [WhatsApp](whatsapp.md)
-- State management: [State Management](state-management.md)
+For implementation details, see:
+- [State Management](state-management.md) - State validation and flow control
+- [Flow Framework](flow-framework.md) - Progressive interaction framework

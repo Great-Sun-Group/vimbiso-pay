@@ -1,428 +1,387 @@
-"""Clean flow management implementation"""
-import logging
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
-from core.utils.flow_audit import FlowAuditLogger
+"""Flow management with clean architecture patterns
 
-logger = logging.getLogger(__name__)
-audit = FlowAuditLogger()
+This module provides flow management using:
+- Pure UI validation in components
+- State tracking with clear boundaries
+- Proper validation state management
+"""
 
+from datetime import datetime
+from typing import Any, Dict, Optional
 
-class StepType(Enum):
-    """Types of interaction steps"""
-    TEXT = "text"
-    BUTTON = "button"
-    LIST = "list"
+from core.components import create_component
+from core.utils.error_types import ValidationResult
+from core.utils.exceptions import FlowException
 
-
-@dataclass
-class Step:
-    """Single interaction step"""
-    id: str
-    type: StepType
-    message: Union[Dict[str, Any], Callable[[Dict[str, Any]], Dict[str, Any]]]
-    validator: Optional[Callable[[Any], bool]] = None
-    transformer: Optional[Callable[[Any], Any]] = None
-
-    def validate(self, input_data: Any) -> bool:
-        """Validate step input"""
-        try:
-            # Special validation for confirmation
-            if self.id == "confirm" and isinstance(input_data, dict):
-                interactive = input_data.get("interactive", {})
-                if (interactive.get("type") == "button_reply" and
-                        interactive.get("button_reply", {}).get("id") == "confirm_action"):
-                    return True
-                return False
-
-            # Use custom validator if provided
-            if not self.validator:
-                return True
-
-            try:
-                return self.validator(input_data)
-            except Exception as validation_error:
-                # Log validation error with context
-                logger.error(
-                    f"Validation failed in step {self.id}",
-                    extra={
-                        "step_id": self.id,
-                        "validator": self.validator.__name__ if hasattr(self.validator, '__name__') else str(self.validator),
-                        "input": input_data,
-                        "error": str(validation_error)
-                    },
-                    exc_info=True
-                )
-                # Re-raise with context
-                raise ValueError(f"Validation error in step {self.id}: {str(validation_error)}")
-
-        except Exception as e:
-            # Only log non-validation errors
-            if not isinstance(e, ValueError):
-                logger.error(f"Unexpected error in step {self.id}: {str(e)}")
-            raise
-
-    def transform(self, input_data: Any) -> Any:
-        """Transform step input"""
-        try:
-            return self.transformer(input_data) if self.transformer else input_data
-        except Exception as e:
-            logger.error(f"Transform error in {self.id}: {str(e)}")
-            raise ValueError(str(e))
-
-    def get_message(self, state: Any) -> Dict[str, Any]:
-        """Get step message"""
-        try:
-            # Ensure state is a dictionary
-            if not isinstance(state, dict):
-                state = {"data": state}
-            return self.message(state) if callable(self.message) else self.message
-        except Exception as e:
-            logger.error(f"Message error in {self.id}: {str(e)}")
-            raise ValueError(str(e))
+from .registry import FlowRegistry
 
 
-class Flow:
-    """Base class for all flows"""
+class FlowManager:
+    """Manages flow progression and component state"""
 
-    def __init__(self, id: str, steps: List[Step]):
-        self.id = id
-        self.steps = steps
-        self.current_index = 0
-        self.data: Dict[str, Any] = {}
-        self._previous_data: Dict[str, Any] = {}  # Store previous state for rollback
+    def __init__(self, flow_type: str, state_manager: Any):
+        """Initialize flow manager"""
+        self.flow_type = flow_type
+        self.state_manager = state_manager
+        self.config = FlowRegistry.get_flow_config(flow_type)
+        self.components = {}
 
-    @property
-    def current_step(self) -> Optional[Step]:
-        """Get current step"""
-        return self.steps[self.current_index] if 0 <= self.current_index < len(self.steps) else None
+    def get_component(self, step: str, component_type: str = None) -> Any:
+        """Get component for step with validation
 
-    def process_input(self, input_data: Any) -> Optional[Dict[str, Any]]:
-        """Process input and return next message or None if complete"""
-        step = self.current_step
-        if not step:
-            return None
+        Args:
+            step: Step identifier
+            component_type: Optional specific component type to get.
+                          If not provided, gets component types from registry.
+        """
+        # Validate step
+        FlowRegistry.validate_flow_step(self.flow_type, step)
 
-        try:
-            # Initialize validation state in data
-            self.data["_validation_state"] = {
-                "step_id": step.id,
-                "step_index": self.current_index,
-                "input": input_data,
-                "timestamp": audit.get_current_timestamp()
-            }
-
-            # Store previous state
-            self._previous_data = self.data.copy()
-
-            # Log flow event at start of processing
-            audit.log_flow_event(
-                self.id,
-                "step_start",
-                step.id,
-                self._previous_data,
-                "in_progress"
-            )
-
-            # Log input processing
-            logger.debug(f"[Flow {self.id}] Processing input for step {step.id}")
-            logger.debug(f"[Flow {self.id}] Input data: {input_data}")
-            logger.debug(f"[Flow {self.id}] Current validation state: {self.data['_validation_state']}")
-
-            # Validate input
-            validation_result = step.validate(input_data)
-            audit.log_validation_event(
-                self.id,
-                step.id,
-                input_data,
-                validation_result
-            )
-
-            if not validation_result:
-                from services.whatsapp.types import WhatsAppMessage
-                # Restore previous state and mark validation error
-                self.data = self._previous_data.copy()
-                self.data["_validation_state"].update({
-                    "success": False,
-                    "error": "Invalid input"
-                })
-
-                # Log validation failure
-                audit.log_flow_event(
-                    self.id,
-                    "validation_error",
-                    step.id,
-                    self.data,
-                    "failure",
-                    "Invalid input"
-                )
-
-                if step.id == "amount":
-                    return WhatsAppMessage.create_text(
-                        self.data.get("mobile_number", ""),
-                        "Invalid amount format. Examples:\n"
-                        "100     (USD)\n"
-                        "USD 100\n"
-                        "ZWG 100\n"
-                        "XAU 1\n\n"
-                        "Please ensure you enter a valid number with an optional currency code."
-                    )
-                return WhatsAppMessage.create_text(
-                    self.data.get("mobile_number", ""),
-                    "Invalid input"
-                )
-
-            # Transform input
-            transformed_data = step.transform(input_data)
-
-            # Store transformed data under step ID to preserve structure
-            if step.id == "amount":
-                # Store amount data under amount_denom key to better reflect its structure
-                self.data["amount_denom"] = transformed_data
+        # Get component type if not provided
+        if not component_type:
+            registry_type = FlowRegistry.get_step_component(self.flow_type, step)
+            if isinstance(registry_type, list):
+                component_type = registry_type[0]
             else:
-                self.data[step.id] = transformed_data
+                component_type = registry_type
 
-            # Move to next step only after successful transformation
-            self.current_index += 1
+        # Get/create component using cache key
+        cache_key = f"{step}_{component_type}"
+        if cache_key not in self.components:
+            self.components[cache_key] = create_component(component_type)
 
-            # Update validation state with success and transformed data
-            self.data["_validation_state"].update({
-                "success": True,
-                "transformed": transformed_data
+        return self.components[cache_key]
+
+    def process_step(self, step: str, value: Any) -> ValidationResult:
+        """Process step input with pure validation
+
+        Args:
+            step: Current step ID
+            value: Input value
+
+        Returns:
+            ValidationResult with validation status
+
+        Raises:
+            FlowException: If step invalid
+        """
+        # Get component types for step
+        component_types = FlowRegistry.get_step_component(self.flow_type, step)
+        if not isinstance(component_types, list):
+            component_types = [component_types]
+
+        # Get current component state from state manager
+        flow_state = self.state_manager.get_flow_state()
+        if not flow_state:
+            raise FlowException(
+                message="No active flow state",
+                step=step,
+                action="process",
+                data={}
+            )
+
+        component_state = flow_state.get("active_component", {})
+        current_index = component_state.get("component_index", 0)
+
+        # Get current component type
+        if current_index >= len(component_types):
+            raise FlowException(
+                message=f"Invalid component index {current_index} for step {step}",
+                step=step,
+                action="process",
+                data={"component_index": current_index}
+            )
+
+        current_type = component_types[current_index]
+
+        # Get and validate current component
+        component = self.get_component(step, current_type)
+        validation = component.validate(value)
+
+        # If valid and not last component, move to next component
+        if validation.valid and current_index < len(component_types) - 1:
+            # Update component index in state manager
+            next_component = component_types[current_index + 1]
+            self.state_manager.update_state({
+                "flow_data": {
+                    "active_component": {
+                        **component_state,
+                        "component_index": current_index + 1,
+                        "type": next_component,
+                        "value": None,  # Reset value for new component
+                        "validation": {  # Initialize validation for new component
+                            "in_progress": False,
+                            "error": None,
+                            "attempts": 0,
+                            "last_attempt": None,
+                            "operation": "initialize_component",
+                            "component": next_component,
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                    }
+                }
             })
 
-            # Store in previous data
-            self._previous_data = self.data.copy()
+        return validation
 
-            # Log successful state transition
-            audit.log_state_transition(
-                self.id,
-                self._previous_data,
-                self.data,
-                "success"
+
+def initialize_flow(
+    state_manager: Any,
+    flow_type: str,
+    step: Optional[str] = None,
+    initial_data: Optional[Dict] = None
+) -> None:
+    """Initialize flow state with proper structure
+
+    Args:
+        state_manager: State manager instance
+        flow_type: Type of flow
+        step: Optional starting step (defaults to first step)
+        initial_data: Optional initial business data
+
+    Raises:
+        FlowException: If flow type invalid
+    """
+    # Get flow config
+    config = FlowRegistry.get_flow_config(flow_type)
+    steps = config["steps"]
+
+    # Get initial step and index
+    if not step:
+        step = steps[0]
+        step_index = 0
+    else:
+        FlowRegistry.validate_flow_step(flow_type, step)
+        try:
+            step_index = steps.index(step)
+        except ValueError:
+            raise FlowException(
+                message=f"Invalid step {step} for flow {flow_type}",
+                step=step,
+                action="initialize",
+                data={"flow_type": flow_type}
             )
 
-            # Complete or get next message
-            next_message = (
-                self.complete()
-                if self.current_index >= len(self.steps)
-                else self.current_step.get_message(self.data)
-                if self.current_step
-                else None
-            )
+    # Get component type(s) for step
+    component_types = FlowRegistry.get_step_component(flow_type, step)
+    if not isinstance(component_types, list):
+        component_types = [component_types]
 
-            return next_message
+    # Use first component for initial state
+    initial_component = component_types[0]
 
-        except ValueError as validation_error:
-            # Handle validation errors with context
-            from services.whatsapp.types import WhatsAppMessage
+    # Create flow state with standardized validation tracking
+    validation_state = {
+        "in_progress": True,
+        "attempts": 0,
+        "last_attempt": None,
+        "operation": "initialize_flow",
+        "component": initial_component,
+        "components": component_types,  # Store all components
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
-            # Restore previous state and mark validation error
-            self.data = self._previous_data.copy()
-            self.data["_validation_state"].update({
-                "success": False,
-                "error": str(validation_error)
-            })
+    flow_state = {
+        "flow_data": {
+            # Flow identification with validation
+            "flow_type": flow_type,
+            "handler_type": config.get("handler_type", "member"),
+            "step": step,
+            "step_index": step_index,
+            "total_steps": len(steps),
+            "validation": validation_state,
 
-            # Log validation error
-            audit.log_flow_event(
-                self.id,
-                "validation_error",
-                step.id,
-                self.data,
-                "failure",
-                str(validation_error)
-            )
+            # Component state with tracking
+            "active_component": {
+                "type": initial_component,
+                "components": component_types,  # Store all components
+                "component_index": 0,  # Track current component
+                "value": None,
+                "validation": {
+                    "in_progress": False,
+                    "error": None,
+                    "attempts": 0,
+                    "last_attempt": None,
+                    "operation": "initialize_component",
+                    "component": initial_component,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            },
 
-            return WhatsAppMessage.create_text(
-                self.data.get("mobile_number", ""),
-                str(validation_error)
-            )
+            # Business data with timestamp
+            "data": {
+                **(initial_data or {}),
+                "_metadata": {
+                    "initialized_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            }
+        }
+    }
 
-        except Exception as e:
-            error_msg = f"Process error in {step.id}: {str(e)}"
-            logger.error(error_msg)
+    # Update only flow state, preserving other state
+    state_manager.update_state({
+        "flow_data": flow_state["flow_data"]  # Only update flow_data portion
+    })
 
-            # Log error event
-            audit.log_flow_event(
-                self.id,
-                "process_error",
-                step.id,
-                self._previous_data,
-                "failure",
-                error_msg
-            )
 
-            # Attempt smart state recovery
-            current_step = self.current_step.id if self.current_step else None
+def process_flow_input(
+    state_manager: Any,
+    input_data: Any
+) -> Optional[Dict]:
+    """Process flow input with validation
 
-            # First try to recover to current step
-            last_valid_state = audit.get_last_valid_state(self.id, current_step)
-            if last_valid_state:
-                self.data = last_valid_state
-                logger.info(f"Recovered to valid state at step {current_step}")
-                return WhatsAppMessage.create_text(
-                    self.data.get("mobile_number", ""),
-                    "Recovered from error. Please try your last action again."
-                )
+    Args:
+        state_manager: State manager instance
+        input_data: Input value
 
-            # If can't recover to current step, try to get recovery path
-            if current_step:
-                recovery_path = audit.get_recovery_path(self.id, current_step)
-                if recovery_path:
-                    # Find the last successful state in the path
-                    for state in reversed(recovery_path):
-                        if state.get("_validation_state", {}).get("success"):
-                            self.data = state
-                            recovered_step = state.get("_validation_state", {}).get("step_id", "previous")
-                            logger.info(f"Recovered to earlier valid state at step {recovered_step}")
-                            return WhatsAppMessage.create_text(
-                                self.data.get("mobile_number", ""),
-                                "Recovered to a previous step. Please continue from there."
-                            )
+    Returns:
+        None if complete, or dict with next step
 
-            # If all recovery attempts fail, fallback to previous state
-            logger.warning("Recovery failed, falling back to previous state")
-            self.data = self._previous_data
-
-            from services.whatsapp.types import WhatsAppMessage
-            return WhatsAppMessage.create_text(
-                self.data.get("mobile_number", ""),
-                f"Error: {str(e)}"
-            )
-
-    def complete(self) -> Optional[Dict[str, Any]]:
-        """Handle flow completion - override in subclasses"""
-        # Log flow completion
-        audit.log_flow_event(
-            self.id,
-            "complete",
-            None,
-            self.data,
-            "success"
+    Raises:
+        FlowException: If flow state invalid
+    """
+    # Get flow state
+    flow_data = state_manager.get_flow_state()
+    if not flow_data:
+        raise FlowException(
+            message="No active flow",
+            step="unknown",
+            action="process",
+            data={}
         )
+
+    flow_type = flow_data["flow_type"]
+    current_step = flow_data["step"]
+    current_index = flow_data["step_index"]
+    total_steps = flow_data["total_steps"]
+
+    # Get handler type
+    handler_type = flow_data.get("handler_type", "member")
+
+    # Process through flow manager
+    flow_manager = FlowManager(flow_type, state_manager)
+    validation = flow_manager.process_step(current_step, input_data)
+
+    # Update validation state with tracking
+    component_state = flow_data["active_component"]
+    validation_state = {
+        "in_progress": True,
+        "attempts": component_state["validation"]["attempts"] + 1,
+        "last_attempt": {
+            "value": input_data,
+            "timestamp": datetime.utcnow().isoformat()
+        },
+        "operation": "validate_input",
+        "component": component_state["type"],
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+    # Handle validation error with tracking
+    if not validation.valid:
+        validation_state.update({
+            "in_progress": False,
+            "error": {
+                "message": validation.error.get("message"),
+                "details": validation.error.get("details", {}),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+        state_manager.update_state({
+            "flow_data": {
+                "active_component": {
+                    **component_state,
+                    "validation": validation_state
+                }
+            }
+        })
+        return {
+            "error": validation.error,
+            "validation": validation_state
+        }
+
+    # Update component state with valid value and tracking
+    validation_state.update({
+        "in_progress": False,
+        "error": None,
+        "timestamp": datetime.utcnow().isoformat()
+    })
+
+    # Get current components array and index
+    components = component_state.get("components", [])
+    component_index = component_state.get("component_index", 0)
+
+    # Update state preserving component tracking
+    state_manager.update_state({
+        "flow_data": {
+            "active_component": {
+                **component_state,
+                "value": validation.value,
+                "validation": validation_state,
+                "components": components,  # Preserve components array
+                "component_index": component_index,  # Preserve current index
+                "updated_at": datetime.utcnow().isoformat()
+            }
+        }
+    })
+
+    # Get next step
+    next_step = FlowRegistry.get_next_step(flow_type, current_step)
+    if next_step == "complete":
         return None
 
-    def get_state(self) -> Dict[str, Any]:
-        """Get flow state"""
-        try:
-            # Ensure data is a dictionary
-            if not isinstance(self.data, dict):
-                self.data = {}
+    # Get next component type(s)
+    next_component_types = FlowRegistry.get_step_component(flow_type, next_step)
+    if not isinstance(next_component_types, list):
+        next_component_types = [next_component_types]
 
-            # Ensure required fields exist
-            if "mobile_number" not in self.data:
-                self.data["mobile_number"] = None
-            if "flow_type" not in self.data:
-                self.data["flow_type"] = self.id.split("_")[0] if "_" in self.id else "unknown"
+    # Use first component for initial state
+    initial_component = next_component_types[0]
 
-            # Ensure validation context exists in data
-            if "_validation_context" not in self.data:
-                self.data["_validation_context"] = {}
-            if "_validation_state" not in self.data:
-                self.data["_validation_state"] = {}
+    # Create next component validation state
+    next_validation_state = {
+        "in_progress": False,
+        "error": None,
+        "attempts": 0,
+        "last_attempt": None,
+        "operation": "initialize_component",
+        "component": initial_component,
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
-            # Build state with validation context only in data
-            state = {
-                "id": self.id,
-                "step": self.current_index,
-                "data": self.data,
-                "_previous_data": self._previous_data
-            }
+    # Update step and component state with tracking
+    state_manager.update_state({
+        "flow_data": {
+            "step": next_step,
+            "step_index": current_index + 1,
+            "active_component": {
+                "type": initial_component,
+                "components": next_component_types,  # Store all components
+                "component_index": 0,  # Reset index for new step
+                "value": None,
+                "validation": next_validation_state,
+                "created_at": datetime.utcnow().isoformat()
+            },
+            "updated_at": datetime.utcnow().isoformat()
+        }
+    })
 
-            # Log state retrieval
-            logger.debug(f"[Flow {self.id}] Getting state:")
-            logger.debug(f"[Flow {self.id}] - Step: {self.current_index}")
-            logger.debug(f"[Flow {self.id}] - Data keys: {list(self.data.keys())}")
-            logger.debug(f"[Flow {self.id}] - Validation context: {self.data.get('_validation_context', {})}")
+    return {
+        "step": next_step,
+        "handler_type": handler_type,
+        "progress": {
+            "current": current_index + 1,
+            "total": total_steps
+        }
+    }
 
-            audit.log_flow_event(
-                self.id,
-                "get_state",
-                None,
-                state,
-                "success"
-            )
 
-            return state
+def complete_flow(state_manager: Any) -> None:
+    """Complete flow and clear state
 
-        except Exception as e:
-            error_msg = f"Error getting flow state: {str(e)}"
-            logger.error(error_msg)
-            audit.log_flow_event(
-                self.id,
-                "get_state_error",
-                None,
-                self.data,
-                "failure",
-                error_msg
-            )
-            raise ValueError(error_msg)
-
-    def set_state(self, state: Dict[str, Any]) -> None:
-        """Set flow state while preserving existing data"""
-        try:
-            if not isinstance(state, dict):
-                raise ValueError("State must be a dictionary")
-
-            # Log current state before changes
-            logger.debug(f"[Flow {self.id}] Setting flow state")
-            logger.debug(f"[Flow {self.id}] Current data: {self.data}")
-            logger.debug(f"[Flow {self.id}] Current step: {self.current_index}")
-            logger.debug(f"[Flow {self.id}] New state to merge: {state}")
-
-            old_state = self.get_state()
-
-            # Merge data preserving validation context
-            if "data" in state:
-                new_data = state["data"]
-                if not isinstance(new_data, dict):
-                    raise ValueError("State data must be a dictionary")
-
-                # Preserve validation context from new data
-                validation_context = {
-                    k: v for k, v in new_data.items()
-                    if k in ("_validation_context", "_validation_state")
-                }
-
-                # Merge data with validation context preserved
-                self.data = {
-                    **self.data,  # Base data
-                    **new_data,   # New data
-                    **validation_context  # Ensure validation context from new data
-                }
-
-                # Update previous data
-                self._previous_data = state.get("_previous_data", self.data.copy())
-
-            # Update step index
-            old_step = self.current_index
-            self.current_index = state.get("step", 0)
-
-            # Log state transition
-            audit.log_state_transition(
-                self.id,
-                old_state,
-                self.get_state(),
-                "success"
-            )
-
-            # Log final state
-            logger.debug(f"[Flow {self.id}] State update complete")
-            logger.debug(f"[Flow {self.id}] - Step transition: {old_step} -> {self.current_index}")
-            logger.debug(f"[Flow {self.id}] - Final data keys: {list(self.data.keys())}")
-            logger.debug(f"[Flow {self.id}] - Validation context: {validation_context}")
-
-        except Exception as e:
-            error_msg = f"Error setting flow state: {str(e)}"
-            logger.error(error_msg)
-            audit.log_flow_event(
-                self.id,
-                "set_state_error",
-                None,
-                state,
-                "failure",
-                error_msg
-            )
-            raise ValueError(error_msg)
+    Args:
+        state_manager: State manager instance
+    """
+    state_manager.update_state({
+        "flow_data": None
+    })

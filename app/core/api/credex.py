@@ -1,253 +1,496 @@
-"""CredEx operations"""
+"""CredEx operations using pure functions"""
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
-from .base import BaseAPIClient
-from .profile import ProfileManager
+from core.utils.error_handler import ErrorHandler
+from .base import (BASE_URL, get_headers, handle_error_response,
+                   make_api_request)
 
 logger = logging.getLogger(__name__)
 
 
-class CredExManager(BaseAPIClient):
-    """Handles CredEx operations"""
+def validate_account_handle(handle: str, token: str) -> Dict[str, Any]:
+    """Validate a member's account handle through state validation"""
+    logger.info(f"Validating account handle: {handle}")
+    url = f"{BASE_URL}/validateHandle"
+    logger.info(f"Validation URL: {url}")
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.profile_manager = ProfileManager(*args, **kwargs)
+    try:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        payload = {"handle": handle}
 
-    def offer_credex(self, offer_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
-        """Create a new CredEx offer"""
-        logger.info("Attempting to offer CredEx")
-        url = f"{self.base_url}/createCredex"
-        logger.info(f"Offer URL: {url}")
+        # Make request
+        response = make_api_request(url, headers, payload)
+        if isinstance(response, dict) and "error" in response:
+            return response
 
-        # Remove any extra fields
-        offer_data.pop("full_name", None)
+        if response.status_code == 200:
+            response_data = response.json()
+            if response_data.get("status") == "success":
+                logger.info("Handle validation successful")
+                return {"success": True, "data": response_data}
 
-        headers = self._get_headers()
-        try:
-            response = self._make_api_request(url, headers, offer_data)
-            if response.status_code == 200:
-                response_data = response.json()
+            logger.error("Handle validation failed")
+            return ErrorHandler.handle_system_error(
+                code="VALIDATION_FAILED",
+                service="credex",
+                action="validate_handle",
+                message=response_data.get("error", "Handle validation failed")
+            )
 
-                if (
-                    response_data.get("data", {}).get("action", {}).get("type")
-                    == "CREDEX_CREATED"
-                ):
-                    # Add success message and status to response
-                    if "data" not in response_data:
-                        response_data["data"] = {}
-                    if "action" not in response_data["data"]:
-                        response_data["data"]["action"] = {}
-                    response_data["data"]["action"].update({
-                        "message": "CredEx offer created successfully",
-                        "status": "success"
-                    })
+        return handle_error_response(
+            "Handle validation",
+            response,
+            f"Handle validation failed: Unexpected error (status code: {response.status_code})"
+        )
 
-                    # Update profile and state
-                    self.profile_manager.update_profile_from_response(
-                        response_data,
-                        "credex_offer",
-                        "credex_offer"
-                    )
+    except Exception as e:
+        logger.exception(f"Error during handle validation: {str(e)}")
+        return ErrorHandler.handle_system_error(
+            code="VALIDATION_ERROR",
+            service="credex",
+            action="validate_handle",
+            message=f"Handle validation failed: {str(e)}"
+        )
 
-                    # Return success response with message
-                    return True, response_data
-                else:
-                    logger.error("Offer failed")
-                    return False, {"error": response_data.get("error")}
 
-            else:
-                return self._handle_error_response(
-                    "Offer",
-                    response,
-                    f"Offer failed: Unexpected error (status code: {response.status_code})"
-                )
+def offer_credex(state_manager: Any) -> Dict[str, Any]:
+    """Create a new CredEx offer through state validation"""
+    logger.info("Attempting to offer CredEx")
+    url = f"{BASE_URL}/createCredex"
+    logger.info(f"Offer URL: {url}")
 
-        except Exception as e:
-            logger.exception(f"Error during offer: {str(e)}")
-            return False, {"error": f"Offer failed: {str(e)}"}
+    try:
+        # Let StateManager validate API request
+        state_manager.update_state({
+            "api_request": {
+                "type": "credex_offer",
+                "url": url,
+                "method": "POST"
+            }
+        })
 
-    def accept_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Accept a CredEx offer"""
-        logger.info("Attempting to accept CredEx")
-        url = f"{self.base_url}/acceptCredex"
-        logger.info(f"Accept URL: {url}")
+        # Get validated request data
+        headers = get_headers(state_manager)
+        payload = state_manager.get_api_payload()
 
-        payload = {"credexID": credex_id}
-        headers = self._get_headers()
+        # Make request
+        response = make_api_request(url, headers, payload, state_manager=state_manager)
+        if isinstance(response, dict) and "error" in response:
+            return response
 
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                if (
-                    response_data.get("data", {}).get("action", {}).get("type")
-                    == "CREDEX_ACCEPTED"
-                ):
-                    # Update profile and state
-                    self.profile_manager.update_profile_from_response(
-                        response_data,
-                        "credex_accept",
-                        "credex_accept"
-                    )
-                    logger.info("Accept successful")
-                    return True, response_data
-                else:
-                    logger.error("Accept failed")
-                    return False, {"error": response_data.get("error")}
+        if response.status_code == 200:
+            response_data = response.json()
 
-            else:
-                return self._handle_error_response(
-                    "Accept",
-                    response,
-                    f"Accept failed: Unexpected error (status code: {response.status_code})"
-                )
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_offer",
+                    "data": response_data
+                }
+            })
 
-        except Exception as e:
-            logger.exception(f"Error during accept: {str(e)}")
-            return False, {"error": f"Accept failed: {str(e)}"}
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
+                return {"success": True, "data": validated_response}
 
-    def decline_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Decline a CredEx offer"""
-        logger.info("Attempting to decline CredEx")
-        url = f"{self.base_url}/declineCredex"
-        logger.info(f"Decline URL: {url}")
+            logger.error("Offer failed")
+            return ErrorHandler.handle_system_error(
+                code="OFFER_FAILED",
+                service="credex",
+                action="create_offer",
+                message=response_data.get("error", "Offer failed")
+            )
 
-        payload = {"credexID": credex_id}
-        headers = self._get_headers()
+        return handle_error_response(
+            "Offer",
+            response,
+            f"Offer failed: Unexpected error (status code: {response.status_code})"
+        )
 
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data.get("status") == "success":
-                    # Update profile and state
-                    self.profile_manager.update_profile_from_response(
-                        response_data,
-                        "credex_decline",
-                        "credex_decline"
-                    )
-                    logger.info("Decline successful")
-                    return True, {"message": "Decline successful"}
-                else:
-                    logger.error("Decline failed")
-                    return False, {"error": response_data.get("error")}
+    except Exception as e:
+        logger.exception(f"Error during offer: {str(e)}")
+        return ErrorHandler.handle_system_error(
+            code="OFFER_ERROR",
+            service="credex",
+            action="create_offer",
+            message=f"Offer failed: {str(e)}"
+        )
 
-            else:
-                return self._handle_error_response(
-                    "Decline",
-                    response,
-                    f"Decline failed: Unexpected error (status code: {response.status_code})"
-                )
 
-        except Exception as e:
-            logger.exception(f"Error during decline: {str(e)}")
-            return False, {"error": f"Decline failed: {str(e)}"}
+def accept_credex(state_manager: Any) -> Dict[str, Any]:
+    """Accept a CredEx offer through state validation"""
+    logger.info("Attempting to accept CredEx")
+    url = f"{BASE_URL}/acceptCredex"
+    logger.info(f"Accept URL: {url}")
 
-    def cancel_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Cancel a CredEx offer"""
-        logger.info("Attempting to cancel CredEx")
-        url = f"{self.base_url}/cancelCredex"
-        logger.info(f"Cancel URL: {url}")
+    try:
+        # Let StateManager validate API request
+        state_manager.update_state({
+            "api_request": {
+                "type": "credex_accept",
+                "url": url,
+                "method": "POST"
+            }
+        })
 
-        payload = {"credexID": credex_id}
-        headers = self._get_headers()
+        # Get validated request data
+        headers = get_headers(state_manager)
+        payload = state_manager.get_api_payload()
 
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data.get("message") == "Credex cancelled successfully":
-                    # Update profile and state
-                    self.profile_manager.update_profile_from_response(
-                        response_data,
-                        "credex_cancel",
-                        "credex_cancel"
-                    )
-                    logger.info("Cancel successful")
-                    return True, {"message": "Credex cancelled successfully"}
-                else:
-                    logger.error("Cancel failed")
-                    return False, {"error": response_data.get("error")}
+        # Make request
+        response = make_api_request(url, headers, payload, state_manager=state_manager)
+        if isinstance(response, dict) and "error" in response:
+            return response
 
-            else:
-                return self._handle_error_response(
-                    "Cancel",
-                    response,
-                    f"Cancel failed: Unexpected error (status code: {response.status_code})"
-                )
+        if response.status_code == 200:
+            response_data = response.json()
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_accept",
+                    "data": response_data
+                }
+            })
 
-        except Exception as e:
-            logger.exception(f"Error during cancel: {str(e)}")
-            return False, {"error": f"Cancel failed: {str(e)}"}
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
+                logger.info("Accept successful")
+                return {"success": True, "data": validated_response}
 
-    def get_credex(self, credex_id: str) -> Tuple[bool, Dict[str, Any]]:
-        """Get details of a specific CredEx"""
-        logger.info("Fetching credex details")
-        url = f"{self.base_url}/getCredex"
-        logger.info(f"Credex URL: {url}")
+            logger.error("Accept failed")
+            return ErrorHandler.handle_system_error(
+                code="ACCEPT_FAILED",
+                service="credex",
+                action="accept_offer",
+                message=response_data.get("error", "Accept failed")
+            )
 
-        payload = {"credexID": credex_id}
-        headers = self._get_headers()
+        return handle_error_response(
+            "Accept",
+            response,
+            f"Accept failed: Unexpected error (status code: {response.status_code})"
+        )
 
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                # Update profile and state
-                self.profile_manager.update_profile_from_response(
-                    response_data,
-                    "credex_fetch",
-                    "credex_fetch"
-                )
+    except Exception as e:
+        logger.exception(f"Error during accept: {str(e)}")
+        return ErrorHandler.handle_system_error(
+            code="ACCEPT_ERROR",
+            service="credex",
+            action="accept_offer",
+            message=f"Accept failed: {str(e)}"
+        )
+
+
+def decline_credex(state_manager: Any) -> Dict[str, Any]:
+    """Decline a CredEx offer through state validation"""
+    logger.info("Attempting to decline CredEx")
+    url = f"{BASE_URL}/declineCredex"
+    logger.info(f"Decline URL: {url}")
+
+    try:
+        # Let StateManager validate API request
+        state_manager.update_state({
+            "api_request": {
+                "type": "credex_decline",
+                "url": url,
+                "method": "POST"
+            }
+        })
+
+        # Get validated request data
+        headers = get_headers(state_manager)
+        payload = state_manager.get_api_payload()
+
+        # Make request
+        response = make_api_request(url, headers, payload, state_manager=state_manager)
+        if isinstance(response, dict) and "error" in response:
+            return response
+
+        if response.status_code == 200:
+            response_data = response.json()
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_decline",
+                    "data": response_data
+                }
+            })
+
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
+                logger.info("Decline successful")
+                return {"success": True, "data": validated_response}
+
+            logger.error("Decline failed")
+            return ErrorHandler.handle_system_error(
+                code="DECLINE_FAILED",
+                service="credex",
+                action="decline_offer",
+                message=response_data.get("error", "Decline failed")
+            )
+
+        return handle_error_response(
+            "Decline",
+            response,
+            f"Decline failed: Unexpected error (status code: {response.status_code})"
+        )
+
+    except Exception as e:
+        logger.exception(f"Error during decline: {str(e)}")
+        return ErrorHandler.handle_system_error(
+            code="DECLINE_ERROR",
+            service="credex",
+            action="decline_offer",
+            message=f"Decline failed: {str(e)}"
+        )
+
+
+def cancel_credex(state_manager: Any) -> Dict[str, Any]:
+    """Cancel a CredEx offer through state validation"""
+    logger.info("Attempting to cancel CredEx")
+    url = f"{BASE_URL}/cancelCredex"
+    logger.info(f"Cancel URL: {url}")
+
+    try:
+        # Let StateManager validate API request
+        state_manager.update_state({
+            "api_request": {
+                "type": "credex_cancel",
+                "url": url,
+                "method": "POST"
+            }
+        })
+
+        # Get validated request data
+        headers = get_headers(state_manager)
+        payload = state_manager.get_api_payload()
+
+        # Make request
+        response = make_api_request(url, headers, payload, state_manager=state_manager)
+        if isinstance(response, dict) and "error" in response:
+            return response
+
+        if response.status_code == 200:
+            response_data = response.json()
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_cancel",
+                    "data": response_data
+                }
+            })
+
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
+                logger.info("Cancel successful")
+                return {"success": True, "data": validated_response}
+
+            logger.error("Cancel failed")
+            return ErrorHandler.handle_system_error(
+                code="CANCEL_FAILED",
+                service="credex",
+                action="cancel_offer",
+                message=response_data.get("error", "Cancel failed")
+            )
+
+        return handle_error_response(
+            "Cancel",
+            response,
+            f"Cancel failed: Unexpected error (status code: {response.status_code})"
+        )
+
+    except Exception as e:
+        logger.exception(f"Error during cancel: {str(e)}")
+        return ErrorHandler.handle_system_error(
+            code="CANCEL_ERROR",
+            service="credex",
+            action="cancel_offer",
+            message=f"Cancel failed: {str(e)}"
+        )
+
+
+def get_credex(state_manager: Any) -> Dict[str, Any]:
+    """Get details of a specific CredEx through state validation"""
+    logger.info("Fetching credex details")
+    url = f"{BASE_URL}/getCredex"
+    logger.info(f"Credex URL: {url}")
+
+    try:
+        # Let StateManager validate API request
+        state_manager.update_state({
+            "api_request": {
+                "type": "credex_get",
+                "url": url,
+                "method": "GET"
+            }
+        })
+
+        # Get validated request data
+        headers = get_headers(state_manager)
+        payload = state_manager.get_api_payload()
+
+        # Make request
+        response = make_api_request(url, headers, payload, state_manager=state_manager)
+        if isinstance(response, dict) and "error" in response:
+            return response
+
+        if response.status_code == 200:
+            response_data = response.json()
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_get",
+                    "data": response_data
+                }
+            })
+
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
                 logger.info("Credex fetched successfully")
-                return True, response_data
+                return {"success": True, "data": validated_response}
 
-            else:
-                return self._handle_error_response(
-                    "Credex fetch",
-                    response,
-                    f"Credex fetch failed: Unexpected error (status code: {response.status_code})"
-                )
+        return handle_error_response(
+            "Credex fetch",
+            response,
+            f"Credex fetch failed: Unexpected error (status code: {response.status_code})"
+        )
 
-        except Exception as e:
-            logger.exception(f"Error during credex fetch: {str(e)}")
-            return False, {"error": f"Credex fetch failed: {str(e)}"}
+    except Exception as e:
+        logger.exception(f"Error during credex fetch: {str(e)}")
+        return ErrorHandler.handle_system_error(
+            code="GET_ERROR",
+            service="credex",
+            action="get_offer",
+            message=f"Credex fetch failed: {str(e)}"
+        )
 
-    def accept_bulk_credex(self, credex_ids: list) -> Tuple[bool, Dict[str, Any]]:
-        """Accept multiple CredEx offers"""
-        logger.info("Attempting to accept multiple CredEx offers")
-        url = f"{self.base_url}/acceptCredexBulk"
-        logger.info(f"Accept URL: {url}")
 
-        payload = {"credexIDs": credex_ids}
-        headers = self._get_headers()
+def accept_bulk_credex(state_manager: Any) -> Dict[str, Any]:
+    """Accept multiple CredEx offers through state validation"""
+    logger.info("Attempting to accept multiple CredEx offers")
+    url = f"{BASE_URL}/acceptCredexBulk"
+    logger.info(f"Accept URL: {url}")
 
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data.get("summary", {}).get("accepted"):
-                    # Update profile and state
-                    self.profile_manager.update_profile_from_response(
-                        response_data,
-                        "credex_bulk_accept",
-                        "credex_bulk_accept"
-                    )
-                    logger.info("Bulk accept successful")
-                    return True, response_data
-                else:
-                    logger.error("Bulk accept failed")
-                    return False, {"error": response_data.get("error")}
+    try:
+        # Let StateManager validate API request
+        state_manager.update_state({
+            "api_request": {
+                "type": "credex_bulk_accept",
+                "url": url,
+                "method": "POST"
+            }
+        })
 
-            else:
-                return self._handle_error_response(
-                    "Bulk accept",
-                    response,
-                    f"Bulk accept failed: Unexpected error (status code: {response.status_code})"
-                )
+        # Get validated request data
+        headers = get_headers(state_manager)
+        payload = state_manager.get_api_payload()
 
-        except Exception as e:
-            logger.exception(f"Error during bulk accept: {str(e)}")
-            return False, {"error": f"Bulk accept failed: {str(e)}"}
+        # Make request
+        response = make_api_request(url, headers, payload, state_manager=state_manager)
+        if isinstance(response, dict) and "error" in response:
+            return response
+
+        if response.status_code == 200:
+            response_data = response.json()
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_bulk_accept",
+                    "data": response_data
+                }
+            })
+
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
+                logger.info("Bulk accept successful")
+                return {"success": True, "data": validated_response}
+
+            logger.error("Bulk accept failed")
+            return ErrorHandler.handle_system_error(
+                code="BULK_ACCEPT_FAILED",
+                service="credex",
+                action="bulk_accept",
+                message=response_data.get("error", "Bulk accept failed")
+            )
+
+        return handle_error_response(
+            "Bulk accept",
+            response,
+            f"Bulk accept failed: Unexpected error (status code: {response.status_code})"
+        )
+
+    except Exception as e:
+        logger.exception(f"Error during bulk accept: {str(e)}")
+        return ErrorHandler.handle_system_error(
+            code="BULK_ACCEPT_ERROR",
+            service="credex",
+            action="bulk_accept",
+            message=f"Bulk accept failed: {str(e)}"
+        )
+
+
+def get_ledger(state_manager: Any) -> Dict[str, Any]:
+    """Get user's CredEx ledger through state validation"""
+    logger.info("Fetching CredEx ledger")
+    url = f"{BASE_URL}/getLedger"
+    logger.info(f"Ledger URL: {url}")
+
+    try:
+        # Let StateManager validate API request
+        state_manager.update_state({
+            "api_request": {
+                "type": "credex_ledger",
+                "url": url,
+                "method": "GET"
+            }
+        })
+
+        # Get validated request data
+        headers = get_headers(state_manager)
+        payload = state_manager.get_api_payload()
+
+        # Make request
+        response = make_api_request(url, headers, payload, state_manager=state_manager)
+        if isinstance(response, dict) and "error" in response:
+            return response
+
+        if response.status_code == 200:
+            response_data = response.json()
+            # Let StateManager validate response
+            state_manager.update_state({
+                "api_response": {
+                    "type": "credex_ledger",
+                    "data": response_data
+                }
+            })
+
+            # Get validated response
+            validated_response = state_manager.get_api_response()
+            if validated_response.get("status") == "success":
+                logger.info("Ledger fetched successfully")
+                return {"success": True, "data": validated_response}
+
+        return handle_error_response(
+            "Ledger fetch",
+            response,
+            f"Ledger fetch failed: Unexpected error (status code: {response.status_code})"
+        )
+
+    except Exception as e:
+        logger.exception(f"Error during ledger fetch: {str(e)}")
+        return ErrorHandler.handle_system_error(
+            code="LEDGER_ERROR",
+            service="credex",
+            action="get_ledger",
+            message=f"Ledger fetch failed: {str(e)}"
+        )

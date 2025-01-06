@@ -34,12 +34,8 @@ class WhatsAppMessagingService(BaseMessagingService):
                 "Content-Type": "application/json",
             }
 
-            payload = {
-                "messaging_product": message.messaging_product,
-                "recipient_type": message.recipient_type,
-                "to": message.recipient.phone_number,
-                **message.content
-            }
+            # Use Message's to_dict() method which properly handles channel identifier
+            payload = message.to_dict()
 
             response = requests.post(
                 f"{self.api_url}/{self.phone_number_id}/messages",

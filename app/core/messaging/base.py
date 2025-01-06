@@ -1,5 +1,6 @@
+"""Base messaging service implementation"""
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional
 
 from .exceptions import (
     InvalidMessageTypeError,
@@ -9,14 +10,13 @@ from .exceptions import (
 )
 from .interface import MessagingServiceInterface
 from .types import (
-    AudioContent,
     Button,
-    DocumentContent,
-    ImageContent,
+    InteractiveContent,
+    InteractiveType,
     Message,
+    MessageContent,
     MessageRecipient,
-    MessageType,
-    VideoContent,
+    TextContent,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,27 +25,36 @@ logger = logging.getLogger(__name__)
 class BaseMessagingService(MessagingServiceInterface):
     """Base class implementing common messaging functionality"""
 
-    def send_message(self, message: Message) -> Dict[str, Any]:
+    def send_message(self, message: Message) -> Message:
         """Send a message to a recipient"""
         if not self.validate_message(message):
-            raise MessageValidationError("Invalid message")
+            raise MessageValidationError(
+                message="Invalid message",
+                service="messaging",
+                action="send_message",
+                validation_details={
+                    "message_type": message.content.type if message and message.content else None,
+                    "validation_error": "Message validation failed"
+                }
+            )
 
         return self._send_message(message)
 
     def send_text(
         self, recipient: MessageRecipient, text: str, preview_url: bool = False
-    ) -> Dict[str, Any]:
+    ) -> Message:
         """Send a text message"""
         if not text:
-            raise MessageFormatError("Text content cannot be empty")
+            raise MessageFormatError(
+                message="Text content cannot be empty",
+                service="messaging",
+                action="send_text",
+                format_details={"field": "text", "error": "empty"}
+            )
 
         message = Message(
             recipient=recipient,
-            content={
-                "type": MessageType.TEXT,
-                "text": {"body": text},
-                "preview_url": preview_url
-            }
+            content=TextContent(body=text, preview_url=preview_url)
         )
         return self.send_message(message)
 
@@ -56,80 +65,35 @@ class BaseMessagingService(MessagingServiceInterface):
         buttons: List[Button],
         header: Optional[str] = None,
         footer: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> Message:
         """Send an interactive message"""
         if not body:
-            raise MessageFormatError("Message body cannot be empty")
+            raise MessageFormatError(
+                message="Message body cannot be empty",
+                service="messaging",
+                action="send_interactive",
+                format_details={"field": "body", "error": "empty"}
+            )
         if not buttons:
-            raise MessageFormatError("Interactive message must have buttons")
+            raise MessageFormatError(
+                message="Interactive message must have buttons",
+                service="messaging",
+                action="send_interactive",
+                format_details={"field": "buttons", "error": "empty"}
+            )
 
+        content = InteractiveContent(
+            interactive_type=InteractiveType.BUTTON,
+            body=body,
+            buttons=buttons,
+            header=header,
+            footer=footer
+        )
         message = Message(
             recipient=recipient,
-            content={
-                "type": MessageType.INTERACTIVE,
-                "interactive": {
-                    "type": "button",
-                    "body": {"text": body},
-                    "action": {
-                        "buttons": [
-                            {"type": btn.type, "reply": {"id": btn.id, "title": btn.title}}
-                            for btn in buttons
-                        ]
-                    }
-                }
-            }
+            content=content
         )
 
-        if header:
-            message.content["interactive"]["header"] = {"type": "text", "text": header}
-        if footer:
-            message.content["interactive"]["footer"] = {"text": footer}
-
-        return self.send_message(message)
-
-    def send_media(
-        self,
-        recipient: MessageRecipient,
-        content: Union[ImageContent, DocumentContent, AudioContent, VideoContent],
-    ) -> Dict[str, Any]:
-        """Send a media message"""
-        if not content.url:
-            raise MessageFormatError("Media URL is required")
-
-        message = Message(
-            recipient=recipient,
-            content={
-                "type": content.type,
-                content.type.value: {
-                    "link": content.url,
-                    **({"caption": content.caption} if content.caption else {}),
-                    **({"filename": content.filename} if content.filename else {})
-                }
-            }
-        )
-        return self.send_message(message)
-
-    def send_location(
-        self,
-        recipient: MessageRecipient,
-        latitude: float,
-        longitude: float,
-        name: Optional[str] = None,
-        address: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Send a location message"""
-        message = Message(
-            recipient=recipient,
-            content={
-                "type": MessageType.LOCATION,
-                "location": {
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    **({"name": name} if name else {}),
-                    **({"address": address} if address else {})
-                }
-            }
-        )
         return self.send_message(message)
 
     def validate_message(self, message: Message) -> bool:
@@ -144,26 +108,65 @@ class BaseMessagingService(MessagingServiceInterface):
 
     def _validate_recipient(self, recipient: MessageRecipient) -> None:
         """Validate recipient information"""
-        if not recipient.phone_number:
-            raise InvalidRecipientError("Recipient phone number is required")
+        if not recipient.channel_id:
+            raise InvalidRecipientError("Channel identifier is required")
+        if not recipient.channel_id.value:
+            raise InvalidRecipientError("Channel identifier value is required")
 
-    def _validate_content(self, content: Dict[str, Any]) -> None:
+    def _validate_content(self, content: MessageContent) -> None:
         """Validate message content"""
-        if not content or "type" not in content:
-            raise MessageFormatError("Message content must have a type")
+        # Validate content is a MessageContent instance
+        if not isinstance(content, MessageContent):
+            raise MessageFormatError(
+                message="Invalid message content type",
+                service="messaging",
+                action="validate_content",
+                format_details={
+                    "expected": "MessageContent",
+                    "received": type(content).__name__
+                }
+            )
 
-        try:
-            message_type = MessageType(content["type"])
-        except ValueError:
-            raise InvalidMessageTypeError(f"Invalid message type: {content['type']}")
+        # Validate content has a type
+        if not hasattr(content, 'type'):
+            raise MessageFormatError(
+                message="Message content must have a type field",
+                service="messaging",
+                action="validate_content",
+                format_details={"error": "missing_type_field"}
+            )
 
-        # Additional type-specific validation can be added here
-        if message_type == MessageType.TEXT and (
-            "text" not in content or "body" not in content["text"]
-        ):
-            raise MessageFormatError("Text message must have a body")
+        # Validate type is set
+        if not content.type:
+            raise MessageFormatError(
+                message="Message content must have a type value",
+                service="messaging",
+                action="validate_content",
+                format_details={"error": "missing_type_value"}
+            )
 
-    def _send_message(self, message: Message) -> Dict[str, Any]:
+        # Type-specific validation
+        if isinstance(content, TextContent):
+            if not hasattr(content, 'body') or not content.body:
+                raise MessageFormatError(
+                    message="Text content must have a body",
+                    service="messaging",
+                    action="validate_content",
+                    format_details={"error": "missing_body"}
+                )
+            if not isinstance(content.body, str):
+                raise MessageFormatError(
+                    message="Text content body must be a string",
+                    service="messaging",
+                    action="validate_content",
+                    format_details={
+                        "error": "invalid_body_type",
+                        "expected": "str",
+                        "received": type(content.body).__name__
+                    }
+                )
+
+    def _send_message(self, message: Message) -> Message:
         """Internal method to send the message
 
         This should be implemented by specific provider implementations

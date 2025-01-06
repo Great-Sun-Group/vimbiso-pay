@@ -1,229 +1,325 @@
 # State Management
 
-## Overview
+## Code Reading Guide
+Before modifying state management, read these files in order:
 
-VimbisoPay uses a state management system built on Redis that strictly enforces SINGLE SOURCE OF TRUTH:
-- Member ID exists ONLY at top level state
-- Channel info exists ONLY at top level state
-- No duplication of data in flow_data
-- All components access data from single source
+1. core/config/state_manager.py - Understand central state management
+   - Learn state access patterns
+   - Understand state updates
+   - Review state validation
 
-Core features:
-- Atomic state operations
-- Stateful conversations
-- Multi-step form handling
-- Error recovery
-- Comprehensive audit logging
+2. core/utils/state_validator.py - Learn validation rules
+   - Understand state validation
+   - Learn validation patterns
+   - Review validation rules
 
-## Architecture
+3. core/messaging/base.py - Understand state usage
+   - Learn state integration
+   - Understand state flow
+   - Review state patterns
 
-### 1. Core Components
+4. core/config/atomic_state.py - Learn atomic operations
+   - Understand state atomicity
+   - Learn transaction patterns
+   - Review rollback handling
 
-- **AtomicStateManager** (redis_atomic.py)
-  - Handles atomic Redis operations
-  - Manages version tracking
-  - Handles concurrent modifications
-  - Manages TTL and cleanup
+Common mistakes to avoid:
+1. DON'T modify state without understanding validation
+2. DON'T bypass state manager for direct access
+3. DON'T mix state responsibilities
+4. DON'T duplicate state across components
 
-- **StateValidator** (state_validator.py)
-  - Validates member and channel structure
-  - Validates state structure
-  - Checks field types
-  - Ensures critical field preservation
-  - Provides validation results
+## Core Principles
 
-- **FlowStateManager** (flow_state.py)
-  - Manages flow state transitions
-  - Accesses member_id from top level state
-  - Accesses channel info from top level state
-  - Handles validation state
-  - Provides rollback mechanisms
-  - Preserves context during transitions
+1. **Single Source of Truth**
+- Member ID accessed through get_member_id()
+- Channel info accessed through get_channel_id()
+- JWT token accessed through flow_data auth
+- NO direct state access
+- NO state passing
+- NO transformation
 
-- **FlowAuditLogger** (flow_audit.py)
-  - Logs flow events with member context
-  - Tracks state transitions
-  - Records validation results
-  - Provides error context
-  - Enables state recovery
+2. **Simple Structure**
+- Common configurations
+- Clear boundaries
+- Standard validation
+- Flow metadata
+- NO complex hierarchies
+- NO redundant wrapping
 
-### 2. State Structure
+3. **Pure Functions**
+- Stateless operations
+- Clear validation
+- Standard updates
+- NO stored state
+- NO side effects
+- NO manual handling
 
-Core state includes:
+4. **Central Management**
+- Single state manager
+- Standard validation
+- Clear boundaries
+- Progress tracking
+- NO manual updates
+- NO local state
+
+## State Structure
+
+### 1. Core Identity
 ```python
 {
-    # Core identity - SINGLE SOURCE OF TRUTH
-    "member_id": "unique_member_id",  # Primary identifier, ONLY AND ALWAYS at top level
-
-    # Channel information
-    "channel": {
-        "type": "whatsapp",
-        "identifier": "channel_specific_id"
+    # Accessed through proper methods
+    "member_id": str,     # Use get_member_id()
+    "channel": {          # Use get_channel_id()
+        "type": str,      # Use get_channel_type()
+        "identifier": str
     },
-
-    # Authentication
-    "jwt_token": "token",  # 5-minute expiry
-    "authenticated": true,
-
-    # Profile and accounts
-    "profile": { ... },
-    "current_account": { ... },
-
-    # Flow state
-    "flow_data": {
-        "id": "flow_id",
-        "step": current_step,
-        "data": {
-            "flow_type": "flow_type",
-            "_validation_context": {},
-            "_validation_state": {}
-        }
-    },
-
-    # Version and audit
-    "_version": 1,
-    "_last_updated": timestamp
+    "jwt_token": str     # Accessed through flow_data auth
 }
 ```
 
-Flow state includes:
-- Current step and data
-- Flow type information
-- Minimal validation state in flow_data.data
-- Previous state for rollback
-- Version information
-- Smart recovery paths
+### 2. Flow State
+```python
+{
+    "flow_data": {
+        # Flow identification
+        "flow_type": str,     # Type of flow
+        "handler_type": str,  # Handler responsible
+        "step": str,         # Current step
+        "step_index": int,   # Current position
+        "total_steps": int,  # Total steps
 
-Note: Member ID and channel info are ONLY stored at top level as SINGLE SOURCE OF TRUTH
+        # Validation tracking
+        "active_component": {
+            "type": str,     # Component type
+            "validation": {
+                "in_progress": bool,
+                "error": Optional[Dict],
+                "attempts": int,
+                "last_attempt": Any
+            }
+        }
+    }
+}
+```
 
-### 3. Key Features
+## Access Patterns
 
-1. **Member Management**
-   - Member ID as SINGLE SOURCE OF TRUTH at top level
-   - No duplication of member info in flow_data
-   - Access member_id only from top level state
-   - Member-specific validation at top level
-   - Cross-channel state through top level identifiers
+### 1. State Access
+```python
+# CORRECT - Use proper accessor methods
+channel_id = state_manager.get_channel_id()
+member_id = state_manager.get_member_id()
 
-2. **Channel Handling**
-   - Channel info as SINGLE SOURCE OF TRUTH at top level
-   - No duplication of channel info in flow_data
-   - Access channel info only from top level state
-   - Channel validation at top level
-   - Cross-channel support through top level abstraction
+# WRONG - Direct state access
+channel = state_manager.get("channel")  # Don't access directly!
+member_id = state_manager.get("member_id")  # Don't access directly!
+```
 
-3. **Version Management**
-   - Incremental version tracking
-   - Conflict detection
-   - Automatic retries
-   - Version preservation
+### 2. Validation Updates
+```python
+# CORRECT - Update with validation tracking
+state_manager.update_state({
+    "flow_data": {
+        "active_component": {
+            "type": "input",
+            "validation": {
+                "in_progress": True,
+                "attempts": current + 1,
+                "last_attempt": datetime.utcnow()
+            }
+        }
+    }
+})
 
-4. **TTL Management**
-   - 5-minute session timeout
-   - Aligned TTLs for related data
-   - Automatic cleanup
-   - Core field preservation
-
-5. **Smart Recovery**
-   - Member context preservation
-   - Channel state recovery
-   - Multi-step recovery paths
-   - Last valid state restoration
-   - Clear error messages
-   - Recovery attempt logging
-
-6. **Audit Logging**
-   - Member-centric event tracking
-   - Channel context logging
-   - State transition history
-   - Validation result logging
-   - Error scenario documentation
-   - Recovery attempt tracking
-
-## Redis Configuration
-
-Uses dedicated Redis instance with:
-- Atomic operations support
-- Persistence enabled
-- Memory limits
-- Independent scaling
+# WRONG - Update without tracking
+state_manager.update_state({
+    "value": new_value  # Don't update without validation!
+})
+```
 
 ## Best Practices
 
-1. **Member-Centric Design**
-   - Keep member_id ONLY at top level state
-   - Never duplicate member info in flow_data
-   - Always access member_id from top level
-   - Validate member info at top level only
-   - Maintain SINGLE SOURCE OF TRUTH
+1. **State Access**
+- Use proper accessor methods
+- Validate through updates
+- Track all attempts
+- NO direct access
+- NO assumptions
+- NO default values
 
-2. **Channel Management**
-   - Keep channel info ONLY at top level state
-   - Never duplicate channel info in flow_data
-   - Always access channel info from top level
-   - Validate channel info at top level only
-   - Maintain SINGLE SOURCE OF TRUTH
+2. **State Updates**
+- Include validation tracking
+- Track all attempts
+- Include error context
+- NO manual updates
+- NO transformation
+- NO state fixing
 
-3. **State Updates**
+3. **Flow State**
+- Clear boundaries
+- Standard structure
+- Track progress
+- Track validation
+- NO mixed concerns
+- NO manual handling
+
+4. **Error Handling**
+- Update state with errors
+- Track validation failures
+- Include error context
+- NO manual handling
+- NO local recovery
+- NO state fixing
+
+## Integration Points
+
+The state system has specific integration points with other systems:
+
+### Flow Integration
+- Flow state managed centrally
+- Flow progression updates state
+- Flow validation through state
+- Flow errors update state
+
+### Component Integration
+- Components access state properly
+- Component validation through state
+- Component state properly tracked
+- State updates validated
+
+### Error Integration
+- Error state properly tracked
+- Error history maintained
+- Validation state updated
+- Error context preserved
+
+### Message Integration
+- Message state properly tracked
+- Message history maintained
+- State updates validated
+- Context preserved
+
+### API Integration
+- API state properly managed
+- Credentials handled securely
+- State updates atomic
+- Context maintained
+
+Common mistakes to avoid:
+1. DON'T bypass state integration points
+2. DON'T create new state paths
+3. DON'T mix state responsibilities
+4. DON'T lose state context
+
+## Common Modifications
+
+### Adding New State Types
+1. Check state_manager.py for patterns
+2. Add state structure
+3. Update validation rules
+4. Add access methods
+5. Test state handling
+
+Example:
+```python
+def add_new_state(self, new_state: Dict[str, Any]) -> None:
+    """Add new state with validation"""
+    # Validate new state
+    if not self.validate_new_state(new_state):
+        raise ValidationError("Invalid new state")
+
+    # Update with atomic operation
+    with self.atomic_update():
+        self.state.update({
+            "new_state": {
+                "data": new_state,
+                "timestamp": datetime.utcnow().isoformat(),
+                "validation": {
+                    "valid": True,
+                    "last_check": datetime.utcnow().isoformat()
+                }
+            }
+        })
+```
+
+### Modifying State Access
+1. Check existing access patterns
+2. Update access methods
+3. Maintain validation
+4. Test state access
+
+### Adding State Validation
+1. Check validation rules
+2. Add validation logic
+3. Update state handling
+4. Test validation
+
+Common mistakes to avoid:
+1. DON'T create new patterns when existing ones exist
+2. DON'T bypass state manager
+3. DON'T mix validation responsibilities
+4. DON'T duplicate validation logic
+
+## Architecture Rules
+
+Key principles that must be followed:
+
+1. State Manager is Single Source of Truth
+   - All state access through manager
+   - No direct state modification
+   - No state duplication
+
+2. Proper State Validation
+   - All updates validated
+   - No invalid state
+   - No validation bypass
+
+3. Atomic State Updates
    - Use atomic operations
-   - Validate member and channel
-   - Keep validation minimal
-   - Handle concurrent access
-   - Log key transitions
+   - Handle rollbacks properly
+   - Maintain consistency
 
-4. **Flow Integration**
-   - Use FlowStateManager
-   - Access member_id from top level state
-   - Access channel info from top level state
-   - Keep validation in flow_data.data
-   - Handle transitions efficiently
-   - Implement smart recovery
-   - Focus audit trail
+4. Clear State Boundaries
+   - State properly isolated
+   - No mixed responsibilities
+   - No cross-boundary access
 
-5. **Error Handling**
-   - Preserve member context
-   - Handle channel errors
-   - Use structured errors
-   - Log error details
-   - Clean up properly
-   - Enable automatic recovery
+5. Secure State Handling
+   - Credentials properly managed
+   - No sensitive data exposure
+   - No security bypass
 
-6. **Audit Trail**
-   - Include member context
-   - Log channel information
-   - Track state transitions
-   - Record validation results
-   - Document error scenarios
-   - Monitor recovery attempts
-   - Maintain debugging context
+Common mistakes to avoid:
+1. DON'T access state directly
+2. DON'T bypass validation
+3. DON'T break atomicity
+4. DON'T mix state responsibilities
 
-## Migration Considerations
+## State Management
 
-1. **State Structure**
-   - Move member_id to SINGLE SOURCE OF TRUTH at top level
-   - Move channel info to SINGLE SOURCE OF TRUTH at top level
-   - Remove any duplicated data from flow_data
-   - Convert mobile_number to channel identifier at top level
+### State Access
+- Use proper accessor methods
+- Validate all access
+- Track access patterns
 
-2. **Flow Updates**
-   - Update flows to access member_id from top level only
-   - Update flows to access channel info from top level only
-   - Remove any duplicated data access
-   - Enforce SINGLE SOURCE OF TRUTH in all flows
+### State Updates
+- Use atomic operations
+- Include validation
+- Track all updates
 
-3. **Data Migration**
-   - Consolidate member info to top level
-   - Consolidate channel info to top level
-   - Clean up duplicated data in flow_data
-   - Maintain SINGLE SOURCE OF TRUTH during migration
+### Validation State
+- Track all validation
+- Include timestamps
+- Maintain context
 
-4. **Validation**
-   - Validate member_id at top level only
-   - Validate channel info at top level only
-   - Remove duplicate validation checks
-   - Enforce SINGLE SOURCE OF TRUTH in validators
+### State History
+- Track state changes
+- Maintain timestamps
+- Record context
 
-For more details on:
-- Flow Framework: [Flow Framework](flow-framework.md)
-- Redis Management: [Redis Memory Management](redis-memory-management.md)
-- Security: [Security](security.md)
+Common mistakes to avoid:
+1. DON'T access state directly
+2. DON'T update without validation
+3. DON'T bypass atomicity
+4. DON'T lose state history

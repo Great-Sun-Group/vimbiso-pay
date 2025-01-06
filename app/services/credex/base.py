@@ -1,216 +1,176 @@
-import logging
-import sys
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+"""Base CredEx functionality using pure functions"""
+from typing import Any, Dict
 
 import requests
-from core.transactions.exceptions import TransactionError
+from core.utils.error_handler import ErrorHandler
+from datetime import datetime
 
-if TYPE_CHECKING:
-    from .config import CredExConfig
-
-# Configure logging to output to stdout with DEBUG level
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-
-logger = logging.getLogger(__name__)
+from .config import CredExConfig, CredExEndpoints
 
 
-class BaseCredExService:
-    """Base class with core CredEx service functionality"""
+def make_credex_request(
+    group: str,
+    action: str,
+    payload: Dict[str, Any] = None,
+    state_manager: Any = None,
+    method: str = "POST"
+) -> Dict[str, Any]:
+    """Make an HTTP request to the CredEx API using endpoint groups"""
+    try:
+        # Get endpoint info
+        path = CredExEndpoints.get_path(group, action)
+        # Build request
+        config = CredExConfig.from_env()
+        url = config.get_url(path)
+        headers = config.get_headers()
 
-    def __init__(self, config: Optional['CredExConfig'] = None):
-        """Initialize the base service
+        # Check if endpoint requires authentication
+        if CredExEndpoints.requires_auth(group, action):
+            # Update state with auth request
+            state_manager.update_state({
+                "flow_data": {
+                    "type": "auth_request",
+                    "data": {
+                        "endpoint": f"{method}_{path}"
+                    }
+                }
+            })
 
-        Args:
-            config: Service configuration. If not provided, loads from environment.
-        """
-        # Import here to avoid circular imports
-        from .config import CredExConfig
-        self.config = config or CredExConfig.from_env()
-        self._jwt_token: Optional[str] = None
-        self._phone: Optional[str] = None  # Store phone for token refresh
-        logger.debug(f"Initialized BaseCredExService with base_url: {self.config.base_url}")
-
-    def _extract_error_message(self, response: requests.Response) -> str:
-        """Extract the most user-friendly error message from a response"""
-        try:
-            # Try to parse response as JSON
+            # Let StateManager validate auth through update
             try:
-                error_data = response.json()
-                logger.debug(f"Response content: {error_data}")
-            except Exception:
-                logger.debug(f"Non-JSON response: {response.text}")
-                error_data = {}
+                channel_id = state_manager.get_channel_id()
+                headers["Authorization"] = f"Bearer {state_manager.get_flow_data().get('auth', {}).get('token')}"
+            except Exception as e:
+                return ErrorHandler.handle_system_error(
+                    code="AUTH_REQUIRED",
+                    service="credex",
+                    action=f"{method}_{path}",
+                    message=str(e)
+                )
 
-            # Direct message in response
-            if error_data.get("message"):
-                return error_data["message"]
+        # For auth endpoints, get channel info through state manager
+        if group == 'auth' and action == 'login':
+            try:
+                channel_id = state_manager.get_channel_id()
+                payload = {"phone": channel_id}
+            except Exception as e:
+                return ErrorHandler.handle_system_error(
+                    code="CHANNEL_REQUIRED",
+                    service="credex",
+                    action="login",
+                    message=str(e)
+                )
 
-            # Check for business logic errors in action.details
-            action = error_data.get("data", {}).get("action", {})
-            if action.get("type") == "CREDEX_CREATE_FAILED":
-                details = action.get("details", {})
-                if details.get("reason"):
-                    return details["reason"]
+        # Get current flow state for validation tracking
+        flow_state = state_manager.get_flow_state() or {}
+        current_validation = flow_state.get("validation", {})
+        current_step_index = flow_state.get("step_index", 0)
+        total_steps = flow_state.get("total_steps", 1)
 
-            # Check for error details
-            if error_data.get("error"):
-                return error_data["error"]
+        # Create standardized validation state
+        validation_state = {
+            "in_progress": True,
+            "attempts": current_validation.get("attempts", 0) + 1,
+            "last_attempt": {
+                "group": group,
+                "action": action,
+                "payload": payload,
+                "timestamp": datetime.utcnow().isoformat()
+            },
+            "operation": "api_request",
+            "component": "credex",
+            "timestamp": datetime.utcnow().isoformat()
+        }
 
-            # Check for specific error conditions
-            if "Required field missing" in str(error_data):
-                return "Please check your input and try again."
-            elif response.status_code == 404:
-                # Check if this is a member not found case
-                if "Member not found" in str(error_data):
-                    return "Member not found"
-                return "Recipient account not found. Please check the handle and try again."
-            elif response.status_code == 403:
-                return "You don't have permission to perform this action."
-            elif response.status_code == 502:
-                return "The service is temporarily unavailable. Please try again in a few minutes."
-            elif response.status_code >= 500:
-                return "The service is experiencing technical difficulties. Please try again later."
-
-            # Last resort - return raw response content if nothing else found
-            if error_data:
-                return str(error_data)
-
-            return f"Server error {response.status_code}. Please try again."
-        except Exception as e:
-            logger.error(f"Error extracting error message: {str(e)}")
-            return f"Server error {response.status_code}. Please try again."
-
-    def _make_request(
-        self,
-        endpoint: str,
-        method: str = "POST",
-        payload: Optional[Dict[str, Any]] = None,
-        require_auth: bool = True,
-    ) -> requests.Response:
-        """Make an HTTP request to the CredEx API"""
-        url = self.config.get_url(endpoint)
-        headers = self.config.get_headers(self._jwt_token if require_auth else None)
-
-        logger.info(f"Making {method} request to {endpoint}")
-        logger.debug(f"Full URL: {url}")
-        logger.debug(f"Headers: {headers}")
-        logger.debug(f"Payload: {payload}")
+        # Update flow state with validation tracking
+        state_manager.update_state({
+            "flow_data": {
+                "flow_type": flow_state.get("flow_type"),
+                "step": flow_state.get("step"),
+                "step_index": current_step_index,
+                "total_steps": total_steps,
+                "handler_type": "credex",
+                "active_component": {
+                    "type": "api_request",
+                    "validation": validation_state
+                },
+                "data": {
+                    **flow_state.get("data", {}),
+                    "request": {
+                        "group": group,
+                        "action": action,
+                        "payload": payload,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                }
+            }
+        })
 
         try:
+            # Make request
             response = requests.request(method, url, headers=headers, json=payload)
 
-            logger.debug(f"Response status: {response.status_code}")
-            logger.debug(f"Response headers: {dict(response.headers)}")
-            logger.debug(f"Response content: {response.text}")
+            # Handle API errors with validation tracking
+            if not response.ok:
+                validation_state.update({
+                    "in_progress": False,
+                    "error": {
+                        "code": "API_ERROR",
+                        "status_code": response.status_code,
+                        "message": f"API request failed: {response.status_code}",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                })
 
-            # Check for new token in response headers for token refresh
-            new_token = response.headers.get('Authorization')
-            if new_token:
-                self._jwt_token = new_token
-                # Update parent service's user state if available
-                if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
-                    self._parent_service.user.state.set_jwt_token(new_token)
-                    logger.debug("Updated parent service user state with refreshed token")
+                return ErrorHandler.handle_system_error(
+                    code="API_ERROR",
+                    service="credex",
+                    action=f"{method}_{path}",
+                    message=f"API request failed: {response.status_code}",
+                    details={
+                        "status_code": response.status_code,
+                        "response": response.json() if response.headers.get("content-type") == "application/json" else response.text
+                    },
+                    validation_state=validation_state
+                )
 
-            if response.status_code == 401 and require_auth:
-                logger.warning("Authentication failed, attempting to refresh token")
-                if payload and "phone" in payload:
-                    # Store phone for future token refreshes
-                    self._phone = payload["phone"]
-                    # This will be implemented in auth.py
-                    from .auth import CredExAuthService
-                    auth_service = CredExAuthService(config=self.config)
-                    logger.debug(f"Attempting to refresh token for phone: {payload['phone']}")
-                    success, msg = auth_service.login(payload["phone"])
-                    logger.debug(f"Token refresh result: success={success}, msg={msg}")
-                    if success:
-                        # Update token and propagate to parent service if available
-                        self._jwt_token = auth_service._jwt_token
-                        if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
-                            self._parent_service.user.state.set_jwt_token(self._jwt_token)
-                            logger.debug("Updated parent service user state with refreshed token")
-                        headers = self.config.get_headers(self._jwt_token)
-                        logger.debug("Making request with refreshed token")
-                        response = requests.request(method, url, headers=headers, json=payload)
-                        logger.debug(f"Refresh response status: {response.status_code}")
-                        logger.debug(f"Refresh response content: {response.text}")
-                    else:
-                        raise TransactionError("Authentication failed. Please try again.")
+            # Update validation state for success
+            validation_state.update({
+                "in_progress": False,
+                "error": None,
+                "timestamp": datetime.utcnow().isoformat()
+            })
 
-            # Check for error responses
-            if response.status_code >= 400:
-                error_msg = self._extract_error_message(response)
-                logger.error(error_msg)  # Log the actual error message without prefix
+            # Update flow state with success
+            state_manager.update_state({
+                "flow_data": {
+                    "active_component": {
+                        "type": "api_request",
+                        "validation": validation_state
+                    }
+                }
+            })
 
-                # Don't raise error for login attempts (when require_auth is False)
-                # This allows auth.py to handle the response
-                if require_auth:
-                    raise TransactionError(error_msg)
-
-            return response
+            # Return response data with validation
+            response_data = response.json()
+            response_data["_validation"] = validation_state
+            return response_data
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during API request: {str(e)}")
-            raise TransactionError("Network error. Please check your connection and try again.")
+            # Handle network errors
+            return ErrorHandler.handle_system_error(
+                code="CONNECTION_ERROR",
+                service="credex",
+                action=f"{method}_{path}",
+                message=f"Connection error: {str(e)}",
+                details={"url": url}
+            )
 
-    def _validate_response(
-        self, response: requests.Response, error_mapping: Optional[Dict[int, str]] = None
-    ) -> Dict[str, Any]:
-        """Validate API response"""
-        try:
-            content_type = response.headers.get("Content-Type", "")
-            logger.info(f"Validating API response for status code {response.status_code}")
-            logger.debug(f"Content-Type: {content_type}")
-            logger.debug(f"Response text: {response.text}")
-
-            if "application/json" not in content_type.lower():
-                logger.error(f"Unexpected Content-Type: {content_type}")
-                raise TransactionError("Invalid response from server. Please try again.")
-
-            try:
-                data = response.json()
-                logger.debug(f"Parsed JSON response: {data}")
-            except ValueError:
-                logger.error(f"Failed to parse response as JSON: {response.text}")
-                raise TransactionError("Invalid response format. Please try again.")
-
-            if response.status_code >= 400:
-                error_msg = error_mapping.get(response.status_code) if error_mapping else None
-                if not error_msg:
-                    error_msg = self._extract_error_message(response)
-                logger.error(error_msg)  # Log the actual error message without prefix
-                raise TransactionError(error_msg)
-
-            return data
-
-        except ValueError as e:
-            logger.error(f"Failed to parse API response: {str(e)}")
-            raise TransactionError("Invalid response from server. Please try again.")
-
-    def _handle_error_response(self, response: requests.Response, error_mapping: Dict[int, str]) -> Tuple[bool, Dict[str, Any]]:
-        """Handle error response with proper error mapping"""
-        try:
-            error_msg = self._extract_error_message(response)
-            return False, {"message": error_msg}
-        except Exception as e:
-            logger.error(f"Error handling error response: {str(e)}")
-            return False, {"message": str(e)}
-
-    @property
-    def jwt_token(self) -> Optional[str]:
-        """Get the current JWT token"""
-        return self._jwt_token
-
-    @jwt_token.setter
-    def jwt_token(self, value: str):
-        """Set the JWT token"""
-        logger.debug("Setting new JWT token")
-        self._jwt_token = value
-        # Update parent service's user state if available
-        if hasattr(self, '_parent_service') and hasattr(self._parent_service, 'user'):
-            self._parent_service.user.state.set_jwt_token(value)
-            logger.debug("Updated parent service user state with new token")
+    except Exception as e:
+        # Handle unexpected errors
+        return ErrorHandler.handle_system_error(
+            code="REQUEST_ERROR",
+            service="credex",
+            action=f"{group}_{action}",
+            message=str(e)
+        )

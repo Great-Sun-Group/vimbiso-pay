@@ -1,279 +1,229 @@
-"""Unified state validation for flow management"""
-import logging
-from typing import Dict, Any
-from .validator_interface import ValidationResult
+"""State validation with clear boundaries
 
-logger = logging.getLogger(__name__)
+This module provides simple state validation focused on:
+- Core state structure
+- Flow state validation
+- Channel validation
+"""
+
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+
+
+@dataclass
+class ValidationResult:
+    """Result of state validation"""
+    is_valid: bool
+    error_message: Optional[str] = None
 
 
 class StateValidator:
-    """Centralized state validation for core state structure"""
+    """Validates state structure with clear boundaries"""
 
-    CRITICAL_FIELDS = {
-        "member_id",    # Primary identifier
-        "channel",      # Channel information
-        "profile",      # User profile
-        "account_id",   # Account reference
-        "flow_data"     # Flow state
-    }
+    # Core state fields that can't be modified once set
+    CORE_FIELDS = {"member_id", "channel", "jwt_token"}
 
-    CHANNEL_FIELDS = {
-        "type",         # Channel type (e.g. whatsapp)
-        "identifier",   # Channel-specific identifier
-        "metadata"      # Channel-specific metadata
+    # Flow validation rules
+    FLOW_RULES = {
+        # Required fields in flow_data
+        "required_fields": {
+            "flow_type": str,
+            "handler_type": str,
+            "step": str,
+            "step_index": int,
+            "total_steps": int
+        },
+
+        # Required fields in active_component
+        "component_fields": {
+            "type": str,
+            "validation": {
+                "in_progress": bool,
+                "error": (type(None), dict),
+                "attempts": int,
+                "last_attempt": (type(None), str, int, float, bool, dict, list)
+            }
+        },
+
+        # Valid handler types
+        "handler_types": {"member", "account", "credex"},
+
+        # Flow type validation is now handled by FlowRegistry
     }
 
     @classmethod
-    def validate_state(cls, state: Dict[str, Any], preserve_context: bool = True) -> ValidationResult:
-        """
-        Validate core state structure and enforce SINGLE SOURCE OF TRUTH
-
-        Args:
-            state: State dictionary to validate
-            preserve_context: Whether to preserve validation context in validation
-        """
-        # First convert legacy mobile_number to channel identifier
-        if "mobile_number" in state and "channel" not in state:
-            state["channel"] = {
-                "type": "whatsapp",
-                "identifier": state["mobile_number"],
-                "metadata": {}
-            }
-            del state["mobile_number"]
+    def validate_state(cls, state: Dict[str, Any]) -> ValidationResult:
+        """Validate complete state structure"""
+        # Validate state is dictionary
         if not isinstance(state, dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="State must be a dictionary"
             )
 
-        # Get required fields based on context preservation
-        required_fields = cls.CRITICAL_FIELDS
-        if not preserve_context:
-            # Exclude context fields if not preserving
-            required_fields = {
-                f for f in required_fields
-                if not f.startswith('_')
-            }
-
-        # Validate and enforce channel structure, even during greeting
-        if "channel" in state:
-            channel_validation = cls.validate_channel_structure(state["channel"])
-            if not channel_validation.is_valid:
-                return channel_validation
-
-            # Ensure no duplicate channel info in flow_data
-            if "flow_data" in state and isinstance(state["flow_data"], dict):
-                flow_data = state["flow_data"]
-                if "data" in flow_data and isinstance(flow_data["data"], dict):
-                    if "channel" in flow_data["data"]:
-                        del flow_data["data"]["channel"]
-                    if "mobile_number" in flow_data["data"]:
-                        del flow_data["data"]["mobile_number"]
-
-        # Allow minimal state during greeting but ensure proper structure
-        if not state.get("authenticated", False):
-            return ValidationResult(is_valid=True)
-
-        # For non-greeting states, check for required fields
-        state_keys = set(state.keys())
-        missing = required_fields - state_keys
-
-        if missing:
+        # Validate channel exists and structure
+        if "channel" not in state:
             return ValidationResult(
                 is_valid=False,
-                error_message="Missing required fields: " + ", ".join(missing),
-                missing_fields=missing
+                error_message="Missing required field: channel"
             )
 
-        # Validate profile structure
-        profile_validation = cls.validate_profile_structure(state.get("profile", {}))
-        if not profile_validation.is_valid:
-            return profile_validation
-
-        # Validate current_account structure if not empty
-        current_account = state.get("current_account", {})
-        if current_account:  # Only validate if account has data
-            account_validation = cls.validate_account_structure(current_account)
-            if not account_validation.is_valid:
-                return account_validation
-
-        # Validate member_id is at top level - SINGLE SOURCE OF TRUTH
-        if "member_id" not in state:
-            return ValidationResult(
-                is_valid=False,
-                error_message="member_id must be present at top level as the SINGLE SOURCE OF TRUTH"
-            )
-
-        # Ensure no duplicate member_id in flow_data
-        if "flow_data" in state and isinstance(state["flow_data"], dict):
-            flow_data = state["flow_data"]
-            if "data" in flow_data and isinstance(flow_data["data"], dict):
-                if "member_id" in flow_data["data"]:
-                    del flow_data["data"]["member_id"]
-
-        # Validate flow data if present
-        if "flow_data" in state:
-            flow_validation = cls.validate_flow_data_structure(state["flow_data"])
-            if not flow_validation.is_valid:
-                return flow_validation
-
-        return ValidationResult(is_valid=True)
-
-    @classmethod
-    def validate_flow_data_structure(cls, flow_data: Dict[str, Any]) -> ValidationResult:
-        """Validate flow data structure"""
-        if not isinstance(flow_data, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Flow data must be a dictionary"
-            )
-
-        # Check required flow fields
-        required_fields = {"id", "step", "data"}
-        missing = required_fields - set(flow_data.keys())
-        if missing:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Missing required flow fields: {', '.join(missing)}",
-                missing_fields=missing
-            )
-
-        # Validate step is a non-negative integer
-        if not isinstance(flow_data["step"], int) or flow_data["step"] < 0:
-            return ValidationResult(
-                is_valid=False,
-                error_message="Step must be a non-negative integer"
-            )
-
-        # Validate flow data structure
-        data = flow_data.get("data", {})
-        if not isinstance(data, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Flow data must be a dictionary"
-            )
-
-        # Ensure validation state exists but don't validate its structure
-        if "_validation_state" not in data:
-            data["_validation_state"] = {}
-
-        return ValidationResult(is_valid=True)
-
-    @classmethod
-    def validate_profile_structure(cls, profile: Dict[str, Any]) -> ValidationResult:
-        """Validate profile data structure"""
-        if not isinstance(profile, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Profile must be a dictionary"
-            )
-
-        # Only validate structure existence, not content
-        if "action" in profile and not isinstance(profile["action"], dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Profile action must be a dictionary"
-            )
-
-        if "dashboard" in profile and not isinstance(profile["dashboard"], dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Profile dashboard must be a dictionary"
-            )
-
-        return ValidationResult(is_valid=True)
-
-    @classmethod
-    def validate_channel_structure(cls, channel: Dict[str, Any]) -> ValidationResult:
-        """Validate channel information structure"""
+        channel = state["channel"]
         if not isinstance(channel, dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="Channel must be a dictionary"
             )
 
-        # Check required channel fields
-        missing = cls.CHANNEL_FIELDS - set(channel.keys())
-        if missing:
+        if "type" not in channel or "identifier" not in channel:
             return ValidationResult(
                 is_valid=False,
-                error_message=f"Missing required channel fields: {', '.join(missing)}",
-                missing_fields=missing
+                error_message="Channel missing required fields"
             )
 
-        # Validate channel type
-        if not isinstance(channel["type"], str):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Channel type must be a string"
-            )
-
-        # Validate metadata is a dictionary
-        if not isinstance(channel["metadata"], dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Channel metadata must be a dictionary"
-            )
-
-        return ValidationResult(is_valid=True)
-
-    @classmethod
-    def validate_account_structure(cls, account: Dict[str, Any]) -> ValidationResult:
-        """Validate account data structure"""
-        if not isinstance(account, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Account must be a dictionary"
-            )
-
-        # Only validate minimal fields if account is not empty
-        if account:
-            minimal_fields = {"accountType", "accountHandle"}
-            missing = minimal_fields - set(account.keys())
-            if missing:
+        # Validate flow state if present
+        if "flow_data" in state and state["flow_data"] is not None:
+            flow_data = state["flow_data"]
+            if not isinstance(flow_data, dict):
                 return ValidationResult(
                     is_valid=False,
-                    error_message=f"Missing required account fields: {', '.join(missing)}",
-                    missing_fields=missing
+                    error_message="Flow data must be a dictionary"
+                )
+
+            # Validate required fields
+            for field, field_type in cls.FLOW_RULES["required_fields"].items():
+                if field not in flow_data:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"Missing required field: {field}"
+                    )
+                if not isinstance(flow_data[field], field_type):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"Invalid type for {field}"
+                    )
+
+            # Validate handler type
+            if flow_data["handler_type"] not in cls.FLOW_RULES["handler_types"]:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Invalid handler type: {flow_data['handler_type']}"
+                )
+
+            # Validate step index
+            if not (0 <= flow_data["step_index"] < flow_data["total_steps"]):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Invalid step index"
+                )
+
+            # Validate component state
+            component = flow_data.get("active_component")
+            if not component or not isinstance(component, dict):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Invalid component state"
+                )
+
+            for field, field_type in cls.FLOW_RULES["component_fields"].items():
+                if field not in component:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"Missing component field: {field}"
+                    )
+
+                if field == "validation":
+                    validation = component[field]
+                    if not isinstance(validation, dict):
+                        return ValidationResult(
+                            is_valid=False,
+                            error_message="Invalid validation state"
+                        )
+
+                    for val_field, val_type in field_type.items():
+                        if val_field not in validation:
+                            return ValidationResult(
+                                is_valid=False,
+                                error_message=f"Missing validation field: {val_field}"
+                            )
+                        if not isinstance(validation[val_field], val_type):
+                            if isinstance(val_type, tuple):
+                                if not any(isinstance(validation[val_field], t) for t in val_type):
+                                    return ValidationResult(
+                                        is_valid=False,
+                                        error_message=f"Invalid type for {val_field}"
+                                    )
+                            else:
+                                return ValidationResult(
+                                    is_valid=False,
+                                    error_message=f"Invalid type for {val_field}"
+                                )
+                else:
+                    if not isinstance(component[field], field_type):
+                        return ValidationResult(
+                            is_valid=False,
+                            error_message=f"Invalid type for component {field}"
+                        )
+
+            # Validate data structure
+            if "data" in flow_data and not isinstance(flow_data["data"], dict):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Flow data must be a dictionary"
                 )
 
         return ValidationResult(is_valid=True)
 
     @classmethod
-    def ensure_profile_structure(cls, profile: Dict[str, Any]) -> Dict[str, Any]:
-        """Ensure minimal profile structure while preserving data"""
-        if not isinstance(profile, dict):
-            return {
-                "action": {},
-                "dashboard": {"accounts": []}
-            }
+    def validate_core_fields(cls, current: Dict[str, Any], updates: Dict[str, Any]) -> ValidationResult:
+        """Validate core field updates"""
+        for field in cls.CORE_FIELDS:
+            if (
+                field in updates and
+                field in current and
+                updates[field] != current[field]
+            ):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Cannot modify core field: {field}"
+                )
 
-        result = profile.copy()
-
-        # Ensure basic structure exists
-        if "action" not in result or not isinstance(result["action"], dict):
-            result["action"] = {}
-
-        if "dashboard" not in result or not isinstance(result["dashboard"], dict):
-            result["dashboard"] = {"accounts": []}
-        elif "accounts" not in result["dashboard"]:
-            result["dashboard"]["accounts"] = []
-        elif not isinstance(result["dashboard"]["accounts"], list):
-            result["dashboard"]["accounts"] = []
-
-        return result
+        return ValidationResult(is_valid=True)
 
     @classmethod
-    def ensure_validation_context(cls, flow_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Ensure minimal validation context structure"""
-        result = flow_data if isinstance(flow_data, dict) else {}
+    def validate_flow_state(cls, flow_data: Dict[str, Any]) -> ValidationResult:
+        """Validate flow state structure"""
+        if not isinstance(flow_data, dict):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Flow data must be a dictionary"
+            )
 
-        # Ensure data dictionary exists
-        if "data" not in result or not isinstance(result["data"], dict):
-            result["data"] = {}
+        # Validate required fields
+        for field, field_type in cls.FLOW_RULES["required_fields"].items():
+            if field not in flow_data:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Missing required field: {field}"
+                )
+            if not isinstance(flow_data[field], field_type):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Invalid type for {field}"
+                )
 
-        # Initialize validation state if needed
-        if not isinstance(result["data"].get("_validation_state"), dict):
-            result["data"]["_validation_state"] = {}
+        # Validate handler type
+        if flow_data["handler_type"] not in cls.FLOW_RULES["handler_types"]:
+            return ValidationResult(
+                is_valid=False,
+                error_message=f"Invalid handler type: {flow_data['handler_type']}"
+            )
 
-        return result
+        # Validate step index
+        if not (0 <= flow_data["step_index"] < flow_data["total_steps"]):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Invalid step index"
+            )
+
+        return ValidationResult(is_valid=True)

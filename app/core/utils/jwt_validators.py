@@ -3,7 +3,8 @@ from typing import Dict, Any
 
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.exceptions import InvalidToken
+
+from .exceptions import SystemException
 
 User = get_user_model()
 
@@ -20,26 +21,55 @@ class EnhancedJWTAuthentication(JWTAuthentication):
 
         # Check if user is active
         if not user.is_active:
-            raise InvalidToken('User account is disabled')
+            raise SystemException(
+                message='User account is disabled',
+                code='USER_DISABLED',
+                service='jwt_auth',
+                action='validate_user'
+            )
 
         return user
 
 
 def validate_token_user(token: Dict[str, Any]) -> None:
-    """
-    Additional token validation to check user status.
-    Use this in views or middleware for extra security.
+    """Additional token validation to check user status.
+
+    Args:
+        token: JWT token payload to validate
+
+    Raises:
+        SystemException: If token validation fails
     """
     try:
         user_id = token.get('user_id')
         if not user_id:
-            raise InvalidToken('Invalid token payload')
+            raise SystemException(
+                message='Invalid token payload',
+                code='INVALID_TOKEN',
+                service='jwt_auth',
+                action='validate_token'
+            )
 
         user = User.objects.get(id=user_id)
         if not user.is_active:
-            raise InvalidToken('User account is disabled')
+            raise SystemException(
+                message='User account is disabled',
+                code='USER_DISABLED',
+                service='jwt_auth',
+                action='validate_token'
+            )
 
     except User.DoesNotExist:
-        raise InvalidToken('User not found')
+        raise SystemException(
+            message='User not found',
+            code='USER_NOT_FOUND',
+            service='jwt_auth',
+            action='validate_token'
+        )
     except Exception as e:
-        raise InvalidToken(f'Token validation failed: {str(e)}')
+        raise SystemException(
+            message=f'Token validation failed: {str(e)}',
+            code='TOKEN_VALIDATION_ERROR',
+            service='jwt_auth',
+            action='validate_token'
+        )

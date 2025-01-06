@@ -1,232 +1,307 @@
 # Flow Framework
 
-## Overview
+## Code Reading Guide
+Before modifying flow-related functionality, read these files in order:
 
-The Flow Framework provides a progressive interaction system for handling complex, multi-step conversations in WhatsApp, extendable to other channels. It enables:
-- Member-centric state management
-- Multi-channel support
-- Structured data collection
-- Input validation
-- Error recovery
-- Comprehensive audit logging
+1. core/messaging/types.py - Understand message structures and flow types
+   - Learn core message interfaces
+   - Understand flow state structures
+   - Review validation types
 
-## Core Components
+2. core/messaging/flow.py - Understand flow management
+   - Learn flow progression logic
+   - Understand state transitions
+   - Review validation patterns
 
-### 1. Flow Management
+3. core/messaging/registry.py - Learn flow configurations
+   - Understand flow registration
+   - Learn component mapping
+   - Review validation rules
 
-The framework consists of four main components:
+4. core/messaging/exceptions.py - Understand error patterns
+   - Learn flow-specific exceptions
+   - Understand error boundaries
+   - Review error handling patterns
 
-- **Flow Base Class**
-  - Manages member-centric state
-  - Handles channel abstraction
-  - Manages step progression
-  - Handles data collection
-  - Integrates with state management
-  - Provides error recovery
-  - Maintains audit trail
+Common mistakes to avoid:
+1. DON'T modify flows without understanding message types
+2. DON'T bypass flow registry for direct handling
+3. DON'T mix component and flow responsibilities
+4. DON'T create new patterns when existing ones suffice
 
-- **FlowStateManager**
-  - Validates member and channel state
-  - Manages state transitions
-  - Handles rollbacks
-  - Preserves validation context
-  - Manages channel information
+## Core Principles
 
-- **Step Definition**
-  - Defines interaction type
-  - Provides validation rules
-  - Handles data transformation
-  - Generates channel-aware messages
+1. **Clear Boundaries**
+- Flows manage progression
+- Components handle input
+- State validates updates
+- NO mixed responsibilities
+- NO state duplication
+- NO manual validation
 
-- **FlowAuditLogger**
-  - Logs flow events with member context
-  - Tracks state transitions
-  - Records validation results
-  - Enables state recovery
-  - Provides debugging context
+2. **Simple Structure**
+- Common flow configurations
+- Clear flow types
+- Standard components
+- Flow type metadata
+- NO complex hierarchies
+- NO redundant wrapping
 
-### 2. Step Types
+3. **Pure Functions**
+- Stateless operations
+- Clear input/output
+- Standard validation
+- NO stored state
+- NO side effects
+- NO manual handling
 
-Supports three interaction types:
-- `TEXT`: Free-form text input
-- `BUTTON`: Button-based responses
-- `LIST`: Selection from a list of options
+4. **Central Management**
+- Single flow registry
+- Standard progression
+- Clear validation
+- Progress tracking
+- NO manual routing
+- NO local state
 
-### 3. State Integration
+## Flow Registry
 
-Each flow maintains:
-- Member ID as primary identifier
-- Channel information
-- Current step index
-- Collected data
-- Minimal validation state in flow_data.data
-- Previous state for rollback
-- Audit trail data
-- Smart recovery paths
-
-## Implementation
-
-### Flow Creation
-
+### 1. Common Configurations
 ```python
-class CredexFlow(Flow):
-    def __init__(self, flow_type: str, state: Dict = None):
-        # Get member ID and channel info
-        member_id = state.get("member_id")
-        channel_id = self._get_channel_identifier(state)
-
-        steps = self._create_steps()
-        super().__init__(f"{flow_type}_{member_id}", steps)
-```
-
-### Step Definition
-
-```python
-Step(
-    id="amount",
-    type=StepType.TEXT,
-    message=self._get_amount_prompt,
-    validator=self._validate_amount,
-    transformer=self._transform_amount
-)
-```
-
-### State Structure
-
-```python
-new_state = {
-    # Core identity - SINGLE SOURCE OF TRUTH
-    "member_id": member_id,  # Primary identifier, ONLY AND ALWAYS at top level
-
-    # Channel information
-    "channel": {
-        "type": "whatsapp",
-        "identifier": channel_id
-    },
-
-    # Flow and state info
-    "flow_data": {
-        "id": flow_id,
-        "step": current_step,
-        "data": {
-            "flow_type": flow_type,
-            "channel": {
-                "type": "whatsapp",
-                "identifier": channel_id
-            }
+COMMON_FLOWS = {
+    "action": {
+        "steps": ["select", "confirm"],
+        "components": {
+            "select": "SelectInput",
+            "confirm": "ConfirmInput"
         }
     }
 }
 ```
 
-### Audit Logging
-
+### 2. Flow Types
 ```python
-# Log flow event with member context
-audit.log_flow_event(
-    flow_id=f"credex_offer_{member_id}",
-    event_type="step_start",
-    step_id="amount",
-    state={
-        "member_id": member_id,
-        "channel": {
-            "type": "whatsapp",
-            "identifier": channel_id
-        },
-        **current_state
+FLOWS = {
+    "registration": {
+        "handler_type": "member",
+        "steps": ["firstname", "lastname"],
+        "components": {
+            "firstname": "TextInput",
+            "lastname": "TextInput"
+        }
     },
-    status="in_progress"
-)
-
-# Log validation with member context
-audit.log_validation_event(
-    flow_id=f"credex_offer_{member_id}",
-    step_id="amount",
-    input_data={
-        "member_id": member_id,
-        "channel": channel_info,
-        "data": input_data
-    },
-    validation_result=result
-)
-
-# Log state transition with member context
-audit.log_state_transition(
-    flow_id=f"credex_offer_{member_id}",
-    from_state=old_state,
-    to_state=new_state,
-    status="success"
-)
+    "credex_accept": {
+        "handler_type": "credex",
+        "flow_type": "action",
+        "action_type": "accept"
+    }
+}
 ```
 
-## Message Handling
+## State Patterns
 
-### 1. Message Types
-- Text messages
-- Button messages
-- List messages
-- Interactive content
-- Template messages
+### 1. Flow State
+```python
+flow_state = {
+    # Flow identification
+    "flow_type": str,     # Type of flow
+    "handler_type": str,  # Handler responsible
+    "step": str,         # Current step
+    "step_index": int,   # Current position
+    "total_steps": int,  # Total steps
 
-### 2. Template Organization
-- Member-centric templates
-- Channel-aware components
-- Reusable components
-- Type-safe creation
-- Consistent formatting
+    # Validation tracking
+    "active_component": {
+        "type": str,     # Component type
+        "validation": {
+            "in_progress": bool,
+            "error": Optional[Dict],
+            "attempts": int,
+            "last_attempt": Any
+        }
+    }
+}
+```
+
+### 2. Progress Tracking
+Every flow update includes:
+- Current step index
+- Total steps
+- Validation state
+- Attempt tracking
 
 ## Best Practices
 
-1. **State Management**
-   - Use member_id as primary identifier
-   - Maintain proper channel abstraction
-   - Keep validation context in flow_data.data
-   - Use minimal required validations
-   - Implement smart state recovery
-   - Focus on critical data integrity
-   - Maintain focused audit trail
+1. **Flow Management**
+- Use common configurations
+- Clear flow types
+- Standard components
+- Progress tracking
+- NO manual routing
+- NO local state
 
-2. **Flow Implementation**
-   - Keep flows focused and single-purpose
-   - Validate member and channel info
-   - Handle channel-specific requirements
-   - Validate input properly
-   - Handle errors gracefully
-   - Log state transitions
-   - Enable automatic recovery
+2. **State Updates**
+- Track validation state
+- Track progress
+- Standard validation
+- NO state duplication
+- NO manual validation
+- NO state fixing
 
-3. **Template Usage**
-   - Use member-centric templates
-   - Handle channel-specific formatting
-   - Keep templates reusable
-   - Follow channel limits
-   - Handle errors properly
+3. **Error Handling**
+- Track validation attempts
+- Clear boundaries
+- Standard formats
+- NO manual handling
+- NO local recovery
+- NO state fixing
 
-4. **Error Recovery**
-   - Validate member and channel state
-   - Preserve context during errors
-   - Implement proper rollback
-   - Provide clear error messages
-   - Log recovery attempts
+4. **Component Usage**
+- Standard components
+- Track validation state
+- Pure functions
+- NO stored state
+- NO side effects
+- NO manual handling
 
-5. **Audit Logging**
-   - Include member context in logs
-   - Log channel information
-   - Track state transitions
-   - Record validation results
-   - Document error scenarios
-   - Enable debugging
+## Integration Points
 
-## Integration
+The Flow Framework has specific integration points with other systems:
 
-The Flow Framework integrates with:
-- WhatsApp message handling
-- Redis state management
-- API services
-- User authentication
-- Audit logging system
+### Component System Integration
+- Components are registered in flow configurations
+- Components handle input validation
+- Components maintain their own state
+- Flow progression depends on component validation
 
-For more details on:
-- State Management: [State Management](state-management.md)
-- WhatsApp Integration: [WhatsApp](whatsapp.md)
-- API Integration: [API Integration](api-integration.md)
+### State Management Integration
+- Flow state stored in StateManager
+- Flow progression updates state
+- Component state tracked in flow state
+- Validation state maintained per step
+
+### Error Handling Integration
+- Flow errors handled by ErrorHandler
+- Component errors stay in components
+- System errors propagate to top level
+- Error state tracked in flow state
+
+### Message Template Integration
+- Templates linked to flow steps
+- Templates access flow state
+- Templates handle error display
+- Templates maintain consistency
+
+### API Service Integration
+- Services accessed through flow state
+- Service responses update flow state
+- Service errors handled consistently
+- State validated after service calls
+
+Common mistakes to avoid:
+1. DON'T bypass established integration points
+2. DON'T create new connections when existing ones exist
+3. DON'T mix responsibilities between systems
+4. DON'T handle errors outside boundaries
+
+## Common Modifications
+
+### Adding New Flow Types
+1. Check registry.py for similar flows
+2. Add flow configuration to FLOWS
+3. Create necessary components
+4. Update validation rules
+5. Test flow progression
+
+Example:
+```python
+FLOWS["new_flow"] = {
+    "handler_type": "member",
+    "steps": ["step1", "step2"],
+    "components": {
+        "step1": "TextInput",
+        "step2": "ConfirmInput"
+    }
+}
+```
+
+### Modifying Flow Progression
+1. Check flow.py for progression logic
+2. Update step sequence in registry
+3. Modify component validation
+4. Update state transitions
+5. Test full flow
+
+### Adding Flow Validation
+1. Check existing validation in components
+2. Add validation rules to component
+3. Update flow state handling
+4. Test validation scenarios
+
+Common mistakes to avoid:
+1. DON'T create new patterns when existing ones exist
+2. DON'T bypass flow registry
+3. DON'T mix validation responsibilities
+4. DON'T duplicate validation logic
+
+## Architecture Rules
+
+Key principles that must be followed:
+
+1. Flow Registry is Single Source of Truth
+   - All flows must be registered
+   - No dynamic flow creation
+   - No bypassing registry
+
+2. Components Own Validation
+   - Components validate their own input
+   - Flows don't modify component validation
+   - No validation in flow logic
+
+3. State Updates Through Manager Only
+   - No direct state modification
+   - All updates through state_manager
+   - No state duplication
+
+4. Clear Error Boundaries
+   - Flow errors stay in flows
+   - Component errors in components
+   - System errors at top level
+
+5. Pure Flow Functions
+   - No side effects in flow logic
+   - Clear input/output contracts
+   - No stored state
+
+Common mistakes to avoid:
+1. DON'T create flows outside registry
+2. DON'T mix validation responsibilities
+3. DON'T modify state directly
+4. DON'T bypass error boundaries
+
+## State Management
+
+### Flow State Access
+- Access through state_manager.get_flow_state()
+- Never access state directly
+- Use proper accessor methods
+
+### State Updates
+- Update through state_manager.update_state()
+- Include validation context
+- Track update attempts
+
+### Validation State
+- Track in active_component
+- Include attempt counting
+- Maintain error context
+
+### Progress Tracking
+- Track step_index
+- Maintain total_steps
+- Record completion state
+
+Common mistakes to avoid:
+1. DON'T access state directly
+2. DON'T update without validation
+3. DON'T bypass state manager
+4. DON'T lose tracking context

@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
+from core.messaging.exceptions import MessageValidationError
+
 
 class MessageType(Enum):
     """Types of messages that can be sent"""
@@ -52,7 +54,6 @@ class ChannelIdentifier:
 @dataclass
 class MessageRecipient:
     """Message recipient information"""
-    member_id: str  # Primary system identifier
     channel_id: ChannelIdentifier  # Channel-specific identifier
     name: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -60,7 +61,6 @@ class MessageRecipient:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
         result = {
-            "member_id": self.member_id,
             "channel": self.channel_id.to_dict()
         }
         if self.name:
@@ -77,27 +77,34 @@ class MessageRecipient:
 
 @dataclass
 class MessageContent:
-    """Base class for message content"""
-    type: MessageType
-    body: Optional[str] = None
-    preview_url: bool = False
+    """Base interface for message content"""
+    type: MessageType = field(init=False)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
-        result = {"type": self.type.value}
-        if self.body:
-            result[self.type.value] = {"body": self.body}
-        if self.preview_url:
-            result["preview_url"] = self.preview_url
-        return result
+        raise NotImplementedError
 
 
 @dataclass
 class TextContent(MessageContent):
     """Text message content"""
-    def __init__(self, body: str):
-        super().__init__(type=MessageType.TEXT)
-        self.body = body
+    body: str
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.TEXT)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization"""
+        result = {
+            "type": self.type.value,
+            self.type.value: {"body": self.body}
+        }
+        if self.preview_url:
+            result["preview_url"] = self.preview_url
+        return result
 
 
 @dataclass
@@ -119,61 +126,243 @@ class Button:
 
 
 @dataclass
-class InteractiveContent:
+class InteractiveContent(MessageContent):
     """Interactive message content"""
     interactive_type: InteractiveType
     body: str
-    type: MessageType = field(default=MessageType.INTERACTIVE)
-    preview_url: bool = False
     header: Optional[str] = None
     footer: Optional[str] = None
     buttons: List[Button] = field(default_factory=list)
-    action_items: Dict[str, Any] = field(default_factory=dict)
+    sections: List[Dict[str, Any]] = field(default_factory=list)
+    button_text: Optional[str] = None
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.INTERACTIVE)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
+
+        # Validate text lengths (WhatsApp limits)
+        if len(self.body) > 4096:
+            raise MessageValidationError(
+                message="Body text exceeds 4096 characters",
+                service="whatsapp",
+                action="create_message",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "body",
+                    "length": len(self.body),
+                    "max_length": 4096
+                }
+            )
+
+        if self.header and len(self.header) > 60:
+            raise MessageValidationError(
+                message="Header text exceeds 60 characters",
+                service="whatsapp",
+                action="create_message",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "header",
+                    "length": len(self.header),
+                    "max_length": 60
+                }
+            )
+
+        if self.footer and len(self.footer) > 60:
+            raise MessageValidationError(
+                message="Footer text exceeds 60 characters",
+                service="whatsapp",
+                action="create_message",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "footer",
+                    "length": len(self.footer),
+                    "max_length": 60
+                }
+            )
+
+        if self.button_text and len(self.button_text) > 20:
+            raise MessageValidationError(
+                message="Button text exceeds 20 characters",
+                service="whatsapp",
+                action="create_message",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "button_text",
+                    "length": len(self.button_text),
+                    "max_length": 20
+                }
+            )
+
+        # Validate sections (WhatsApp limits)
+        if len(self.sections) > 10:
+            raise MessageValidationError(
+                message="Too many sections (max 10)",
+                service="whatsapp",
+                action="create_message",
+                validation_details={
+                    "error": "too_many_sections",
+                    "count": len(self.sections),
+                    "max_count": 10
+                }
+            )
+
+        for section in self.sections:
+            if "rows" in section and len(section["rows"]) > 10:
+                raise MessageValidationError(
+                    message=f"Too many rows in section '{section.get('title', 'Untitled')}' (max 10)",
+                    service="whatsapp",
+                    action="create_message",
+                    validation_details={
+                        "error": "too_many_rows",
+                        "section": section.get("title", "Untitled"),
+                        "count": len(section["rows"]),
+                        "max_count": 10
+                    }
+                )
+
+            # Validate section title length
+            if "title" in section and len(section["title"]) > 24:
+                raise MessageValidationError(
+                    message="Section title exceeds 24 characters",
+                    service="whatsapp",
+                    action="create_message",
+                    validation_details={
+                        "error": "text_too_long",
+                        "field": "section_title",
+                        "section": section.get("title", "Untitled"),
+                        "length": len(section["title"]),
+                        "max_length": 24
+                    }
+                )
+
+            # Validate rows
+            if "rows" in section:
+                for row in section["rows"]:
+                    # Validate required fields
+                    if "id" not in row or "title" not in row:
+                        raise MessageValidationError(
+                            message="Row missing required fields (id and title)",
+                            service="whatsapp",
+                            action="create_message",
+                            validation_details={
+                                "error": "missing_required_fields",
+                                "section": section.get("title", "Untitled"),
+                                "row": row
+                            }
+                        )
+
+                    # Validate row ID length
+                    if len(row["id"]) > 200:
+                        raise MessageValidationError(
+                            message="Row ID exceeds 200 characters",
+                            service="whatsapp",
+                            action="create_message",
+                            validation_details={
+                                "error": "text_too_long",
+                                "field": "row_id",
+                                "section": section.get("title", "Untitled"),
+                                "row_id": row["id"],
+                                "length": len(row["id"]),
+                                "max_length": 200
+                            }
+                        )
+
+                    # Validate row title length
+                    if len(row["title"]) > 24:
+                        raise MessageValidationError(
+                            message="Row title exceeds 24 characters",
+                            service="whatsapp",
+                            action="create_message",
+                            validation_details={
+                                "error": "text_too_long",
+                                "field": "row_title",
+                                "section": section.get("title", "Untitled"),
+                                "row_title": row["title"],
+                                "length": len(row["title"]),
+                                "max_length": 24
+                            }
+                        )
+
+                    # Validate row description length if present
+                    if "description" in row and len(row["description"]) > 72:
+                        raise MessageValidationError(
+                            message="Row description exceeds 72 characters",
+                            service="whatsapp",
+                            action="create_message",
+                            validation_details={
+                                "error": "text_too_long",
+                                "field": "row_description",
+                                "section": section.get("title", "Untitled"),
+                                "row_title": row["title"],
+                                "length": len(row["description"]),
+                                "max_length": 72
+                            }
+                        )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
-        interactive = {
-            "type": self.interactive_type.value,
-            "body": {"text": self.body}
+        result = {
+            "type": self.type.value,
+            "interactive": {
+                "type": self.interactive_type.value,
+                "body": {"text": self.body}
+            }
         }
+
+        interactive = result["interactive"]
 
         # Add header if present
         if self.header:
-            interactive["header"] = {"type": "text", "text": self.header}
+            interactive["header"] = {
+                "type": "text",
+                "text": self.header
+            }
 
         # Add footer if present
         if self.footer:
-            interactive["footer"] = {"text": self.footer}
+            interactive["footer"] = {
+                "text": self.footer
+            }
 
         # Add action based on interactive type
         if self.interactive_type == InteractiveType.BUTTON:
+            if len(self.buttons) > 3:  # WhatsApp limit
+                raise MessageValidationError(
+                    message="Too many buttons (max 3)",
+                    service="whatsapp",
+                    action="create_message",
+                    validation_details={
+                        "error": "too_many_buttons",
+                        "count": len(self.buttons),
+                        "max_count": 3
+                    }
+                )
             interactive["action"] = {
                 "buttons": [button.to_dict() for button in self.buttons]
             }
         elif self.interactive_type == InteractiveType.LIST:
-            # For list type, action_items should contain button and sections
-            if not self.action_items:
-                interactive["action"] = {
-                    "button": "Select",
-                    "sections": []
-                }
-            else:
-                interactive["action"] = self.action_items
+            interactive["action"] = {
+                "button": self.button_text or "Select",
+                "sections": self.sections
+            }
 
-        return {
-            "type": self.type.value,
-            "interactive": interactive
-        }
+        return result
 
 
 @dataclass
-class TemplateContent:
+class TemplateContent(MessageContent):
     """Template message content"""
     name: str
     language: Dict[str, str]
-    type: MessageType = field(default=MessageType.TEMPLATE)
-    preview_url: bool = False
     components: List[Dict[str, Any]] = field(default_factory=list)
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.TEMPLATE)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
@@ -192,13 +381,17 @@ class TemplateContent:
 
 
 @dataclass
-class MediaContent:
-    """Base class for media message content"""
+class ImageContent(MessageContent):
+    """Image message content"""
     url: str
-    type: MessageType
-    preview_url: bool = False
     caption: Optional[str] = None
     filename: Optional[str] = None
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.IMAGE)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
@@ -216,42 +409,102 @@ class MediaContent:
 
 
 @dataclass
-class ImageContent(MediaContent):
-    """Image message content"""
-    def __init__(self, url: str, **kwargs):
-        super().__init__(url=url, type=MessageType.IMAGE, **kwargs)
-
-
-@dataclass
-class DocumentContent(MediaContent):
+class DocumentContent(MessageContent):
     """Document message content"""
-    def __init__(self, url: str, **kwargs):
-        super().__init__(url=url, type=MessageType.DOCUMENT, **kwargs)
+    url: str
+    caption: Optional[str] = None
+    filename: Optional[str] = None
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.DOCUMENT)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization"""
+        result = {
+            "type": self.type.value,
+            self.type.value: {"url": self.url}
+        }
+        if self.caption:
+            result[self.type.value]["caption"] = self.caption
+        if self.filename:
+            result[self.type.value]["filename"] = self.filename
+        if self.preview_url:
+            result["preview_url"] = self.preview_url
+        return result
 
 
 @dataclass
-class AudioContent(MediaContent):
+class AudioContent(MessageContent):
     """Audio message content"""
-    def __init__(self, url: str, **kwargs):
-        super().__init__(url=url, type=MessageType.AUDIO, **kwargs)
+    url: str
+    caption: Optional[str] = None
+    filename: Optional[str] = None
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.AUDIO)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization"""
+        result = {
+            "type": self.type.value,
+            self.type.value: {"url": self.url}
+        }
+        if self.caption:
+            result[self.type.value]["caption"] = self.caption
+        if self.filename:
+            result[self.type.value]["filename"] = self.filename
+        if self.preview_url:
+            result["preview_url"] = self.preview_url
+        return result
 
 
 @dataclass
-class VideoContent(MediaContent):
+class VideoContent(MessageContent):
     """Video message content"""
-    def __init__(self, url: str, **kwargs):
-        super().__init__(url=url, type=MessageType.VIDEO, **kwargs)
+    url: str
+    caption: Optional[str] = None
+    filename: Optional[str] = None
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.VIDEO)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization"""
+        result = {
+            "type": self.type.value,
+            self.type.value: {"url": self.url}
+        }
+        if self.caption:
+            result[self.type.value]["caption"] = self.caption
+        if self.filename:
+            result[self.type.value]["filename"] = self.filename
+        if self.preview_url:
+            result["preview_url"] = self.preview_url
+        return result
 
 
 @dataclass
-class LocationContent:
+class LocationContent(MessageContent):
     """Location message content"""
     latitude: float
     longitude: float
-    type: MessageType = field(default=MessageType.LOCATION)
-    preview_url: bool = False
     name: Optional[str] = None
     address: Optional[str] = None
+    preview_url: bool = False
+    type: MessageType = field(init=False, default=MessageType.LOCATION)
+
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        super().__init__()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
@@ -285,23 +538,16 @@ class Message:
         VideoContent,
         LocationContent,
     ]
-    messaging_product: str = "whatsapp"
-    recipient_type: str = "individual"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
         result = {
-            "messaging_product": self.messaging_product,
-            "recipient_type": self.recipient_type,
-            "to": self.recipient.channel_value,  # Use channel-specific identifier
+            "recipient": self.recipient.to_dict(),
             **self.content.to_dict()
         }
-        # Include member_id in metadata for tracking
-        if not self.metadata:
-            self.metadata = {}
-        self.metadata["member_id"] = self.recipient.member_id
-        result["metadata"] = self.metadata
+        if self.metadata:
+            result["metadata"] = self.metadata.copy()
         return result
 
     def __str__(self) -> str:

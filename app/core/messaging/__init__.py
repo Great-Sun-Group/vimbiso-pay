@@ -1,41 +1,27 @@
 """Core Messaging Package
 
-This package provides a comprehensive messaging interface with implementations
-for different messaging providers. It handles message formatting, validation,
-and delivery through various channels.
+This package provides:
+1. Comprehensive messaging interface with implementations
+   for different messaging providers
+2. Flow framework for managing multi-step interactions
+   through messaging channels
 """
 
 from typing import Dict, Optional, Type, TypeVar
 
 from .base import BaseMessagingService
-from .exceptions import (
-    InvalidMessageTypeError,
-    InvalidRecipientError,
-    MessageDeliveryError,
-    MessageFormatError,
-    MessageHandlerError,
-    MessageRateLimitError,
-    MessageTemplateError,
-    MessageValidationError,
-    TemplateNotFoundError,
-    TemplateValidationError,
-)
+from .exceptions import (InvalidMessageTypeError, InvalidRecipientError,
+                         MessageDeliveryError, MessageFormatError,
+                         MessageHandlerError, MessageRateLimitError,
+                         MessageTemplateError, MessageValidationError,
+                         TemplateNotFoundError, TemplateValidationError)
+from .flow import FlowManager, complete_flow, initialize_flow, process_flow_input
 from .interface import MessagingServiceInterface
-from .types import (
-    AudioContent,
-    Button,
-    DocumentContent,
-    ImageContent,
-    InteractiveContent,
-    InteractiveType,
-    LocationContent,
-    Message,
-    MessageRecipient,
-    MessageType,
-    TemplateContent,
-    TextContent,
-    VideoContent,
-)
+from .registry import FlowRegistry
+from .types import (AudioContent, Button, DocumentContent, ImageContent,
+                    InteractiveContent, InteractiveType, LocationContent,
+                    Message, MessageRecipient, MessageType, TemplateContent,
+                    TextContent, VideoContent)
 from .whatsapp import WhatsAppMessagingService
 
 # Type variable for service factory
@@ -84,6 +70,13 @@ __all__ = [
     'DocumentContent',
     'LocationContent',
     'Button',
+
+    # Flow framework
+    'FlowManager',
+    'FlowRegistry',
+    'initialize_flow',
+    'process_flow_input',
+    'complete_flow',
 
     # Exceptions
     'MessageHandlerError',

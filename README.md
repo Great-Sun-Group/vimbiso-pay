@@ -1,17 +1,27 @@
-# VimbisoPay
+# Vimbiso ChatServer
 
-A WhatsApp bot service that facilitates financial transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in a secure WhatsApp chat.
+Facilitates transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in secure WhatsApp and SMS chats:
+- Multi-denominational balance display
+- Offer secured credex with settlement on demand
+- Offer unsecured credex with configurable due date
+- Accept/decline/cancel credex offers
+- Account ledgers with pagination
+- Multiple account management
 
-## Documentation
+## Architecture
+
+See [Core Architecture](docs/architecture.md) for detailed architectural principles, patterns, and implementation guidelines.
+
+## Core Implementation
+- [Service & API](docs/service-architecture.md) - Service and API integration patterns
+- [State Management](docs/state-management.md) - State validation and flow control
 - [Flow Framework](docs/flow-framework.md) - Progressive interaction framework
-- [WhatsApp Integration](docs/whatsapp.md) - WhatsApp bot implementation
-- [API Integration](docs/api-integration.md) - Integration with credex-core API
-- [State Management](docs/state-management.md) - Conversation and session management
-- [Testing Guide](docs/testing.md) - Testing infrastructure and tools
-- [Security](docs/security.md) - Security measures and best practices
-- [Docker](docs/docker.md) - Docker configuration and services
-- [Deployment](docs/deployment.md) - Deployment process and infrastructure
-- [Redis Management](docs/redis-memory-management.md) - Redis configuration and management
+
+## Infrastructure
+- [Security](docs/infrastructure/security.md) - Security measures and best practices
+- [Docker](docs/infrastructure/docker.md) - Container configuration and services
+- [Deployment](docs/infrastructure/deployment.md) - Deployment process and infrastructure
+- [Redis](docs/infrastructure/redis-memory-management.md) - Redis configuration and management
 
 ## Quick Start
 
@@ -60,51 +70,43 @@ Requirements:
 Usage:
 ```bash
 # Stream logs in real-time
-./scripts/fetchlogs.sh
+fetchlogs
 
 # Fetch historical logs in seconds
-./scripts/fetchlogs.sh 60
-
-# Show help
-./scripts/fetchlogs.sh --help
+fetchlogs 60
 ```
 
 ## Core Features
+
+### Service Layer
+- State-based service architecture
+- Pure function implementation
+- Single source of truth enforcement
+- Consistent error handling
+- Clear service boundaries
 
 ### WhatsApp Interface
 - Interactive menus and buttons
 - Form-based data collection
 - Rich message formatting
 - State-based conversation flow
-- Time-aware greetings
 - Navigation commands
 - Custom message templates
 
-### Financial Operations
-- Secured credex transactions with immediate settlement
-- Unsecured credex with configurable due dates
-- Multi-tier account system:
-  - Personal accounts with basic features
-  - Business accounts with advanced capabilities
-  - Member authorization management
-- Balance tracking with denomination support
-- Transaction history with pagination
-- Pending offers management
-
 ### API & Integration
-- Direct integration with CredEx core API
-- Webhook support for real-time updates:
-  - Company updates
-  - Member updates
-  - Offer status changes
-- Internal API endpoints for:
-  - Company management
-  - Member operations
-  - Offer handling
+- State-based API integration
+- Credential extraction only when needed
+- Flow state management
+- Consistent error handling
+- Direct integration with credex-core API
 - Comprehensive validation and error handling
 - Type-safe request/response handling
 
 ### Security
+- State-based credential management
+- No credential duplication
+- Flow state validation
+- Consistent error handling
 - JWT authentication
 - Rate limiting
 - Input validation
@@ -115,44 +117,17 @@ Usage:
 ## Development Tools
 
 ### Mock WhatsApp Interface
-Test the WhatsApp bot without real WhatsApp credentials:
+Test the WhatsApp chatserver without hitting WhastApp:
 
 ```bash
 # Start all services including mock server
 make dev
 
-# CLI testing (from host machine)
-./mock/cli.py "Hello, world!"
-./mock/cli.py --type button "button_1"
-```
-
 ### API Testing
 Test API endpoints and webhooks:
 
-```bash
-# Test webhook endpoint
-curl -X POST http://localhost:8000/api/webhooks/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "metadata": {
-      "webhook_id": "test",
-      "event_type": "company_update",
-      "timestamp": "2024-01-01T00:00:00Z"
-    },
-    "payload": {
-      "company_id": "123",
-      "name": "Test Company",
-      "status": "active"
-    }
-  }'
-
-# Test internal API (requires authentication)
-curl -X GET http://localhost:8000/api/companies/ \
-  -H "Authorization: Bearer your-token"
-```
-
 ### AI-Assisted Merge Summaries
-Generate branch comparison summaries:
+Generate diffs for AI-assisted summarization in merge requests:
 
 ```bash
 make diff <source_branch> <target_branch>
@@ -167,4 +142,4 @@ make diff <source_branch> <target_branch>
 
 ## License
 
-Have at it.
+Public domain.

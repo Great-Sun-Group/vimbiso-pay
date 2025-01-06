@@ -23,7 +23,7 @@ class OfferCredexSerializer(serializers.Serializer):
 
         if self.context.get("api_interactions"):
             print("API INTERACTIONS")
-            success, data = self.context["api_interactions"].validate_handle(
+            success, data = self.context["api_interactions"].validate_account_handle(
                 attrs.get("handle").lower()
             )
             print(success, data)

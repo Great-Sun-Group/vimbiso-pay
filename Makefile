@@ -1,4 +1,8 @@
-.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down diff dev prod
+.PHONY: dev-build dev-up dev-down prod-build prod-up prod-down diff dev prod BRANCH
+
+# Branch target to prevent argument interpretation
+BRANCH:
+	@:
 
 # Combined development workflow
 dev:
@@ -50,16 +54,14 @@ prod-down:
 
 # Get diff between two branches
 diff:
-	@if [ "$(filter-out $@,$(MAKECMDGOALS))" = "" ]; then \
-		echo "Usage: make diff <source_branch> <target_branch>"; \
+	@if [ -z "$(filter-out $@ BRANCH,$(MAKECMDGOALS))" ]; then \
+		echo "Usage: make diff <branch1> <branch2>"; \
 		exit 1; \
 	fi
-	@if [ "$$(echo $(filter-out $@,$(MAKECMDGOALS)) | wc -w)" != "2" ]; then \
+	@args="$(filter-out $@ BRANCH,$(MAKECMDGOALS))" && \
+	if [ "$$(echo $$args | wc -w)" != "2" ]; then \
 		echo "Error: Exactly two branch names are required"; \
-		echo "Usage: make diff <source_branch> <target_branch>"; \
+		echo "Usage: make diff <branch1> <branch2>"; \
 		exit 1; \
-	fi
-	bash projects/getDiff.sh $(filter-out $@,$(MAKECMDGOALS))
-
-%:
-	@:
+	fi && \
+	bash projects/getDiff.sh $$args

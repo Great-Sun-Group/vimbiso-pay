@@ -1,16 +1,8 @@
-"""API client package"""
-from .client import APIClient
-from .base import BaseAPIClient
-from .auth import AuthManager
-from .credex import CredExManager
-from .dashboard import DashboardManager
-from .profile import ProfileManager
+"""API package exposing pure functions for API interactions"""
+from .api_interactions import create_api_interactions
+from .client import create_api_service
 
 __all__ = [
-    'APIClient',
-    'BaseAPIClient',
-    'AuthManager',
-    'CredExManager',
-    'DashboardManager',
-    'ProfileManager'
+    'create_api_interactions',
+    'create_api_service',
 ]

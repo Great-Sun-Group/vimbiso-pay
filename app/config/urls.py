@@ -7,24 +7,24 @@ from django.contrib import admin
 from django.core.cache import cache
 from django.http import JsonResponse
 from django.urls import include, path
+from django.views import defaults
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
-from rest_framework import routers
 from core.utils.throttling import HealthCheckRateThrottle
 from core.utils.redis_atomic import AtomicStateManager
 import redis
 
 from api import views
 
+# Error handlers
+handler400 = defaults.bad_request
+handler403 = defaults.permission_denied
+handler404 = defaults.page_not_found
+handler500 = defaults.server_error
+
 # Initialize Redis clients
 state_redis_client = redis.from_url(settings.REDIS_STATE_URL)
 state_redis = AtomicStateManager(state_redis_client).redis
-
-# Create a router and register our viewsets with it
-router = routers.DefaultRouter()
-router.register(r'companies', views.CompanyViewSet, basename='company')
-router.register(r'members', views.MemberViewSet, basename='member')
-router.register(r'offers', views.OfferViewSet, basename='offer')
 
 
 # Health check endpoint with improved error handling and logging
@@ -86,9 +86,19 @@ urlpatterns = [
     path("bot/notify", CredexSendMessageWebhook.as_view(), name="notify"),
     path("bot/welcome/message", WelcomeMessage.as_view(), name="welcome_message"),
     path("bot/wipe", WipeCache.as_view(), name="wipe"),
-    # New API endpoints
-    path("api/", include(router.urls)),
-    path("api/webhooks/", views.webhook_handler, name="webhook-handler"),
+    # API endpoints
+    path("api/webhooks/", views.webhook_endpoint, name="webhook-endpoint"),
+    # Company endpoints
+    path("api/companies/", views.list_companies, name="company-list"),
+    path("api/companies/<str:company_id>/", views.get_company, name="company-detail"),
+    # Member endpoints
+    path("api/members/", views.list_members, name="member-list"),
+    path("api/members/<str:member_id>/", views.get_member, name="member-detail"),
+    # Offer endpoints
+    path("api/offers/", views.list_offers, name="offer-list"),
+    path("api/offers/<str:offer_id>/", views.get_offer, name="offer-detail"),
+    path("api/offers/<str:offer_id>/accept/", views.accept_offer, name="offer-accept"),
+    path("api/offers/<str:offer_id>/reject/", views.reject_offer, name="offer-reject"),
 ]
 
 if settings.DEBUG:

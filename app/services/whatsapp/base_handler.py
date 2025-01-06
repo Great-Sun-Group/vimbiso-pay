@@ -1,87 +1,224 @@
+"""Base handler enforcing SINGLE SOURCE OF TRUTH"""
+import logging
+from typing import Any
+
+from core.utils.exceptions import ComponentException, SystemException
 from core.utils.utils import wrap_text
 
-from .screens import INVALID_ACTION
-from .types import BotServiceInterface, WhatsAppMessage
+from core.messaging.formatters import ErrorFormatters
+from .types import WhatsAppMessage
+
+logger = logging.getLogger(__name__)
 
 
-class BaseActionHandler:
-    """Base class for WhatsApp action handlers"""
+def handle_default_action(state_manager: Any) -> WhatsAppMessage:
+    """Handle default or unknown actions
 
-    def __init__(self, service: BotServiceInterface):
-        """Initialize the handler with a BotServiceInterface instance
+    Args:
+        state_manager: State manager instance for state access
 
-        Args:
-            service: Service instance for handling bot interactions
-        """
-        self.service = service
+    Returns:
+        WhatsAppMessage: Error message for invalid actions
+    """
+    try:
+        # Validate state manager
+        if not state_manager:
+            raise ComponentException(
+                message="State manager is required",
+                component="base_handler",
+                field="state_manager",
+                value="None"
+            )
 
-    def handle_default_action(self) -> WhatsAppMessage:
-        """Handle default or unknown actions
+        # Get channel info through proper method
+        channel_id = state_manager.get_channel_id()
 
-        Returns:
-            WhatsAppMessage: Error message for invalid actions
-        """
-        return wrap_text(INVALID_ACTION, self.service.user.mobile_number)
+        # Create error response
+        return WhatsAppMessage.create_text(
+            channel_id,
+            wrap_text(ErrorFormatters.format_invalid_action(), channel_id)
+        )
 
-    @staticmethod
-    def format_synopsis(synopsis: str, style: str = None) -> str:
-        """Format text synopsis with line breaks for better readability
+    except ComponentException as e:
+        # Component errors become error messages
+        logger.error(
+            "Default action validation error",
+            extra={"error": str(e)}
+        )
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"❌ {str(e)}"
+        )
 
-        Args:
-            synopsis: Text to format
-            style: Optional style to apply to each word (e.g. '*' for bold)
+    except Exception as e:
+        # Wrap unexpected errors
+        error = SystemException(
+            message=str(e),
+            code="DEFAULT_ACTION_ERROR",
+            service="base_handler",
+            action="handle_default"
+        )
+        logger.error(
+            "Default action error",
+            extra={"error": str(error)}
+        )
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"❌ {str(error)}"
+        )
 
-        Returns:
-            str: Formatted text with appropriate line breaks
-        """
-        formatted_synopsis = ""
-        words = synopsis.split()
-        line_length = 0
 
-        for word in words:
-            # If adding the word exceeds the line length, start a new line
-            if line_length + len(word) + 1 > 35:
-                formatted_synopsis += "\n"
-                line_length = 0
-            if style:
-                word = f"{style}{word}{style}"
-            formatted_synopsis += word + " "
-            line_length += len(word) + 1
+def format_synopsis(synopsis: str, style: str = None) -> str:
+    """Format text synopsis with line breaks for better readability
 
-        return formatted_synopsis.strip()
+    Args:
+        synopsis: Text to format
+        style: Optional style to apply to each word (e.g. '*' for bold)
 
-    def get_response_template(self, message_text: str) -> WhatsAppMessage:
-        """Get a basic WhatsApp message template
+    Returns:
+        str: Formatted text with appropriate line breaks
+    """
+    if not synopsis:
+        return ""
 
-        Args:
-            message_text: Text content for the message
+    formatted_synopsis = ""
+    words = synopsis.split()
+    line_length = 0
 
-        Returns:
-            WhatsAppMessage: Basic formatted WhatsApp message
-        """
-        return {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": self.service.user.mobile_number,
-            "type": "text",
-            "text": {"body": message_text}
-        }
+    for word in words:
+        # If adding the word exceeds the line length, start a new line
+        if line_length + len(word) + 1 > 35:
+            formatted_synopsis += "\n"
+            line_length = 0
+        if style:
+            word = f"{style}{word}{style}"
+        formatted_synopsis += word + " "
+        line_length += len(word) + 1
 
-    def _format_error_response(self, error_message: str) -> WhatsAppMessage:
-        """Format an error response message
+    return formatted_synopsis.strip()
 
-        Args:
-            error_message: Error message to format
 
-        Returns:
-            WhatsAppMessage: Formatted error message
-        """
-        return {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": self.service.user.mobile_number,
-            "type": "text",
-            "text": {
-                "body": f"❌ {error_message}"
-            }
-        }
+def get_response_template(state_manager: Any, message_text: str) -> WhatsAppMessage:
+    """Get a basic WhatsApp message template
+
+    Args:
+        state_manager: State manager instance for state access
+        message_text: Text content for the message
+
+    Returns:
+        WhatsAppMessage: Basic formatted WhatsApp message
+    """
+    try:
+        # Validate inputs
+        if not state_manager:
+            raise ComponentException(
+                message="State manager is required",
+                component="base_handler",
+                field="state_manager",
+                value="None"
+            )
+
+        if not message_text:
+            raise ComponentException(
+                message="Message text is required",
+                component="base_handler",
+                field="message_text",
+                value="None"
+            )
+
+        # Get channel info through proper methods
+        channel_id = state_manager.get_channel_id()
+
+        # Create template response
+        return WhatsAppMessage.create_text(channel_id, message_text)
+
+    except ComponentException as e:
+        # Component errors become error messages
+        logger.error(
+            "Response template validation error",
+            extra={"error": str(e)}
+        )
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"❌ {str(e)}"
+        )
+
+    except Exception as e:
+        # Wrap unexpected errors
+        error = SystemException(
+            message=str(e),
+            code="TEMPLATE_ERROR",
+            service="base_handler",
+            action="get_template",
+            details={"message_text": message_text}
+        )
+        logger.error(
+            "Response template error",
+            extra={"error": str(error)}
+        )
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"❌ {str(error)}"
+        )
+
+
+def format_error_response(state_manager: Any, error_message: str) -> WhatsAppMessage:
+    """Format an error response message
+
+    Args:
+        state_manager: State manager instance for state access
+        error_message: Error message to format
+
+    Returns:
+        WhatsAppMessage: Formatted error message
+    """
+    try:
+        # Validate inputs
+        if not state_manager:
+            raise ComponentException(
+                message="State manager is required",
+                component="base_handler",
+                field="state_manager",
+                value="None"
+            )
+
+        if not error_message:
+            error_message = "An unknown error occurred"
+
+        # Get channel info through proper methods
+        channel_id = state_manager.get_channel_id()
+
+        # Create error response
+        return WhatsAppMessage.create_text(
+            channel_id,
+            f"❌ {error_message}"
+        )
+
+    except ComponentException as e:
+        # Component errors become error messages
+        logger.error(
+            "Error response validation error",
+            extra={"error": str(e)}
+        )
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"❌ {str(e)}"
+        )
+
+    except Exception as e:
+        # Wrap unexpected errors
+        error = SystemException(
+            message=str(e),
+            code="ERROR_FORMAT_ERROR",
+            service="base_handler",
+            action="format_error",
+            details={"error_message": error_message}
+        )
+        logger.error(
+            "Error response formatting failed",
+            extra={"error": str(error)}
+        )
+        return WhatsAppMessage.create_text(
+            "unknown",  # Fallback identifier
+            f"❌ {str(error)}"
+        )

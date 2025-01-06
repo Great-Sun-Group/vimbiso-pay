@@ -1,719 +1,91 @@
-import base64
+"""API interactions using pure functions"""
 import logging
-from typing import Tuple
+from typing import Any, Callable, Dict, Optional
 
-import requests
-from decouple import config
-from django.core.cache import cache
-from services.whatsapp.types import BotServiceInterface
-
-from ..config.constants import CachedUser
-from ..utils.utils import CredexWhatsappService
+from .auth_client import login as auth_login
+from .auth_client import register_member as auth_register
+from .credex import accept_bulk_credex as accept_bulk_credex_offers
+from .credex import accept_credex as accept_credex_offer
+from .credex import cancel_credex as cancel_credex_offer
+from .credex import decline_credex as decline_credex_offer
+from .credex import get_credex as get_credex_details
+from .credex import get_ledger as get_account_ledger
+from .credex import offer_credex as create_credex
+from .credex import validate_account_handle as validate_member_handle
 
 logger = logging.getLogger(__name__)
 
 
-class APIInteractions:
-    def __init__(self, bot_service: BotServiceInterface):
-        self.bot_service = bot_service
-        self.base_url = f"{config('MYCREDEX_APP_URL')}"
-        logger.info(f"Base URL: {self.base_url}")
+def process_dashboard_response(current_state: Dict[str, Any], data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Process dashboard response with state validation
 
-    def refresh_dashboard(self):
-        """Refreshes the member's dashboard"""
-        logger.info("Refreshing dashboard")
-        success, data = self.get_dashboard()
-        if success:
-            user = CachedUser(self.bot_service.user.mobile_number)
-            current_state = user.state.get_state(user)
+    Args:
+        current_state: Current state fields
+        data: Dashboard response data
 
-            if not isinstance(current_state, dict):
-                current_state = current_state.state
-            return self._handle_successful_refresh(current_state, data)
+    Returns:
+        Processed dashboard data or None if invalid
+    """
+    try:
+        # Validate response format
+        if not isinstance(data, dict):
+            logger.error("Invalid dashboard data format")
+            return None
 
-    def refresh_member_info(self, reset=True, silent=True, init=False):
-        """Refreshes member info by making an API call to CredEx"""
-        logger.info("Refreshing member info")
-
-        user = CachedUser(self.bot_service.user.mobile_number)
-        current_state = user.state.get_state(user)
-
-        if not isinstance(current_state, dict):
-            current_state = current_state.state
-
-        # print("")
-        url = f"{self.base_url}/getMemberDashboardByPhone"
-        payload = {"phone": self.bot_service.message["from"]}
-        headers = self._get_headers()
-        print(
-            "\n\n>>>>>>>>>>>>>>>>>>>\n\nHEADERS  >>>> ",
-            headers,
-            self.bot_service.user.state.jwt_token,
-        )
-
-        self._handle_reset_and_init(reset, silent, init)
-        try:
-            response = self._make_api_request(url, headers, payload)
-            print("####### RESPONSE ", response)
-            response_data = self._process_api_response(response)
-            print("####### RESPONSE DATA ", response_data)
-            if (
-                "Member not found" in response_data.get("message", "")
-                or "Could not retrieve member dashboard"
-                in response_data.get("message", "")
-                or "Invalid token" in response_data.get("message", "")
-            ):
-                return self.bot_service.action_handler.handle_action_register(
-                    register=True
-                )
-            else:
-                return self._handle_successful_refresh(
-                    current_state, member_info=response_data
-                )
-
-        except Exception as e:
-            logger.exception(f"Error during refresh: {str(e)}")
-            return self._handle_failed_refresh(current_state, str(e))
-
-    def login(self):
-        """Sends a login request to the CredEx API"""
-        logger.info("Attempting to login")
-        url = f"{self.base_url}/login"
-        logger.info(f"Login URL: {url}")
-        payload = {"phone": self.bot_service.user.mobile_number}
-        headers = {
-            "Content-Type": "application/json",
-            "x-client-api-key": config("CLIENT_API_KEY"),
-        }
-
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                token = (
-                    response_data.get("data", {})
-                    .get("action", {})
-                    .get("details", {})
-                    .get("token")
-                )
-                if token:
-                    self.bot_service.user.state.set_jwt_token(token)
-                    logger.info(f"Login successful {token}")
-                    return True, "Login successful"
-                else:
-                    logger.error("Login response didn't contain a token")
-                    return False, "Login failed: No token received"
-            elif response.status_code == 400:
-                logger.info("Login failed: New user or invalid phone")
-                return (
-                    False,
-                    "*Welcome!* \n\nIt looks like you're new here. Let's get you \nset up.",
-                )
-            elif response.status_code == 401:
-                logger.error(
-                    f"Login failed: Unauthorized. Response content: {response.text}"
-                )
-                return (
-                    False,
-                    "Login failed: Unauthorized. Please check your credentials.",
-                )
-            elif response.status_code == 404:
-                logger.error(
-                    f"Login failed: Not found. Response content: {response.text}"
-                )
-                print("RESPONSE TEXT ", response.json())
-                return False, response.json()
-            else:
-                logger.error(
-                    f"Unexpected status code: {response.status_code}. Response content: {response.text}"
-                )
-                return (
-                    False,
-                    f"Login failed: Unexpected error (status code: {response.status_code})",
-                )
-        except Exception as e:
-            logger.exception(f"Error during login: {str(e)}")
-            return False, f"Login failed: {str(e)}"
-
-    def register_member(self, payload):
-        """Sends a registration request to the CredEx API"""
-        logger.info("Attempting to register member")
-
-        url = f"{self.base_url}/onboardMember"
-        logger.info(f"Register URL: {url}")
-
-        headers = self._get_headers()
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 201:
-                response_data = response.json()
-                print("REGISTRATION RESPONSE DATA ", response_data)
-                if (
-                    response_data.get("data", {})
-                    .get("action", {})
-                    .get("details", {})
-                    .get("token")
-                ):
-                    self.bot_service.user.state.set_jwt_token(
-                        response_data.get("token")
-                    )
-                    logger.info("Registration successful")
-                    return True, "Registration successful"
-                else:
-                    logger.error("Registration response didn't contain a token")
-                    return False, "Registration failed: No token received"
-            elif response.status_code == 400:
-                logger.error(
-                    f"Registration failed: Bad request. Response content: {response.json().get('message')}"
-                )
-                return (
-                    False,
-                    f"*Registration failed (400)*:\n\n{response.json().get('message')}",
-                )
-            elif response.status_code == 401:
-                logger.error(
-                    f"Registration failed: Unauthorized. Response content: {response.text}"
-                )
-                return False, f"Registration failed: Unauthorized. {response.text}"
-            else:
-                logger.error(
-                    f"Unexpected status code: {response.status_code}. Response content: {response.text}"
-                )
-                return (
-                    False,
-                    f"Registration failed: Unexpected error (status code: {response.status_code})",
-                )
-        except Exception as e:
-            logger.exception(f"Error during registration: {str(e)}")
-            return False, f"Registration failed: {str(e)}"
-
-    def get_dashboard(self) -> Tuple[bool, dict]:
-        """Fetches the member's dashboard from the CredEx API"""
-        logger.info("Fetching member dashboard")
-        url = f"{self.base_url}/getMemberDashboardByPhone"
-        logger.info(f"Dashboard URL: {url}")
-
-        payload = {"phone": self.bot_service.user.mobile_number}
-        headers = self._get_headers()
-
-        try:
-            response = self._make_api_request(url, headers, payload, login=False)
-            if response.status_code == 200:
-                response_data = response.json()
-                logger.info("Dashboard fetched successfully")
-                return True, response_data
-            elif response.status_code == 401:
-                self.login()
-                response = self._make_api_request(url, headers, payload)
-                if response.status_code == 200:
-                    response_data = response.json()
-                    logger.info("Dashboard fetched successfully")
-                    return True, response_data
-                logger.error(
-                    f"Dashboard fetch failed: Unauthorized. Response content: {response.text}"
-                )
-                return False, {"message": "Dashboard fetch failed: Unauthorized"}
-            else:
-                logger.error(
-                    f"Unexpected status code: {response.status_code}. Response content: {response.text}"
-                )
-                return False, {
-                    "message": f"Dashboard fetch failed: Unexpected error (status code: {response.status_code})"
-                }
-        except Exception as e:
-            logger.exception(f"Error during dashboard fetch: {str(e)}")
-            return False, {"message": f"Dashboard fetch failed: {str(e)}"}
-
-    def validate_handle(self, handle):
-        """Validates a handle by making an API call to CredEx"""
-        logger.info(f"Validating handle: {handle}")
-
-        url = f"{self.base_url}/getAccountByHandle"
-        logger.info(f"Handle validation URL: {url}")
-
-        payload = {"accountHandle": handle.lower()}
-        headers = self._get_headers()
-        # print("HEADERS  >>>> ", headers, self.bot_service.user.state.jwt_token)
-
-        try:
-            response = self._make_api_request(url, headers, payload, method="POST")
-            if response.status_code == 200:
-                response_data = response.json()
-                if not response_data.get("Error"):
-                    logger.info("Handle validation successful")
-                    return True, response_data
-                else:
-                    logger.error("Handle validation failed")
-                    return False, response_data
-            else:
-                logger.error(
-                    f"Unexpected status code: {response.status_code}. Response content: {response.text}"
-                )
-                return (
-                    False,
-                    f"Handle validation failed: Unexpected error (status code: {response.status_code})",
-                )
-        except Exception as e:
-            logger.exception(f"Error during handle validation: {str(e)}")
-            return False, f"Handle validation failed: {str(e)}"
-
-    def offer_credex(self, payload):
-        """Sends an offer to the CredEx API"""
-        logger.info("Attempting to offer CredEx")
-        payload.pop("full_name", None)
-
-        url = f"{self.base_url}/createCredex"
-        logger.info(f"Offer URL: {url}")
-
-        headers = self._get_headers()
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-
-                if (
-                    response_data.get("data", {}).get("action", {}).get("type")
-                    == "CREDEX_CREATED"
-                ):
-                    logger.info("Offer successful")
-                    return True, response_data
-                else:
-                    logger.error("Offer failed")
-                    return False, response_data.get("error")
-            elif response.status_code == 400:
-                logger.error(
-                    f"Offer failed: Bad request. Response content: {response.json().get('message')}"
-                )
-                return False, response.json().get("error")
-            elif response.status_code == 401:
-                logger.error(
-                    f"Offer failed: Unauthorized. Response content: {response.text}"
-                )
-                return False, f"Offer failed: Unauthorized. {response.text}"
-            else:
-                logger.error(
-                    f"Unexpected status code: {response.status_code}. Response content: {response.text}"
-                )
-                return (
-                    False,
-                    f"Offer failed: Unexpected error (status code: {response.status_code})",
-                )
-        except Exception as e:
-            logger.exception(f"Error during offer: {str(e)}")
-            return False, f"Offer failed: {str(e)}"
-
-    def accept_bulk_credex(self, payload):
-        """Accepts multiple CredEx offers"""
-        logger.info("Attempting to accept multiple CredEx offers")
-
-        url = f"{self.base_url}/acceptCredexBulk"
-        logger.info(f"Accept URL: {url}")
-
-        headers = self._get_headers()
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data.get("summary", {}).get("accepted"):
-                    logger.info("Accept successful")
-                    return True, response_data
-                else:
-                    logger.error("Accept failed")
-                    return False, response_data.get("error")
-            elif response.status_code == 400:
-                logger.error(
-                    f"Accept failed: Bad request. Response content: {response.json().get('message')}"
-                )
-                return False, f"Accept failed: {response.json().get('message')}"
-            elif response.status_code == 401:
-                logger.error(
-                    f"Accept failed: Unauthorized. Response content: {response.text}"
-                )
-                return False, f"Accept failed: Unauthorized. {response.text}"
-            else:
-                logger.error(
-                    f"Unexpected status code: {response.status_code}. Response content: {response.text}"
-                )
-                return (
-                    False,
-                    f"Accept failed: Unexpected error (status code: {response.status_code})",
-                )
-        except Exception as e:
-            logger.exception(f"Error during accept: {str(e)}")
-            return False, f"Accept failed: {str(e)}"
-
-    def accept_credex(self, payload):
-        """Accepts a CredEx offer"""
-        logger.info("Attempting to accept CredEx")
-
-        url = f"{self.base_url}/acceptCredex"
-        logger.info(f"Accept URL: {url}")
-
-        headers = self._get_headers()
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                if (
-                    response_data.get("data", {}).get("action", {}).get("type")
-                    == "CREDEX_ACCEPTED"
-                ):
-                    logger.info("Accept successful")
-                    return True, response_data
-                else:
-                    logger.error("Accept failed")
-                    return False, response_data.get("error")
-            elif response.status_code == 400:
-                logger.error(
-                    f"Accept failed: Bad request. Response content: {response.json().get('message')}"
-                )
-                return (
-                    False,
-                    f"Accept failed: {response.json().get('error', 'Failed to accept')}",
-                )
-            elif response.status_code == 401:
-                logger.error(
-                    f"Accept failed: Unauthorized. Response content: {response.text}"
-                )
-                return False, f"Accept failed: Unauthorized. {response.text}"
-            else:
-                logger.error(
-                    f"Unexpected status code: {response.status_code}. Response content: {response.text}"
-                )
-                return (
-                    False,
-                    f"Accept failed: Unexpected error (status code: {response.status_code})",
-                )
-        except Exception as e:
-            logger.exception(f"Error during accept: {str(e)}")
-            return False, f"Accept failed: {str(e)}"
-
-    def decline_credex(self, payload):
-        """Declines a CredEx offer"""
-        logger.info("Attempting to decline CredEx")
-
-        url = f"{self.base_url}/declineCredex"
-        logger.info(f"Decline URL: {url}")
-
-        headers = self._get_headers()
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data.get("status") == "success":
-                    logger.info("Decline successful")
-                    return True, "Decline successful"
-                else:
-                    logger.error("Decline failed")
-                    return False, response_data.get("error")
-            elif response.status_code == 400:
-                logger.error(
-                    f"Decline failed: Bad request. Response content: {response.json().get('message')}"
-                )
-                return False, f"Decline failed: {response.json().get('message')}"
-            elif response.status_code == 401:
-                logger.error(
-                    f"Decline failed: Unauthorized. Response content: {response.text}"
-                )
-                return False, f"Decline failed: Unauthorized. {response.text}"
-            else:
-                logger.error(
-                    f"Unexpected status code: {response.status_code}. Response content: {response.text}"
-                )
-                return (
-                    False,
-                    f"Decline failed: Unexpected error (status code: {response.status_code})",
-                )
-        except Exception as e:
-            logger.exception(f"Error during decline: {str(e)}")
-            return False, f"Decline failed: {str(e)}"
-
-    def cancel_credex(self, payload):
-        """Cancels a CredEx offer"""
-        logger.info("Attempting to cancel CredEx")
-
-        url = f"{self.base_url}/cancelCredex"
-        logger.info(f"Cancel URL: {url}")
-
-        headers = self._get_headers()
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data.get("message") == "Credex cancelled successfully":
-                    logger.info("Cancel successful")
-                    return True, "Credex cancelled successfully"
-                else:
-                    logger.error("Cancel failed")
-                    return False, response_data.get("error")
-            elif response.status_code == 400:
-                logger.error(
-                    f"Cancel failed: Bad request. Response content: {response.json().get('message')}"
-                )
-                return False, f"Cancel failed: {response.json().get('message')}"
-            elif response.status_code == 401:
-                logger.error(
-                    f"Cancel failed: Unauthorized. Response content: {response.text}"
-                )
-                return False, f"Cancel failed: Unauthorized. {response.text}"
-            else:
-                logger.error(
-                    f"Unexpected status code: {response.status_code}. Response content: {response.text}"
-                )
-                return (
-                    False,
-                    f"Cancel failed: Unexpected error (status code: {response.status_code})",
-                )
-        except Exception as e:
-            logger.exception(f"Error during cancel: {str(e)}")
-            return False, f"Cancel failed: {str(e)}"
-
-    def get_credex(self, payload):
-        """
-        :param payload:
-        :return:
-        """
-        logger.info("Fetching credex")
-        url = f"{self.base_url}/getCredex"
-        logger.info(f"Credex URL: {url}")
-
-        headers = self._get_headers()
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                logger.info("Credex fetched successfully")
-                return True, response_data
-            elif response.status_code == 400:
-                logger.error(
-                    f"Credex fetch failed: Bad request. Response content: {response.json().get('message')}"
-                )
-                return False, f"Credex fetch failed: {response.json().get('message')}"
-            elif response.status_code == 401:
-                logger.error(
-                    f"Credex fetch failed: Unauthorized. Response content: {response.text}"
-                )
-                return False, f"Credex fetch failed: Unauthorized. {response.text}"
-            else:
-                logger.error(
-                    f"Unexpected status code: {response.status_code}. Response content: {response.text}"
-                )
-                return (
-                    False,
-                    f"Credex fetch failed: Unexpected error (status code: {response.status_code})",
-                )
-        except Exception as e:
-            logger.exception(f"Error during credex fetch: {str(e)}")
-            return False, f"Credex fetch failed: {str(e)}"
-
-    def get_ledger(self, payload):
-        """
-        :param payload:
-        :return:
-        """
-        logger.info("Fetching ledger")
-        url = f"{self.base_url}/getLedger"
-        logger.info(f"Ledger URL: {url}")
-
-        headers = self._get_headers()
-        try:
-            response = self._make_api_request(url, headers, payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                logger.info("Ledger fetched successfully")
-                return True, response_data
-            elif response.status_code == 400:
-                logger.error(
-                    f"Ledger fetch failed: Bad request. Response content: {response.json().get('message')}"
-                )
-                return False, f"Ledger fetch failed: {response.json().get('message')}"
-            elif response.status_code == 401:
-                logger.error(
-                    f"Ledger fetch failed: Unauthorized. Response content: {response.text}"
-                )
-                return False, f"Ledger fetch failed: Unauthorized. {response.text}"
-            else:
-                logger.error(
-                    f"Unexpected status code: {response.status_code}. Response content: {response.text}"
-                )
-                return (
-                    False,
-                    f"Ledger fetch failed: Unexpected error (status code: {response.status_code})",
-                )
-        except Exception as e:
-            logger.exception(f"Error during ledger fetch: {str(e)}")
-            return False, f"Ledger fetch failed: {str(e)}"
-
-    @staticmethod
-    def _get_basic_auth_header(phone_number):
-        credentials = f"{phone_number}:{phone_number}"
-        encoded_credentials = base64.b64encode(credentials.encode("utf-8")).decode(
-            "utf-8"
-        )
-        return f"Basic {encoded_credentials}"
-
-    def _get_headers(self):
-        user = CachedUser(self.bot_service.user.mobile_number)
-        headers = {
-            "Content-Type": "application/json",
-            "x-client-api-key": config("CLIENT_API_KEY"),
-        }
-
-        # Add JWT token if available
-        if user.jwt_token:
-            headers["Authorization"] = f"Bearer {user.jwt_token}"
-        else:
-            self.login()
-
-        return headers
-
-    def _handle_reset_and_init(self, reset, silent, init):
-        if reset and not silent or init:
-            self._send_delay_message()
-            self._send_first_message()
-
-    def _send_delay_message(self):
-        if self.bot_service.state.stage != "handle_action_register" and not cache.get(
-            f"{self.bot_service.user.mobile_number}_interracted"
-        ):
-            CredexWhatsappService(
-                payload={
-                    "messaging_product": "whatsapp",
-                    "preview_url": False,
-                    "recipient_type": "individual",
-                    "to": self.bot_service.user.mobile_number,
-                    "type": "text",
-                    "text": {"body": "Please wait while we process your request..."},
-                }
-            ).send_message()
-            cache.set(
-                f"{self.bot_service.user.mobile_number}_interracted", True, 60 * 15
-            )
-
-    def _send_first_message(self):
-        # Instead of fetching from the database, we'll use a hardcoded message
-        first_message = "Welcome to CredEx! How can I assist you today?"
-        CredexWhatsappService(
-            payload={
-                "messaging_product": "whatsapp",
-                "preview_url": False,
-                "recipient_type": "individual",
-                "to": self.bot_service.user.mobile_number,
-                "type": "text",
-                "text": {"body": first_message},
-            }
-        ).send_message()
-
-    def _make_api_request(self, url, headers, payload, method="POST", login=False):
-        logger.info(f"Sending API request to: {url}")
-        logger.info(f"Headers: {headers}")
-        logger.info(f"Payload: {payload}")
-        user = CachedUser(self.bot_service.user.mobile_number)
-        if not user.jwt_token and login:
-            logger.info("Refreshing token")
-            success, message = self.login()
-            if not success:
-                return message
-
-        headers["Authorization"] = f"Bearer {user.jwt_token}"
-        response = requests.request(method, url, headers=headers, json=payload)
-        logger.info(f"API Response Status Code: {response.status_code}")
-        logger.info(f"API Response Headers: {response.headers}")
-        logger.info(
-            f"API Response Content: {response.text[:500]}..."
-        )  # Log only the first 500 characters
-        return response
-
-    @staticmethod
-    def _process_api_response(response):
-        # if response.status_code != 200:
-        #     raise requests.exceptions.RequestException(f"API returned status code {response.status_code}")
-
-        content_type = response.headers.get("Content-Type", "")
-        if "application/json" not in content_type:
-            raise ValueError(f"Received unexpected Content-Type: {content_type}")
-
-        return response.json()
-
-    @staticmethod
-    def _update_current_state(response_data, current_state, reset):
-        if reset:
-            current_state["profile"] = response_data
-        else:
-            current_state["profile"].update(response_data)
-        logger.info("Current state updated")
-
-    def _handle_successful_refresh(self, current_state, member_info=dict):
-
-        logger.info("Refresh successful")
-
-        # Validate member_info structure
-        if not isinstance(member_info, dict):
-            logger.error("Invalid member_info format")
-            return self._handle_failed_refresh(current_state, "Invalid member info format")
-
-        # Extract and validate dashboard data
-        dashboard_data = member_info.get("data", {}).get("dashboard")
-        member_details = member_info.get("data", {}).get("action", {}).get("details", {})
+        dashboard_data = data.get("data", {}).get("dashboard")
+        member_details = data.get("data", {}).get("action", {}).get("details", {})
 
         if not dashboard_data or not member_details:
             logger.error("Missing required dashboard data")
-            return self._handle_failed_refresh(current_state, "Missing dashboard data")
+            return None
 
-        # Extract member_id from details - SINGLE SOURCE OF TRUTH
-        member_id = member_details.get("memberId")
-        if not member_id:
-            logger.error("Missing member ID in dashboard response")
-            return self._handle_failed_refresh(current_state, "Missing member ID in response")
-
-        # Format member info consistently
-        member_info = {
-            "member": member_details,
-            "memberDashboard": dashboard_data,
+        # Return validated response
+        return {
+            "data": {
+                "dashboard": dashboard_data,
+                "action": {
+                    "details": member_details
+                }
+            }
         }
 
-        # Preserve JWT token
-        jwt_token = current_state.get("jwt_token")
-        if jwt_token:
-            member_info["jwt_token"] = jwt_token
-
-        # Update state with new member info and member_id at top level
-        current_state["profile"] = member_info
-        current_state["member_id"] = member_id  # Set at top level - SINGLE SOURCE OF TRUTH
-
-        # Handle current account setup with proper validation
-        if not current_state.get("current_account", {}):
-            member_tier = (
-                dashboard_data.get("memberTier", {}).get("low", 1)
-                if isinstance(dashboard_data.get("memberTier"), dict)
-                else 1
-            )
-
-            accounts = dashboard_data.get("accounts", [])
-            if member_tier < 2 and accounts and isinstance(accounts, list) and accounts:
-                try:
-                    # Extract account data from success/data wrapper
-                    first_account = accounts[0]
-                    if (
-                        isinstance(first_account, dict)
-                        and first_account.get("success")
-                        and isinstance(first_account.get("data"), dict)
-                    ):
-                        current_state["current_account"] = first_account["data"]
-                        logger.info("Successfully set default account")
-                    else:
-                        logger.error("Invalid account data structure")
-                        current_state["current_account"] = {}
-                except Exception as e:
-                    logger.error(f"Error setting default account: {str(e)}")
-                    current_state["current_account"] = {}
-            else:
-                current_state["current_account"] = {}
-                logger.info("No eligible account found or member tier too high")
-
-        # Update state with simplified pattern
-        user = CachedUser(self.bot_service.user.mobile_number)
-        user.state.update_state(current_state, "refresh")
-
-        logger.info("State updated successfully after refresh")
+    except Exception:
+        logger.exception("Error processing dashboard response")
         return None
+
+
+def create_api_interactions(state_manager: Any, channel_id: str) -> Dict[str, Callable]:
+    """Create API interactions service with pure functions
+
+    Args:
+        state_manager: State manager instance
+        channel_id: Channel identifier
+
+    Returns:
+        Dict[str, Callable]: Dictionary of API interaction functions
+    """
+    return {
+        # Auth operations
+        "login": lambda: auth_login(channel_id),
+        "register_member": lambda payload: auth_register(
+            payload,
+            state_manager.get("jwt_token")
+        ),
+
+        "validate_account_handle": lambda handle: validate_member_handle(
+            handle,
+            state_manager.get("jwt_token")
+        ),
+        "get_account_ledger": lambda account_id: get_account_ledger(
+            {"accountID": account_id},
+            state_manager.get("jwt_token")
+        ),
+
+        # CredEx operations
+        "offer_credex": lambda: create_credex(state_manager),
+        "accept_credex": lambda: accept_credex_offer(state_manager),
+        "accept_bulk_credex": lambda: accept_bulk_credex_offers(state_manager),
+        "decline_credex": lambda: decline_credex_offer(state_manager),
+        "cancel_credex": lambda: cancel_credex_offer(state_manager),
+        "get_credex": lambda: get_credex_details(state_manager),
+    }
