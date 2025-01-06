@@ -104,9 +104,14 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
 
-                # Return app's response data directly
-                logger.info(f"\nSending response to client: {json.dumps(response_data, indent=2)}")
-                self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                # If this is a text message response, send it immediately
+                if response_data.get("type") == "text":
+                    logger.info(f"\nSending text response to client: {json.dumps(response_data, indent=2)}")
+                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                # If this is an interactive message (dashboard), send it in a separate response
+                elif response_data.get("type") == "interactive":
+                    logger.info(f"\nSending interactive response to client: {json.dumps(response_data, indent=2)}")
+                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
             else:
                 # This is an app response, just acknowledge it
                 self.send_response(200)
