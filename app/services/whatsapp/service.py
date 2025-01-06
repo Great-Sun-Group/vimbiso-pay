@@ -1,17 +1,17 @@
 """WhatsApp messaging service implementation"""
 import json
 import logging
-from typing import Any, Dict, List, Optional
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import requests
-from decouple import config
 from core.messaging.base import BaseMessagingService
 from core.messaging.exceptions import MessageValidationError
 from core.messaging.types import (Button, InteractiveContent, InteractiveType,
                                   Message, MessageRecipient, TemplateContent,
                                   TextContent)
 from core.utils.exceptions import SystemException
+from decouple import config
 
 from .types import WhatsAppMessage
 

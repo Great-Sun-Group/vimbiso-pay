@@ -12,6 +12,7 @@ from core.messaging.types import Button, Message, TextContent
 from core.utils.exceptions import FlowException, SystemException
 
 from ...utils import get_recipient
+from ..constants import REGISTRATION_NEEDED
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class AuthFlow:
                 data={"validation": validation_result.error}
             )
 
-        # Send greeting message
+        # Create greeting message
         content = component.to_message_content(validation_result.value)
         if not isinstance(content, str):
             raise FlowException(
@@ -68,60 +69,44 @@ class AuthFlow:
             }
         })
 
-        # Send greeting and wait for response
-        greeting_response = messaging_service.send_message(message)
-        if not greeting_response:
-            # Update component validation state
-            component.validation_state.update({
-                "in_progress": False,
-                "completed": False,
-                "error": "Failed to send greeting"
-            })
+        # Mark component as completed
+        component.validation_state.update({
+            "in_progress": False,
+            "completed": True,
+            "error": None
+        })
 
-            # Update flow state with component state
-            state_manager.update_state({
-                "flow_data": {
-                    "active_component": component.get_ui_state()
-                }
-            })
+        # Get current flow state
+        flow_state = state_manager.get_flow_state()
+        if not flow_state:
             raise FlowException(
-                message="Failed to send greeting",
+                message="Lost flow state",
                 step="login",
-                action="send_greeting",
+                action="update_state",
                 data={}
             )
 
-        # Verify WhatsApp accepted the message
-        if not greeting_response.metadata or not greeting_response.metadata.get("whatsapp_message_id"):
-            logger.error("WhatsApp did not accept greeting message")
-            # Update component validation state
-            component.validation_state.update({
-                "in_progress": False,
-                "completed": False,
-                "error": "WhatsApp did not accept greeting"
-            })
-
-            # Update flow state with component state
-            state_manager.update_state({
-                "flow_data": {
-                    "active_component": component.get_ui_state()
+        # Advance to next component while preserving flow state
+        next_component = components[current_index + 1]
+        flow_state.update({
+            "active_component": {
+                "type": next_component,
+                "component_index": current_index + 1,
+                "validation": {
+                    "in_progress": False,
+                    "completed": False,
+                    "attempts": 0
                 }
-            })
-            raise FlowException(
-                message="WhatsApp did not accept greeting",
-                step="login",
-                action="verify_acceptance",
-                data={"response": greeting_response}
-            )
+            }
+        })
 
-        # After successful delivery, log acceptance and return
-        logger.info("Greeting accepted by WhatsApp with ID: %s",
-                   greeting_response.metadata.get("whatsapp_message_id") if greeting_response.metadata else "No message ID")
-        logger.info("Greeting sent with content: %s",
-                   greeting_response.content.body if greeting_response and greeting_response.content else "None")
+        # Update state preserving structure
+        state_manager.update_state({
+            "flow_data": flow_state
+        })
 
-        # Return greeting response and wait for user acknowledgment
-        return greeting_response
+        # Return greeting message to be sent through proper path
+        return message
 
     @staticmethod
     def _handle_login(state_manager: Any) -> tuple[bool, Dict]:
@@ -270,8 +255,8 @@ class AuthFlow:
                     try:
                         logger.info("Starting greeting sequence")
 
-                        # Handle greeting and wait for confirmation
-                        greeting_response = AuthFlow._handle_greeting(
+                        # Get and send greeting message
+                        greeting_message = AuthFlow._handle_greeting(
                             messaging_service=messaging_service,
                             state_manager=state_manager,
                             component=component,
@@ -279,8 +264,22 @@ class AuthFlow:
                             components=components
                         )
 
-                        # Return greeting response and wait for user acknowledgment
-                        return greeting_response
+                        # Send greeting through messaging service
+                        messaging_service.send_message(greeting_message)
+
+                        # Proceed to login handler
+                        success, auth_details = AuthFlow._handle_login(state_manager)
+                        if success:
+                            # Continue to login complete step
+                            return AuthFlow.process_step(
+                                messaging_service=messaging_service,
+                                state_manager=state_manager,
+                                step="login_complete",
+                                input_value=input_value
+                            )
+                        else:
+                            # Signal that registration is needed
+                            return REGISTRATION_NEEDED
 
                     except SystemException as e:
                         if "rate limit" in str(e).lower():
@@ -292,58 +291,32 @@ class AuthFlow:
                                 )
                             )
                         raise
-
                 elif current_type == "LoginHandler":
                     try:
-                        # Handle login after user has acknowledged greeting
                         success, auth_details = AuthFlow._handle_login(state_manager)
-                            if success:
-                                # Continue to login complete step
-                                return AuthFlow.process_step(
-                                    messaging_service=messaging_service,
-                                    state_manager=state_manager,
-                                    step="login_complete",
-                                    input_value=input_value
-                                )
-                            else:
-                                # Return registration message
-                                recipient = get_recipient(state_manager)
-                                message_content = auth_details.get("message") if auth_details else "Login failed"
-                                if not isinstance(message_content, str):
-                                    raise FlowException(
-                                        message="Invalid message content type",
-                                        step="login",
-                                        action="format_content",
-                                        data={"content_type": type(message_content).__name__}
-                                    )
-
-                                return Message(
-                                    recipient=recipient,
-                                    content=TextContent(body=message_content)
-                                )
-
-                        except SystemException:
-                            # Let system exceptions propagate up
-                            raise
-                        except Exception as e:
-                            # Wrap other errors
-                            raise SystemException(
-                                message=f"Error in login handler: {str(e)}",
-                                code="LOGIN_ERROR",
-                                service="auth_flow",
-                                action="login"
+                        if success:
+                            # Continue to login complete step
+                            return AuthFlow.process_step(
+                                messaging_service=messaging_service,
+                                state_manager=state_manager,
+                                step="login_complete",
+                                input_value=input_value
                             )
+                        else:
+                            # Signal that registration is needed
+                            return REGISTRATION_NEEDED
 
-                    except SystemException as e:
-                        if "rate limit" in str(e).lower():
-                            # Return error message for rate limit
-                            return Message(
-                                recipient=get_recipient(state_manager),
-                                content=TextContent(
-                                    body="⚠️ Too many messages sent. Please wait a moment before trying again."
-                                )
-                            )
+                    except SystemException:
+                        # Let system exceptions propagate up
                         raise
+                    except Exception as e:
+                        # Wrap other errors
+                        raise SystemException(
+                            message=f"Error in login handler: {str(e)}",
+                            code="LOGIN_ERROR",
+                            service="auth_flow",
+                            action="login"
+                        )
 
             elif step == "login_complete":
                 # Get dashboard component through account handler
