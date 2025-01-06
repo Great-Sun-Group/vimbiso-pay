@@ -127,7 +127,7 @@ class MessagingService(MessagingServiceInterface):
                     return member_handler.handle_flow_step(
                         state_manager=state_manager,
                         flow_type="member_auth",
-                        step="greeting",
+                        step="login",
                         input_value=message_text
                     )
 
@@ -197,11 +197,11 @@ class MessagingService(MessagingServiceInterface):
                 # Get member handler
                 handler = self._get_handler("member")
 
-                # Start with greeting step
+                # Start with login step which includes greeting
                 return handler.handle_flow_step(
                     state_manager=state_manager,
                     flow_type="member_auth",
-                    step="greeting",
+                    step="login",
                     input_value=message_text
                 )
 

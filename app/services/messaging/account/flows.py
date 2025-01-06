@@ -2,7 +2,7 @@
 import logging
 from typing import Any, Dict, Optional
 
-from core.components.registry import ComponentRegistry
+from core.components.registry import create_component
 from core.messaging.interface import MessagingServiceInterface
 from core.messaging.registry import FlowRegistry
 from core.messaging.types import Message
@@ -34,7 +34,7 @@ class AccountDashboardFlow:
             if step == "display":
                 # Get dashboard component
                 component_type = FlowRegistry.get_step_component("account_dashboard", step)
-                component = ComponentRegistry.create_component(component_type)
+                component = create_component(component_type)
 
                 # Set state manager for account access
                 component.set_state_manager(state_manager)
@@ -79,10 +79,10 @@ class AccountDashboardFlow:
                 }
                 message = AccountFormatters.format_dashboard(account_data)
 
-                # Convert button dictionaries to Button objects
+                # Convert button dictionaries to Button objects (max 3 for WhatsApp)
                 buttons = [
                     Button(id=btn["id"], title=btn["title"])
-                    for btn in verified_data["buttons"]
+                    for btn in verified_data["buttons"][:3]  # Limit to first 3 buttons
                 ]
 
                 # Create interactive message with buttons

@@ -160,20 +160,62 @@ def _get_message_content(message_type: str, message_text: Union[str, Dict]) -> D
                 }
             }
 
-        # Handle button/list replies
+        # Handle list selection with full details
+        if isinstance(message_text, dict) and message_text.get("type") == "list":
+            selection = message_text.get("selection", {})
+            return {
+                "type": "interactive",
+                "interactive": {
+                    "type": "list_reply",
+                    "list_reply": {
+                        "id": selection.get("id", "")[:200],  # WhatsApp's ID limit
+                        "title": selection.get("title", "")[:24],  # WhatsApp's title limit
+                        "description": selection.get("description", "")[:72]  # WhatsApp's description limit
+                    }
+                }
+            }
+
+        # Handle button/list replies by ID
         if isinstance(message_text, str) and ":" in message_text:
-            reply_type, reply_id = message_text.split(":", 1)
-            if reply_type in ["button", "list"]:
+            reply_type, reply_data = message_text.split(":", 1)
+            if reply_type == "button":
                 return {
                     "type": "interactive",
                     "interactive": {
-                        "type": f"{reply_type}_reply",
-                        f"{reply_type}_reply": {
-                            "id": reply_id[:256],  # WhatsApp's ID limit
-                            "title": reply_id[:20]  # WhatsApp's title limit
+                        "type": "button_reply",
+                        "button_reply": {
+                            "id": reply_data[:200],  # WhatsApp's ID limit
+                            "title": reply_data[:24]  # WhatsApp's title limit
                         }
                     }
                 }
+            elif reply_type == "list":
+                # Parse list selection details if provided
+                try:
+                    selection = json.loads(reply_data)
+                    return {
+                        "type": "interactive",
+                        "interactive": {
+                            "type": "list_reply",
+                            "list_reply": {
+                                "id": selection.get("id", "")[:200],
+                                "title": selection.get("title", "")[:24],
+                                "description": selection.get("description", "")[:72]
+                            }
+                        }
+                    }
+                except json.JSONDecodeError:
+                    # Fallback to simple ID if not JSON
+                    return {
+                        "type": "interactive",
+                        "interactive": {
+                            "type": "list_reply",
+                            "list_reply": {
+                                "id": reply_data[:200],
+                                "title": reply_data[:24]
+                            }
+                        }
+                    }
 
         # Default to text message
         return {
@@ -198,15 +240,33 @@ def extract_message_text(message: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
         interactive = message.get("interactive", {})
         interactive_type = interactive.get("type", "")
 
-        # Handle button/list replies
+        # Handle button replies
         if interactive_type == "button_reply":
             reply = interactive.get("button_reply", {})
-            return reply.get("id", "")
+            return {
+                "type": "button",
+                "id": reply.get("id", ""),
+                "title": reply.get("title", "")
+            }
+        # Handle list replies with full details
         elif interactive_type == "list_reply":
             reply = interactive.get("list_reply", {})
-            return reply.get("id", "")
+            return {
+                "type": "list",
+                "selection": {
+                    "id": reply.get("id", ""),
+                    "title": reply.get("title", ""),
+                    "description": reply.get("description", "")
+                }
+            }
 
-        return "Unknown interactive type"
+        # Handle other interactive types
+        body = interactive.get("body", {}).get("text", "")
+        return {
+            "type": interactive_type,
+            "body": body,
+            "context": interactive
+        }
 
     return "Unsupported message type"
 

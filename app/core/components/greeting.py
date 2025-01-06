@@ -18,9 +18,14 @@ class GreetingComponent(Component):
         super().__init__("greeting")
 
     def _validate(self, value: Any) -> ValidationResult:
-        """No validation needed for greeting - always valid"""
+        """Generate greeting - base Component handles validation tracking"""
+        # Get greeting text
+        greeting = get_random_greeting()
+
+        # Return success with value only - base Component handles validation state
         return ValidationResult.success({
-            "greeting": get_random_greeting()
+            "greeting": greeting,
+            "type": "greeting"  # Include type for flow routing
         })
 
     def to_message_content(self, value: Dict) -> str:

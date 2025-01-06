@@ -13,6 +13,7 @@ from core.utils.exceptions import FlowException, SystemException
 from core.messaging.flow import initialize_flow
 from core.utils.error_handler import ErrorHandler
 
+from .constants import REGISTRATION_NEEDED
 from .flows import AuthFlow, RegistrationFlow, UpgradeFlow
 from ..utils import get_recipient
 
@@ -131,10 +132,16 @@ class MemberHandler:
             # Process step through appropriate flow
             if flow_type == "member_auth":
                 result = AuthFlow.process_step(self.messaging, state_manager, step, input_value)
+                # Handle registration signal
+                if result == REGISTRATION_NEEDED:
+                    return self.start_registration(state_manager)
+                return result
             elif flow_type == "member_registration":
                 result = RegistrationFlow.process_step(self.messaging, state_manager, step, input_value)
+                return result
             elif flow_type == "member_upgrade":
                 result = UpgradeFlow.process_step(self.messaging, state_manager, step, input_value)
+                return result
             else:
                 raise FlowException(
                     message=f"Invalid flow type: {flow_type}",
@@ -142,8 +149,6 @@ class MemberHandler:
                     action="handle_flow",
                     data={"flow_type": flow_type}
                 )
-
-            return result
 
         except FlowException as e:
             # Enhanced flow error handling
