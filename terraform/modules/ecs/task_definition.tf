@@ -61,17 +61,27 @@ resource "aws_ecs_task_definition" "app" {
         # Check and repair AOF files if needed
         if [ -f /redis/cache/appendonlydir/appendonly.aof.1.incr.aof ]; then
           echo "Checking AOF file integrity..."
+          # Backup AOF files before repair attempt
+          echo "Creating backup of AOF files..."
+          cp -f /redis/cache/appendonlydir/appendonly.aof.1.incr.aof /redis/cache/appendonlydir/appendonly.aof.1.incr.aof.bak
+          cp -f /redis/cache/appendonlydir/appendonly.aof.manifest /redis/cache/appendonlydir/appendonly.aof.manifest.bak
+
           if ! redis-check-aof --fix /redis/cache/appendonlydir/appendonly.aof.1.incr.aof; then
             echo "AOF file corrupted, removing and starting fresh..."
             rm -f /redis/cache/appendonlydir/appendonly.aof.1.incr.aof
             rm -f /redis/cache/appendonlydir/appendonly.aof.manifest
+          else
+            echo "AOF file repaired successfully"
+            rm -f /redis/cache/appendonlydir/*.bak
           fi
         fi
 
-        # Start Redis with proper user and fixed memory limit
+        # Start Redis with proper user and optimized settings
         exec gosu redis redis-server \
           --appendonly yes \
           --appendfsync everysec \
+          --no-appendfsync-on-rewrite yes \
+          --aof-rewrite-incremental-fsync yes \
           --auto-aof-rewrite-percentage 100 \
           --auto-aof-rewrite-min-size 64mb \
           --aof-load-truncated yes \
@@ -83,9 +93,13 @@ resource "aws_ecs_task_definition" "app" {
           --timeout 30 \
           --tcp-keepalive 60 \
           --maxmemory-policy allkeys-lru \
-          --maxmemory ${floor(var.task_memory * 0.2 * 0.95)}mb \
+          --maxmemory ${floor(var.task_memory * 0.2 * 0.90)}mb \
           --save "" \
-          --stop-writes-on-bgsave-error no
+          --stop-writes-on-bgsave-error no \
+          --ignore-warnings ARM64-COW-BUG \
+          --activedefrag yes \
+          --active-defrag-threshold-lower 10 \
+          --active-defrag-threshold-upper 30
         EOT
       ]
       healthCheck = {
@@ -149,17 +163,27 @@ resource "aws_ecs_task_definition" "app" {
         # Check and repair AOF files if needed
         if [ -f /redis/state/appendonlydir/appendonly.aof.1.incr.aof ]; then
           echo "Checking AOF file integrity..."
+          # Backup AOF files before repair attempt
+          echo "Creating backup of AOF files..."
+          cp -f /redis/state/appendonlydir/appendonly.aof.1.incr.aof /redis/state/appendonlydir/appendonly.aof.1.incr.aof.bak
+          cp -f /redis/state/appendonlydir/appendonly.aof.manifest /redis/state/appendonlydir/appendonly.aof.manifest.bak
+
           if ! redis-check-aof --fix /redis/state/appendonlydir/appendonly.aof.1.incr.aof; then
             echo "AOF file corrupted, removing and starting fresh..."
             rm -f /redis/state/appendonlydir/appendonly.aof.1.incr.aof
             rm -f /redis/state/appendonlydir/appendonly.aof.manifest
+          else
+            echo "AOF file repaired successfully"
+            rm -f /redis/state/appendonlydir/*.bak
           fi
         fi
 
-        # Start Redis with proper user and fixed memory limit
+        # Start Redis with proper user and optimized settings
         exec gosu redis redis-server \
           --appendonly yes \
           --appendfsync everysec \
+          --no-appendfsync-on-rewrite yes \
+          --aof-rewrite-incremental-fsync yes \
           --auto-aof-rewrite-percentage 100 \
           --auto-aof-rewrite-min-size 64mb \
           --aof-load-truncated yes \
@@ -171,9 +195,13 @@ resource "aws_ecs_task_definition" "app" {
           --timeout 30 \
           --tcp-keepalive 60 \
           --maxmemory-policy allkeys-lru \
-          --maxmemory ${floor(var.task_memory * 0.2 * 0.95)}mb \
+          --maxmemory ${floor(var.task_memory * 0.2 * 0.90)}mb \
           --save "" \
-          --stop-writes-on-bgsave-error no
+          --stop-writes-on-bgsave-error no \
+          --ignore-warnings ARM64-COW-BUG \
+          --activedefrag yes \
+          --active-defrag-threshold-lower 10 \
+          --active-defrag-threshold-upper 30
         EOT
       ]
       healthCheck = {
@@ -388,7 +416,6 @@ EOF
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
       root_directory = "/"
-      transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.app_access_point_id
         iam = "ENABLED"
@@ -401,7 +428,6 @@ EOF
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
       root_directory = "/"
-      transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.redis_cache_access_point_id
         iam = "ENABLED"
@@ -414,7 +440,6 @@ EOF
     efs_volume_configuration {
       file_system_id = var.efs_file_system_id
       root_directory = "/"
-      transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.redis_state_access_point_id
         iam = "ENABLED"
