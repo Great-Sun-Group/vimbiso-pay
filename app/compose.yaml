@@ -42,14 +42,8 @@ services:
     volumes:
       - ./data/redis/state:/data
     ports:
-      - "6379:6379"  # Changed from 6380 since it's the only Redis now
-    command: >
-      redis-server
-      --maxmemory 512mb  # Increased since it's the only Redis
-      --maxmemory-policy allkeys-lru
-      --appendonly yes
-      --appendfsync everysec
-      --save ""
+      - "6379:6379"
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes --appendfsync everysec --save ""
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
