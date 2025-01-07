@@ -9,9 +9,9 @@ def health_check(request):
     """Simple health check endpoint"""
     try:
         # Check state Redis
-        state_cache = caches['state']
-        state_cache.set("health_check", "ok", 10)
-        result = state_cache.get("health_check")
+        default_cache = caches['default']
+        default_cache.set("health_check", "ok", 10)
+        result = default_cache.get("health_check")
 
         if result == "ok":
             return JsonResponse({"status": "ok", "message": "Service is healthy"})

@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from core.utils.error_types import ValidationResult
 
-from .base import InputComponent
+from core.components.base import InputComponent
 
 
 class FirstNameInput(InputComponent):

@@ -44,7 +44,7 @@ class StateManager:
             )
 
         self.key_prefix = key_prefix
-        self.atomic_state = AtomicStateManager(caches['state'])
+        self.atomic_state = AtomicStateManager(caches['default'])
         self._state = self._initialize_state()
 
     def _initialize_state(self) -> Dict[str, Any]:

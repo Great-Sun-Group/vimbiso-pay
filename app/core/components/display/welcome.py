@@ -10,10 +10,10 @@ from core.messaging.types import (Button, ChannelIdentifier, ChannelType,
                                   MessageRecipient)
 from core.utils.error_types import ValidationResult
 
-from .base import InputComponent
+from core.components.base import Component
 
 
-class Welcome(InputComponent):
+class Welcome(Component):
     """Handles registration welcome screen"""
 
     def __init__(self):

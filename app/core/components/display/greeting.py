@@ -5,10 +5,10 @@ This component handles sending greetings as a separate step in flows.
 
 from typing import Any, Dict
 
-from core.messaging.greetings import get_random_greeting
+from core.messaging.formatters.greetings import get_random_greeting
 from core.utils.error_types import ValidationResult
 
-from .base import Component
+from core.components.base import Component
 
 
 class Greeting(Component):

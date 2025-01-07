@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from core.utils.error_types import ValidationResult
 
-from .confirm_base import ConfirmBase
+from . import ConfirmBase
 
 
 class ConfirmDeclineOffer(ConfirmBase):
