@@ -203,9 +203,8 @@ resource "aws_ecs_task_definition" "app" {
 
         # Set up directories with proper permissions
         echo "[App] Setting up directories..."
-        mkdir -p /efs-vols/app-data/data/{db,static,media,logs}
+        mkdir -p /efs-vols/app-data/data/{static,media,logs}
         chown -R 10001:10001 /efs-vols/app-data
-        chmod 777 /efs-vols/app-data/data/db
 
         echo "[App] Waiting for Redis State..."
         until nc -z localhost ${var.redis_state_port}; do
@@ -257,9 +256,6 @@ EOF
 
         echo "[App] Creating data symlink..."
         ln -sfn /efs-vols/app-data/data /app/data
-
-        echo "[App] Running migrations..."
-        python manage.py migrate --noinput
 
         echo "[App] Collecting static files..."
         python manage.py collectstatic --noinput

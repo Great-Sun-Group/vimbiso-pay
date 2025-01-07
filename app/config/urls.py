@@ -1,5 +1,5 @@
 from core.api.views import (CredexCloudApiWebhook, CredexSendMessageWebhook,
-                            WelcomeMessage, WipeCache)
+                            WipeCache)
 from django.http import JsonResponse
 from django.urls import path
 from django.core.cache import caches
@@ -35,6 +35,5 @@ urlpatterns = [
     # Bot endpoints
     path("bot/webhook", CredexCloudApiWebhook.as_view(), name="webhook"),
     path("bot/notify", CredexSendMessageWebhook.as_view(), name="notify"),
-    path("bot/welcome/message", WelcomeMessage.as_view(), name="welcome_message"),
     path("bot/wipe", WipeCache.as_view(), name="wipe"),
 ]

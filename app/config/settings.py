@@ -27,26 +27,13 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 
-# Database and storage paths
+# Storage paths
 DEPLOYED_TO_AWS = env('DEPLOYED_TO_AWS', default=False, cast=bool)
 if DEPLOYED_TO_AWS:
     BASE_PATH = "/efs-vols/app-data/data"
 else:
     BASE_PATH = BASE_DIR / 'data'
     os.makedirs(BASE_PATH, exist_ok=True)
-
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": f"{BASE_PATH}/db/db.sqlite3",
-        "ATOMIC_REQUESTS": True,
-        "OPTIONS": {
-            "timeout": 60,
-            "isolation_level": "IMMEDIATE",
-        },
-        "CONN_MAX_AGE": 60,
-    }
-}
 
 # Redis state configuration
 REDIS_STATE_URL = env("REDIS_STATE_URL", default="redis://redis-state:6379/0")
