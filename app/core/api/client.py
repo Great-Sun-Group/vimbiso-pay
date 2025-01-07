@@ -2,8 +2,8 @@
 import logging
 from typing import Any, Callable, Dict
 
-from .auth import login as auth_login
-from .auth import register_member as auth_register
+from .login import login as auth_login
+from .login import onboard_member as auth_onboard
 from .credex import (accept_bulk_credex, accept_credex, cancel_credex,
                      decline_credex, get_credex, offer_credex)
 from .credex import get_ledger as get_account_ledger
@@ -26,7 +26,7 @@ def create_api_service(state_manager: Any, channel_id: str) -> Dict[str, Callabl
     return {
         # Auth operations
         "login": lambda: auth_login(channel_id),
-        "register_member": lambda member_data: auth_register(
+        "onboard_member": lambda member_data: auth_onboard(
             member_data,
             state_manager.get_flow_data().get("auth", {}).get("token")
         ),

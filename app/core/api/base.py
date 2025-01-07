@@ -144,8 +144,11 @@ def make_api_request(
                 # Handle 401 with retry
                 if response.status_code == 401 and retry_auth and state_manager:
                     logger.warning("Received 401, attempting to refresh auth token")
-                    from .auth import login
-                    success, _ = login(BASE_URL, state_manager)
+                    from .login import login
+                    # Create bot service for login
+                    from services.whatsapp.bot_service import get_bot_service
+                    bot_service = get_bot_service(state_manager)
+                    success, _ = login(bot_service)
                     if success:
                         headers = get_headers(state_manager)  # Get fresh headers
                         retries += 1
@@ -237,14 +240,19 @@ def handle_error_response(
     custom_message: str = None
 ) -> Dict:
     """Handle error response with logging"""
-    try:
-        error_data = response.json()
-        error_msg = custom_message or error_data.get(
-            "message",
-            error_data.get("error", f"{operation} failed")
-        )
-    except ValueError:
-        error_msg = custom_message or f"{operation} failed"
+    # Handle 502 errors specifically
+    if response.status_code == 502:
+        error_msg = "❌ Sorry, the server is temporarily down (502). Please try again soon."
+        logger.error(f"{operation} failed: Server temporarily unavailable (502)")
+    else:
+        try:
+            error_data = response.json()
+            error_msg = custom_message or error_data.get(
+                "message",
+                error_data.get("error", f"{operation} failed")
+            )
+        except ValueError:
+            error_msg = custom_message or f"{operation} failed"
 
     logger.error(
         f"{operation} failed: {response.status_code}. Response: {response.text}"

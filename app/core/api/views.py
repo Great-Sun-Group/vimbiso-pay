@@ -1,6 +1,7 @@
 """Cloud API webhook views"""
 import logging
 import sys
+from datetime import datetime
 
 from core.api.models import Message as DBMessage  # Rename to avoid confusion
 from core.config.state_manager import StateManager
@@ -166,9 +167,17 @@ class CredexCloudApiWebhook(APIView):
                 logger.warning("Missing required message information")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Initialize state manager with channel info (SINGLE SOURCE OF TRUTH)
+            # Initialize state manager with channel info and mock status (SINGLE SOURCE OF TRUTH)
             logger.info(f"Initializing state manager for {channel_type.value} channel: {channel_id}")
             state_manager = StateManager(f"channel:{channel_id}")
+
+            # Store mock testing status in state
+            state_manager.update_state({
+                "mock_testing": is_mock_testing,
+                "_metadata": {
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            })
 
             # Log message details
             logger.info(f"Processing {channel_type.value} message: {message_text}")
@@ -182,19 +191,22 @@ class CredexCloudApiWebhook(APIView):
                     message_text=message_text
                 )
 
-                # Convert domain Message to transport format at boundary
-                if isinstance(response, DomainMessage):
-                    response_dict = response.to_dict()
-                else:
+                # Validate response type
+                if not isinstance(response, DomainMessage):
                     logger.error("Invalid response type from messaging service")
                     raise ValueError("Messaging service returned invalid response type")
 
-                # For mock testing return the formatted response
-                if is_mock_testing:
-                    return JsonResponse(response_dict, status=status.HTTP_200_OK)
+                # Send message through service
+                sent_response = messaging_service.send_message(response)
 
-                # For real requests send via service
-                messaging_service.send_message(response)
+                # For mock testing return the WhatsApp payload
+                if is_mock_testing:
+                    # Return the response directly in mock mode
+                    if isinstance(sent_response, DomainMessage):
+                        return JsonResponse(sent_response.to_dict(), status=status.HTTP_200_OK)
+                    return JsonResponse(sent_response, status=status.HTTP_200_OK)
+
+                # For real requests return success
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             except Exception as e:

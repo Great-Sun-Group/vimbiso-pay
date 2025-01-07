@@ -3,16 +3,16 @@
 This package provides the component system with:
 - Base component interfaces
 - Input components
-- Auth components
+- Login components
 - Component registry
 """
 
-from .auth import LoginCompleteHandler, LoginHandler
+from .login import LoginApiCall
 from .base import Component, InputComponent
+from .greeting import Greeting
 from .input import AmountInput, ConfirmInput, HandleInput, SelectInput
-from .registration import (
-    FirstNameInput, LastNameInput, RegistrationComplete, RegistrationWelcome
-)
+from .registration import (FirstNameInput, LastNameInput, OnBoardMemberApiCall,
+                           RegistrationWelcome)
 from .registry import ComponentRegistry, create_component
 
 __all__ = [
@@ -20,9 +20,12 @@ __all__ = [
     "Component",
     "InputComponent",
 
-    # Auth components
-    "LoginHandler",
-    "LoginCompleteHandler",
+    # Member components
+    "LoginApiCall",
+    "RegistrationWelcome",
+    "FirstNameInput",
+    "LastNameInput",
+    "OnBoardMemberApiCall",
 
     # Input components
     "AmountInput",
@@ -30,11 +33,8 @@ __all__ = [
     "SelectInput",
     "ConfirmInput",
 
-    # Registration components
-    "RegistrationWelcome",
-    "FirstNameInput",
-    "LastNameInput",
-    "RegistrationComplete",
+    # Output components
+    "Greeting",
 
     # Registry
     "ComponentRegistry",

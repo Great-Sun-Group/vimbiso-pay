@@ -203,6 +203,148 @@ Common mistakes to avoid:
 3. DON'T mix responsibilities between systems
 4. DON'T handle errors outside boundaries
 
+## Multi-Component and Message Handling
+
+### Message Component Pattern
+Message components (like Greeting) require special handling through a dedicated handler method:
+
+```python
+@staticmethod
+def _handle_greeting(messaging_service: MessagingServiceInterface, state_manager: Any, component: Any, current_index: int, components: list) -> Message:
+    """Handle greeting component"""
+    # Get validation result first
+    validation_result = component.validate({})
+    if not validation_result.valid:
+        raise FlowException(
+            message="Failed to validate greeting",
+            step="step_name",
+            action="validate",
+            data={"validation": validation_result.error}
+        )
+
+    # Create greeting message
+    content = component.to_message_content(validation_result.value)
+    if not isinstance(content, str):
+        raise FlowException(
+            message="Invalid greeting content type",
+            step="step_name",
+            action="format_content",
+            data={"content_type": type(content).__name__}
+        )
+
+    message = Message(
+        recipient=get_recipient(state_manager),
+        content=TextContent(body=content)
+    )
+
+    # Get component state
+    component_state = component.get_ui_state()
+
+    # Mark component as completed
+    component_state["validation"].update({
+        "in_progress": False,
+        "completed": True,
+        "error": None
+    })
+
+    # Get current flow state
+    flow_state = state_manager.get_flow_state()
+    if not flow_state:
+        raise FlowException(
+            message="Lost flow state",
+            step="step_name",
+            action="update_state",
+            data={}
+        )
+
+    # Advance to next component while preserving flow state
+    next_component = components[current_index + 1]
+    flow_state.update({
+        "active_component": {
+            "type": next_component,
+            "component_index": current_index + 1,
+            "validation": {
+                "in_progress": False,
+                "completed": False,
+                "attempts": 0
+            }
+        }
+    })
+
+    # Update state preserving structure
+    state_manager.update_state({
+        "flow_data": flow_state
+    })
+
+    # Return greeting message to be sent through proper path
+    return message
+```
+
+Key principles for message component handling:
+1. Use dedicated handler method (_handle_greeting)
+2. Validate and get message content
+3. Update component state and mark as completed
+4. Advance to next component while preserving flow state
+5. Return message for sending through proper channel
+
+Example usage in flow step:
+```python
+# Handle greeting component
+greeting_message = Flow._handle_greeting(
+    messaging_service=messaging_service,
+    state_manager=state_manager,
+    component=greeting_component,
+    current_index=0,
+    components=["Greeting", "ActionComponent"]
+)
+
+# Send greeting through messaging service
+messaging_service.send_message(greeting_message)
+
+# Proceed to next component immediately
+action_component = create_component("ActionComponent")
+action_component.set_dependencies(...)
+validation_result = action_component.validate(None)
+```
+
+### Multi-Component Steps
+Steps can contain multiple components that execute in sequence:
+
+1. **Registry Configuration**
+```python
+"step_name": {
+    "components": ["MessageComponent", "ActionComponent"]
+}
+```
+
+2. **Component Progression**
+- Components execute in array order
+- Message components send and advance
+- Action components process input
+- Each updates state to next component
+- Final component advances to next step
+
+3. **State Management**
+```python
+{
+    "active_component": {
+        "type": current_component,
+        "components": component_array,
+        "component_index": index,
+        "validation": {
+            "completed": False,
+            "attempts": 0
+        }
+    }
+}
+```
+
+Common mistakes to avoid:
+1. DON'T handle message components in multiple places
+2. DON'T mix message and input handling
+3. DON'T skip component progression
+4. DON'T duplicate component handling
+
 ## Common Modifications
 
 ### Adding New Flow Types
@@ -230,6 +372,7 @@ FLOWS["new_flow"] = {
 3. Modify component validation
 4. Update state transitions
 5. Test full flow
+
 
 ### Adding Flow Validation
 1. Check existing validation in components

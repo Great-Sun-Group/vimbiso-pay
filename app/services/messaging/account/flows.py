@@ -66,17 +66,17 @@ class AccountDashboardFlow:
                 # Get member tier from dashboard data (source of truth)
                 member_data = verified_data["dashboard"].get("member", {})
                 member_tier = member_data.get("memberTier")
-                tier_limit_display = ""  # Default to no display
-                if member_tier < 2:  # only show for memberTier < 2
-                    remaining_usd = balance_data.get("remainingAvailableUSD", "0.00")
-                    tier_limit_display = f"\n⏳ DAILY MEMBER TIER LIMIT: {remaining_usd} USD"
-
                 account_data = {
                     "accountName": active_account.get("accountName"),
                     "accountHandle": active_account.get("accountHandle"),
-                    **balance_data,
-                    "tier_limit_display": tier_limit_display
+                    "netCredexAssetsInDefaultDenom": balance_data.get('netCredexAssetsInDefaultDenom', '0.00'),
+                    "defaultDenom": member_data.get('defaultDenom', 'USD'),
+                    **balance_data
                 }
+
+                # Only include tier limit for tier < 2
+                if member_tier < 2:
+                    account_data["tier_limit_raw"] = member_data.get("remainingAvailableUSD", "0.00")
                 message = AccountFormatters.format_dashboard(account_data)
 
                 # Convert button dictionaries to Button objects (max 3 for WhatsApp)

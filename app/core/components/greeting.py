@@ -11,7 +11,7 @@ from core.utils.error_types import ValidationResult
 from .base import Component
 
 
-class GreetingComponent(Component):
+class Greeting(Component):
     """Component for sending culturally-aware greetings"""
 
     def __init__(self):
