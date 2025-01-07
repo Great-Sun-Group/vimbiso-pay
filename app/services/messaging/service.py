@@ -1,74 +1,160 @@
-"""Channel-agnostic messaging service"""
+"""Messaging service implementation
+
+This service handles message processing and responses.
+Flow routing is handled by core/messaging/flow.py.
+Component processing is handled by the components themselves.
+Message formatting is handled by handlers.py.
+"""
+
 import logging
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from core.messaging.exceptions import (MessageDeliveryError,
-                                       MessageTemplateError,
-                                       MessageValidationError)
-from core.messaging.flow import initialize_flow
+from core.messaging.flow import process_component
+from core.messaging.base import BaseMessagingService
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.registry import FlowRegistry
-from core.messaging.types import (Button, ChannelIdentifier, ChannelType,
-                                  Message, MessageRecipient)
-from core.utils.error_handler import ErrorHandler
-from core.utils.exceptions import (ComponentException, FlowException,
-                                   SystemException)
+from core.messaging.types import Message
+from core.utils.exceptions import SystemException
 
-from .account.handlers import AccountHandler
-from .credex.handlers import CredexHandler
-from .member.handlers import MemberHandler
+from . import handlers
 
 logger = logging.getLogger(__name__)
 
 
 class MessagingService(MessagingServiceInterface):
-    """Coordinates messaging operations across channels"""
+    """Main messaging service"""
 
-    def __init__(self, messaging_service: MessagingServiceInterface):
-        """Initialize with channel-specific messaging service"""
-        self.messaging = messaging_service
-        self.state_manager = None  # Will be set during handle_message
+    def __init__(self, channel_service: BaseMessagingService, state_manager: Any):
+        """Initialize messaging service
+
+        Args:
+            channel_service: Channel-specific messaging service (WhatsApp, SMS, etc)
+            state_manager: State manager for tracking state
+        """
+        self.channel_service = channel_service
+        self.state_manager = state_manager
+
+        # Set state manager on channel service
+        if hasattr(self.channel_service, 'state_manager'):
+            self.channel_service.state_manager = state_manager
+
+    def handle_message(self) -> Optional[Message]:
+        """Handle incoming message
+
+        The flow is:
+        1. Get message data from state
+        2. Get current context/component from state
+        3. Process component with input
+        4. Get next context/component
+        5. Format and send appropriate message
+
+        Returns:
+            Optional[Message]: Response message if any
+        """
+        try:
+            # Get message data from state
+            message_data = self.state_manager.get("message", {})
+            if not message_data:
+                raise ValueError("No message data in state")
+
+            # Get current context and component
+            context = self.state_manager.get_context()
+            component = self.state_manager.get_component()
+
+            # Process component using state manager
+            result, next_context, next_component = process_component(
+                context or "login",  # Default to login context
+                component or "Greeting",  # Default to greeting component
+                self.state_manager
+            )
+
+            # Update state
+            self.state_manager.update_flow_state(
+                next_context,
+                next_component,
+                {"result": result}
+            )
+
+            # Format appropriate message based on context/component
+            match (next_context, next_component):
+                case ("account", "AccountDashboard"):
+                    return handlers.handle_dashboard_display(
+                        messaging_service=self,
+                        state_manager=self.state_manager,
+                        verified_data=result
+                    )
+
+                case (_, "Greeting"):
+                    return handlers.handle_greeting(
+                        state_manager=self.state_manager,
+                        content=result
+                    )
+
+                case _:
+                    # For other cases, check result type
+                    if isinstance(result, str):
+                        return handlers.handle_greeting(
+                            state_manager=self.state_manager,
+                            content=result
+                        )
+                    elif isinstance(result, dict) and "error" in result:
+                        return handlers.handle_error(
+                            state_manager=self.state_manager,
+                            error=result["error"]
+                        )
+                    else:
+                        logger.info(
+                            f"No message handler for {next_context}/{next_component}"
+                        )
+                        return None
+
+        except SystemException as e:
+            if "rate limit" in str(e).lower():
+                return handlers.handle_rate_limit_error(self.state_manager)
+            raise
 
     def send_message(self, message: Message) -> Message:
-        """Send a message to a recipient"""
-        return self.messaging.send_message(message)
+        """Send message through channel service"""
+        return self.channel_service.send_message(message)
 
     def send_text(
         self,
-        recipient: MessageRecipient,
+        recipient,
         text: str,
         preview_url: bool = False
     ) -> Message:
-        """Send a text message"""
-        return self.messaging.send_text(recipient, text, preview_url)
+        """Send text message through channel service"""
+        return self.channel_service.send_text(recipient, text, preview_url)
 
     def send_interactive(
         self,
-        recipient: MessageRecipient,
+        recipient,
         body: str,
-        buttons: List[Button],
-        header: Optional[str] = None,
-        footer: Optional[str] = None,
+        buttons=None,
+        header=None,
+        footer=None,
+        sections=None,
+        button_text=None
     ) -> Message:
-        """Send an interactive message"""
-        return self.messaging.send_interactive(
+        """Send interactive message through channel service"""
+        return self.channel_service.send_interactive(
             recipient=recipient,
             body=body,
             buttons=buttons,
             header=header,
-            footer=footer
+            footer=footer,
+            sections=sections,
+            button_text=button_text
         )
 
     def send_template(
         self,
-        recipient: MessageRecipient,
+        recipient,
         template_name: str,
         language: Dict[str, str],
-        components: Optional[List[Dict[str, Any]]] = None,
+        components=None
     ) -> Message:
-        """Send a template message"""
-        return self.messaging.send_template(
+        """Send template message through channel service"""
+        return self.channel_service.send_template(
             recipient=recipient,
             template_name=template_name,
             language=language,
@@ -76,264 +162,6 @@ class MessagingService(MessagingServiceInterface):
         )
 
     def validate_message(self, message: Message) -> bool:
-        """Validate a message before sending"""
-        return self.messaging.validate_message(message)
-
-    def _get_handler(self, handler_type: str) -> Any:
-        """Get appropriate handler instance"""
-        handlers = {
-            "member": lambda: MemberHandler(self.messaging),
-            "account": lambda: AccountHandler(self.messaging),
-            "credex": lambda: CredexHandler(self.messaging)
-        }
-        if handler_type not in handlers:
-            raise FlowException(
-                message=f"Invalid handler type: {handler_type}",
-                step="init",
-                action="get_handler",
-                data={"handler_type": handler_type}
-            )
-        return handlers[handler_type]()
-
-    def _get_recipient(self, state_manager: Any) -> MessageRecipient:
-        """Get message recipient from state with validation"""
-        try:
-            # Create proper channel identifier
-            channel_id = ChannelIdentifier(
-                channel=ChannelType.WHATSAPP,
-                value=state_manager.get_channel_id()
-            )
-            return MessageRecipient(channel_id=channel_id)
-        except ComponentException as e:
-            logger.error(f"Error creating recipient: {str(e)}")
-            raise
-
-    def handle_message(self, state_manager: Any, message_type: str, message_text: str) -> Message:
-        """Handle incoming message using appropriate handler"""
-        try:
-            # Store state manager for use by messaging service
-            self.state_manager = state_manager
-            if hasattr(self.messaging, 'state_manager'):
-                self.messaging.state_manager = state_manager
-            greetings = [
-                # English greetings
-                "hi", "hello", "hey", "hie", "menu", "dashboard",
-                # Spanish greetings
-                "hola", "menu", "tablero",
-                # French greetings
-                "bonjour", "salut", "menu", "tableau",
-                # Shona greetings
-                "mhoro", "makadii", "maswera sei", "ndeipi", "zvirisei", "wakadini", "manheru", "masikati",
-                # Ndebele greetings
-                "sabona", "salibonani", "sawubona", "unjani",
-                # Swahili greetings
-                "jambo", "habari", "menu", "karibu", "mambo",
-                # Common variations
-                "start", "begin", "help", "get started", "howzit", "yo", "sup"
-            ]
-
-            # Check for greeting first - always reset and start auth flow
-            if message_text.lower() in greetings:
-                # Clear all state for fresh start
-                state_manager.clear_all_state()
-
-                # Initialize auth flow starting with greeting step
-                initialize_flow(
-                    state_manager=state_manager,
-                    flow_type="member_login",
-                    initial_data={
-                        "started_at": datetime.utcnow().isoformat()
-                    }
-                )
-
-                # Get member handler
-                handler = self._get_handler("member")
-
-                # Start with login step which includes greeting
-                return handler.handle_flow_step(
-                    state_manager=state_manager,
-                    flow_type="member_login",
-                    step="login",
-                    input_value=message_text
-                )
-
-            # Then check if in active flow
-            flow_state = state_manager.get_flow_state()
-            if flow_state:
-                flow_type = state_manager.get_flow_type()
-                current_step = state_manager.get_current_step()
-
-                # Get flow config through registry
-                config = FlowRegistry.get_flow_config(flow_type)
-                handler_type = config.get("handler_type", "member")
-
-                # Get handler instance
-                handler = self._get_handler(handler_type)
-
-                # Route to handler
-                return handler.handle_flow_step(
-                    state_manager,
-                    flow_type,
-                    current_step,
-                    message_text
-                )
-
-            # Parse command if no active flow
-            if "_" in message_text:
-                handler_type, command = message_text.split("_", 1)
-
-                # Ensure token still valid before handling command
-                if not state_manager.is_authenticated():
-                    member_handler = self._get_handler("member")
-                    initialize_flow(
-                        state_manager=state_manager,
-                        flow_type="member_login",
-                        initial_data={
-                            "started_at": datetime.utcnow().isoformat()
-                        }
-                    )
-                    return member_handler.handle_flow_step(
-                        state_manager=state_manager,
-                        flow_type="member_login",
-                        step="login",
-                        input_value=message_text
-                    )
-
-                # Clear flow state before starting new flow
-                state_manager.clear_flow_state()
-
-                # Get appropriate handler
-                handler = self._get_handler(handler_type)
-
-                # Let handler process command
-                try:
-                    return handler.handle_command(state_manager, command)
-                except FlowException:
-                    return self.messaging.send_text(
-                        recipient=self._get_recipient(state_manager),
-                        text="I don't understand that command."
-                    )
-
-            # Check if in active flow again for non-command messages
-            flow_state = state_manager.get_flow_state()
-            if flow_state:
-                flow_type = state_manager.get_flow_type()
-                current_step = state_manager.get_current_step()
-
-                # Get flow config through registry
-                config = FlowRegistry.get_flow_config(flow_type)
-                handler_type = config.get("handler_type", "member")
-
-                # Get handler instance
-                handler = self._get_handler(handler_type)
-
-                # Route to handler
-                return handler.handle_flow_step(
-                    state_manager,
-                    flow_type,
-                    current_step,
-                    message_text
-                )
-
-            # Default response for unhandled messages
-            return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
-                text="👋 Hello and welcome to VimbisoPay. Send me 'hi/ndeipi/sabona' or another greeting to get started!"
-            )
-
-        except FlowException as e:
-            # Handle flow errors
-            error_response = ErrorHandler.handle_flow_error(
-                step=e.step,
-                action=e.action,
-                data=e.data,
-                message=str(e),
-                flow_state=flow_state if 'flow_state' in locals() else None
-            )
-            return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
-                text=f"❌ {error_response['error']['message']}"
-            )
-
-        except ComponentException as e:
-            # Handle component errors
-            error_response = ErrorHandler.handle_component_error(
-                component=e.component,
-                field=e.field,
-                value=e.value,
-                message=str(e)
-            )
-            return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
-                text=f"❌ {error_response['error']['message']}"
-            )
-
-        except MessageValidationError as e:
-            # Handle message validation errors
-            error_response = ErrorHandler.handle_system_error(
-                code=e.details["code"],
-                service=e.details["service"],
-                action=e.details["action"],
-                message=str(e),
-                error=e
-            )
-            return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
-                text=f"❌ {error_response['error']['message']}"
-            )
-
-        except MessageDeliveryError as e:
-            # Handle message delivery errors
-            error_response = ErrorHandler.handle_system_error(
-                code=e.details["code"],
-                service=e.details["service"],
-                action=e.details["action"],
-                message=str(e),
-                error=e
-            )
-            return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
-                text=f"❌ {error_response['error']['message']}"
-            )
-
-        except MessageTemplateError as e:
-            # Handle template errors
-            error_response = ErrorHandler.handle_system_error(
-                code=e.details["code"],
-                service=e.details["service"],
-                action=e.details["action"],
-                message=str(e),
-                error=e
-            )
-            return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
-                text=f"❌ {error_response['error']['message']}"
-            )
-
-        except SystemException as e:
-            # Handle system errors
-            error_response = ErrorHandler.handle_system_error(
-                code="MESSAGE_ERROR",
-                service="messaging",
-                action="handle_message",
-                message=str(e),
-                error=e
-            )
-            return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
-                text=f"❌ {error_response['error']['message']}"
-            )
-
-        except Exception as e:
-            # Handle unexpected errors
-            error_response = ErrorHandler.handle_system_error(
-                code="MESSAGE_ERROR",
-                service="messaging",
-                action="handle_message",
-                message=str(e),
-                error=e
-            )
-            return self.messaging.send_text(
-                recipient=self._get_recipient(state_manager),
-                text=f"❌ {error_response['error']['message']}"
-            )
+        """Validate message format"""
+        # Implementation depends on channel type
+        raise NotImplementedError

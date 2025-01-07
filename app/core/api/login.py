@@ -4,8 +4,7 @@ from typing import Dict, Any, Tuple
 
 from decouple import config
 
-from .base import make_api_request, handle_error_response
-from .profile import update_profile_from_response
+from .base import make_api_request, handle_api_response
 
 logger = logging.getLogger(__name__)
 
@@ -41,16 +40,16 @@ def login(bot_service: Any) -> Tuple[bool, str]:
             )
 
             if token:
-                # Update profile and state
-                update_profile_from_response(
-                    api_response=response_data,
+                # Handle response through dashboard handler
+                response_data, error = handle_api_response(
+                    response=response,
                     state_manager=bot_service.state_manager,
-                    action_type="login",
-                    update_from="login",
-                    token=token
+                    auth_token=token
                 )
+                if error:
+                    return False, error
 
-                logger.info(f"Login successful {token}")
+                logger.info("Login successful")
                 return True, "Login successful"
             else:
                 logger.error("Login response didn't contain a token")
@@ -64,24 +63,13 @@ def login(bot_service: Any) -> Tuple[bool, str]:
             )
 
         elif response.status_code == 401:
-            return handle_error_response(
-                "Login",
-                response,
-                "Login failed: Unauthorized. Please check your credentials."
-            )
+            return False, "Login failed: Unauthorized. Please check your credentials."
 
         elif response.status_code == 404:
-            return handle_error_response(
-                "Login",
-                response
-            )
+            return False, "Login failed: Resource not found"
 
         else:
-            return handle_error_response(
-                "Login",
-                response,
-                f"Login failed: Unexpected error (status code: {response.status_code})"
-            )
+            return False, f"Login failed: Unexpected error (status code: {response.status_code})"
 
     except Exception as e:
         logger.exception(f"Error during login: {str(e)}")
@@ -102,7 +90,7 @@ def onboard_member(bot_service: Any, member_data: Dict[str, Any]) -> Tuple[bool,
 
     Returns:
         Tuple[bool, Dict[str, Any]]: Success flag and either:
-            - On success: Dict with "token" and "memberID"
+            - On success: Dict with response data
             - On failure: Dict with "message" error string
     """
     logger.info("Attempting to onboard member")
@@ -126,34 +114,26 @@ def onboard_member(bot_service: Any, member_data: Dict[str, Any]) -> Tuple[bool,
             )
 
             token = details.get("token")
-            member_id = details.get("memberID")
-
-            if token and member_id:
-                # Update profile and state
-                update_profile_from_response(
-                    api_response=response_data,
-                    state_manager=bot_service.state_manager,
-                    action_type="onboarding",
-                    update_from="onboarding",
-                    token=token
-                )
-
-                logger.info(f"Onboarding successful {token}")
-                return True, {
-                    "token": token,
-                    "memberID": member_id
-                }
-            else:
-                logger.error("Onboarding response missing required fields")
+            if not token:
+                logger.error("Onboarding response missing token")
                 return False, {"message": "Onboarding failed: Invalid response data"}
 
-        else:
-            error_response = handle_error_response(
-                "Onboarding",
-                response,
-                f"Onboarding failed: Unexpected error (status code: {response.status_code})"
+            # Handle response through dashboard handler
+            response_data, error = handle_api_response(
+                response=response,
+                state_manager=bot_service.state_manager,
+                auth_token=token
             )
-            return False, {"message": error_response.get("error", {}).get("message", "Onboarding failed")}
+            if error:
+                return False, {"message": error}
+
+            logger.info("Onboarding successful")
+            return True, response_data
+
+        else:
+            error_msg = f"Onboarding failed: Unexpected error (status code: {response.status_code})"
+            logger.error(error_msg)
+            return False, {"message": error_msg}
 
     except Exception as e:
         logger.exception(f"Error during onboarding: {str(e)}")

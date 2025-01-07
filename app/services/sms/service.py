@@ -15,12 +15,36 @@ class SMSMessagingService(BaseMessagingService):
     Core functionality will be implemented after WhatsApp channel is stable.
     """
 
-    def __init__(self, api_client: Any):
-        """Initialize with SMS API client (not implemented)"""
-        self.api_client = api_client
+    def __init__(self):
+        """Initialize SMS messaging service"""
+        super().__init__()
+        self.state_manager = None  # Will be set by MessagingService
 
-    def _send_message(self, message: Message) -> Dict[str, Any]:
-        """Send message through SMS API (not implemented)"""
+    def _is_mock_mode(self) -> bool:
+        """Check if service is in mock testing mode"""
+        return hasattr(self, 'state_manager') and self.state_manager.get('mock_testing')
+
+    def _send_message(self, message: Message) -> Message:
+        """Send message through SMS API or mock
+
+        Args:
+            message: Core Message object to send
+
+        Returns:
+            Message: Sent message with metadata
+
+        Raises:
+            NotImplementedError: SMS channel not yet implemented
+        """
+        # Handle mock mode
+        if self._is_mock_mode():
+            message.metadata = {
+                "sms_message_id": "mock_message_id",
+                "mock": True
+            }
+            return message
+
+        # Production mode not implemented
         raise NotImplementedError("SMS channel not yet implemented")
 
     def send_template(

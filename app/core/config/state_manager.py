@@ -172,15 +172,15 @@ class StateManager:
         """Get current flow state"""
         return self.get("flow_data")
 
-    def get_flow_type(self) -> Optional[str]:
-        """Get current flow type"""
+    def get_context(self) -> Optional[str]:
+        """Get current context"""
         flow_data = self.get_flow_state()
-        return flow_data.get("flow_type") if flow_data else None
+        return flow_data.get("context") if flow_data else None
 
-    def get_current_step(self) -> Optional[str]:
-        """Get current step for flow routing"""
+    def get_component(self) -> Optional[str]:
+        """Get current component"""
         flow_data = self.get_flow_state()
-        return flow_data.get("step") if flow_data else None
+        return flow_data.get("component") if flow_data else None
 
     def get_flow_data(self) -> Dict[str, Any]:
         """Get current flow data"""
@@ -189,32 +189,30 @@ class StateManager:
 
     def update_flow_state(
         self,
-        flow_type: str,
-        step: str,
+        context: str,
+        component: str,
         data: Optional[Dict] = None
     ) -> None:
-        """Update flow state with validation and progress tracking
+        """Update flow state with validation tracking
 
         Args:
-            flow_type: Type of flow
-            step: Current step
+            context: Current context
+            component: Current component
             data: Optional flow data
 
         Raises:
             Exception: If flow state update fails (handled by ErrorHandler)
         """
-        # Get current flow state for progress tracking
+        # Get current flow state for validation tracking
         current_flow = self.get_flow_state() or {}
-        current_step_index = current_flow.get("step_index", 0)
-        total_steps = current_flow.get("total_steps", 1)
 
         # Track validation attempt
         validation_state = {
             "in_progress": True,
             "attempts": current_flow.get("validation_attempts", 0) + 1,
             "last_attempt": {
-                "flow_type": flow_type,
-                "step": step,
+                "context": context,
+                "component": component,
                 "data": data,
                 "timestamp": datetime.utcnow().isoformat()
             }
@@ -222,10 +220,8 @@ class StateManager:
 
         try:
             # Update flow state - will raise exception on failure
-            update_flow_state(self, flow_type, step, {
+            update_flow_state(self, context, component, {
                 **(data or {}),
-                "step_index": current_step_index + 1,
-                "total_steps": total_steps,
                 "validation": validation_state,
                 "_metadata": {
                     "updated_at": datetime.utcnow().isoformat()
@@ -245,9 +241,9 @@ class StateManager:
                 error_type="flow",
                 message=str(e),
                 details={
-                    "step": step,
+                    "context": context,
+                    "component": component,
                     "action": "update_state",
-                    "flow_type": flow_type,
                     "validation": validation_state,
                     "timestamp": datetime.utcnow().isoformat()
                 }
@@ -363,10 +359,12 @@ class StateManager:
             bool: True if authenticated with valid token, False otherwise
         """
         try:
-            # Check for member_id and token
-            member_id = self.get("member_id")
-            jwt_token = self.get("jwt_token")
-            if not member_id or not jwt_token:
+            # Get auth data from flow state
+            flow_data = self.get_flow_state() or {}
+            dashboard = flow_data.get("data", {}).get("dashboard", {})
+            jwt_token = flow_data.get("data", {}).get("auth", {}).get("token")
+
+            if not dashboard.get("member_id") or not jwt_token:
                 return False
 
             # Validate token expiry locally
@@ -389,5 +387,10 @@ class StateManager:
         Returns:
             Member ID string if authenticated with valid token, None otherwise
         """
-        # Only return member_id if authenticated with valid token
-        return self.get("member_id") if self.is_authenticated() else None
+        # Get member_id from dashboard data if authenticated
+        if not self.is_authenticated():
+            return None
+
+        flow_data = self.get_flow_state() or {}
+        dashboard = flow_data.get("data", {}).get("dashboard", {})
+        return dashboard.get("member_id")

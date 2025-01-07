@@ -3,7 +3,7 @@ import base64
 import logging
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
@@ -13,6 +13,8 @@ from requests.exceptions import RequestException
 from core.utils.error_handler import ErrorHandler
 from core.utils.exceptions import SystemException
 from core.utils.state_validator import StateValidator
+from . import dashboard, action
+
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -24,6 +26,54 @@ if not BASE_URL.endswith('/'):
     BASE_URL += '/'
 
 
+def handle_api_response(
+    response: requests.Response,
+    state_manager: Any,
+    auth_token: Optional[str] = None
+) -> Tuple[Dict[str, Any], Optional[str]]:
+    """Handle API response with state updates
+
+    All API responses include:
+    1. dashboard section -> Member state after operation
+    2. action section -> Operation results and details
+
+    Args:
+        response: API response to handle
+        state_manager: State manager instance
+        auth_token: Optional auth token from response
+
+    Returns:
+        Tuple[Dict[str, Any], Optional[str]]: Response data and optional error
+    """
+    try:
+        # Process response first
+        response_data = process_api_response(response)
+        if "error" in response_data:
+            return response_data, response_data["error"].get("message")
+
+        # Update dashboard if present (member state)
+        if "dashboard" in response_data.get("data", {}):
+            success, error = dashboard.update_dashboard_from_response(
+                api_response=response_data,
+                state_manager=state_manager,
+                auth_token=auth_token
+            )
+            if not success:
+                return response_data, error
+
+        # Update action state (operation results)
+        success, error = action.update_action_from_response(
+            api_response=response_data,
+            state_manager=state_manager
+        )
+        if not success:
+            return response_data, error
+
+        return response_data, None
+    except Exception as e:
+        return {"error": str(e)}, str(e)
+
+
 def get_headers(state_manager: Any, include_auth: bool = True) -> Dict[str, str]:
     """Get request headers with authentication"""
     headers = {
@@ -33,7 +83,7 @@ def get_headers(state_manager: Any, include_auth: bool = True) -> Dict[str, str]
 
     if include_auth:
         # Get required state fields with validation at boundary
-        required_fields = {"channel", "jwt_token"}
+        required_fields = {"channel"}
         current_state = {
             field: state_manager.get(field)
             for field in required_fields
@@ -50,7 +100,11 @@ def get_headers(state_manager: Any, include_auth: bool = True) -> Dict[str, str]
             logger.error("Invalid channel structure")
             return headers
 
-        jwt_token = state_manager.get("jwt_token")
+        # Get auth token from flow data
+        flow_data = state_manager.get_flow_state() or {}
+        auth_data = flow_data.get("data", {}).get("auth", {})
+        jwt_token = auth_data.get("token")
+
         if jwt_token:
             headers["Authorization"] = f"Bearer {jwt_token}"
         else:

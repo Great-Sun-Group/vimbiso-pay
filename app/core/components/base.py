@@ -1,7 +1,7 @@
-"""Base component interface
+"""Base component interfaces
 
-This module defines the core Component interface that all components must implement.
-Components handle pure UI validation with clear boundaries.
+This module defines the core Component interfaces that all components extend.
+Each interface handles a specific type of component with clear validation patterns.
 """
 
 from datetime import datetime
@@ -18,6 +18,7 @@ class Component:
         """Initialize component with standardized validation tracking"""
         self.type = component_type
         self.value = None
+        self.state_manager = None
         self.validation_state = {
             "in_progress": False,
             "error": None,
@@ -28,6 +29,10 @@ class Component:
             "timestamp": None
         }
 
+    def set_state_manager(self, state_manager: Any) -> None:
+        """Set state manager for accessing state data"""
+        self.state_manager = state_manager
+
     def validate(self, value: Any) -> ValidationResult:
         """Validate component input with standardized tracking
 
@@ -37,6 +42,14 @@ class Component:
         Returns:
             ValidationResult with validation status
         """
+        # Validate state manager is set
+        if not self.state_manager:
+            return ValidationResult.failure(
+                message="State manager not set",
+                field="state_manager",
+                details={"component": self.type}
+            )
+
         # Track validation attempt with timestamp
         self.validation_state.update({
             "attempts": self.validation_state["attempts"] + 1,
@@ -135,8 +148,24 @@ class Component:
         })
 
 
+class DisplayComponent(Component):
+    """Base class for display components"""
+
+    def __init__(self, component_type: str):
+        super().__init__(component_type)
+
+    def _validate(self, value: Any) -> ValidationResult:
+        """Validate display data with proper tracking"""
+        # Subclasses implement specific validation
+        return self.validate_display(value)
+
+    def validate_display(self, value: Any) -> ValidationResult:
+        """Component-specific display validation logic"""
+        raise NotImplementedError
+
+
 class InputComponent(Component):
-    """Base class for input components with validation tracking"""
+    """Base class for input components"""
 
     def __init__(self, component_type: str):
         super().__init__(component_type)
@@ -188,3 +217,32 @@ class InputComponent(Component):
             )
 
         return ValidationResult.success(value)
+
+
+class ApiComponent(Component):
+    """Base class for API components"""
+
+    def __init__(self, component_type: str):
+        super().__init__(component_type)
+        self.bot_service = None
+
+    def set_bot_service(self, bot_service: Any) -> None:
+        """Set bot service for API access"""
+        self.bot_service = bot_service
+
+    def _validate(self, value: Any) -> ValidationResult:
+        """Validate API call with proper tracking"""
+        # Validate bot service is set
+        if not self.bot_service:
+            return ValidationResult.failure(
+                message="Bot service not set",
+                field="bot_service",
+                details={"component": self.type}
+            )
+
+        # Subclasses implement specific validation
+        return self.validate_api_call(value)
+
+    def validate_api_call(self, value: Any) -> ValidationResult:
+        """Component-specific API validation logic"""
+        raise NotImplementedError

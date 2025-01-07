@@ -32,15 +32,15 @@ Common mistakes to avoid:
 ## Core Principles
 
 1. **Single Source of Truth**
-- Member ID accessed through get_member_id()
 - Channel info accessed through get_channel_id()
 - JWT token accessed through flow_data auth
+- Member data accessed through dashboard state
 - NO direct state access
 - NO state passing
 - NO transformation
 
 2. **Simple Structure**
-- Common configurations
+- Context-based organization
 - Clear boundaries
 - Standard validation
 - Flow metadata
@@ -59,203 +59,115 @@ Common mistakes to avoid:
 - Single state manager
 - Standard validation
 - Clear boundaries
-- Progress tracking
+- Context tracking
 - NO manual updates
 - NO local state
 
 ## State Structure
 
 ### 1. Core Identity
-```python
-{
-    # Accessed through proper methods
-    "member_id": str,     # Use get_member_id()
-    "channel": {          # Use get_channel_id()
-        "type": str,      # Use get_channel_type()
-        "identifier": str
-    },
-    "jwt_token": str     # Accessed through flow_data auth
-}
-```
-
-### 2. Flow State
-```python
-{
-    "flow_data": {
-        # Flow identification
-        "flow_type": str,     # Type of flow
-        "handler_type": str,  # Handler responsible
-        "step": str,         # Current step
-        "step_index": int,   # Current position
-        "total_steps": int,  # Total steps
-
-        # Validation tracking
-        "active_component": {
-            "type": str,     # Component type
-            "validation": {
-                "in_progress": bool,
-                "error": Optional[Dict],
-                "attempts": int,
-                "last_attempt": Any
-            }
-        }
-    }
-}
-```
-
-## Access Patterns
-
-### 1. State Access
-```python
-# CORRECT - Use proper accessor methods
-channel_id = state_manager.get_channel_id()
-member_id = state_manager.get_member_id()
-
-# WRONG - Direct state access
-channel = state_manager.get("channel")  # Don't access directly!
-member_id = state_manager.get("member_id")  # Don't access directly!
-```
-
-### 2. Validation Updates
-```python
-# CORRECT - Update with validation tracking
-state_manager.update_state({
-    "flow_data": {
-        "active_component": {
-            "type": "input",
-            "validation": {
-                "in_progress": True,
-                "attempts": current + 1,
-                "last_attempt": datetime.utcnow()
-            }
-        }
-    }
-})
-
-# WRONG - Update without tracking
-state_manager.update_state({
-    "value": new_value  # Don't update without validation!
-})
-```
-
-## Best Practices
-
-1. **State Access**
-- Use proper accessor methods
-- Validate through updates
-- Track all attempts
-- NO direct access
-- NO assumptions
-- NO default values
-
-2. **State Updates**
-- Include validation tracking
-- Track all attempts
-- Include error context
-- NO manual updates
-- NO transformation
-- NO state fixing
-
-3. **Flow State**
-- Clear boundaries
-- Standard structure
-- Track progress
-- Track validation
-- NO mixed concerns
-- NO manual handling
-
-4. **Error Handling**
-- Update state with errors
-- Track validation failures
-- Include error context
-- NO manual handling
-- NO local recovery
-- NO state fixing
-
-## Integration Points
-
-The state system has specific integration points with other systems:
-
-### Flow Integration
-- Flow state managed centrally
-- Flow progression updates state
-- Flow validation through state
-- Flow errors update state
 
 ### Component Integration
-- Components access state properly
-- Component validation through state
-- Component state properly tracked
-- State updates validated
 
-### Error Integration
-- Error state properly tracked
-- Error history maintained
-- Validation state updated
-- Error context preserved
+Each component type has specific state integration patterns:
 
-### Message Integration
-- Message state properly tracked
-- Message history maintained
-- State updates validated
-- Context preserved
-
-### API Integration
-- API state properly managed
-- Credentials handled securely
-- State updates atomic
-- Context maintained
-
-Common mistakes to avoid:
-1. DON'T bypass state integration points
-2. DON'T create new state paths
-3. DON'T mix state responsibilities
-4. DON'T lose state context
-
-## Common Modifications
-
-### Adding New State Types
-1. Check state_manager.py for patterns
-2. Add state structure
-3. Update validation rules
-4. Add access methods
-5. Test state handling
-
-Example:
+1. **Display Components**
+- Access state through state_manager
+- Read-only state access
+- Format state data for display
+- No state modifications
+- Example:
 ```python
-def add_new_state(self, new_state: Dict[str, Any]) -> None:
-    """Add new state with validation"""
-    # Validate new state
-    if not self.validate_new_state(new_state):
-        raise ValidationError("Invalid new state")
-
-    # Update with atomic operation
-    with self.atomic_update():
-        self.state.update({
-            "new_state": {
-                "data": new_state,
-                "timestamp": datetime.utcnow().isoformat(),
-                "validation": {
-                    "valid": True,
-                    "last_check": datetime.utcnow().isoformat()
-                }
-            }
-        })
+class ViewLedger(DisplayComponent):
+    def validate_display(self, value: Any) -> ValidationResult:
+        active_account_id = self.state_manager.get("active_account_id")
+        dashboard = self.state_manager.get("dashboard")
+        # Format for display...
 ```
 
-### Modifying State Access
-1. Check existing access patterns
-2. Update access methods
-3. Maintain validation
-4. Test state access
+2. **Input Components**
+- Validate input format
+- Update state with validated input
+- Track validation attempts
+- No direct state reads
+- Example:
+```python
+class AmountInput(InputComponent):
+    def validate(self, value: Any) -> ValidationResult:
+        # Validate format...
+        self.update_state(str(amount), ValidationResult.success(amount))
+```
 
-### Adding State Validation
-1. Check validation rules
-2. Add validation logic
-3. Update state handling
-4. Test validation
+3. **API Components**
+- Get member data from dashboard
+- Make API call with proper data
+- Let handlers manage state updates:
+  * dashboard.py -> Updates member state
+  * action.py -> Updates operation state
+- Use action data for flow control
+- Example:
+```python
+class UpgradeMemberApiCall(ApiComponent):
+    def validate(self, value: Any) -> ValidationResult:
+        # Get member data from dashboard
+        dashboard = self.state_manager.get("dashboard")
+        member_id = dashboard.get("member", {}).get("memberID")
+
+        # Make API call
+        response = make_api_request(url, headers, payload)
+
+        # Let handlers update state
+        response_data, error = handle_api_response(
+            response=response,
+            state_manager=self.state_manager
+        )
+
+        # Use action data for flow
+        flow_data = self.state_manager.get_flow_state()
+        action_data = flow_data.get("action", {})
+        return ValidationResult.success({"action": action_data})
+```
+
+4. **Confirm Components**
+- Access state for confirmation context
+- Update state with confirmation result
+- Context-aware validation
+- Track confirmation attempts
+- Example:
+```python
+class ConfirmUpgrade(ConfirmBase):
+    def handle_confirmation(self, value: bool) -> ValidationResult:
+        # Get dashboard data which includes member info
+        dashboard = self.state_manager.get_flow_data().get("dashboard", {})
+        member_id = dashboard.get("member_id")
+        # Validate and update state...
+```
 
 Common mistakes to avoid:
+1. DON'T mix component responsibilities
+   - Display components shouldn't modify state
+   - Input components shouldn't read unrelated state
+   - API components shouldn't format for display
+   - Confirm components shouldn't make API calls
+
+2. DON'T bypass component boundaries
+   - Use proper base component
+   - Implement required methods
+   - Follow component patterns
+   - Maintain clear responsibilities
+
+3. DON'T duplicate state access
+   - Use base component methods
+   - Follow standard patterns
+   - Maintain single source of truth
+   - Keep state access focused
+
+4. DON'T lose validation context
+   - Track all attempts
+   - Include error details
+   - Maintain validation state
+   - Follow validation patterns
+
 1. DON'T create new patterns when existing ones exist
 2. DON'T bypass state manager
 3. DON'T mix validation responsibilities
