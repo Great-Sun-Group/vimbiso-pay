@@ -177,7 +177,6 @@ resource "aws_iam_role_policy" "ecs_task_efs" {
         ]
         Resource = [
           var.app_access_point_arn,
-          var.redis_cache_access_point_arn,
           var.redis_state_access_point_arn
         ]
       }
