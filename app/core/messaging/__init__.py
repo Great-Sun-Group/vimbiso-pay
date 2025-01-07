@@ -3,7 +3,7 @@
 This package provides:
 1. Comprehensive messaging interface with implementations
    for different messaging providers
-2. Flow framework for managing multi-step interactions
+2. Context-based flow framework for managing interactions
    through messaging channels
 """
 
@@ -15,9 +15,8 @@ from .exceptions import (InvalidMessageTypeError, InvalidRecipientError,
                          MessageHandlerError, MessageRateLimitError,
                          MessageTemplateError, MessageValidationError,
                          TemplateNotFoundError, TemplateValidationError)
-from .flow import FlowManager, complete_flow, initialize_flow, process_flow_input
+from .flow import activate_component, handle_component_result, process_component
 from .interface import MessagingServiceInterface
-from .registry import FlowRegistry
 from .types import (AudioContent, Button, DocumentContent, ImageContent,
                     InteractiveContent, InteractiveType, LocationContent,
                     Message, MessageRecipient, MessageType, TemplateContent,
@@ -72,11 +71,9 @@ __all__ = [
     'Button',
 
     # Flow framework
-    'FlowManager',
-    'FlowRegistry',
-    'initialize_flow',
-    'process_flow_input',
-    'complete_flow',
+    'activate_component',
+    'handle_component_result',
+    'process_component',
 
     # Exceptions
     'MessageHandlerError',

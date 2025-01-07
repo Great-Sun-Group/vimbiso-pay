@@ -1,7 +1,6 @@
-"""Login components
+"""Login API call component
 
-This module provides components for handling login flows with pure UI validation.
-Business validation happens in services.
+This component handles the login API call with proper validation.
 """
 
 from typing import Any, Dict

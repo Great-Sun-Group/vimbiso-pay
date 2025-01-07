@@ -25,8 +25,30 @@ logger = logging.getLogger(__name__)
 class BaseMessagingService(MessagingServiceInterface):
     """Base class implementing common messaging functionality"""
 
+    def __init__(self):
+        """Initialize base messaging service"""
+        self.state_manager = None
+
+    def _validate_state_manager(self) -> None:
+        """Validate state manager is set and accessible"""
+        if not self.state_manager:
+            raise MessageValidationError(
+                message="State manager not initialized",
+                service="messaging",
+                action="validate_state",
+                validation_details={"error": "missing_state_manager"}
+            )
+
+    def _is_mock_mode(self) -> bool:
+        """Check if service is in mock testing mode"""
+        return self.state_manager and self.state_manager.get('mock_testing')
+
     def send_message(self, message: Message) -> Message:
         """Send a message to a recipient"""
+        # Validate state manager first
+        self._validate_state_manager()
+
+        # Then validate message
         if not self.validate_message(message):
             raise MessageValidationError(
                 message="Invalid message",

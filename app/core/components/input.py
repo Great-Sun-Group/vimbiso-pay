@@ -5,57 +5,11 @@ Each component handles a specific input type with clear boundaries.
 Business logic validation happens in services.
 """
 
-from typing import Any, List
-from .base import InputComponent
+from typing import Any
+
 from core.utils.error_types import ValidationResult
 
-
-class ButtonInput(InputComponent):
-    """Button input with pure UI validation"""
-
-    def __init__(self):
-        super().__init__("button_input")
-
-    def validate(self, value: Any) -> ValidationResult:
-        """Validate button input format"""
-        try:
-            # Extract button ID from interactive message
-            if isinstance(value, dict):
-                interactive = value.get("interactive", {})
-                if interactive.get("type") == "button_reply":
-                    button_id = interactive.get("button_reply", {}).get("id")
-                    if not button_id:
-                        return ValidationResult.failure(
-                            message="Missing button ID",
-                            field="button"
-                        )
-                    self.update_state(button_id, ValidationResult.success(button_id))
-                    return ValidationResult.success(button_id)
-                return ValidationResult.failure(
-                    message="Invalid button type",
-                    field="button"
-                )
-
-            # Handle direct button ID string
-            type_result = self._validate_type(value, str, "text")
-            if not type_result.valid:
-                return type_result
-
-            button_id = value.strip()
-            if not button_id:
-                return ValidationResult.failure(
-                    message="Empty button ID",
-                    field="button"
-                )
-
-            self.update_state(button_id, ValidationResult.success(button_id))
-            return ValidationResult.success(button_id)
-
-        except Exception:
-            return ValidationResult.failure(
-                message="Invalid button input",
-                field="button"
-            )
+from .base import InputComponent
 
 
 class AmountInput(InputComponent):
@@ -139,36 +93,6 @@ class HandleInput(InputComponent):
         return ValidationResult.success(handle)
 
 
-class SelectInput(InputComponent):
-    """Selection input with pure UI validation"""
-
-    def __init__(self, options: List[str]):
-        super().__init__("select_input")
-        self.options = options
-
-    def validate(self, value: Any) -> ValidationResult:
-        """Validate selection format only
-
-        Only checks that selection is in allowed options.
-        Business validation happens in service layer.
-        """
-        # Validate type
-        type_result = self._validate_type(value, str, "text")
-        if not type_result.valid:
-            return type_result
-
-        # Validate selection exists
-        if value not in self.options:
-            return ValidationResult.failure(
-                message="Invalid selection",
-                field="selection",
-                details={"valid_options": self.options}
-            )
-
-        self.update_state(value, ValidationResult.success(value))
-        return ValidationResult.success(value)
-
-
 class ConfirmInput(InputComponent):
     """Confirmation input with pure UI validation"""
 
@@ -201,3 +125,51 @@ class ConfirmInput(InputComponent):
 
         self.update_state(value, ValidationResult.success(value))
         return ValidationResult.success(value)
+
+
+class ButtonInput(InputComponent):
+    """Button input with pure UI validation"""
+
+    def __init__(self):
+        super().__init__("button_input")
+
+    def validate(self, value: Any) -> ValidationResult:
+        """Validate button input format"""
+        try:
+            # Extract button ID from interactive message
+            if isinstance(value, dict):
+                interactive = value.get("interactive", {})
+                if interactive.get("type") == "button_reply":
+                    button_id = interactive.get("button_reply", {}).get("id")
+                    if not button_id:
+                        return ValidationResult.failure(
+                            message="Missing button ID",
+                            field="button"
+                        )
+                    self.update_state(button_id, ValidationResult.success(button_id))
+                    return ValidationResult.success(button_id)
+                return ValidationResult.failure(
+                    message="Invalid button type",
+                    field="button"
+                )
+
+            # Handle direct button ID string
+            type_result = self._validate_type(value, str, "text")
+            if not type_result.valid:
+                return type_result
+
+            button_id = value.strip()
+            if not button_id:
+                return ValidationResult.failure(
+                    message="Empty button ID",
+                    field="button"
+                )
+
+            self.update_state(button_id, ValidationResult.success(button_id))
+            return ValidationResult.success(button_id)
+
+        except Exception:
+            return ValidationResult.failure(
+                message="Invalid button input",
+                field="button"
+            )

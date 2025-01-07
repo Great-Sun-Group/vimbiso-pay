@@ -28,9 +28,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# Initialize messaging service
-whatsapp_service = WhatsAppMessagingService()
-messaging_service = MessagingService(whatsapp_service)
+def get_messaging_service(state_manager, channel_type: ChannelType):
+    """Get properly initialized messaging service with state and channel
+
+    Args:
+        state_manager: State manager instance
+        channel_type: Type of messaging channel (WhatsApp, SMS)
+
+    Returns:
+        MessagingService: Initialized messaging service
+    """
+    # Create channel-specific service based on type
+    if channel_type == ChannelType.WHATSAPP:
+        channel_service = WhatsAppMessagingService()
+    elif channel_type == ChannelType.SMS:
+        # TODO: Implement SMS service
+        raise NotImplementedError("SMS channel not yet implemented")
+    else:
+        raise ValueError(f"Unsupported channel type: {channel_type}")
+
+    # Create core messaging service with channel service and state
+    messaging_service = MessagingService(
+        channel_service=channel_service,
+        state_manager=state_manager
+    )
+
+    return messaging_service
 
 
 class CredexCloudApiWebhook(APIView):
@@ -184,12 +207,23 @@ class CredexCloudApiWebhook(APIView):
 
             try:
                 logger.info("Processing message...")
+                # Update state with message data
+                state_manager.update_state({
+                    "message": {
+                        "type": message_type,
+                        "text": message_text
+                    },
+                    "_metadata": {
+                        "updated_at": datetime.utcnow().isoformat()
+                    }
+                })
+
+                # Get messaging service for channel
+                service = get_messaging_service(state_manager, channel_type)
+
                 # Process message through service
-                response = messaging_service.handle_message(
-                    state_manager=state_manager,
-                    message_type=message_type,
-                    message_text=message_text
-                )
+                logger.info("Processing message...")
+                response = service.handle_message()
 
                 # Validate response type
                 if not isinstance(response, DomainMessage):
@@ -197,7 +231,7 @@ class CredexCloudApiWebhook(APIView):
                     raise ValueError("Messaging service returned invalid response type")
 
                 # Send message through service
-                sent_response = messaging_service.send_message(response)
+                sent_response = service.send_message(response)
 
                 # For mock testing return the WhatsApp payload
                 if is_mock_testing:
@@ -323,8 +357,14 @@ class CredexSendMessageWebhook(APIView):
                 )
             )
 
+            # Initialize state manager for channel
+            state_manager = StateManager(f"channel:{request.data['phoneNumber']}")
+
+            # Get messaging service for channel
+            service = get_messaging_service(state_manager, channel_type)
+
             # Send through service
-            response = messaging_service.send_message(message)
+            response = service.send_message(message)
             return JsonResponse(response.to_dict(), status=status.HTTP_200_OK)
 
         except Exception as e:

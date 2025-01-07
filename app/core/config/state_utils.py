@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
-    """Update state with validation tracking and progress monitoring
+    """Update state with validation tracking
 
     Args:
         state_manager: State manager instance
@@ -49,17 +49,13 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
                     }
                 }
             elif isinstance(flow_data, dict):
-                # Get current flow state for progress
+                # Get current flow state
                 current_flow = current_state.get("flow_data", {})
-                current_step_index = current_flow.get("step_index", 0)
-                total_steps = current_flow.get("total_steps", 1)
 
-                # Update flow state with validation and progress
+                # Update flow state with validation
                 current_state["flow_data"] = {
-                    "flow_type": flow_data.get("flow_type", current_flow.get("flow_type")),
-                    "step": flow_data.get("step", current_flow.get("step")),
-                    "step_index": flow_data.get("step_index", current_step_index),
-                    "total_steps": flow_data.get("total_steps", total_steps),
+                    "context": flow_data.get("context", current_flow.get("context")),
+                    "component": flow_data.get("component", current_flow.get("component")),
                     "data": {
                         **(current_flow.get("data", {})),
                         **(flow_data.get("data", {}))
@@ -130,33 +126,29 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
 
 def update_flow_state(
     state_manager: Any,
-    flow_type: str,
-    step: str,
+    context: str,
+    component: str,
     data: Optional[Dict] = None
 ) -> None:
-    """Update flow state with validation and progress tracking
+    """Update flow state with validation tracking
 
     Args:
         state_manager: State manager instance
-        flow_type: Type of flow
-        step: Current step
+        context: Current context
+        component: Current component
         data: Optional flow data
 
     Raises:
         SystemException: If flow state update fails
     """
     try:
-        # Get current flow state for progress
+        # Get current flow state for validation
         current_flow = state_manager.get_flow_state() or {}
-        current_step_index = current_flow.get("step_index", 0)
-        total_steps = current_flow.get("total_steps", 1)
 
-        # Create flow update with validation and progress
+        # Create flow update with validation
         flow_data = {
-            "flow_type": flow_type,
-            "step": step,
-            "step_index": current_step_index + 1,
-            "total_steps": total_steps,
+            "context": context,
+            "component": component,
             "data": data or {},
             "validation": {
                 "in_progress": True,
@@ -181,8 +173,8 @@ def update_flow_state(
             "Flow state update error",
             extra={
                 "error": str(e),
-                "flow_type": flow_type,
-                "step": step,
+                "context": context,
+                "component": component,
                 "validation": validation_state
             }
         )

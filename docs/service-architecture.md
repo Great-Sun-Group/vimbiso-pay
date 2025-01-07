@@ -2,23 +2,33 @@
 
 ## Core Principles
 
-1. **State-Based Design**
-- All operations go through state_manager
-- Credentials exist ONLY in state
-- No direct passing of sensitive data
-- State validation through updates
+1. **API Response Structure**
+- All responses include two sections:
+  * dashboard -> Member state after operation
+  * action -> Operation results and details
+- Each section handled by dedicated module
+- Clear separation of concerns
 
-2. **Pure Functions**
-- Services use stateless functions
-- No stored instance variables
-- No service-level state
-- Clear input/output contracts
+2. **Dashboard as Source of Truth**
+- dashboard.py handles member state
+- All member data comes from dashboard
+- Components read from dashboard
+- No direct member state management
+- Single source for member info
 
-3. **Single Source of Truth**
-- Member ID accessed through get_member_id()
-- Channel info accessed through get_channel_id()
-- JWT token accessed through flow_data auth
-- No direct state access
+3. **Action Data Management**
+- action.py handles operation results
+- Components get action data for flow
+- Operation details in action state
+- Clear operation tracking
+- Flow control through actions
+
+4. **Component Responsibilities**
+- Make API calls with proper data
+- Let handlers manage state updates
+- Read from dashboard for member data
+- Use action data for flow decisions
+- Keep focused responsibilities
 
 ## Common Anti-Patterns
 
@@ -62,11 +72,34 @@ ErrorHandler.handle_error(error, state_manager, error_context)
 
 ## Implementation Guide
 
-### Service Layer
-1. Services must be stateless
-2. Use proper accessor methods
-3. Track all operations
-4. Handle errors consistently
+### API Response Flow
+1. Component makes API call
+2. Response contains dashboard and action sections
+3. base.handle_api_response routes to handlers:
+   - dashboard.update_dashboard_from_response -> Updates member state
+   - action.update_action_from_response -> Updates operation state
+4. Component reads action data for flow control
+5. Component uses dashboard data for future calls
+
+### State Management
+1. Dashboard State
+   - Member core data
+   - Account information
+   - Balance details
+   - Single source of truth
+
+2. Action State
+   - Operation ID
+   - Operation type
+   - Timestamps
+   - Details/results
+   - Flow metadata
+
+3. Component State
+   - Minimal local state
+   - Reads from dashboard
+   - Uses action data
+   - Clear boundaries
 
 ### API Integration
 1. All API calls through state_manager
