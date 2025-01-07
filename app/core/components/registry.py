@@ -8,11 +8,11 @@ from typing import Dict, Type
 
 from .base import Component
 from .account import AccountDashboard, AccountSelect, LedgerDisplay
-from .auth import LoginHandler, LoginCompleteHandler
 from .greeting import Greeting
+from .login import LoginApiCall
 from .input import AmountInput, ConfirmInput, HandleInput, SelectInput, ButtonInput
 from .registration import (
-    FirstNameInput, LastNameInput, OnBoardMember, RegistrationWelcome
+    FirstNameInput, LastNameInput, OnBoardMemberApiCall, RegistrationWelcome
 )
 from .upgrade import UpgradeConfirm, UpgradeComplete
 
@@ -22,26 +22,20 @@ class ComponentRegistry:
 
     # Component type definitions matching service structure
     COMPONENTS: Dict[str, Dict] = {
-        # Greeting component
+        # Greeting components
         "Greeting": {
             "type": "greeting",
             "class": Greeting,
-            "validates": ["greeting"],
+            "validates": ["greet"],
             "converts_to": ["message"]
         },
 
         # Member components
-        "LoginHandler": {
-            "type": "auth",
-            "class": LoginHandler,
+        "LoginApiCall": {
+            "type": "login",
+            "class": LoginApiCall,
             "validates": ["login"],
-            "converts_to": ["auth_response"]
-        },
-        "LoginCompleteHandler": {
-            "type": "auth",
-            "class": LoginCompleteHandler,
-            "validates": ["auth_response"],
-            "converts_to": ["member_data", "accounts"]
+            "converts_to": ["auth_data", "member_data"]
         },
 
         # Member registration components
@@ -63,9 +57,9 @@ class ComponentRegistry:
             "validates": ["lastname"],
             "converts_to": ["verified_lastname"]
         },
-        "OnBoardMember": {
+        "OnBoardMemberApiCall": {
             "type": "registration",
-            "class": OnBoardMember,
+            "class": OnBoardMemberApiCall,
             "validates": ["onboarding_response"],
             "converts_to": ["member_data"]
         },

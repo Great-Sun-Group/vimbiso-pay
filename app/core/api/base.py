@@ -144,7 +144,7 @@ def make_api_request(
                 # Handle 401 with retry
                 if response.status_code == 401 and retry_auth and state_manager:
                     logger.warning("Received 401, attempting to refresh auth token")
-                    from .auth import login
+                    from .login import login
                     # Create bot service for login
                     from services.whatsapp.bot_service import get_bot_service
                     bot_service = get_bot_service(state_manager)

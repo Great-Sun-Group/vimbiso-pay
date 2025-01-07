@@ -2,7 +2,7 @@
 import logging
 from typing import Any, Dict, Optional
 
-from core.api.auth_client import get_login_response_data, login
+from core.api.login import get_login_response_data, login
 from core.api.profile import update_profile_from_response
 from core.components.registry import create_component
 from core.messaging.formatters import AccountFormatters
@@ -24,7 +24,7 @@ class AuthFlow:
     def get_step_content(step: str, data: Optional[Dict] = None) -> str:
         """Get auth step content"""
         # Validate step through registry
-        FlowRegistry.validate_flow_step("member_auth", step)
+        FlowRegistry.validate_flow_step("member_login", step)
         return ""
 
     @staticmethod
@@ -35,7 +35,7 @@ class AuthFlow:
         if not validation_result.valid:
             raise FlowException(
                 message="Failed to validate greeting",
-                step="login",
+                step="greet",
                 action="validate",
                 data={"validation": validation_result.error}
             )
@@ -45,7 +45,7 @@ class AuthFlow:
         if not isinstance(content, str):
             raise FlowException(
                 message="Invalid greeting content type",
-                step="login",
+                step="greet",
                 action="format_content",
                 data={"content_type": type(content).__name__}
             )
@@ -61,8 +61,8 @@ class AuthFlow:
         # Initialize flow state
         state_manager.update_state({
             "flow_data": {
-                "flow_type": "member_auth",
-                "step": "login",
+                "flow_type": "member_login",
+                "step": "greet",
                 "step_index": 0,
                 "total_steps": 2,
                 "active_component": component_state
@@ -81,7 +81,7 @@ class AuthFlow:
         if not flow_state:
             raise FlowException(
                 message="Lost flow state",
-                step="login",
+                step="greet",
                 action="update_state",
                 data={}
             )
@@ -225,11 +225,11 @@ class AuthFlow:
         """Process auth step"""
         try:
             # Validate step through registry
-            FlowRegistry.validate_flow_step("member_auth", step)
+            FlowRegistry.validate_flow_step("member_login", step)
 
-            if step == "login":
+            if step == "greet":
                 # Get components for this step
-                components = FlowRegistry.get_step_component("member_auth", "login")
+                components = FlowRegistry.get_step_component("member_login", "greet")
                 if not isinstance(components, list):
                     components = [components]
 
@@ -238,7 +238,7 @@ class AuthFlow:
                 if not flow_state:
                     raise FlowException(
                         message="No active flow state",
-                        step="login",
+                        step="greet",
                         action="process",
                         data={}
                     )
@@ -288,7 +288,7 @@ class AuthFlow:
                                 )
                             )
                         raise
-                elif current_type == "LoginHandler":
+                elif current_type == "LoginApiCall":
                     try:
                         success, auth_details = AuthFlow._handle_login(state_manager)
                         if success:

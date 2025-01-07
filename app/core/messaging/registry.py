@@ -5,7 +5,7 @@ All flows must be registered here to be used in the system.
 """
 
 from datetime import datetime
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 from core.utils.exceptions import FlowException
 
@@ -27,15 +27,23 @@ class FlowRegistry:
     # Flow type definitions with metadata
     FLOWS: Dict[str, Dict] = {
         # Member flows
-        "member_registration": {
+        "member_onboard": {
             "handler_type": "member",
             "steps": ["welcome", "firstname", "lastname", "registration_attempt", "dashboard"],
             "components": {
                 "welcome": "RegistrationWelcome",
                 "firstname": "FirstNameInput",
                 "lastname": "LastNameInput",
-                "registration_attempt": ["Greeting", "OnBoardMember"],
-                "dashboard": "AccountDashboard"
+                "greet": "Greeting",
+                "onboard_member": "OnBoardMemberApiCall"
+            },
+            "auto_progress": {
+                "greet": True,
+                "onboard_member": True
+            },
+            "exit_conditions": {
+                "success": "account_dashboard",  # On successful registration
+                "error": None  # Stay in flow on error
             }
         },
         "member_upgrade": {
@@ -44,14 +52,27 @@ class FlowRegistry:
             "components": {
                 "confirm": "UpgradeConfirm",
                 "complete": "UpgradeComplete"
+            },
+            "exit_conditions": {
+                "success": "account_dashboard",  # Return to dashboard after upgrade
+                "error": None  # Stay in flow on error
             }
         },
-        "member_auth": {
+        "member_login": {
             "handler_type": "member",
-            "steps": ["login", "login_complete"],
+            "steps": ["greet", "login"],
             "components": {
-                "login": ["Greeting", "LoginHandler"],
-                "login_complete": "LoginCompleteHandler"
+                "greet": "Greeting",
+                "login": "LoginApiCall"
+            },
+            "auto_progress": {
+                "greet": True,  # Show greeting then auto-progress
+                "login": True  # Make API call then check result
+            },
+            "exit_conditions": {
+                "success": "account_dashboard",  # On successful login
+                "not_member": "member_onboard",
+                "error": None  # Stay in flow on error
             }
         },
 
@@ -61,6 +82,13 @@ class FlowRegistry:
             "steps": ["display"],
             "components": {
                 "display": "AccountDashboard"
+            },
+            "auto_progress": {
+                "display": True  # Auto-progress dashboard display
+            },
+            "exit_conditions": {
+                "success": None,  # End flow after display
+                "error": None  # Stay in flow on error
             }
         },
         "account_ledger": {
@@ -69,6 +97,10 @@ class FlowRegistry:
             "components": {
                 "select": "AccountSelect",
                 "display": "LedgerDisplay"
+            },
+            "exit_conditions": {
+                "success": "account_dashboard",  # Return to dashboard after viewing
+                "error": None  # Stay in flow on error
             }
         },
 
@@ -81,6 +113,10 @@ class FlowRegistry:
                 "amount": "AmountInput",
                 "handle": "HandleInput",
                 "confirm": "ConfirmInput"
+            },
+            "exit_conditions": {
+                "success": "account_dashboard",  # Return to dashboard after offer
+                "error": None  # Stay in flow on error
             }
         },
         # Action flows use common configuration
@@ -88,24 +124,39 @@ class FlowRegistry:
             "handler_type": "credex",
             "flow_type": "action",
             "action_type": "accept",
-            **COMMON_FLOWS["action"]
+            **COMMON_FLOWS["action"],
+            "exit_conditions": {
+                "success": "account_dashboard",  # Return to dashboard after accept
+                "error": None  # Stay in flow on error
+            }
         },
         "credex_decline": {
             "handler_type": "credex",
             "flow_type": "action",
             "action_type": "decline",
-            **COMMON_FLOWS["action"]
+            **COMMON_FLOWS["action"],
+            "exit_conditions": {
+                "success": "account_dashboard",  # Return to dashboard after decline
+                "error": None  # Stay in flow on error
+            }
         },
         "credex_cancel": {
             "handler_type": "credex",
             "flow_type": "action",
             "action_type": "cancel",
-            **COMMON_FLOWS["action"]
+            **COMMON_FLOWS["action"],
+            "exit_conditions": {
+                "success": "account_dashboard",  # Return to dashboard after cancel
+                "error": None  # Stay in flow on error
+            }
         }
     }
 
     # Valid action types
     ACTION_TYPES = {"accept", "decline", "cancel"}
+
+    # Valid exit conditions
+    EXIT_CONDITIONS = {"success", "error", "not_member"}
 
     @classmethod
     def get_flow_config(cls, flow_type: str) -> Dict:
@@ -316,6 +367,21 @@ class FlowRegistry:
             )
 
     @classmethod
+    def should_auto_progress(cls, flow_type: str, step: str) -> bool:
+        """Check if step should auto-progress without user input
+
+        Args:
+            flow_type: Flow type identifier
+            step: Current step
+
+        Returns:
+            bool: True if step should auto-progress, False otherwise
+        """
+        config = cls.get_flow_config(flow_type)
+        auto_progress = config.get("auto_progress", {})
+        return auto_progress.get(step, False)
+
+    @classmethod
     def get_next_step(cls, flow_type: str, current_step: str) -> str:
         """Get next step in flow"""
         steps = cls.get_flow_steps(flow_type)
@@ -331,3 +397,29 @@ class FlowRegistry:
                 action="get_next",
                 data={"flow_type": flow_type}
             )
+
+    @classmethod
+    def get_exit_flow(cls, flow_type: str, condition: str) -> Optional[str]:
+        """Get next flow based on exit condition
+
+        Args:
+            flow_type: Current flow type
+            condition: Exit condition (success, error, not_member)
+
+        Returns:
+            Optional[str]: Next flow type or None to stay in current flow
+
+        Raises:
+            FlowException: If condition invalid
+        """
+        if condition not in cls.EXIT_CONDITIONS:
+            raise FlowException(
+                message=f"Invalid exit condition: {condition}",
+                step="exit",
+                action="get_next_flow",
+                data={"flow_type": flow_type, "condition": condition}
+            )
+
+        config = cls.get_flow_config(flow_type)
+        exit_conditions = config.get("exit_conditions", {})
+        return exit_conditions.get(condition)

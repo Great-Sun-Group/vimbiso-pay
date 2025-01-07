@@ -7,7 +7,7 @@ This module provides flow management using:
 """
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from core.components import create_component
 from core.utils.error_types import ValidationResult
@@ -52,7 +52,7 @@ class FlowManager:
 
         return self.components[cache_key]
 
-    def process_step(self, step: str, value: Any) -> ValidationResult:
+    def process_step(self, step: str, value: Any) -> Tuple[ValidationResult, Optional[str]]:
         """Process step input with pure validation
 
         Args:
@@ -60,7 +60,8 @@ class FlowManager:
             value: Input value
 
         Returns:
-            ValidationResult with validation status
+            Tuple of (ValidationResult, Optional[str]) where the string is an exit condition
+            if the step produced one (e.g. from API response)
 
         Raises:
             FlowException: If step invalid
@@ -98,12 +99,12 @@ class FlowManager:
         component = self.get_component(step, current_type)
         validation = component.validate(value)
 
-        # Return validation result for current component
-        # Let the handler decide when to move to next component
-        # This ensures messages are sent in sequence
-        return validation
+        # Check for exit condition in validation result
+        exit_condition = None
+        if validation.valid and hasattr(validation, "metadata"):
+            exit_condition = validation.metadata.get("exit_condition")
 
-        return validation
+        return validation, exit_condition
 
 
 def initialize_flow(
@@ -151,6 +152,9 @@ def initialize_flow(
     # Use first component for initial state
     initial_component = component_types[0]
 
+    # Check if step should auto-progress
+    should_auto_progress = FlowRegistry.should_auto_progress(flow_type, step)
+
     # Create flow state with standardized validation tracking
     validation_state = {
         "in_progress": True,
@@ -159,6 +163,7 @@ def initialize_flow(
         "operation": "initialize_flow",
         "component": initial_component,
         "components": component_types,  # Store all components
+        "auto_progress": should_auto_progress,  # Track auto-progress status
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -178,6 +183,7 @@ def initialize_flow(
                 "components": component_types,  # Store all components
                 "component_index": 0,  # Track current component
                 "value": None,
+                "auto_progress": should_auto_progress,  # Track auto-progress status
                 "validation": {
                     "in_progress": False,
                     "error": None,
@@ -217,7 +223,7 @@ def process_flow_input(
         input_data: Input value
 
     Returns:
-        None if complete, or dict with next step
+        None if complete, or dict with next step/flow info
 
     Raises:
         FlowException: If flow state invalid
@@ -242,7 +248,7 @@ def process_flow_input(
 
     # Process through flow manager
     flow_manager = FlowManager(flow_type, state_manager)
-    validation = flow_manager.process_step(current_step, input_data)
+    validation, exit_condition = flow_manager.process_step(current_step, input_data)
 
     # Update validation state with tracking
     component_state = flow_data["active_component"]
@@ -306,9 +312,47 @@ def process_flow_input(
         }
     })
 
+    # Check for exit condition
+    if exit_condition:
+        next_flow = FlowRegistry.get_exit_flow(flow_type, exit_condition)
+        if next_flow:
+            # Clear current flow state
+            complete_flow(state_manager)
+            # Initialize next flow
+            initialize_flow(state_manager, next_flow)
+            return {
+                "flow_transition": {
+                    "from": flow_type,
+                    "to": next_flow,
+                    "condition": exit_condition
+                }
+            }
+        elif exit_condition == "error":
+            # Stay in current flow on error
+            return {
+                "error": {
+                    "message": "Operation failed",
+                    "details": validation.metadata.get("error_details", {})
+                }
+            }
+
     # Get next step
     next_step = FlowRegistry.get_next_step(flow_type, current_step)
     if next_step == "complete":
+        # Check for success exit condition
+        next_flow = FlowRegistry.get_exit_flow(flow_type, "success")
+        if next_flow:
+            # Clear current flow state
+            complete_flow(state_manager)
+            # Initialize next flow
+            initialize_flow(state_manager, next_flow)
+            return {
+                "flow_transition": {
+                    "from": flow_type,
+                    "to": next_flow,
+                    "condition": "success"
+                }
+            }
         return None
 
     # Get next component type(s)
@@ -319,6 +363,9 @@ def process_flow_input(
     # Use first component for initial state
     initial_component = next_component_types[0]
 
+    # Check if next step should auto-progress
+    should_auto_progress = FlowRegistry.should_auto_progress(flow_type, next_step)
+
     # Create next component validation state
     next_validation_state = {
         "in_progress": False,
@@ -327,6 +374,7 @@ def process_flow_input(
         "last_attempt": None,
         "operation": "initialize_component",
         "component": initial_component,
+        "auto_progress": should_auto_progress,  # Track auto-progress status
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -340,6 +388,7 @@ def process_flow_input(
                 "components": next_component_types,  # Store all components
                 "component_index": 0,  # Reset index for new step
                 "value": None,
+                "auto_progress": should_auto_progress,  # Track auto-progress status
                 "validation": next_validation_state,
                 "created_at": datetime.utcnow().isoformat()
             },
@@ -350,6 +399,7 @@ def process_flow_input(
     return {
         "step": next_step,
         "handler_type": handler_type,
+        "auto_progress": should_auto_progress,  # Include auto-progress status in response
         "progress": {
             "current": current_index + 1,
             "total": total_steps

@@ -2,8 +2,8 @@
 import logging
 from typing import Any, Callable, Dict
 
-from .auth import login as auth_login
-from .auth import onboard_member as auth_onboard
+from .login import login as auth_login
+from .login import onboard_member as auth_onboard
 from .credex import (accept_bulk_credex, accept_credex, cancel_credex,
                      decline_credex, get_credex, offer_credex)
 from .credex import get_ledger as get_account_ledger

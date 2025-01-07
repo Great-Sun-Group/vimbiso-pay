@@ -126,11 +126,11 @@ class LastNameInput(InputComponent):
         }
 
 
-class OnBoardMember(Component):
-    """Handles member onboarding by calling the onboardMember endpoint"""
+class OnBoardMemberApiCall(Component):
+    """Handles onboarding API call with proper exit conditions"""
 
     def __init__(self):
-        super().__init__("onboard_member")
+        super().__init__("onboard_member_api")
         self.state_manager = None
         self.bot_service = None
 
@@ -188,7 +188,7 @@ class OnBoardMember(Component):
         }
 
         # Call onboardMember endpoint
-        from core.api.auth import onboard_member
+        from core.api.login import onboard_member
         success, message = onboard_member(
             bot_service=self.bot_service,
             member_data=member_data

@@ -124,7 +124,7 @@ class MemberHandler:
                 )
 
             # Process step through appropriate flow
-            if flow_type == "member_auth":
+            if flow_type == "member_login":
                 # Get flow state for component info
                 flow_state = state_manager.get_flow_state()
                 component_state = flow_state.get("active_component", {})

@@ -140,7 +140,7 @@ class MessagingService(MessagingServiceInterface):
                 # Initialize auth flow starting with greeting step
                 initialize_flow(
                     state_manager=state_manager,
-                    flow_type="member_auth",
+                    flow_type="member_login",
                     initial_data={
                         "started_at": datetime.utcnow().isoformat()
                     }
@@ -152,7 +152,7 @@ class MessagingService(MessagingServiceInterface):
                 # Start with login step which includes greeting
                 return handler.handle_flow_step(
                     state_manager=state_manager,
-                    flow_type="member_auth",
+                    flow_type="member_login",
                     step="login",
                     input_value=message_text
                 )
@@ -187,14 +187,14 @@ class MessagingService(MessagingServiceInterface):
                     member_handler = self._get_handler("member")
                     initialize_flow(
                         state_manager=state_manager,
-                        flow_type="member_auth",
+                        flow_type="member_login",
                         initial_data={
                             "started_at": datetime.utcnow().isoformat()
                         }
                     )
                     return member_handler.handle_flow_step(
                         state_manager=state_manager,
-                        flow_type="member_auth",
+                        flow_type="member_login",
                         step="login",
                         input_value=message_text
                     )
