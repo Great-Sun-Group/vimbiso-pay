@@ -3,7 +3,6 @@ import logging
 import sys
 from datetime import datetime
 
-from core.api.models import Message as DBMessage  # Rename to avoid confusion
 from core.config.state_manager import StateManager
 from core.messaging.types import ChannelIdentifier, ChannelType
 from core.messaging.types import Message as DomainMessage
@@ -259,23 +258,6 @@ class CredexCloudApiWebhook(APIView):
     def get(self, request, *args, **kwargs):
         logger.info(f"Webhook verification request: {request.query_params}")
         return HttpResponse(request.query_params.get("hub.challenge"), 200)
-
-
-class WelcomeMessage(APIView):
-    """Message"""
-
-    parser_classes = (JSONParser,)
-
-    @staticmethod
-    def post(request):
-        if request.data.get("message"):
-            if not DBMessage.objects.all().first():
-                DBMessage.objects.create(messsage=request.data.get("message"))
-            else:
-                obj = DBMessage.objects.all().first()
-                obj.messsage = request.data.get("message")
-                obj.save()
-        return JsonResponse({"message": "Success"}, status=status.HTTP_200_OK)
 
 
 class WipeCache(APIView):

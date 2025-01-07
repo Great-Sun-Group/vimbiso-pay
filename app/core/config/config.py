@@ -1,4 +1,4 @@
-"""Redis configuration and basic constants"""
+"""Redis configuration and state management"""
 import logging
 from datetime import datetime, timedelta
 
@@ -35,22 +35,6 @@ except Exception as e:
 
 # Initialize atomic state manager
 atomic_state = AtomicStateManager(cache)
-
-# TTL Constants
-ACTIVITY_TTL = 300  # 5 minutes
-
-# Command Recognition
-GREETINGS = {
-    "menu", "memu", "hi", "hie", "cancel", "home", "hy",
-    "reset", "hello", "x", "c", "no", "No", "n", "N",
-    "hey", "y", "yes", "retry"
-}
-
-# Message Templates
-REGISTER = "{message}"
-PROFILE_SELECTION = "> *👤 Profile*\n{message}"
-INVALID_ACTION = "I'm sorry, I didn't understand that. Can you please try again?"
-DELAY = "Please wait while I process your request..."
 
 
 def get_greeting(name: str) -> str:
