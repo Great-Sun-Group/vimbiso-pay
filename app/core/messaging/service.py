@@ -52,7 +52,7 @@ class MessagingService(MessagingServiceInterface):
         """
         try:
             # Get message data from state
-            message_data = self.state_manager.get("message", {})
+            message_data = self.state_manager.get("message") or {}
             if not message_data:
                 raise ValueError("No message data in state")
 

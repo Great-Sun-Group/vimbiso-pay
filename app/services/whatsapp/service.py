@@ -208,7 +208,7 @@ class WhatsAppMessagingService(BaseMessagingService):
 
             # Route to appropriate handler based on mode
             handler = (
-                self._handle_mock_send if self._is_mock_mode() 
+                self._handle_mock_send if self._is_mock_mode()
                 else self._handle_production_send
             )
             return handler(message, whatsapp_message)

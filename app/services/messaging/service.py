@@ -34,10 +34,6 @@ class MessagingService:
         if state_manager:
             self.channel_service.state_manager = state_manager
 
-    def handle_message(self) -> Message:
-        """Handle incoming message through appropriate channel service"""
-        return self.channel_service.handle_message()
-
     def send_message(self, message: Message) -> Message:
         """Send message through appropriate channel service"""
         return self.channel_service.send_message(message)

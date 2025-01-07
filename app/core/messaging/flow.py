@@ -25,7 +25,7 @@ def activate_component(component_type: str, state_manager: Any) -> Any:
     component.state_manager = state_manager
 
     # Get input data from state
-    message_data = state_manager.get("message", {})
+    message_data = state_manager.get("message") or {}
 
     return component.validate(message_data)
 
@@ -44,6 +44,12 @@ def handle_component_result(context: str, component: str, result: Any) -> Tuple[
     # Handle errors uniformly
     if isinstance(result, Exception):
         return context, component  # Retry same component in same context
+
+    # Handle ValidationResult objects
+    if hasattr(result, "valid"):
+        if not result.valid:
+            return context, component  # Retry on validation failure
+        result = result.value  # Use validated value for routing
 
     # Branch based on context and component
     match (context, component):

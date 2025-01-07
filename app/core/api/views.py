@@ -15,6 +15,7 @@ from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
 from services.messaging.service import MessagingService
 from services.whatsapp.service import WhatsAppMessagingService
+from services.whatsapp.flow_processor import WhatsAppFlowProcessor
 
 # Configure logging with a standardized format
 logging.basicConfig(
@@ -97,8 +98,6 @@ class CredexCloudApiWebhook(APIView):
             # Identify channel type from payload/headers and validate
             channel_type = None
             channel_id = None
-            message_type = None
-            message_text = None
 
             # Check for WhatsApp payload
             if "messaging_product" in payload and payload["messaging_product"] == "whatsapp":
@@ -114,22 +113,6 @@ class CredexCloudApiWebhook(APIView):
                 # Handle WhatsApp status updates
                 if payload.get("statuses"):
                     logger.info("Received WhatsApp status update")
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-                # Get WhatsApp message
-                messages = payload.get("messages", [])
-                if not messages or not isinstance(messages, list):
-                    logger.info("No WhatsApp messages in payload")
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-                message = messages[0]
-                if not isinstance(message, dict):
-                    logger.warning("Invalid WhatsApp message format")
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-                # Handle WhatsApp system messages
-                if message.get("type") == "system" or message.get("system"):
-                    logger.info("Ignoring WhatsApp system message")
                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
                 # Get WhatsApp contact info
@@ -148,34 +131,9 @@ class CredexCloudApiWebhook(APIView):
                     logger.warning("No WhatsApp channel ID in contact")
                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-                # Get WhatsApp message type and text
-                message_type = message.get("type")
-                if message_type == "text":
-                    text = message.get("text", {})
-                    if isinstance(text, dict):
-                        message_text = text.get("body", "")
-                elif message_type == "interactive":
-                    interactive = message.get("interactive", {})
-                    if isinstance(interactive, dict):
-                        if "button_reply" in interactive:
-                            button_reply = interactive["button_reply"]
-                            if isinstance(button_reply, dict):
-                                message_text = button_reply.get("id", "")
-                        elif "list_reply" in interactive:
-                            list_reply = interactive["list_reply"]
-                            if isinstance(list_reply, dict):
-                                message_text = list_reply.get("id", "")
-                        else:
-                            logger.warning(f"Unhandled WhatsApp interactive type: {interactive}")
-                            message_text = str(interactive)
-
             # Check for SMS payload (stub for future implementation)
             elif "sms_provider" in payload:
                 channel_type = ChannelType.SMS
-                # TODO: Add SMS-specific payload parsing
-                # channel_id = payload.get("from")
-                # message_type = "text"
-                # message_text = payload.get("text")
                 logger.info("SMS channel not yet implemented")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
@@ -185,7 +143,7 @@ class CredexCloudApiWebhook(APIView):
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             # Validate we got the required information
-            if not all([channel_type, channel_id, message_type]):
+            if not all([channel_type, channel_id]):
                 logger.warning("Missing required message information")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
@@ -195,49 +153,33 @@ class CredexCloudApiWebhook(APIView):
 
             # Store mock testing status in state
             state_manager.update_state({
+                "channel": {
+                    "type": channel_type.value,
+                    "identifier": channel_id
+                },
                 "mock_testing": is_mock_testing,
                 "_metadata": {
                     "updated_at": datetime.utcnow().isoformat()
                 }
             })
 
-            # Log message details
-            logger.info(f"Processing {channel_type.value} message: {message_text}")
-
             try:
-                logger.info("Processing message...")
-                # Update state with message data
-                state_manager.update_state({
-                    "message": {
-                        "type": message_type,
-                        "text": message_text
-                    },
-                    "_metadata": {
-                        "updated_at": datetime.utcnow().isoformat()
-                    }
-                })
-
                 # Get messaging service for channel
                 service = get_messaging_service(state_manager, channel_type)
 
-                # Process message through service
-                logger.info("Processing message...")
-                response = service.handle_message()
+                # Create flow processor for channel type
+                if channel_type == ChannelType.WHATSAPP:
+                    flow_processor = WhatsAppFlowProcessor(service, state_manager)
+                else:
+                    raise ValueError(f"Unsupported channel type: {channel_type}")
 
-                # Validate response type
-                if not isinstance(response, DomainMessage):
-                    logger.error("Invalid response type from messaging service")
-                    raise ValueError("Messaging service returned invalid response type")
+                # Process through flow framework
+                logger.info("Processing message through flow framework...")
+                response = flow_processor.process_message(payload, state_manager)
 
-                # Send message through service
-                sent_response = service.send_message(response)
-
-                # For mock testing return the WhatsApp payload
+                # For mock testing return the response payload
                 if is_mock_testing:
-                    # Return the response directly in mock mode
-                    if isinstance(sent_response, DomainMessage):
-                        return JsonResponse(sent_response.to_dict(), status=status.HTTP_200_OK)
-                    return JsonResponse(sent_response, status=status.HTTP_200_OK)
+                    return JsonResponse(response.to_dict(), status=status.HTTP_200_OK)
 
                 # For real requests return success
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)

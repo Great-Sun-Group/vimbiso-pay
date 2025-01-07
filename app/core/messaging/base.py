@@ -118,12 +118,3 @@ class BaseMessagingService(MessagingServiceInterface):
         if not message.content:
             return False
         return True
-
-    def handle_message(self) -> Optional[Message]:
-        """Handle incoming message
-
-        Returns:
-            Optional response message
-        """
-        # Default no-op implementation
-        return None

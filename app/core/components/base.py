@@ -124,6 +124,20 @@ class Component:
             "validation": self.validation_state
         }
 
+    def to_message_content(self, value: Dict) -> str:
+        """Convert component result to message content
+
+        Args:
+            value: Component result value
+
+        Returns:
+            str: Formatted message content
+
+        Raises:
+            NotImplementedError: If component doesn't implement conversion
+        """
+        raise NotImplementedError
+
     def update_state(self, value: Any, validation_result: ValidationResult) -> None:
         """Update component state with standardized validation tracking
 

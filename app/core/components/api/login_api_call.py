@@ -83,6 +83,15 @@ class LoginApiCall(ApiComponent):
             }
         )
 
+    def to_message_content(self, value: Dict) -> str:
+        """Convert component result to message content"""
+        if isinstance(value, dict):
+            if "message" in value:
+                return value["message"]
+            if "action" in value:
+                return "Processing your request..."
+        return "Logging you in..."
+
     def to_verified_data(self, value: Any) -> Dict:
         """Convert API response to verified data
 
