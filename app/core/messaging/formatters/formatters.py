@@ -4,10 +4,78 @@ This module provides message formatting for all content types:
 - Account messages
 - Registration messages
 - Error messages
+- Credex messages
 """
+from decimal import Decimal
 from typing import Dict
 
-from .greetings import get_random_greeting
+from core.messaging.formatters.greetings import get_random_greeting
+
+
+class CredexFormatters:
+    """Credex-related message formatters"""
+
+    @staticmethod
+    def format_amount_prompt() -> str:
+        """Format amount input prompt"""
+        return (
+            "💸 What offer amount and denomination?\n"
+            "- Defaults to USD 💵 (1, 73932.64)\n"
+            "- Valid denom placement ✨ (54 ZWG, ZWG 125.54)"
+        )
+
+    @staticmethod
+    def format_handle_prompt() -> str:
+        """Format handle input prompt"""
+        return "Enter account 💳 handle:"
+
+    @staticmethod
+    def format_offer_confirmation(amount: Decimal, handle: str) -> str:
+        """Format offer confirmation prompt"""
+        return (
+            "📝 Review your offer:\n"
+            f"💸 Amount: {amount}\n"
+            f"💳 To: {handle}"
+        )
+
+    @staticmethod
+    def format_offer_complete() -> str:
+        """Format offer completion message"""
+        return "✅ Your offer has been sent."
+
+    @staticmethod
+    def format_action_prompt(action_type: str) -> str:
+        """Format action selection prompt"""
+        return f"Select a credex offer to {action_type}:"
+
+    @staticmethod
+    def format_action_confirmation(action_type: str, amount: Decimal, handle: str) -> str:
+        """Format action confirmation prompt"""
+        return (
+            f"📝 Review offer to {action_type}:\n"
+            f"💸 Amount: {amount}\n"
+            f"💳 From: {handle}"
+        )
+
+    @staticmethod
+    def format_action_complete(action_type: str) -> str:
+        """Format action completion message"""
+        messages = {
+            "accept": "✅ Offer accepted successfully.",
+            "decline": "✅ Offer declined successfully.",
+            "cancel": "✅ Offer cancelled successfully."
+        }
+        return messages.get(action_type, "✅ Action completed successfully.")
+
+    @staticmethod
+    def format_action_cancelled(action_type: str) -> str:
+        """Format action cancellation message"""
+        messages = {
+            "accept": "Acceptance cancelled",
+            "decline": "Decline cancelled",
+            "cancel": "Cancellation cancelled"
+        }
+        return messages.get(action_type, "Action cancelled")
 
 
 class AccountFormatters:

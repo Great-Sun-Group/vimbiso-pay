@@ -18,8 +18,8 @@ echo "Port: $PORT"
 echo "DEPLOYED_TO_AWS: ${DEPLOYED_TO_AWS:-false}"
 
 # Debug Redis configuration
-echo "REDIS_URL from environment: ${REDIS_URL:-not set}"
-REDIS_HOST=$(echo "${REDIS_URL:-redis://localhost:6379/0}" | sed -E 's|redis://([^:/]+).*|\1|')
+echo "REDIS_STATE_URL from environment: ${REDIS_STATE_URL:-not set}"
+REDIS_HOST=$(echo "${REDIS_STATE_URL:-redis://localhost:6379/0}" | sed -E 's|redis://([^:/]+).*|\1|')
 echo "Extracted Redis host: $REDIS_HOST"
 
 # Test Redis connectivity with increased attempts to match task definition grace period
@@ -69,20 +69,17 @@ echo "Redis is ready!"
 if [ "${DEPLOYED_TO_AWS:-false}" = "true" ]; then
     echo "Using EFS storage..."
     # Ensure EFS mount directories exist
-    mkdir -p /efs-vols/app-data/data/{db,static,media,logs}
+    mkdir -p /efs-vols/app-data/data/{static,media,logs}
     chmod -R 755 /efs-vols/app-data/data
 else
     echo "Using local storage..."
     # Create local directories
-    mkdir -p /app/data/{db,static,media,logs}
+    mkdir -p /app/data/{static,media,logs}
     chmod -R 755 /app/data
 fi
 
-# In production run migrations and collect static files
+# In production collect static files
 if [ "${DJANGO_ENV:-development}" = "production" ]; then
-    echo "Applying database migrations..."
-    python manage.py migrate --noinput
-
     echo "Collecting static files..."
     python manage.py collectstatic --noinput
 fi
@@ -113,10 +110,6 @@ if [ "${DJANGO_ENV:-development}" = "production" ]; then
         --keep-alive 65
 else
     echo "Starting Django development server..."
-    # Always run migrations in development
-    echo "Applying database migrations..."
-    python manage.py migrate --noinput
-
     # Start Django with stdout/stderr going to console
     exec python manage.py runserver 0.0.0.0:${PORT:-8000}
 fi

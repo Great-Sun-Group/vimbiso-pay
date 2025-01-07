@@ -3,7 +3,7 @@
 This service handles message processing and responses.
 Flow routing is handled by core/messaging/flow.py.
 Component processing is handled by the components themselves.
-Message formatting is handled by handlers.py.
+Message formatting is handled by formatters.py.
 """
 
 import logging
@@ -12,10 +12,10 @@ from typing import Any, Dict, Optional
 from core.messaging.flow import process_component
 from core.messaging.base import BaseMessagingService
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import Message
+from core.messaging.types import Message, TextContent
 from core.utils.exceptions import SystemException
-
-from . import handlers
+from core.messaging.formatters.formatters import AccountFormatters
+from core.messaging.utils import get_recipient
 
 logger = logging.getLogger(__name__)
 
@@ -74,32 +74,74 @@ class MessagingService(MessagingServiceInterface):
                 {"result": result}
             )
 
+            # Get recipient for message
+            recipient = get_recipient(self.state_manager)
+
             # Format appropriate message based on context/component
             match (next_context, next_component):
                 case ("account", "AccountDashboard"):
-                    return handlers.handle_dashboard_display(
-                        messaging_service=self,
-                        state_manager=self.state_manager,
-                        verified_data=result
-                    )
+                    # Format dashboard using account data
+                    active_account = result["active_account"]
+                    balance_data = active_account.get("balanceData", {})
+
+                    # Get member tier from dashboard data
+                    member_data = result["dashboard"].get("member", {})
+                    member_tier = member_data.get("memberTier")
+                    account_data = {
+                        "accountName": active_account.get("accountName"),
+                        "accountHandle": active_account.get("accountHandle"),
+                        "netCredexAssetsInDefaultDenom": balance_data.get('netCredexAssetsInDefaultDenom', '0.00'),
+                        "defaultDenom": member_data.get('defaultDenom', 'USD'),
+                        **balance_data
+                    }
+
+                    # Only include tier limit for tier < 2
+                    if member_tier < 2:
+                        account_data["tier_limit_raw"] = member_data.get("remainingAvailableUSD", "0.00")
+
+                    message = AccountFormatters.format_dashboard(account_data)
+
+                    # Check if we should use interactive format
+                    if "buttons" in result:
+                        # Use button format for simple interactions
+                        return self.send_interactive(
+                            recipient=recipient,
+                            body=message,
+                            buttons=result["buttons"][:3]  # Limit to 3 buttons for WhatsApp
+                        )
+                    elif result.get("use_list"):
+                        # Use list format for multiple options
+                        return self.send_interactive(
+                            recipient=recipient,
+                            body=message,
+                            sections=result["sections"],
+                            button_text=result.get("button_text", "Select Option")
+                        )
+                    else:
+                        # Fallback to simple text message
+                        return Message(
+                            recipient=recipient,
+                            content=TextContent(body=message)
+                        )
 
                 case (_, "Greeting"):
-                    return handlers.handle_greeting(
-                        state_manager=self.state_manager,
-                        content=result
+                    # Simple text message for greetings
+                    return Message(
+                        recipient=recipient,
+                        content=TextContent(body=result)
                     )
 
                 case _:
                     # For other cases, check result type
                     if isinstance(result, str):
-                        return handlers.handle_greeting(
-                            state_manager=self.state_manager,
-                            content=result
+                        return Message(
+                            recipient=recipient,
+                            content=TextContent(body=result)
                         )
                     elif isinstance(result, dict) and "error" in result:
-                        return handlers.handle_error(
-                            state_manager=self.state_manager,
-                            error=result["error"]
+                        return Message(
+                            recipient=recipient,
+                            content=TextContent(body=f"⚠️ {result['error']}")
                         )
                     else:
                         logger.info(
@@ -109,7 +151,12 @@ class MessagingService(MessagingServiceInterface):
 
         except SystemException as e:
             if "rate limit" in str(e).lower():
-                return handlers.handle_rate_limit_error(self.state_manager)
+                return Message(
+                    recipient=get_recipient(self.state_manager),
+                    content=TextContent(
+                        body="⚠️ Too many messages sent. Please wait a moment before trying again."
+                    )
+                )
             raise
 
     def send_message(self, message: Message) -> Message:

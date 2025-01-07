@@ -13,7 +13,6 @@ services:
       - DEBUG=True
       - ALLOWED_HOSTS=*
       - DJANGO_SECRET=local-secret-key
-      - REDIS_URL=redis://redis-cache:6379/0
       - REDIS_STATE_URL=redis://redis-state:6379/0
       - DEPLOYED_TO_AWS=false
       - WHATSAPP_API_URL=${WHATSAPP_API_URL}
@@ -27,8 +26,6 @@ services:
       - USE_PROGRESSIVE_FLOW=True
     command: ["./start_app.sh"]
     depends_on:
-      redis-cache:
-        condition: service_healthy
       redis-state:
         condition: service_healthy
     healthcheck:
@@ -40,40 +37,13 @@ services:
     networks:
       - app-network
 
-  redis-cache:
-    image: redis:7.0-alpine
-    volumes:
-      - ./data/redis/cache:/data
-    ports:
-      - "6379:6379"
-    command: >
-      redis-server
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --appendonly no
-      --save ""
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
-    networks:
-      - app-network
-
   redis-state:
     image: redis:7.0-alpine
     volumes:
       - ./data/redis/state:/data
     ports:
-      - "6380:6379"
-    command: >
-      redis-server
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --appendonly yes
-      --appendfsync everysec
-      --save ""
+      - "6379:6379"
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes --appendfsync everysec --save ""
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

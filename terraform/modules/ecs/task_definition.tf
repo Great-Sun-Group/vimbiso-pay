@@ -9,113 +9,11 @@ resource "aws_ecs_task_definition" "app" {
 
   container_definitions = jsonencode([
     {
-      name         = "redis-cache"
-      image        = "public.ecr.aws/docker/library/redis:7.0-alpine"
-      essential    = true
-      memory       = floor(var.task_memory * 0.2)
-      cpu          = floor(var.task_cpu * 0.2)
-      user         = "root"  # Need root for initial setup
-      portMappings = [
-        {
-          containerPort = var.redis_cache_port
-          hostPort     = var.redis_cache_port
-          protocol      = "tcp"
-        }
-      ]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.app.name
-          awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "redis-cache"
-          awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
-          awslogs-create-group  = "true"
-          mode                  = "non-blocking"
-          max-buffer-size       = "4m"
-        }
-      }
-      mountPoints = [
-        {
-          sourceVolume  = "redis-cache-data"
-          containerPath = "/redis/cache"
-          readOnly     = false
-        }
-      ]
-      environment = [
-        {
-          name  = "TZ"
-          value = "UTC"
-        }
-      ]
-      command = [
-        "sh",
-        "-c",
-        <<-EOT
-        # Install gosu for proper user switching
-        apk add --no-cache gosu
-
-        # Initialize Redis data directory
-        mkdir -p /redis/cache/appendonlydir
-        chown -R redis:redis /redis/cache
-
-        # Check and repair AOF files if needed
-        if [ -f /redis/cache/appendonlydir/appendonly.aof.1.incr.aof ]; then
-          echo "Checking AOF file integrity..."
-          # Backup AOF files before repair attempt
-          echo "Creating backup of AOF files..."
-          cp -f /redis/cache/appendonlydir/appendonly.aof.1.incr.aof /redis/cache/appendonlydir/appendonly.aof.1.incr.aof.bak
-          cp -f /redis/cache/appendonlydir/appendonly.aof.manifest /redis/cache/appendonlydir/appendonly.aof.manifest.bak
-
-          if ! redis-check-aof --fix /redis/cache/appendonlydir/appendonly.aof.1.incr.aof; then
-            echo "AOF file corrupted, removing and starting fresh..."
-            rm -f /redis/cache/appendonlydir/appendonly.aof.1.incr.aof
-            rm -f /redis/cache/appendonlydir/appendonly.aof.manifest
-          else
-            echo "AOF file repaired successfully"
-            rm -f /redis/cache/appendonlydir/*.bak
-          fi
-        fi
-
-        # Start Redis with proper user and optimized settings
-        exec gosu redis redis-server \
-          --appendonly yes \
-          --appendfsync everysec \
-          --no-appendfsync-on-rewrite yes \
-          --aof-rewrite-incremental-fsync yes \
-          --auto-aof-rewrite-percentage 100 \
-          --auto-aof-rewrite-min-size 64mb \
-          --aof-load-truncated yes \
-          --aof-use-rdb-preamble yes \
-          --protected-mode no \
-          --bind 0.0.0.0 \
-          --port ${var.redis_cache_port} \
-          --dir /redis/cache \
-          --timeout 30 \
-          --tcp-keepalive 60 \
-          --maxmemory-policy allkeys-lru \
-          --maxmemory ${floor(var.task_memory * 0.2 * 0.90)}mb \
-          --save "" \
-          --stop-writes-on-bgsave-error no \
-          --ignore-warnings ARM64-COW-BUG \
-          --activedefrag yes \
-          --active-defrag-threshold-lower 10 \
-          --active-defrag-threshold-upper 30
-        EOT
-      ]
-      healthCheck = {
-        command     = ["CMD-SHELL", "redis-cli -p ${var.redis_cache_port} ping"]
-        interval    = 30
-        timeout     = 15
-        retries     = 3
-        startPeriod = 300
-      }
-    },
-    {
       name         = "redis-state"
       image        = "public.ecr.aws/docker/library/redis:7.0-alpine"
       essential    = true
-      memory       = floor(var.task_memory * 0.2)
-      cpu          = floor(var.task_cpu * 0.2)
+      memory       = floor(var.task_memory * 0.3)  # Increased from 0.2
+      cpu          = floor(var.task_cpu * 0.3)     # Increased from 0.2
       user         = "root"  # Need root for initial setup
       portMappings = [
         {
@@ -195,7 +93,7 @@ resource "aws_ecs_task_definition" "app" {
           --timeout 30 \
           --tcp-keepalive 60 \
           --maxmemory-policy allkeys-lru \
-          --maxmemory ${floor(var.task_memory * 0.2 * 0.90)}mb \
+          --maxmemory ${floor(var.task_memory * 0.3 * 0.90)}mb \  # Increased from 0.2
           --save "" \
           --stop-writes-on-bgsave-error no \
           --ignore-warnings ARM64-COW-BUG \
@@ -216,8 +114,8 @@ resource "aws_ecs_task_definition" "app" {
       name         = "vimbiso-pay-${var.environment}"
       image        = var.docker_image
       essential    = true
-      memory       = floor(var.task_memory * 0.6)
-      cpu          = floor(var.task_cpu * 0.6)
+      memory       = floor(var.task_memory * 0.7)  # Increased from 0.6
+      cpu          = floor(var.task_cpu * 0.7)     # Increased from 0.6
       user         = "root"  # Need root for initial setup
       environment  = [
         { name = "DJANGO_ENV", value = var.environment },
@@ -236,7 +134,6 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
         { name = "APP_LOG_LEVEL", value = "DEBUG" },
-        { name = "REDIS_URL", value = "redis://localhost:${var.redis_cache_port}/0" },
         { name = "REDIS_STATE_URL", value = "redis://localhost:${var.redis_state_port}/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
@@ -306,15 +203,8 @@ resource "aws_ecs_task_definition" "app" {
 
         # Set up directories with proper permissions
         echo "[App] Setting up directories..."
-        mkdir -p /efs-vols/app-data/data/{db,static,media,logs}
+        mkdir -p /efs-vols/app-data/data/{static,media,logs}
         chown -R 10001:10001 /efs-vols/app-data
-        chmod 777 /efs-vols/app-data/data/db
-
-        echo "[App] Waiting for Redis Cache..."
-        until nc -z localhost ${var.redis_cache_port}; do
-          echo "[App] Redis Cache port not available - sleeping 5s"
-          sleep 5
-        done
 
         echo "[App] Waiting for Redis State..."
         until nc -z localhost ${var.redis_state_port}; do
@@ -329,10 +219,8 @@ resource "aws_ecs_task_definition" "app" {
         while [ $attempt -le $max_attempts ]; do
           echo "[App] Redis connection attempt $attempt/$max_attempts"
 
-          if redis-cli -p ${var.redis_cache_port} ping && redis-cli -p ${var.redis_state_port} ping; then
-            echo "[App] Redis PING successful for both instances"
-            echo "[App] Redis Cache INFO:"
-            redis-cli -p ${var.redis_cache_port} info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
+          if redis-cli -p ${var.redis_state_port} ping; then
+            echo "[App] Redis PING successful"
             echo "[App] Redis State INFO:"
             redis-cli -p ${var.redis_state_port} info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
             break
@@ -348,32 +236,26 @@ resource "aws_ecs_task_definition" "app" {
           sleep 5
         done
 
-        # Test Django Redis connections
-        echo "[App] Testing Django Redis connections..."
+        # Test Django Redis connection
+        echo "[App] Testing Django Redis connection..."
         cd /app
         python << EOF
 import redis
 from django.conf import settings
 import sys
 
-print("[App] Attempting to connect to Redis Cache using settings.REDIS_CACHE_URL:", settings.REDIS_CACHE_URL)
 print("[App] Attempting to connect to Redis State using settings.REDIS_STATE_URL:", settings.REDIS_STATE_URL)
 try:
-    rc = redis.from_url(settings.REDIS_CACHE_URL)
     rs = redis.from_url(settings.REDIS_STATE_URL)
-    rc.ping()
     rs.ping()
-    print("[App] Django Redis connections successful")
+    print("[App] Django Redis connection successful")
 except Exception as e:
-    print("[App] Django Redis connections failed:", str(e))
+    print("[App] Django Redis connection failed:", str(e))
     sys.exit(1)
 EOF
 
         echo "[App] Creating data symlink..."
         ln -sfn /efs-vols/app-data/data /app/data
-
-        echo "[App] Running migrations..."
-        python manage.py migrate --noinput
 
         echo "[App] Collecting static files..."
         python manage.py collectstatic --noinput
@@ -400,10 +282,6 @@ EOF
       ]
       dependsOn = [
         {
-          containerName = "redis-cache"
-          condition     = "HEALTHY"
-        },
-        {
           containerName = "redis-state"
           condition     = "HEALTHY"
         }
@@ -419,19 +297,6 @@ EOF
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.app_access_point_id
-        iam = "ENABLED"
-      }
-    }
-  }
-
-  volume {
-    name = "redis-cache-data"
-    efs_volume_configuration {
-      file_system_id = var.efs_file_system_id
-      root_directory = "/"
-      transit_encryption = "ENABLED"
-      authorization_config {
-        access_point_id = var.redis_cache_access_point_id
         iam = "ENABLED"
       }
     }
