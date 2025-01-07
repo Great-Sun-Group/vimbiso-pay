@@ -1,5 +1,4 @@
 """Message templates for progressive WhatsApp interactions"""
-from decimal import Decimal
 from typing import Any, Dict, List
 
 from .types import (
@@ -154,69 +153,3 @@ class ButtonSelection:
                 buttons=buttons
             )
         )
-
-
-class CredexTemplates:
-    """Templates for Credex-related interactions"""
-
-    @staticmethod
-    def get_amount_prompt() -> str:
-        """Get amount input prompt"""
-        return (
-            "💸 What offer amount and denomination?\n"
-            "- Defaults to USD 💵 (1, 73932.64)\n"
-            "- Valid denom placement ✨ (54 ZWG, ZWG 125.54)"
-        )
-
-    @staticmethod
-    def get_handle_prompt() -> str:
-        """Get handle input prompt"""
-        return "Enter account 💳 handle:"
-
-    @staticmethod
-    def get_offer_confirmation(amount: Decimal, handle: str) -> str:
-        """Get offer confirmation prompt"""
-        return (
-            "📝 Review your offer:\n"
-            f"💸 Amount: {amount}\n"
-            f"💳 To: {handle}"
-        )
-
-    @staticmethod
-    def get_offer_complete() -> str:
-        """Get offer completion message"""
-        return "✅ Your offer has been sent."
-
-    @staticmethod
-    def get_action_prompt(action_type: str) -> str:
-        """Get action selection prompt"""
-        return f"Select a credex offer to {action_type}:"
-
-    @staticmethod
-    def get_action_confirmation(action_type: str, amount: Decimal, handle: str) -> str:
-        """Get action confirmation prompt"""
-        return (
-            f"📝 Review offer to {action_type}:\n"
-            f"💸 Amount: {amount}\n"
-            f"💳 From: {handle}"
-        )
-
-    @staticmethod
-    def get_action_complete(action_type: str) -> str:
-        """Get action completion message"""
-        messages = {
-            "accept": "✅ Offer accepted successfully.",
-            "decline": "✅ Offer declined successfully.",
-            "cancel": "✅ Offer cancelled successfully."
-        }
-        return messages.get(action_type, "✅ Action completed successfully.")
-
-    @staticmethod
-    def get_action_cancelled(action_type: str) -> str:
-        """Get action cancellation message"""
-        messages = {
-            "accept": "Acceptance cancelled",
-            "decline": "Decline cancelled",
-            "cancel": "Cancellation cancelled"
-        }
-        return messages.get(action_type, "Action cancelled")
