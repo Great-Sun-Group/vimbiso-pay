@@ -8,10 +8,10 @@ from typing import Any
 
 from core.utils.error_types import ValidationResult
 
-from .base import InputComponent
+from .base import Component
 
 
-class ConfirmBase(InputComponent):
+class ConfirmBase(Component):
     """Base class for confirmation components"""
 
     def __init__(self, component_type: str):
@@ -37,9 +37,16 @@ class ConfirmBase(InputComponent):
                 )
 
         # Validate type
-        type_result = self._validate_type(value, bool, "boolean")
-        if not type_result.valid:
-            return type_result
+        if not isinstance(value, bool):
+            return ValidationResult.failure(
+                message="Value must be boolean",
+                field="value",
+                details={
+                    "expected_type": "boolean",
+                    "actual_type": str(type(value)),
+                    "value": str(value)
+                }
+            )
 
         # Let subclass handle specific confirmation
         if not value:
