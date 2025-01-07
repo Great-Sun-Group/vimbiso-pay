@@ -137,10 +137,20 @@ class UpgradeMemberApiCall(ApiComponent):
 ```python
 class ConfirmUpgrade(ConfirmBase):
     def handle_confirmation(self, value: bool) -> ValidationResult:
-        # Get dashboard data which includes member info
-        dashboard = self.state_manager.get_flow_data().get("dashboard", {})
-        member_id = dashboard.get("member_id")
+        # Get member data from dashboard
+        dashboard = self.state_manager.get("dashboard")
+        member_id = dashboard.get("member", {}).get("memberID")
+
+        # Get confirmation data from flow
+        flow_data = self.state_manager.get_flow_state()
+        confirm_data = flow_data.get("data", {})
+
         # Validate and update state...
+        return ValidationResult.success({
+            "confirmed": value,
+            "member_id": member_id,
+            "data": confirm_data
+        })
 ```
 
 Common mistakes to avoid:

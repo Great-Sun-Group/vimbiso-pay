@@ -11,10 +11,10 @@ from decouple import config
 from core.utils.error_types import ValidationResult
 from core.api.base import make_api_request, handle_api_response
 
-from .base import Component
+from ..base import ApiComponent
 
 
-class UpgradeMembertierApiCall(Component):
+class UpgradeMembertierApiCall(ApiComponent):
     """Handles upgrade member tier API call"""
 
     def __init__(self):
@@ -30,23 +30,8 @@ class UpgradeMembertierApiCall(Component):
         """Set bot service for API access"""
         self.bot_service = bot_service
 
-    def validate(self, value: Any) -> ValidationResult:
+    def validate_api_call(self, value: Any) -> ValidationResult:
         """Call upgradeMemberTier endpoint and validate response"""
-        # Validate state manager and bot service are set
-        if not self.state_manager:
-            return ValidationResult.failure(
-                message="State manager not set",
-                field="state_manager",
-                details={"component": "upgrade_membertier"}
-            )
-
-        if not self.bot_service:
-            return ValidationResult.failure(
-                message="Bot service not set",
-                field="bot_service",
-                details={"component": "upgrade_membertier"}
-            )
-
         # Get dashboard data from state
         dashboard = self.state_manager.get("dashboard")
         if not dashboard:
@@ -74,7 +59,7 @@ class UpgradeMembertierApiCall(Component):
 
         response = make_api_request(url, headers, {})
 
-        # Handle response - this updates both dashboard and action state
+        # Let handlers update state
         response_data, error = handle_api_response(
             response=response,
             state_manager=self.state_manager
@@ -86,11 +71,10 @@ class UpgradeMembertierApiCall(Component):
                 details={"error": error}
             )
 
-        # Get action data from state
+        # Get action data for flow
         flow_data = self.state_manager.get_flow_state()
         action_data = flow_data.get("action", {})
 
-        # Return action data for component flow
         return ValidationResult.success({
             "action": action_data,
             "upgraded": True

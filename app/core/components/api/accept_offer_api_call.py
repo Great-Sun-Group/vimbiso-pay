@@ -1,16 +1,20 @@
 """Accept offer API call component
 
 This component handles accepting a Credex offer through the API.
+Dashboard data is the source of truth for member state.
 """
 
 from typing import Any, Dict
 
+from decouple import config
+
 from core.utils.error_types import ValidationResult
+from core.api.base import make_api_request, handle_api_response
 
-from .base import Component
+from ..base import ApiComponent
 
 
-class AcceptOfferApiCall(Component):
+class AcceptOfferApiCall(ApiComponent):
     """Handles accepting a Credex offer"""
 
     def __init__(self):
@@ -26,28 +30,21 @@ class AcceptOfferApiCall(Component):
         """Set bot service for API access"""
         self.bot_service = bot_service
 
-    def validate(self, value: Any) -> ValidationResult:
+    def validate_api_call(self, value: Any) -> ValidationResult:
         """Call acceptOffer endpoint and validate response"""
-        # Validate state manager and bot service are set
-        if not self.state_manager:
+        # Get member data from dashboard
+        dashboard = self.state_manager.get("dashboard")
+        if not dashboard:
             return ValidationResult.failure(
-                message="State manager not set",
-                field="state_manager",
+                message="No dashboard data found",
+                field="dashboard",
                 details={"component": "accept_offer"}
             )
 
-        if not self.bot_service:
-            return ValidationResult.failure(
-                message="Bot service not set",
-                field="bot_service",
-                details={"component": "accept_offer"}
-            )
-
-        # Get member ID from state
-        member_id = self.state_manager.get_member_id()
+        member_id = dashboard.get("member", {}).get("memberID")
         if not member_id:
             return ValidationResult.failure(
-                message="No member ID found",
+                message="No member ID found in dashboard",
                 field="member_id",
                 details={"component": "accept_offer"}
             )
@@ -79,46 +76,44 @@ class AcceptOfferApiCall(Component):
                 details={"component": "accept_offer"}
             )
 
-        # Call acceptOffer endpoint
-        from core.api.credex import accept_offer
-        success, message = accept_offer(
-            bot_service=self.bot_service,
-            member_id=member_id,
-            account_id=active_account_id,
-            credex_id=credex_id
+        # Make API call
+        url = f"acceptOffer/{member_id}/{active_account_id}/{credex_id}"
+        headers = {
+            "Content-Type": "application/json",
+            "x-client-api-key": config("CLIENT_API_KEY"),
+        }
+
+        response = make_api_request(url, headers, {})
+
+        # Let handlers update state
+        response_data, error = handle_api_response(
+            response=response,
+            state_manager=self.state_manager
         )
-
-        if not success:
+        if error:
             return ValidationResult.failure(
-                message=f"Failed to accept offer: {message}",
+                message=f"Failed to accept offer: {error}",
                 field="api_call",
-                details={"error": message}
+                details={"error": error}
             )
 
-        # Get API response from state
+        # Get action data for flow
         flow_data = self.state_manager.get_flow_state()
-        if not flow_data or "data" not in flow_data:
-            return ValidationResult.failure(
-                message="No state data after accepting offer",
-                field="flow_data",
-                details={"component": "accept_offer"}
-            )
+        action_data = flow_data.get("action", {})
 
-        api_response = flow_data["data"].get("api_response")
-        if not api_response:
-            return ValidationResult.failure(
-                message="No API response data found",
-                field="api_response",
-                details={"flow_data": flow_data["data"]}
-            )
-
-        return ValidationResult.success(api_response)
+        return ValidationResult.success({
+            "action": action_data,
+            "offer_accepted": True
+        })
 
     def to_verified_data(self, value: Any) -> Dict:
-        """Convert API response to verified data"""
+        """Convert API response to verified data
+
+        Note: Most data is in dashboard state, we just need
+        success indicators and action details here.
+        """
         return {
-            "credex_id": value.get("credexID"),
-            "amount": value.get("amount"),
-            "counterparty": value.get("counterpartyAccountName"),
-            "offer_accepted": True
+            "offer_accepted": True,
+            "action_type": value.get("action", {}).get("type"),
+            "action_id": value.get("action", {}).get("id")
         }
