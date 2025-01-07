@@ -255,7 +255,7 @@ class AuthFlow:
                     try:
                         logger.info("Starting greeting sequence")
 
-                        # Get and send greeting message
+                        # Handle greeting and login sequence
                         greeting_message = AuthFlow._handle_greeting(
                             messaging_service=messaging_service,
                             state_manager=state_manager,
@@ -264,13 +264,10 @@ class AuthFlow:
                             components=components
                         )
 
-                        # Send greeting through messaging service
-                        messaging_service.send_message(greeting_message)
-
                         # Proceed to login handler
                         success, auth_details = AuthFlow._handle_login(state_manager)
                         if success:
-                            # Continue to login complete step
+                            # Return dashboard directly
                             return AuthFlow.process_step(
                                 messaging_service=messaging_service,
                                 state_manager=state_manager,
@@ -278,8 +275,8 @@ class AuthFlow:
                                 input_value=input_value
                             )
                         else:
-                            # Signal that registration is needed
-                            return REGISTRATION_NEEDED
+                            # Return greeting if registration needed
+                            return greeting_message
 
                     except SystemException as e:
                         if "rate limit" in str(e).lower():

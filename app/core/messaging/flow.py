@@ -98,29 +98,10 @@ class FlowManager:
         component = self.get_component(step, current_type)
         validation = component.validate(value)
 
-        # If valid and not last component, move to next component
-        if validation.valid and current_index < len(component_types) - 1:
-            # Update component index in state manager
-            next_component = component_types[current_index + 1]
-            self.state_manager.update_state({
-                "flow_data": {
-                    "active_component": {
-                        **component_state,
-                        "component_index": current_index + 1,
-                        "type": next_component,
-                        "value": None,  # Reset value for new component
-                        "validation": {  # Initialize validation for new component
-                            "in_progress": False,
-                            "error": None,
-                            "attempts": 0,
-                            "last_attempt": None,
-                            "operation": "initialize_component",
-                            "component": next_component,
-                            "timestamp": datetime.utcnow().isoformat()
-                        }
-                    }
-                }
-            })
+        # Return validation result for current component
+        # Let the handler decide when to move to next component
+        # This ensures messages are sent in sequence
+        return validation
 
         return validation
 

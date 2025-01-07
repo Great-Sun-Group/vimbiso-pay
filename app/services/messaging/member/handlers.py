@@ -7,15 +7,15 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from core.messaging.flow import initialize_flow
 from core.messaging.interface import MessagingServiceInterface
 from core.messaging.types import Message
-from core.utils.exceptions import FlowException, SystemException
-from core.messaging.flow import initialize_flow
 from core.utils.error_handler import ErrorHandler
+from core.utils.exceptions import FlowException, SystemException
 
+from ..utils import get_recipient
 from .constants import REGISTRATION_NEEDED
 from .flows import AuthFlow, RegistrationFlow, UpgradeFlow
-from ..utils import get_recipient
 
 logger = logging.getLogger(__name__)
 
@@ -125,10 +125,45 @@ class MemberHandler:
 
             # Process step through appropriate flow
             if flow_type == "member_auth":
+                # Get flow state for component info
+                flow_state = state_manager.get_flow_state()
+                component_state = flow_state.get("active_component", {})
+                component_types = component_state.get("components", [])
+                current_index = component_state.get("component_index", 0)
+
+                # Process current component
                 result = AuthFlow.process_step(self.messaging, state_manager, step, input_value)
+
                 # Handle registration signal
                 if result == REGISTRATION_NEEDED:
                     return self.start_registration(state_manager)
+
+                # If this component succeeded and there are more components,
+                # update state to move to next component
+                if current_index < len(component_types) - 1:
+                    next_component = component_types[current_index + 1]
+                    state_manager.update_state({
+                        "flow_data": {
+                            "active_component": {
+                                **component_state,
+                                "component_index": current_index + 1,
+                                "type": next_component,
+                                "value": None,
+                                "validation": {
+                                    "in_progress": False,
+                                    "error": None,
+                                    "attempts": 0,
+                                    "last_attempt": None,
+                                    "operation": "initialize_component",
+                                    "component": next_component,
+                                    "timestamp": datetime.utcnow().isoformat()
+                                }
+                            }
+                        }
+                    })
+                    # Process next component immediately
+                    return AuthFlow.process_step(self.messaging, state_manager, step, input_value)
+
                 return result
             elif flow_type == "member_registration":
                 result = RegistrationFlow.process_step(self.messaging, state_manager, step, input_value)

@@ -1,7 +1,6 @@
 """WhatsApp messaging service implementation"""
 import json
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -178,129 +177,43 @@ class WhatsAppMessagingService(BaseMessagingService):
 
         return message_data
 
-    def send_whatsapp_message(self, payload: Dict, phone_number_id: Optional[str] = None) -> Dict:
-        """Send message to WhatsApp Cloud API with detailed logging.
+    def _is_mock_mode(self) -> bool:
+        """Check if service is in mock testing mode"""
+        return hasattr(self, 'state_manager') and self.state_manager.get('mock_testing')
+
+    def send_message(self, message: Message) -> Message:
+        """Send a message through WhatsApp Cloud API or mock.
+
+        This method:
+        1. Converts core Message to WhatsApp format
+        2. Determines if message should go to mock or real API
+        3. Sends and processes response
+        4. Updates message metadata
 
         Args:
-            payload: Message payload in WhatsApp format
-            phone_number_id: Optional phone number ID, defaults to config value
+            message: Core Message object to send
 
         Returns:
-            Dict: API response
+            Message: Sent message with metadata
 
         Raises:
-            SystemException: If message sending fails
+            MessageValidationError: If message sending fails
         """
-        # Log the request payload
-        logger.info("WhatsApp request: %s", json.dumps({
-            "payload": payload
-        }, indent=2))
-
         try:
-            # Check if we're in mock mode
-            if hasattr(self, 'state_manager') and self.state_manager.get('mock_testing'):
-                # Return mock success response
-                response_data = {
-                    "messaging_product": "whatsapp",
-                    "contacts": [{
-                        "input": payload.get("to"),
-                        "wa_id": payload.get("to")
-                    }],
-                    "messages": [{
-                        "id": f"mock_message_{datetime.utcnow().timestamp()}"
-                    }]
-                }
-                logger.info("Mock WhatsApp response: %s", json.dumps(response_data, indent=2))
-                return response_data
-
-            # Real API call for non-mock mode
-            phone_number_id = phone_number_id or config("WHATSAPP_PHONE_NUMBER_ID")
-            api_url = config("WHATSAPP_API_URL", default="https://graph.facebook.com/v20.0/")
-            url = f"{api_url}{phone_number_id}/messages"
-
-            headers = {
-                "Authorization": f"Bearer {config('WHATSAPP_ACCESS_TOKEN')}",
-                "Content-Type": "application/json",
-            }
-
-            response = requests.post(url, json=payload, headers=headers)
-
-            # Log the complete response
-            logger.info("WhatsApp response: %s", json.dumps(response.json(), indent=2))
-
-            if response.status_code != 200:
-                error_msg = f"WhatsApp API Error [{response.status_code}]: {response.text}"
-                logger.error(error_msg)
-
-                # Check for rate limit error
-                response_data = response.json()
-                if (response.status_code == 400 and response_data.get("error", {}).get("code") == 131056):
-                    raise SystemException(
-                        message=error_msg,
-                        code="WHATSAPP_RATE_LIMIT",
-                        service="whatsapp",
-                        action="send_message"
-                    )
-                else:
-                    raise SystemException(
-                        message=error_msg,
-                        code="WHATSAPP_API_ERROR",
-                        service="whatsapp",
-                        action="send_message"
-                    )
-            return response.json()
-
-        except requests.RequestException as e:
-            error_msg = f"Error sending WhatsApp message: {str(e)}"
-            logger.error(error_msg)
-            raise SystemException(
-                message=error_msg,
-                code="WHATSAPP_REQUEST_ERROR",
-                service="whatsapp",
-                action="send_message"
-            )
-        except Exception as e:
-            error_msg = f"Unexpected error sending WhatsApp message: {str(e)}"
-            logger.error(error_msg)
-            raise SystemException(
-                message=error_msg,
-                code="WHATSAPP_UNEXPECTED_ERROR",
-                service="whatsapp",
-                action="send_message"
-            )
-
-    def _send_message(self, message: Message) -> Message:
-        """Internal method to send the message through WhatsApp API"""
-        try:
-            # Convert core Message to WhatsApp Cloud API format
+            # Convert and validate core Message
             whatsapp_message = WhatsAppMessage.from_core_message(message)
+            logger.info("WhatsApp request: %s", json.dumps({
+                "payload": whatsapp_message
+            }, indent=2))
 
-            # Use class method to send message and get response
-            response = self.send_whatsapp_message(whatsapp_message)
+            # Route to appropriate handler based on mode
+            handler = (
+                self._handle_mock_send if self._is_mock_mode() 
+                else self._handle_production_send
+            )
+            return handler(message, whatsapp_message)
 
-            # Verify WhatsApp accepted the message
-            if not response.get("messages", []):
-                logger.error("Message not accepted by WhatsApp: %s", response)
-                raise SystemException(
-                    message="Message not accepted by WhatsApp",
-                    code="WHATSAPP_ACCEPTANCE_ERROR",
-                    service="whatsapp",
-                    action="send_message"
-                )
-
-            # Log successful acceptance
-            message_id = response["messages"][0].get("id")
-            logger.info("Message accepted by WhatsApp with ID: %s", message_id)
-
-            # Add acceptance info to message
-            message.metadata = {
-                "whatsapp_message_id": message_id,
-                "accepted_at": datetime.utcnow().isoformat()
-            }
-
-            return message
-
-        except SystemException as e:
+        except Exception as e:
             logger.error(f"Error sending message: {str(e)}")
             raise MessageValidationError(
                 message=f"Failed to send message: {str(e)}",
@@ -311,6 +224,76 @@ class WhatsAppMessagingService(BaseMessagingService):
                     "message_type": message.content.type if message and message.content else None
                 }
             )
+
+    def _handle_mock_send(self, message: Message, whatsapp_message: Dict) -> Message:
+        """Handle mock message sending path
+
+        Args:
+            message: Original core Message
+            whatsapp_message: Converted WhatsApp format message
+
+        Returns:
+            Message: Message with mock metadata
+        """
+        logger.info("Mock mode: returning payload")
+        message.metadata = {
+            "whatsapp_message_id": "mock_message_id",
+            "mock": True,
+            "payload": whatsapp_message
+        }
+        return message
+
+    def _handle_production_send(self, message: Message, whatsapp_message: Dict) -> Message:
+        """Handle production message sending path
+
+        Args:
+            message: Original core Message
+            whatsapp_message: Converted WhatsApp format message
+
+        Returns:
+            Message: Message with API response metadata
+
+        Raises:
+            SystemException: If API call fails
+        """
+        logger.info("Production mode: sending to WhatsApp")
+
+        # Get API configuration
+        phone_number_id = config("WHATSAPP_PHONE_NUMBER_ID")
+        api_url = config("WHATSAPP_API_URL", default="https://graph.facebook.com/v20.0/")
+        url = f"{api_url}{phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {config('WHATSAPP_ACCESS_TOKEN')}",
+            "Content-Type": "application/json",
+        }
+
+        # Make API request
+        try:
+            response = requests.post(url, json=whatsapp_message, headers=headers)
+            response_data = response.json()
+            logger.info("WhatsApp response: %s", json.dumps(response_data, indent=2))
+
+            if response.status_code != 200:
+                raise SystemException(
+                    message=f"WhatsApp API Error: {response.text}",
+                    code="WHATSAPP_API_ERROR",
+                    service="whatsapp",
+                    action="send_message"
+                )
+
+        except requests.RequestException as e:
+            raise SystemException(
+                message=f"WhatsApp API request failed: {str(e)}",
+                code="WHATSAPP_API_ERROR",
+                service="whatsapp",
+                action="send_message"
+            )
+
+        # Update message metadata with response
+        message.metadata = {
+            "whatsapp_message_id": response_data["messages"][0]["id"]
+        }
+        return message
 
     def send_text(
         self,
