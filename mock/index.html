@@ -9,11 +9,17 @@
 <body>
     <h1>VimbisoPay Mock Interface</h1>
 
-    <div class="chat-container" id="chatContainer"></div>
+    <div class="chat-container" id="chatContainer">
+        <div id="messageList">
+            {messages_placeholder}
+        </div>
+    </div>
 
     <div class="input-container">
         <input type="text" id="messageInput" placeholder="Type a message...">
         <button id="sendButton">Send</button>
+        <button id="refreshButton">Refresh</button>
+        <button id="clearButton" class="danger">Clear</button>
     </div>
 
     <div class="settings-row">

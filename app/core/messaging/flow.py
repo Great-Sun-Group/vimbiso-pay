@@ -143,6 +143,9 @@ def handle_component_result(context: str, component: str, result: Any, state_man
     match (context, component):
         # Login context
         case ("login", "Greeting"):
+            # Clear flow state before transitioning to login flow
+            if state_manager:
+                state_manager.clear_flow_state()
             return "login", "LoginApiCall"
 
         case ("login", "LoginApiCall"):
