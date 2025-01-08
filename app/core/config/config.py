@@ -8,6 +8,9 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
+# Activity timeout in seconds (5 minutes as per API spec)
+ACTIVITY_TTL = 300
+
 # Cache Configuration
 try:
     # Test cache connection

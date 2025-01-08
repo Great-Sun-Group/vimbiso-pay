@@ -13,6 +13,7 @@ from .base import Component, InputComponent, DisplayComponent, ApiComponent
 from .confirm import ConfirmBase
 
 # Display components
+from .display.account_dashboard import AccountDashboard
 from .display.display_ledger_section import DisplayLedgerSection
 from .display.greeting import Greeting
 from .display.offer_list_display import OfferListDisplay
@@ -50,6 +51,7 @@ __all__ = [
     "ConfirmBase",
 
     # Display components
+    "AccountDashboard",
     "DisplayLedgerSection",
     "Greeting",
     "OfferListDisplay",

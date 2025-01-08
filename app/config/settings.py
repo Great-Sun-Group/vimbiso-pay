@@ -38,9 +38,9 @@ else:
 # Redis state configuration
 REDIS_STATE_URL = env("REDIS_STATE_URL", default="redis://redis-state:6379/0")
 
-# Redis state cache configuration
+# Redis cache configuration
 CACHES = {
-    "state": {
+    "default": {
         "BACKEND": "django_redis.cache.RedisCache",
         "LOCATION": REDIS_STATE_URL,
         "OPTIONS": {

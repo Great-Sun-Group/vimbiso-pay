@@ -7,8 +7,7 @@ Specific confirmation components extend this with their own context and messagin
 from typing import Any
 
 from core.utils.error_types import ValidationResult
-
-from .base import Component
+from ..base import Component
 
 
 class ConfirmBase(Component):

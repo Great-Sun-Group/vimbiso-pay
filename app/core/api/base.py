@@ -3,17 +3,17 @@ import base64
 import logging
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
-from decouple import config
-from requests.exceptions import RequestException
-
 from core.utils.error_handler import ErrorHandler
 from core.utils.exceptions import SystemException
 from core.utils.state_validator import StateValidator
-from . import dashboard, action
+from decouple import config
+from requests.exceptions import RequestException
+
+from . import api_response
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,7 @@ if not BASE_URL.endswith('/'):
 
 def handle_api_response(
     response: requests.Response,
-    state_manager: Any,
-    auth_token: Optional[str] = None
+    state_manager: Any
 ) -> Tuple[Dict[str, Any], Optional[str]]:
     """Handle API response with state updates
 
@@ -40,7 +39,6 @@ def handle_api_response(
     Args:
         response: API response to handle
         state_manager: State manager instance
-        auth_token: Optional auth token from response
 
     Returns:
         Tuple[Dict[str, Any], Optional[str]]: Response data and optional error
@@ -48,24 +46,19 @@ def handle_api_response(
     try:
         # Process response first
         response_data = process_api_response(response)
+        logger.info(f"Response after processing: {response_data}")
+
         if "error" in response_data:
             return response_data, response_data["error"].get("message")
 
-        # Update dashboard if present (member state)
-        if "dashboard" in response_data.get("data", {}):
-            success, error = dashboard.update_dashboard_from_response(
-                api_response=response_data,
-                state_manager=state_manager,
-                auth_token=auth_token
-            )
-            if not success:
-                return response_data, error
-
-        # Update action state (operation results)
-        success, error = action.update_action_from_response(
+        # Update state with API response data
+        logger.info("Updating state with response data")
+        success, error = api_response.update_state_from_response(
             api_response=response_data,
             state_manager=state_manager
         )
+        logger.info(f"State update result - success: {success}, error: {error}")
+
         if not success:
             return response_data, error
 
@@ -74,14 +67,23 @@ def handle_api_response(
         return {"error": str(e)}, str(e)
 
 
-def get_headers(state_manager: Any, include_auth: bool = True) -> Dict[str, str]:
-    """Get request headers with authentication"""
+def get_headers(state_manager: Any, url: str) -> Dict[str, str]:
+    """Get request headers with authentication if required
+
+    Args:
+        state_manager: State manager instance
+        url: Request URL to check if auth is required
+
+    Returns:
+        Dict[str, str]: Headers with auth token if needed
+    """
     headers = {
         "Content-Type": "application/json",
         "x-client-api-key": config("CLIENT_API_KEY"),
     }
 
-    if include_auth:
+    # Check if endpoint needs auth
+    if is_auth_required(url):
         # Get required state fields with validation at boundary
         required_fields = {"channel"}
         current_state = {
@@ -100,10 +102,10 @@ def get_headers(state_manager: Any, include_auth: bool = True) -> Dict[str, str]
             logger.error("Invalid channel structure")
             return headers
 
-        # Get auth token from flow data
+        # Get auth token from action details
         flow_data = state_manager.get_flow_state() or {}
-        auth_data = flow_data.get("data", {}).get("auth", {})
-        jwt_token = auth_data.get("token")
+        action_data = flow_data.get("data", {}).get("action", {})
+        jwt_token = action_data.get("details", {}).get("token")
 
         if jwt_token:
             headers["Authorization"] = f"Bearer {jwt_token}"
@@ -157,9 +159,15 @@ def validate_request_params(
     return {"valid": True}
 
 
+def is_auth_required(url: str) -> bool:
+    """Check if URL requires authentication"""
+    # Strip any leading/trailing slashes and base URL
+    endpoint = url.rstrip('/').split('/')[-1]
+    return endpoint not in ['login', 'onboard']
+
+
 def make_api_request(
     url: str,
-    headers: Dict[str, str],
     payload: Dict[str, Any],
     method: str = "POST",
     retry_auth: bool = True,
@@ -167,14 +175,27 @@ def make_api_request(
 ) -> Dict:
     """Make API request with logging, validation and error handling"""
     try:
+        # Ensure URL is absolute
+        if not url.startswith(('http://', 'https://')):
+            url = urljoin(BASE_URL, url)
+
+        # Check if endpoint requires auth
+        requires_auth = is_auth_required(url)
+        if requires_auth and not state_manager:
+            return ErrorHandler.handle_system_error(
+                code="AUTH_ERROR",
+                service="api_client",
+                action="validate_auth",
+                message="State manager required for authenticated request"
+            )
+
+        # Get headers with auth if needed
+        headers = get_headers(state_manager, url) if state_manager else {}
+
         # Validate request parameters
         validation = validate_request_params(url, headers, payload)
         if "error" in validation:
             return validation
-
-        # Ensure URL is absolute
-        if not url.startswith(('http://', 'https://')):
-            url = urljoin(BASE_URL, url)
 
         logger.info(f"Sending API request to: {url}")
         logger.debug(f"Headers: {headers}")
@@ -183,6 +204,7 @@ def make_api_request(
         retries = 0
         while retries < MAX_RETRIES:
             try:
+                # Try request with current headers
                 response = requests.request(
                     method,
                     url,
@@ -193,21 +215,41 @@ def make_api_request(
 
                 logger.info(f"API Response Status Code: {response.status_code}")
                 logger.debug(f"API Response Headers: {response.headers}")
-                logger.debug(f"API Response Content: {response.text[:500]}...")
+                logger.debug(f"API Response Content: {response.text}")
 
-                # Handle 401 with retry
-                if response.status_code == 401 and retry_auth and state_manager:
-                    logger.warning("Received 401, attempting to refresh auth token")
-                    from .login import login
-                    # Create bot service for login
+                # Handle auth errors
+                if requires_auth and (
+                    # No token in headers
+                    ("Authorization" not in headers and retry_auth) or
+                    # Or got 401 response
+                    (response.status_code == 401 and retry_auth)
+                ):
+                    if not state_manager:
+                        return ErrorHandler.handle_system_error(
+                            code="AUTH_ERROR",
+                            service="api_client",
+                            action="validate_auth",
+                            message="State manager required for authenticated request"
+                        )
+
+                    logger.warning("Auth error, attempting login")
                     from services.whatsapp.bot_service import get_bot_service
+                    from .login import login
                     bot_service = get_bot_service(state_manager)
                     success, _ = login(bot_service)
-                    if success:
-                        headers = get_headers(state_manager)  # Get fresh headers
-                        retries += 1
-                        time.sleep(RETRY_DELAY)
-                        continue
+                    if not success:
+                        return ErrorHandler.handle_system_error(
+                            code="AUTH_ERROR",
+                            service="api_client",
+                            action="refresh_token",
+                            message="Failed to refresh auth token"
+                        )
+
+                    # Retry with new token
+                    headers = get_headers(state_manager, url)
+                    retries += 1
+                    time.sleep(RETRY_DELAY)
+                    continue
 
                 return response
 
@@ -277,6 +319,7 @@ def process_api_response(
                 action="process_response",
                 message="Response data must be a dictionary"
             )
+        logger.info(f"Processed API response data: {data}")
         return data
 
     except ValueError as e:

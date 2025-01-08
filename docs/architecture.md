@@ -10,13 +10,21 @@
 - Progress tracking through state
 - Validation tracking through state
 
-2. **Pure Functions**
-- Services use stateless functions
-- No stored instance variables
-- No service-level state
-- Clear input/output contracts
-- Standard validation patterns
-- Standard error handling
+2. **Component Responsibilities**
+- Components handle their own operations:
+  * API calls through make_api_request
+  * Message sending through state_manager.messaging
+  * Error handling through ErrorHandler
+  * State updates with validation
+- Clear boundaries between components:
+  * Display components -> UI and messaging
+  * Input components -> Validation and state updates
+  * API components -> External calls and state updates
+  * Confirm components -> User confirmation flows
+- Standard patterns:
+  * All operations wrapped in try/except
+  * All errors handled through ErrorHandler
+  * All results returned as ValidationResult
 
 3. **Single Source of Truth**
 - Member ID ONLY at top level
@@ -84,16 +92,50 @@ state_manager.update_state({
 ### 4. Error Handling
 ```python
 # WRONG - Handle errors manually
-if error:
-    return {"error": str(error)}  # Don't handle directly!
+try:
+    response = make_api_request(url, headers, payload)
+    if response.status_code != 200:
+        return {"error": str(response.text)}  # Don't handle directly!
+except Exception as e:
+    return {"error": str(e)}  # Don't handle directly!
 
-# CORRECT - Use ErrorHandler with context
-error_context = ErrorContext(
-    error_type="api",
-    message=str(error),
-    details={"operation": operation}
-)
-ErrorHandler.handle_error(error, state_manager, error_context)
+# CORRECT - Use ErrorHandler with proper context
+try:
+    response = make_api_request(url, headers, payload)
+    response_data, error = handle_api_response(response, state_manager)
+    if error:
+        return ValidationResult.failure(message=error)
+    return ValidationResult.success({"action": response_data})
+except Exception as e:
+    error_response = ErrorHandler.handle_component_error(
+        component=self.type,
+        field="api_call",
+        value=str(payload),
+        message=str(e)
+    )
+    return ValidationResult.failure(message=error_response["error"]["message"])
+```
+
+### 5. Messaging Service Integration
+```python
+# WRONG - Access messaging service directly
+messaging_service = WhatsAppMessagingService()
+messaging_service.send_text(recipient, text)  # Don't access directly!
+
+# CORRECT - Access through state manager
+try:
+    self.state_manager.messaging.send_text(
+        recipient=recipient,
+        text=message_text
+    )
+except Exception as e:
+    error_response = ErrorHandler.handle_component_error(
+        component=self.type,
+        field="messaging",
+        value=str(message_text),
+        message=str(e)
+    )
+    return ValidationResult.failure(message=error_response["error"]["message"])
 ```
 
 ## Pre-Change Checklist

@@ -1,6 +1,6 @@
 """WhatsApp messaging service implementation"""
-import json
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -9,7 +9,6 @@ from core.messaging.exceptions import MessageValidationError
 from core.messaging.types import (Button, InteractiveContent, InteractiveType,
                                   Message, MessageRecipient, TemplateContent,
                                   TextContent)
-from core.utils.exceptions import SystemException
 from decouple import config
 
 from .types import WhatsAppMessage
@@ -200,15 +199,17 @@ class WhatsAppMessagingService(BaseMessagingService):
             MessageValidationError: If message sending fails
         """
         try:
-            # Convert and validate core Message
+            # Convert message to WhatsApp format
             whatsapp_message = WhatsAppMessage.from_core_message(message)
-            logger.info("WhatsApp request: %s", json.dumps({
-                "payload": whatsapp_message
-            }, indent=2))
 
-            # Route to appropriate handler based on mode
+            # Log basic info - full payload not needed since we're async
+            logger.info("Sending %s message to %s",
+                        message.content.type,
+                        message.recipient.channel_id.value)
+
+            # Send through appropriate handler
             handler = (
-                self._handle_mock_send if self._is_mock_mode() 
+                self._handle_mock_send if self._is_mock_mode()
                 else self._handle_production_send
             )
             return handler(message, whatsapp_message)
@@ -235,13 +236,41 @@ class WhatsAppMessagingService(BaseMessagingService):
         Returns:
             Message: Message with mock metadata
         """
-        logger.info("Mock mode: returning payload")
-        message.metadata = {
-            "whatsapp_message_id": "mock_message_id",
-            "mock": True,
-            "payload": whatsapp_message
-        }
-        return message
+        logger.info("Mock mode: sending to mock server")
+
+        try:
+            # Send and wait for response
+            response = requests.post(
+                "http://mock:8001/bot/webhook",
+                json=whatsapp_message,
+                headers={"Content-Type": "application/json"},
+                timeout=10  # Increased timeout
+            )
+
+            # Track when sent and response
+            message.metadata = {
+                "sent_at": datetime.utcnow().isoformat(),
+                "mock": True,
+                "status_code": response.status_code
+            }
+
+            # Try to parse response
+            try:
+                message.metadata["response"] = response.json()
+            except Exception:
+                message.metadata["response"] = response.text
+
+            return message
+
+        except Exception as e:
+            # Log error and include in metadata
+            logger.warning("Mock server request failed: %s", e)
+            message.metadata = {
+                "sent_at": datetime.utcnow().isoformat(),
+                "mock": True,
+                "error": str(e)
+            }
+            return message
 
     def _handle_production_send(self, message: Message, whatsapp_message: Dict) -> Message:
         """Handle production message sending path
@@ -251,10 +280,7 @@ class WhatsAppMessagingService(BaseMessagingService):
             whatsapp_message: Converted WhatsApp format message
 
         Returns:
-            Message: Message with API response metadata
-
-        Raises:
-            SystemException: If API call fails
+            Message: Message with metadata
         """
         logger.info("Production mode: sending to WhatsApp")
 
@@ -267,33 +293,37 @@ class WhatsAppMessagingService(BaseMessagingService):
             "Content-Type": "application/json",
         }
 
-        # Make API request
         try:
-            response = requests.post(url, json=whatsapp_message, headers=headers)
-            response_data = response.json()
-            logger.info("WhatsApp response: %s", json.dumps(response_data, indent=2))
-
-            if response.status_code != 200:
-                raise SystemException(
-                    message=f"WhatsApp API Error: {response.text}",
-                    code="WHATSAPP_API_ERROR",
-                    service="whatsapp",
-                    action="send_message"
-                )
-
-        except requests.RequestException as e:
-            raise SystemException(
-                message=f"WhatsApp API request failed: {str(e)}",
-                code="WHATSAPP_API_ERROR",
-                service="whatsapp",
-                action="send_message"
+            # Send and wait for response
+            response = requests.post(
+                url,
+                json=whatsapp_message,
+                headers=headers,
+                timeout=10  # Increased timeout
             )
 
-        # Update message metadata with response
-        message.metadata = {
-            "whatsapp_message_id": response_data["messages"][0]["id"]
-        }
-        return message
+            # Track when sent and response
+            message.metadata = {
+                "sent_at": datetime.utcnow().isoformat(),
+                "status_code": response.status_code
+            }
+
+            # Try to parse response
+            try:
+                message.metadata["response"] = response.json()
+            except Exception:
+                message.metadata["response"] = response.text
+
+            return message
+
+        except Exception as e:
+            # Log error and include in metadata
+            logger.warning("WhatsApp API request failed: %s", e)
+            message.metadata = {
+                "sent_at": datetime.utcnow().isoformat(),
+                "error": str(e)
+            }
+            return message
 
     def send_text(
         self,

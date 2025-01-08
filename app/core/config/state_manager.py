@@ -44,8 +44,36 @@ class StateManager:
             )
 
         self.key_prefix = key_prefix
-        self.atomic_state = AtomicStateManager(caches['state'])
+        self.atomic_state = AtomicStateManager(caches['default'])
         self._state = self._initialize_state()
+        self._messaging = None  # Will be set by MessagingService
+
+    @property
+    def messaging(self) -> Any:
+        """Get messaging service with validation
+
+        Returns:
+            Messaging service instance
+
+        Raises:
+            ComponentException: If messaging service not initialized
+        """
+        if self._messaging is None:
+            raise ComponentException(
+                message="Messaging service not initialized",
+                component="state_manager",
+                field="messaging"
+            )
+        return self._messaging
+
+    @messaging.setter
+    def messaging(self, service: Any) -> None:
+        """Set messaging service
+
+        Args:
+            service: Messaging service instance
+        """
+        self._messaging = service
 
     def _initialize_state(self) -> Dict[str, Any]:
         """Initialize state structure"""
@@ -65,10 +93,9 @@ class StateManager:
         }
 
         # Get existing state
+        state_data = None
         try:
-            logger.debug(f"Attempting to get state for key: {self.key_prefix}")
             state_data = self.atomic_state.atomic_get(self.key_prefix)
-            logger.debug(f"Retrieved state data: {state_data}")
         except Exception as e:
             # Handle error through ErrorHandler
             error_context = ErrorContext(
@@ -83,10 +110,8 @@ class StateManager:
             )
             ErrorHandler.handle_error(e, self, error_context)
 
-        # Use existing or initial state
-        result = state_data or initial_state
-        logger.debug(f"Using state: {result}")
-        return result
+        # Always return valid state
+        return state_data if state_data is not None else initial_state
 
     def update_state(self, updates: Dict[str, Any]) -> None:
         """Update state with validation
@@ -115,9 +140,7 @@ class StateManager:
             update_state_core(self, updates)
 
             # Persist to Redis
-            logger.debug(f"Persisting state to Redis for key {self.key_prefix}: {self._state}")
             self.atomic_state.atomic_update(self.key_prefix, self._state)
-            logger.debug("State persisted successfully")
         except Exception as e:
             # Handle error through ErrorHandler
             error_context = ErrorContext(
@@ -294,9 +317,7 @@ class StateManager:
             }
 
             # Persist to Redis
-            logger.debug(f"Persisting cleared state to Redis for key {self.key_prefix}: {self._state}")
             self.atomic_state.atomic_update(self.key_prefix, self._state)
-            logger.debug("State cleared successfully")
 
         except Exception as e:
             # Handle error through ErrorHandler

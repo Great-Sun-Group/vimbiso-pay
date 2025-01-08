@@ -6,10 +6,8 @@ Dashboard data is the source of truth for member state.
 
 from typing import Any, Dict
 
-from decouple import config
-
+from core.api.base import handle_api_response, make_api_request
 from core.utils.error_types import ValidationResult
-from core.api.base import make_api_request, handle_api_response
 
 from ..base import ApiComponent
 
@@ -20,15 +18,10 @@ class LoginApiCall(ApiComponent):
     def __init__(self):
         super().__init__("login")
         self.state_manager = None
-        self.bot_service = None
 
     def set_state_manager(self, state_manager: Any) -> None:
         """Set state manager for accessing state data"""
         self.state_manager = state_manager
-
-    def set_bot_service(self, bot_service: Any) -> None:
-        """Set bot service for API access"""
-        self.bot_service = bot_service
 
     def validate_api_call(self, value: Any) -> ValidationResult:
         """Call login endpoint and validate response"""
@@ -43,13 +36,15 @@ class LoginApiCall(ApiComponent):
 
         # Make API call
         url = "login"
-        headers = {
-            "Content-Type": "application/json",
-            "x-client-api-key": config("CLIENT_API_KEY"),
-        }
         payload = {"phone": channel["identifier"]}
 
-        response = make_api_request(url, headers, payload)
+        response = make_api_request(
+            url=url,
+            payload=payload,
+            method="POST",
+            retry_auth=False,
+            state_manager=self.state_manager
+        )
 
         # Handle 400 for new users
         if response.status_code == 400:
@@ -72,9 +67,8 @@ class LoginApiCall(ApiComponent):
                 details={"error": error}
             )
 
-        # Get action data for flow
-        flow_data = self.state_manager.get_flow_state()
-        action_data = flow_data.get("action", {})
+        # Get action data from state
+        action_data = self.state_manager.get("action") or {}
 
         return ValidationResult.success(
             {"action": action_data},
@@ -82,6 +76,15 @@ class LoginApiCall(ApiComponent):
                 "exit_condition": "success"  # Exit to dashboard
             }
         )
+
+    def to_message_content(self, value: Dict) -> str:
+        """Convert component result to message content"""
+        if isinstance(value, dict):
+            if "message" in value:
+                return value["message"]
+            if "action" in value:
+                return "Processing your request..."
+        return "Logging you in..."
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert API response to verified data

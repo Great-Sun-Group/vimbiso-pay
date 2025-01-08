@@ -42,7 +42,18 @@ class WhatsAppMessage(Dict[str, Any]):
         }
 
         if message_type == "text":
-            message["text"] = {"body": str(content.get("text", ""))}
+            text = content.get("text")
+            if text is None:
+                raise MessageValidationError(
+                    message="Text content is required",
+                    service="whatsapp",
+                    action="create_message",
+                    validation_details={
+                        "error": "missing_text",
+                        "message_type": message_type
+                    }
+                )
+            message["text"] = {"body": str(text)}
         elif message_type == "interactive":
             message["interactive"] = content.get("interactive", {})
         elif message_type == "template":
@@ -74,10 +85,31 @@ class WhatsAppMessage(Dict[str, Any]):
     def from_core_message(cls, message: CoreMessage) -> Dict[str, Any]:
         """Convert core Message to WhatsApp format"""
         try:
+            if not message or not message.content:
+                raise MessageValidationError(
+                    message="Message or content is missing",
+                    service="whatsapp",
+                    action="from_core_message",
+                    validation_details={
+                        "error": "missing_content",
+                        "message": str(message)
+                    }
+                )
+
             content = message.content
             content_type = content.type.value
 
             if content_type == "text":
+                if not content.body:
+                    raise MessageValidationError(
+                        message="Text content body is required",
+                        service="whatsapp",
+                        action="from_core_message",
+                        validation_details={
+                            "error": "missing_text",
+                            "content_type": content_type
+                        }
+                    )
                 return cls.create_message(
                     to=message.recipient.channel_value,
                     message_type="text",

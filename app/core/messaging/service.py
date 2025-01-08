@@ -9,13 +9,13 @@ Message formatting is handled by formatters.py.
 import logging
 from typing import Any, Dict, Optional
 
-from core.messaging.flow import process_component
 from core.messaging.base import BaseMessagingService
+from core.messaging.flow import process_component
+from core.messaging.formatters.formatters import AccountFormatters
 from core.messaging.interface import MessagingServiceInterface
 from core.messaging.types import Message, TextContent
-from core.utils.exceptions import SystemException
-from core.messaging.formatters.formatters import AccountFormatters
 from core.messaging.utils import get_recipient
+from core.utils.exceptions import SystemException
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class MessagingService(MessagingServiceInterface):
 
         Args:
             channel_service: Channel-specific messaging service (WhatsApp, SMS, etc)
-            state_manager: State manager for tracking state
+            state_manager: State manager instance
         """
         self.channel_service = channel_service
         self.state_manager = state_manager
@@ -36,6 +36,9 @@ class MessagingService(MessagingServiceInterface):
         # Set state manager on channel service
         if hasattr(self.channel_service, 'state_manager'):
             self.channel_service.state_manager = state_manager
+
+        # Set messaging service on state manager for component access
+        state_manager.messaging = self
 
     def handle_message(self) -> Optional[Message]:
         """Handle incoming message
@@ -52,7 +55,7 @@ class MessagingService(MessagingServiceInterface):
         """
         try:
             # Get message data from state
-            message_data = self.state_manager.get("message", {})
+            message_data = self.state_manager.get("message") or {}
             if not message_data:
                 raise ValueError("No message data in state")
 
@@ -126,9 +129,15 @@ class MessagingService(MessagingServiceInterface):
 
                 case (_, "Greeting"):
                     # Simple text message for greetings
+                    if isinstance(result, dict) and "message" in result:
+                        return Message(
+                            recipient=recipient,
+                            content=TextContent(body=result["message"])
+                        )
+                    # Fallback for backward compatibility
                     return Message(
                         recipient=recipient,
-                        content=TextContent(body=result)
+                        content=TextContent(body=str(result))
                     )
 
                 case _:

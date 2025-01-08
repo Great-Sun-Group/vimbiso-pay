@@ -53,13 +53,17 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
                 current_flow = current_state.get("flow_data", {})
 
                 # Update flow state with validation
+                # Safely merge flow data
+                new_data = {}
+                if current_flow and isinstance(current_flow.get("data"), dict):
+                    new_data.update(current_flow["data"])
+                if flow_data and isinstance(flow_data.get("data"), dict):
+                    new_data.update(flow_data["data"])
+
                 current_state["flow_data"] = {
                     "context": flow_data.get("context", current_flow.get("context")),
                     "component": flow_data.get("component", current_flow.get("component")),
-                    "data": {
-                        **(current_flow.get("data", {})),
-                        **(flow_data.get("data", {}))
-                    },
+                    "data": new_data,
                     "validation": {
                         **validation_state,
                         "in_progress": False,

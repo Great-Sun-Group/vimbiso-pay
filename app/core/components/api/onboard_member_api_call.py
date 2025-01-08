@@ -20,15 +20,10 @@ class OnBoardMemberApiCall(ApiComponent):
     def __init__(self):
         super().__init__("onboard_member_api")
         self.state_manager = None
-        self.bot_service = None
 
     def set_state_manager(self, state_manager: Any) -> None:
-        """Set state manager for accessing registration data"""
+        """Set state manager for accessing member data"""
         self.state_manager = state_manager
-
-    def set_bot_service(self, bot_service: Any) -> None:
-        """Set bot service for API access"""
-        self.bot_service = bot_service
 
     def validate_api_call(self, value: Any) -> ValidationResult:
         """Call onboardMember endpoint and validate response"""

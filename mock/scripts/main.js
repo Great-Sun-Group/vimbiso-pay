@@ -1,4 +1,4 @@
-import { createFormReply, createMessagePayload } from './handlers.js';
+import { createFormReply } from './handlers.js';
 import { ChatUI } from './ui.js';
 
 class WhatsAppMock {
@@ -6,6 +6,32 @@ class WhatsAppMock {
         this.ui = new ChatUI();
         this.ui.setupEventListeners(() => this.sendMessage());
         this.ui.updateStatus();
+        this.setupAppMessageStream();
+    }
+
+    setupAppMessageStream() {
+        console.log('Setting up SSE connection...');
+        // Connect to server events stream for app messages
+        const events = new EventSource('./events');
+
+        events.onopen = () => {
+            console.log('SSE connection opened');
+        };
+
+        events.onmessage = (event) => {
+            console.log('Received SSE message:', event.data);
+            const message = JSON.parse(event.data);
+            console.log('Parsed message:', message);
+            this.ui.displayMessage(message);
+        };
+
+        events.onerror = (error) => {
+            console.error('EventSource error:', error);
+            events.close();
+            // Retry connection after 1s
+            console.log('Retrying SSE connection in 1s...');
+            setTimeout(() => this.setupAppMessageStream(), 1000);
+        };
     }
 
     async sendMessage() {
@@ -44,7 +70,7 @@ class WhatsAppMock {
         this.ui.displayUserMessage(displayText);
 
         try {
-            // Create payload matching WhatsApp format
+            // Create simple message payload
             const payload = {
                 type: messageType,
                 message: processedMessage,
@@ -68,28 +94,9 @@ class WhatsAppMock {
                 throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
             }
 
-            const data = await response.json();
-            console.log('Raw response from server:', data);
-
-            // Display response after a short delay
-            setTimeout(() => {
-                // Get the response content
-                const responseData = data.response || data;
-                console.log('Processed response data:', responseData);
-
-                // Log the type and structure
-                console.log('Response type:', typeof responseData);
-                console.log('Response keys:', Object.keys(responseData));
-                if (responseData.type === 'interactive') {
-                    console.log('Interactive type:', responseData.interactive?.type);
-                    console.log('Interactive content:', responseData.interactive);
-                }
-
-                this.ui.displayMessage(responseData);
-                this.ui.disableSendButton(false);
-
-                console.log('=== SEND MESSAGE END ===');
-            }, 1000);
+            // Ignore empty response from UI->App message
+            await response.text();
+            this.ui.disableSendButton(false);
 
         } catch (error) {
             console.error('Error:', error);

@@ -25,31 +25,76 @@
 - Clear operation tracking
 - Flow control through actions
 
-4. **Component Pattern**
+4. **Component Patterns**
+
+### API Component Pattern
 ```python
 class ApiComponent(Component):
     def validate(self, value: Any) -> ValidationResult:
-        # 1. Get member data from dashboard
-        dashboard = self.state_manager.get("dashboard")
-        member_id = dashboard.get("member", {}).get("memberID")
+        try:
+            # 1. Get member data from dashboard
+            dashboard = self.state_manager.get("dashboard")
+            member_id = dashboard.get("member", {}).get("memberID")
 
-        # 2. Make API call directly
-        url = f"endpoint/{member_id}"
-        headers = {"x-client-api-key": config("CLIENT_API_KEY")}
-        response = make_api_request(url, headers, payload)
+            # 2. Make API call directly
+            url = f"endpoint/{member_id}"
+            headers = {"x-client-api-key": config("CLIENT_API_KEY")}
+            response = make_api_request(url, headers, payload)
 
-        # 3. Let handlers update state
-        response_data, error = handle_api_response(
-            response=response,
-            state_manager=self.state_manager
-        )
-        if error:
-            return ValidationResult.failure(message=error)
+            # 3. Let handlers update state
+            response_data, error = handle_api_response(
+                response=response,
+                state_manager=self.state_manager
+            )
+            if error:
+                return ValidationResult.failure(message=error)
 
-        # 4. Use action data for flow
-        flow_data = self.state_manager.get_flow_state()
-        action_data = flow_data.get("action", {})
-        return ValidationResult.success({"action": action_data})
+            # 4. Use action data for flow
+            flow_data = self.state_manager.get_flow_state()
+            action_data = flow_data.get("action", {})
+            return ValidationResult.success({"action": action_data})
+
+        except Exception as e:
+            # Handle errors through ErrorHandler
+            error_response = ErrorHandler.handle_component_error(
+                component=self.type,
+                field="api_call",
+                value=str(payload),
+                message=str(e)
+            )
+            return ValidationResult.failure(message=error_response["error"]["message"])
+```
+
+### Display Component Pattern
+```python
+class DisplayComponent(Component):
+    def validate_display(self, value: Any) -> ValidationResult:
+        try:
+            # 1. Get display data from state
+            display_data = self.get_display_data()
+
+            # 2. Send through messaging service
+            recipient = get_recipient(self.state_manager)
+            self.state_manager.messaging.send_text(
+                recipient=recipient,
+                text=display_data
+            )
+
+            # 3. Return success with sent data
+            return ValidationResult.success({
+                "sent": True,
+                "message": display_data
+            })
+
+        except Exception as e:
+            # Handle errors through ErrorHandler
+            error_response = ErrorHandler.handle_component_error(
+                component=self.type,
+                field="display",
+                value=str(value),
+                message=str(e)
+            )
+            return ValidationResult.failure(message=error_response["error"]["message"])
 ```
 
 ## Implementation Guide
@@ -99,41 +144,85 @@ class ApiComponent(Component):
    - Clear boundaries
    - No state duplication
 
-### Common Anti-Patterns
+### Common Patterns
 
-1. Using API Modules
+1. Direct API Calls with Error Handling
 ```python
-# WRONG - Extra layer through module
-from core.api.credex import create_credex
-success, message = create_credex(bot_service, member_id, amount)
+try:
+    # Make API call directly
+    response = make_api_request(url, headers, payload)
 
-# CORRECT - Direct API call
-response = make_api_request(url, headers, payload)
-response_data, error = handle_api_response(response, state_manager)
+    # Let handlers manage state and errors
+    response_data, error = handle_api_response(response, state_manager)
+    if error:
+        return ValidationResult.failure(message=error)
+
+    return ValidationResult.success({"action": response_data})
+
+except Exception as e:
+    # Use ErrorHandler for all errors
+    error_response = ErrorHandler.handle_component_error(
+        component=self.type,
+        field="api_call",
+        value=str(payload),
+        message=str(e)
+    )
+    return ValidationResult.failure(message=error_response["error"]["message"])
 ```
 
-2. Extra State Validation
+2. Message Sending with Error Handling
 ```python
-# WRONG - Extra validation layer
-state_manager.update_state({
-    "api_request": {"type": "credex_offer"}
-})
+try:
+    # Send through messaging service
+    recipient = get_recipient(self.state_manager)
+    self.state_manager.messaging.send_text(
+        recipient=recipient,
+        text=message_text
+    )
 
-# CORRECT - Let handlers manage state
-response_data, error = handle_api_response(response, state_manager)
+    # Return success with sent data
+    return ValidationResult.success({
+        "sent": True,
+        "message": message_text
+    })
+
+except Exception as e:
+    # Use ErrorHandler for all errors
+    error_response = ErrorHandler.handle_component_error(
+        component=self.type,
+        field="messaging",
+        value=str(message_text),
+        message=str(e)
+    )
+    return ValidationResult.failure(message=error_response["error"]["message"])
 ```
 
-3. Duplicate Error Handling
+3. State Updates with Error Handling
 ```python
-# WRONG - Custom error handling
-if response.status_code == 200:
-    return {"success": True, "data": response.json()}
-return handle_error_response(...)
+try:
+    # Update state with validation
+    self.state_manager.update_state({
+        "flow_data": {
+            "context": context,
+            "component": component,
+            "data": data,
+            "validation": {
+                "in_progress": False,
+                "attempts": current_attempts + 1,
+                "last_attempt": datetime.utcnow().isoformat()
+            }
+        }
+    })
 
-# CORRECT - Use ValidationResult
-if error:
-    return ValidationResult.failure(message=error)
-return ValidationResult.success({"action": action_data})
+except Exception as e:
+    # Use ErrorHandler for all errors
+    error_response = ErrorHandler.handle_component_error(
+        component=self.type,
+        field="state_update",
+        value=str(data),
+        message=str(e)
+    )
+    return ValidationResult.failure(message=error_response["error"]["message"])
 ```
 
 ## Code Reading Guide

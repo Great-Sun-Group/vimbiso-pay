@@ -22,15 +22,22 @@ class ValidationResult:
         valid: Whether validation passed
         error: Optional error details if validation failed
         value: Optional transformed value if validation passed
+        metadata: Optional metadata for flow control
     """
     valid: bool
     error: Optional[Dict] = None
     value: Optional[Any] = None
+    metadata: Optional[Dict] = None
 
     @classmethod
-    def success(cls, value: Any = None) -> 'ValidationResult':
-        """Create successful validation result"""
-        return cls(valid=True, value=value)
+    def success(cls, value: Any = None, metadata: Optional[Dict] = None) -> 'ValidationResult':
+        """Create successful validation result
+
+        Args:
+            value: Optional transformed value
+            metadata: Optional metadata for flow control
+        """
+        return cls(valid=True, value=value, metadata=metadata)
 
     @classmethod
     def failure(cls, message: str, field: str = "value", details: Optional[Dict] = None) -> 'ValidationResult':
