@@ -3,16 +3,21 @@ import json
 import logging
 import os
 import socketserver
+import threading
 from http.server import SimpleHTTPRequestHandler
 
 import requests
-from whatsapp_utils import create_whatsapp_payload, extract_message_text
+from whatsapp_utils import create_whatsapp_payload
 
+# Configure logging - just show messages
 logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO,
+    format='%(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Silence connection logs
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 # The actual app endpoint we're testing
 APP_ENDPOINT = 'http://app:8000/bot/webhook'
@@ -25,107 +30,96 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
         # Set directory before parent initialization
         if directory is None:
             directory = '/app/mock' if os.path.exists('/app/mock') else os.path.dirname(os.path.abspath(__file__))
-
-        logger.info(f"Setting server directory to: {directory}")
-        logger.info(f"Directory contents: {os.listdir(directory)}")
-
-        # Initialize with directory
         super().__init__(*args, directory=directory, **kwargs)
 
-    def _handle_webhook(self):
-        """Handle webhook POST request."""
-        content_length = int(self.headers["Content-Length"])
-        post_data = self.rfile.read(content_length)
-        mock_request = json.loads(post_data.decode("utf-8"))
-
-        logger.info("=== WEBHOOK REQUEST START ===")
-        logger.info(f"Received webhook request: {json.dumps(mock_request, indent=2)}")
-
-        # Create WhatsApp-formatted webhook payload
+    def _forward_to_app(self, mock_request):
+        """Forward message from UI to app."""
+        # Format for WhatsApp
         whatsapp_payload = create_whatsapp_payload(
             phone_number=mock_request.get("phone", "263778177125"),
             message_type=mock_request.get("type", "text"),
             message_text=mock_request.get("message", ""),
-            phone_number_id="390447444143042"  # Match staging phone number ID
+            phone_number_id="390447444143042"
         )
 
-        # Extract message details for logging
-        message_data = whatsapp_payload["entry"][0]["changes"][0]["value"]
-        message = message_data["messages"][0]
-        text = extract_message_text(message)
+        # Add context if interactive
+        if mock_request.get("type") == "interactive" and mock_request.get("context_id"):
+            whatsapp_payload["entry"][0]["changes"][0]["value"]["messages"][0]["context"] = {
+                "from": mock_request.get("context_from", "15550783881"),
+                "id": mock_request.get("context_id")
+            }
 
-        # Log request details
-        logger.info(f"\nReceived message: {text}")
-        logger.info(f"WhatsApp webhook payload: {json.dumps(whatsapp_payload, indent=2)}")
+        # Forward to app asynchronously
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-Mock-Testing": "true",
+            "X-Mock-Context": json.dumps({
+                "message_type": mock_request.get("type"),
+                "has_context": bool(mock_request.get("context_id"))
+            })
+        }
 
+        def send_request():
+            try:
+                requests.post(APP_ENDPOINT, json=whatsapp_payload, headers=headers, timeout=10)
+            except Exception as e:
+                logger.error("Error forwarding to app: %s", e)
+
+        thread = threading.Thread(target=send_request)
+        thread.daemon = True  # Thread will exit when main thread exits
+        thread.start()
+
+    def _format_ui_message(self, app_message):
+        """Format app message for UI."""
+        if app_message.get("type") == "text":
+            return {
+                "type": "text",
+                "text": app_message.get("text", {}),
+                "timestamp": "",
+                "status": "success"
+            }
+        elif app_message.get("type") == "interactive":
+            return {
+                "type": "interactive",
+                "interactive": app_message.get("interactive", {}),
+                "timestamp": "",
+                "status": "success"
+            }
+        return app_message
+
+    def _handle_webhook(self):
+        """Handle webhook POST request."""
         try:
-            # Add message context for interactive messages
-            if mock_request.get("type") == "interactive":
-                # Get original message that triggered this interaction
-                context_id = mock_request.get("context_id")
-                if context_id:
-                    whatsapp_payload["entry"][0]["changes"][0]["value"]["messages"][0]["context"] = {
-                        "from": mock_request.get("context_from", "15550783881"),
-                        "id": context_id
-                    }
+            # Read request
+            content_length = int(self.headers["Content-Length"])
+            post_data = self.rfile.read(content_length)
+            request_data = json.loads(post_data.decode("utf-8"))
 
-            # Only forward to app if this is a user message (not an app response)
-            if "recipient" not in mock_request:
-                # Forward to app with WhatsApp webhook format
-                headers = {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-Mock-Testing": "true",  # Indicate this is from mock
-                    "X-Mock-Context": json.dumps({  # Include context for response handling
-                        "message_type": mock_request.get("type"),
-                        "has_context": bool(mock_request.get("context_id"))
-                    })
-                }
+            # Send immediate success response
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
 
-                logger.info(f"\nSending request to app: {json.dumps(whatsapp_payload, indent=2)}")
-                try:
-                    response = requests.post(
-                        APP_ENDPOINT,
-                        json=whatsapp_payload,
-                        headers=headers,
-                        timeout=30
-                    )
-                except requests.exceptions.RequestException as e:
-                    logger.error(f"Request error: {str(e)}")
-                    if hasattr(e, 'response'):
-                        logger.error(f"Response text: {e.response.text}")
-                    raise
-                response.raise_for_status()
-                response_data = response.json()
-                logger.info(f"\nReceived raw response from app: {json.dumps(response_data, indent=2)}")
-
-                # Send response with app's response data
-                self.send_response(200)
-                self.send_header("Content-type", "application/json")
-                self.end_headers()
-
-                # If this is a text message response, send it immediately
-                if response_data.get("type") == "text":
-                    logger.info(f"\nSending text response to client: {json.dumps(response_data, indent=2)}")
-                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
-                # If this is an interactive message (dashboard), send it in a separate response
-                elif response_data.get("type") == "interactive":
-                    logger.info(f"\nSending interactive response to client: {json.dumps(response_data, indent=2)}")
-                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
+            # For App->UI messages, include formatted message in response
+            if "messaging_product" in request_data and request_data["messaging_product"] == "whatsapp":
+                logger.info("App -> UI: %s", request_data)
+                response_data = self._format_ui_message(request_data)
+                self.wfile.write(json.dumps(response_data).encode('utf-8'))
             else:
-                # This is an app response, just acknowledge it
-                self.send_response(200)
-                self.send_header("Content-type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
-
-            logger.info("=== WEBHOOK REQUEST END ===\n")
+                # For UI->App messages, just acknowledge receipt
+                logger.info("UI -> App: %s", request_data)
+                self.wfile.write(json.dumps({"status": "received"}).encode('utf-8'))
+                # Forward to app asynchronously after response
+                threading.Thread(
+                    target=self._forward_to_app,
+                    args=(request_data,),
+                    daemon=True
+                ).start()
 
         except Exception as e:
-            logger.error(f"Error: {str(e)}")
-            if isinstance(e, requests.exceptions.RequestException) and hasattr(e, 'response'):
-                logger.error(f"App response: {e.response.text}")
-            self.send_error(500, "Internal Server Error", str(e))
+            logger.error("Error in webhook handler: %s", e)
+            self.send_error(500, "Internal Server Error")
 
     def do_POST(self):
         """Handle POST requests."""
@@ -135,27 +129,20 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             else:
                 self.send_error(404, "Not Found")
         except Exception as e:
-            logger.error(f"Error: {str(e)}")
+            logger.error("Error: %s", e)
             self.send_error(500, "Internal Server Error")
 
     def do_GET(self):
         """Handle GET requests."""
-        # Log request details
-        logger.info(f"GET request for path: {self.path}")
-
         # Serve index.html for root path
         if self.path == "/" or self.path == "":
             self.path = "/index.html"
-
-        # Let parent class handle file serving
         return SimpleHTTPRequestHandler.do_GET(self)
 
 
 def run_server(port=8001):
     """Run the mock server."""
-    logger.info(f"\nStarting mock WhatsApp server on port {port}")
-    logger.info(f"Forwarding requests to: {APP_ENDPOINT}")
-    logger.info("\nOpen http://localhost:8001 in your browser")
+    logger.info("Mock server running on port %d", port)
 
     server = socketserver.TCPServer(("", port), MockWhatsAppHandler)
     server.allow_reuse_address = True
@@ -163,7 +150,7 @@ def run_server(port=8001):
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        logger.info("\nShutting down...")
+        logger.info("Shutting down...")
     finally:
         server.server_close()
 

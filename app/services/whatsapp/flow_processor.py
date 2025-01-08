@@ -26,16 +26,47 @@ class WhatsAppFlowProcessor(FlowProcessor):
                 message="Message payload is required",
                 component="whatsapp_flow_processor",
                 field="payload",
-                value="None"
+                value=str(payload)
             )
 
         try:
+            # Extract and validate each level
+            entry = payload.get("entry", [])
+            if not entry:
+                raise ValueError("Missing entry array")
+
+            changes = entry[0].get("changes", [])
+            if not changes:
+                raise ValueError("Missing changes array")
+
+            value = changes[0].get("value", {})
+            if not value:
+                raise ValueError("Missing value object")
+
+            messages = value.get("messages", [])
+            if not messages:
+                raise ValueError("Missing messages array")
+
+            message = messages[0]
+            if not message:
+                raise ValueError("Empty message object")
+
+            return message
+
+        except (IndexError, KeyError, ValueError) as e:
+            # Get as much info as possible for error context
             value = payload.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
-            return value.get("messages", [{}])[0]
-        except Exception:
+            messages = value.get("messages", [])
+            message = messages[0] if messages else {}
+
             raise ComponentException(
-                message="Invalid message payload format",
+                message=f"Invalid message payload format: {str(e)}",
                 component="whatsapp_flow_processor",
                 field="payload",
-                value=str(payload)
+                value=str({
+                    "error": str(e),
+                    "payload": payload,
+                    "value": value,
+                    "message": message
+                })
             )

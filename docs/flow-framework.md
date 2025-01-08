@@ -131,16 +131,34 @@ Example state structure:
 - Pure functional approach
 
 2. **Clear Boundaries**
-- Components handle validation
-- State manages persistence
-- Flow handles routing
-- No mixed responsibilities
+- Components handle their own operations:
+  * API calls and message sending
+  * State validation and updates
+  * Error handling with proper context
+- State manager provides:
+  * Central state storage
+  * Atomic operations
+  * Validation tracking
+- Flow framework handles:
+  * Component activation
+  * State transitions
+  * Error recovery
 
-3. **Strong Validation**
-- Component-level validation
-- State validation
-- Flow validation
-- Clear error handling
+3. **Strong Validation & Error Handling**
+- Component-level validation:
+  * Input format validation
+  * Business logic validation
+  * API response validation
+  * Message sending validation
+- State validation:
+  * Atomic updates
+  * Validation tracking
+  * Error state management
+- Error handling:
+  * Standardized through ErrorHandler
+  * Clear error context
+  * Proper validation state
+  * Consistent error patterns
 
 4. **Pure Functions**
 - No stored state

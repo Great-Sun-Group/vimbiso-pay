@@ -11,13 +11,15 @@ that implements the MessagingServiceInterface.
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Dict
 
-from core import components
 from core.messaging.types import Message, TextContent
-from core.utils.error_handler import ErrorHandler
-from services.messaging.service import MessagingService
 from core.messaging.utils import get_recipient
+from core.utils.error_handler import ErrorHandler
+from core.utils.error_types import ValidationResult
+from core.utils.exceptions import ComponentException
+from services.messaging.service import MessagingService
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +36,15 @@ class FlowProcessor:
         """
         self.messaging = messaging_service
         self.state_manager = state_manager
+        # Ensure bidirectional relationship is set up
+        if not hasattr(state_manager, 'messaging') or state_manager.messaging is None:
+            state_manager.messaging = messaging_service
 
-    def process_message(self, payload: Dict[str, Any], state_manager: Any) -> Message:
+    def process_message(self, payload: Dict[str, Any]) -> Message:
         """Process message through flow framework
 
         Args:
             payload: Raw message payload
-            state_manager: State manager instance
 
         Returns:
             Message: Response message
@@ -53,75 +57,108 @@ class FlowProcessor:
             message_type = message_data.get("type", "")
             message_text = message_data.get("text", {}).get("body", "") if message_type == "text" else ""
 
-            # Update state with message data (SINGLE SOURCE OF TRUTH)
-            state_manager.update_state({
-                "message": {
+            # Create message recipient
+            recipient = get_recipient(self.state_manager)
+
+            # Get current flow state or initialize new flow
+            flow_state = self.state_manager.get("flow_data")
+            if not flow_state:
+                # Initialize new flow with message data
+                flow_state = {
+                    "context": "login",
+                    "component": "Greeting",
+                    "data": {
+                        "message": {
+                            "type": message_type,
+                            "text": message_text,
+                            "_metadata": {
+                                "received_at": datetime.utcnow().isoformat()
+                            }
+                        }
+                    },
+                    "_metadata": {
+                        "initialized_at": datetime.utcnow().isoformat()
+                    }
+                }
+            else:
+                # Update existing flow with message data
+                flow_state["data"] = flow_state.get("data", {})
+                flow_state["data"]["message"] = {
                     "type": message_type,
                     "text": message_text,
                     "_metadata": {
-                        "received_at": (state_manager.get("_metadata") or {}).get("updated_at")
+                        "received_at": datetime.utcnow().isoformat()
                     }
                 }
-            })
 
-            # Create message recipient
-            recipient = get_recipient(state_manager)
+            # Update flow state
+            self.state_manager.update_state({"flow_data": flow_state})
 
-            # Get current flow state or initialize new flow
-            flow_state = state_manager.get("flow_data") or {}
             context = flow_state.get("context", "login")
             component = flow_state.get("component", "Greeting")
 
             # Process through flow framework
-            from core.messaging.flow import process_component
-            result, next_context, next_component = process_component(
+            from core.messaging.flow import (activate_component,
+                                             handle_component_result)
+            logger.info(f"Processing flow: {context} -> {component}")
+
+            # Log state before processing
+            logger.info(f"Flow state before processing: {flow_state}")
+
+            # Process component and get next step
+            logger.info(f"Activating component: {component}")
+            result = activate_component(component, self.state_manager)
+            logger.info(f"Component result: {result}")
+
+            # Get next component
+            logger.info(f"Handling component result for {context}.{component}")
+            next_step = handle_component_result(
                 context=context,
                 component=component,
-                state_manager=state_manager
+                result=result,
+                state_manager=self.state_manager
             )
+            logger.info(f"Got next step: {next_step}")
 
-            # Update flow state
-            state_manager.update_state({
-                "flow_data": {
-                    "context": next_context,
-                    "component": next_component,
-                    "result": result
-                }
-            })
+            if next_step is None:
+                logger.error(f"handle_component_result returned None for {context}.{component}")
+                # Default to staying on current component
+                next_context, next_component = context, component
+            else:
+                next_context, next_component = next_step
 
-            # Get component class to convert result to message
-            component_class = getattr(components, component)
-            component_instance = component_class()
-            component_instance.state_manager = state_manager
+            logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
 
-            # Handle ValidationResult objects
-            if hasattr(result, "valid"):
-                if not result.valid and result.error:
-                    return self.messaging.send_text(
-                        recipient=recipient,
-                        text=result.error.get("message", "Validation failed")
-                    )
-                result = result.value
+            # Update flow state with just context and component
+            self.state_manager.update_flow_state(
+                context=next_context,
+                component=next_component
+            )
+            logger.info(f"Updated flow state: {next_context}.{next_component}")
 
-            # Convert result to message content
-            try:
-                message_content = component_instance.to_message_content(result)
-                return self.messaging.send_text(
-                    recipient=recipient,
-                    text=message_content
-                )
-            except (AttributeError, KeyError) as e:
-                logger.error(f"Error converting component result to message: {str(e)}")
-                # Fallback to raw result if conversion fails
-                if isinstance(result, dict) and "message" in result:
-                    return self.messaging.send_text(
-                        recipient=recipient,
-                        text=result["message"]
-                    )
-                return self.messaging.send_text(
-                    recipient=recipient,
-                    text="Processing your request..."
-                )
+            # Only return messages for errors, components handle their own messaging
+            if isinstance(result, ValidationResult):
+                if not result.valid:
+                    # Component returned an error
+                    content = TextContent(body=result.error.get("message", "Validation failed"))
+                    return Message(recipient=recipient, content=content)
+                # Component succeeded
+                return None
+            # Non-ValidationResult returns also succeed silently
+            return None
+
+        except ComponentException as e:
+            # Handle component errors with validation state
+            error_response = ErrorHandler.handle_component_error(
+                component=e.details["component"],
+                field=e.details["field"],
+                value=e.details["value"],
+                message=str(e),
+                validation_state=e.details.get("validation")
+            )
+            recipient = get_recipient(self.state_manager)
+            content = TextContent(body=error_response["error"]["message"])
+            return Message(recipient=recipient, content=content)
 
         except Exception as e:
             # Handle system errors
@@ -132,8 +169,7 @@ class FlowProcessor:
                 message=str(e),
                 error=e
             )
-
-            recipient = get_recipient(state_manager)
+            recipient = get_recipient(self.state_manager)
             content = TextContent(body=error_response["error"]["message"])
             return Message(recipient=recipient, content=content)
 

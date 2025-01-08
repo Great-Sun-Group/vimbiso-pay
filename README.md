@@ -79,11 +79,11 @@ fetchlogs 60
 ## Core Features
 
 ### Service Layer
-- State-based service architecture
-- Pure function implementation
+- Component-based architecture with clear responsibilities
+- Messaging service integration through state manager
 - Single source of truth enforcement
-- Consistent error handling
-- Clear service boundaries
+- Standardized error handling through ErrorHandler
+- Clear component and service boundaries
 
 ### WhatsApp Interface
 - Interactive menus and buttons
@@ -104,9 +104,9 @@ fetchlogs 60
 
 ### Security
 - State-based credential management
-- No credential duplication
+- Secure messaging service integration
 - Flow state validation
-- Consistent error handling
+- Error handling with proper context
 - JWT authentication
 - Rate limiting
 - Input validation

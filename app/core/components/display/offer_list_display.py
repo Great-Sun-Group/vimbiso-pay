@@ -5,12 +5,13 @@ This component handles displaying a list of Credex offers.
 
 from typing import Any, Dict
 
+from core.messaging.formatters.formatters import CredexFormatters
 from core.utils.error_types import ValidationResult
 
-from core.components.base import Component
+from ..base import DisplayComponent
 
 
-class OfferListDisplay(Component):
+class OfferListDisplay(DisplayComponent):
     """Handles displaying a list of Credex offers"""
 
     def __init__(self):
@@ -21,8 +22,8 @@ class OfferListDisplay(Component):
         """Set state manager for accessing offer data"""
         self.state_manager = state_manager
 
-    def validate(self, value: Any) -> ValidationResult:
-        """Validate and format offer data for display"""
+    def validate_display(self, value: Any) -> ValidationResult:
+        """Validate display and handle offer selection"""
         # Validate state manager is set
         if not self.state_manager:
             return ValidationResult.failure(
@@ -31,7 +32,58 @@ class OfferListDisplay(Component):
                 details={"component": "offer_list"}
             )
 
-        # Get dashboard data from state
+        # If this is an offer selection, validate it
+        if isinstance(value, dict) and value.get("type") == "text":
+            # Get available offer IDs from state
+            dashboard = self.state_manager.get("dashboard")
+            if not dashboard:
+                return ValidationResult.failure(
+                    message="No dashboard data found",
+                    field="dashboard",
+                    details={"component": "offer_list"}
+                )
+
+            # Get context to determine which offers to check
+            flow_data = self.state_manager.get_flow_state()
+            context = flow_data.get("context") if flow_data else None
+            if not context:
+                return ValidationResult.failure(
+                    message="No context found",
+                    field="context",
+                    details={"component": "offer_list"}
+                )
+
+            # Get valid offer IDs based on context
+            if context in {"accept_offers", "decline_offers"}:
+                offers = dashboard.get("incomingOffers", [])
+            elif context == "cancel_offers":
+                offers = dashboard.get("outgoingOffers", [])
+            else:
+                return ValidationResult.failure(
+                    message="Invalid context for offer list",
+                    field="context",
+                    details={"context": context}
+                )
+
+            valid_ids = {str(offer["credexID"]) for offer in offers}
+            selection = value.get("text", "").strip()
+
+            if selection in valid_ids:
+                # Update state with selection using standard API key
+                self.state_manager.update_state({
+                    "flow_data": {
+                        "data": {"credex_id": selection}
+                    }
+                })
+                return ValidationResult.success({"selection": selection})
+
+            return ValidationResult.failure(
+                message="Invalid offer selection. Please choose from the available offers.",
+                field="selection",
+                details={"component": "offer_list"}
+            )
+
+        # Otherwise get and validate dashboard data for display
         dashboard = self.state_manager.get("dashboard")
         if not dashboard:
             return ValidationResult.failure(
@@ -100,11 +152,22 @@ class OfferListDisplay(Component):
             "offers": formatted_offers
         })
 
-    def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified display data"""
-        return {
-            "title": value["title"],
-            "action": value["action"],
-            "offers": value["offers"],
-            "use_list": True  # Signal to use list format
-        }
+    def to_message_content(self, value: Dict) -> str:
+        """Convert to message content using CredexFormatters"""
+        # Format header
+        header = f"📋 {value['title']}\n\n"
+
+        # Format each offer
+        offer_lines = []
+        for offer in value["offers"]:
+            offer_lines.append(
+                f"💰 Amount: {offer['amount']}\n"
+                f"👤 From: {offer['counterparty']}\n"
+                f"📊 Status: {offer['status']}\n"
+            )
+
+        # Format action prompt
+        action_prompt = CredexFormatters.format_action_prompt(value["action"].lower())
+
+        # Combine all sections
+        return header + "\n".join(offer_lines) + "\n" + action_prompt

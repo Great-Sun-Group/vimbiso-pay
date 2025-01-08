@@ -4,6 +4,7 @@ This module defines the core Component interfaces that all components extend.
 Each interface handles a specific type of component with clear validation patterns.
 """
 
+import logging
 from datetime import datetime
 from typing import Any, Dict, Type, Union
 
@@ -30,7 +31,30 @@ class Component:
         }
 
     def set_state_manager(self, state_manager: Any) -> None:
-        """Set state manager for accessing state data"""
+        """Set state manager for accessing state data
+
+        Args:
+            state_manager: State manager instance
+
+        Raises:
+            ComponentException: If state manager is not properly initialized
+        """
+        if not state_manager:
+            raise ComponentException(
+                message="State manager is required",
+                component=self.type,
+                field="state_manager",
+                value="None"
+            )
+
+        if not hasattr(state_manager, 'messaging') or state_manager.messaging is None:
+            raise ComponentException(
+                message="State manager messaging service not initialized",
+                component=self.type,
+                field="state_manager.messaging",
+                value=str(state_manager)
+            )
+
         self.state_manager = state_manager
 
     def validate(self, value: Any) -> ValidationResult:
@@ -67,38 +91,48 @@ class Component:
             if result.valid:
                 self.update_state(result.value, result)
             else:
+                error_details = {}
+                if result.error:
+                    error_details = {
+                        "message": result.error.get("message"),
+                        "field": result.error.get("field"),
+                        "details": result.error.get("details", {})
+                    }
+
                 self.validation_state.update({
                     "in_progress": False,
                     "error": {
-                        "message": result.error.get("message"),
-                        "field": result.error.get("field"),
-                        "details": result.error.get("details", {}),
+                        **error_details,
                         "validation": {
                             "attempts": self.validation_state["attempts"],
                             "last_attempt": value,
                             "timestamp": datetime.utcnow().isoformat()
                         }
-                    }
+                    } if error_details else None
                 })
 
             return result
 
         except Exception as e:
-            # Update validation state
-            self.validation_state.update({
+            # Update validation state with error details
+            validation_state = {
                 "in_progress": False,
                 "error": str(e),
                 "operation": "validate_error",
-                "timestamp": datetime.utcnow().isoformat()
-            })
+                "attempts": self.validation_state["attempts"],
+                "last_attempt": value,
+                "timestamp": datetime.utcnow().isoformat(),
+                "component": self.type
+            }
+            self.validation_state.update(validation_state)
 
-            # Raise ComponentException with validation context
+            # Raise ComponentException with complete validation context
             raise ComponentException(
-                message="Validation failed",
+                message=str(e),
                 component=self.type,
                 field="value",
                 value=str(value),
-                validation=self.validation_state
+                validation=validation_state
             )
 
     def _validate(self, value: Any) -> ValidationResult:
@@ -170,8 +204,21 @@ class DisplayComponent(Component):
 
     def _validate(self, value: Any) -> ValidationResult:
         """Validate display data with proper tracking"""
-        # Subclasses implement specific validation
-        return self.validate_display(value)
+        logger = logging.getLogger(__name__)
+        try:
+            # Log validation attempt
+            logger.info(f"Validating display component {self.type} with value: {value}")
+
+            # Subclasses implement specific validation
+            result = self.validate_display(value)
+
+            # Log validation result
+            logger.info(f"Display validation result: {result}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Display validation error in {self.type}: {str(e)}")
+            raise
 
     def validate_display(self, value: Any) -> ValidationResult:
         """Component-specific display validation logic"""
@@ -238,22 +285,9 @@ class ApiComponent(Component):
 
     def __init__(self, component_type: str):
         super().__init__(component_type)
-        self.bot_service = None
-
-    def set_bot_service(self, bot_service: Any) -> None:
-        """Set bot service for API access"""
-        self.bot_service = bot_service
 
     def _validate(self, value: Any) -> ValidationResult:
         """Validate API call with proper tracking"""
-        # Validate bot service is set
-        if not self.bot_service:
-            return ValidationResult.failure(
-                message="Bot service not set",
-                field="bot_service",
-                details={"component": self.type}
-            )
-
         # Subclasses implement specific validation
         return self.validate_api_call(value)
 

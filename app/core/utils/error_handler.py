@@ -45,9 +45,9 @@ class ErrorHandler:
         """
         error = {
             "type": error_type,
-            "message": message,
-            "details": details,
-            "context": context or {},
+            "message": message or "An error occurred",  # Ensure message is never None
+            "details": details or {},  # Ensure details is never None
+            "context": context or {},  # Already handles None
             "timestamp": datetime.utcnow().isoformat()
         }
 

@@ -5,41 +5,22 @@ This component handles the registration welcome screen with proper validation.
 
 from typing import Any
 
-from core.messaging.types import (Button, ChannelIdentifier, ChannelType,
-                                  InteractiveContent, InteractiveType, Message,
-                                  MessageRecipient)
+from core.messaging.formatters.formatters import RegistrationFormatters
 from core.utils.error_types import ValidationResult
 
-from core.components.base import Component
+from ..base import DisplayComponent
 
 
-class Welcome(Component):
+class Welcome(DisplayComponent):
     """Handles registration welcome screen"""
 
     def __init__(self):
         super().__init__("welcome")
 
-    def validate(self, value: Any) -> ValidationResult:
+    def validate_display(self, value: Any) -> ValidationResult:
         """Simple validation for welcome step"""
-        return ValidationResult.success(value)
+        return ValidationResult.success({})
 
-    def get_message(self, channel_id: str) -> Message:
-        """Get welcome message"""
-        return Message(
-            recipient=MessageRecipient(
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_id
-                )
-            ),
-            content=InteractiveContent(
-                interactive_type=InteractiveType.BUTTON,
-                body="Welcome to VimbisoPay 💰\n\nWe're your portal 🚪to the credex ecosystem 🌱\n\nBecome a member 🌐 and open a free account 💳 to get started 📈",
-                buttons=[
-                    Button(
-                        id="start_registration",
-                        title="Become a Member"
-                    )
-                ]
-            )
-        )
+    def to_message_content(self, value: Any) -> str:
+        """Convert to message content using RegistrationFormatters"""
+        return RegistrationFormatters.format_welcome()

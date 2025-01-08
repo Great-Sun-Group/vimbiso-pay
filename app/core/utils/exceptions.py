@@ -22,12 +22,14 @@ class ComponentException(BaseException):
         message: str,
         component: str,
         field: str,
-        value: str
+        value: str,
+        validation: Optional[Dict] = None
     ):
         details = {
             "component": component,
             "field": field,
-            "value": value
+            "value": value,
+            "validation": validation
         }
         super().__init__(message, details)
 

@@ -44,12 +44,12 @@ class WhatsAppMock {
         this.ui.displayUserMessage(displayText);
 
         try {
-            // Create payload matching WhatsApp format
-            const payload = {
-                type: messageType,
-                message: processedMessage,
-                phone: this.ui.phoneInput.value
-            };
+            // Create WhatsApp-formatted payload
+            const payload = createMessagePayload(
+                messageType,
+                processedMessage,
+                this.ui.phoneInput.value
+            );
 
             console.log('Sending payload to server:', payload);
 
@@ -68,28 +68,9 @@ class WhatsAppMock {
                 throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
             }
 
-            const data = await response.json();
-            console.log('Raw response from server:', data);
-
-            // Display response after a short delay
-            setTimeout(() => {
-                // Get the response content
-                const responseData = data.response || data;
-                console.log('Processed response data:', responseData);
-
-                // Log the type and structure
-                console.log('Response type:', typeof responseData);
-                console.log('Response keys:', Object.keys(responseData));
-                if (responseData.type === 'interactive') {
-                    console.log('Interactive type:', responseData.interactive?.type);
-                    console.log('Interactive content:', responseData.interactive);
-                }
-
-                this.ui.displayMessage(responseData);
-                this.ui.disableSendButton(false);
-
-                console.log('=== SEND MESSAGE END ===');
-            }, 1000);
+            // Ignore the empty response
+            await response.text();
+            this.ui.disableSendButton(false);
 
         } catch (error) {
             console.error('Error:', error);

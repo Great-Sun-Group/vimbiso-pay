@@ -35,17 +35,59 @@ Common mistakes to avoid:
 - Channel info accessed through get_channel_id()
 - JWT token accessed through flow_data auth
 - Member data accessed through dashboard state
+- Messaging service accessed through state_manager.messaging
 - NO direct state access
 - NO state passing
 - NO transformation
 
-2. **Simple Structure**
-- Context-based organization
-- Clear boundaries
-- Standard validation
-- Flow metadata
-- NO complex hierarchies
-- NO redundant wrapping
+2. **Messaging Service Integration**
+- MessagingService sets up bidirectional relationship:
+  ```python
+  def __init__(self, channel_service: BaseMessagingService, state_manager: Any):
+      self.channel_service = channel_service
+      self.state_manager = state_manager
+      if state_manager:
+          # Set up bidirectional relationship
+          self.channel_service.state_manager = state_manager
+          state_manager.messaging = self
+  ```
+- Components access messaging through state_manager:
+  ```python
+  # Send message through messaging service
+  self.state_manager.messaging.send_text(
+      recipient=recipient,
+      text=message_text
+  )
+  ```
+- Error handling through ErrorHandler:
+  ```python
+  try:
+      self.state_manager.messaging.send_text(...)
+  except Exception as e:
+      error_response = ErrorHandler.handle_component_error(
+          component=self.type,
+          field="messaging",
+          value=str(message_text),
+          message=str(e)
+      )
+      return ValidationResult.failure(message=error_response["error"]["message"])
+  ```
+
+3. **Component Responsibilities**
+- Components handle their own operations:
+  * API calls through make_api_request
+  * Message sending through state_manager.messaging
+  * Error handling through ErrorHandler
+  * State updates with validation
+- Clear boundaries between components:
+  * Display components -> UI and messaging
+  * Input components -> Validation and state updates
+  * API components -> External calls and state updates
+  * Confirm components -> User confirmation flows
+- Standard validation and error handling:
+  * All operations wrapped in try/except
+  * All errors handled through ErrorHandler
+  * All results returned as ValidationResult
 
 3. **Pure Functions**
 - Stateless operations
