@@ -14,6 +14,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict
 
+from core.config.recognition import GREETING_COMMANDS
 from core.messaging.types import Message, TextContent
 from core.messaging.utils import get_recipient
 from core.utils.error_handler import ErrorHandler
@@ -59,6 +60,18 @@ class FlowProcessor:
 
             # Create message recipient
             recipient = get_recipient(self.state_manager)
+
+            # Check if message is a greeting
+            current_component = self.state_manager.get_component()
+            if (message_type == "text" and
+                message_text.lower().strip() in GREETING_COMMANDS and
+                    (not current_component or not current_component.lower().endswith('input'))):
+                # Wipe state and set login flow
+                self.state_manager.clear_all_state()
+                self.state_manager.update_flow_state(
+                    context="login",
+                    component="Greeting"
+                )
 
             # Get current flow state or initialize new flow
             flow_state = self.state_manager.get("flow_data")

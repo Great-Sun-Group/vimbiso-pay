@@ -304,12 +304,14 @@ class StateManager:
             Exception: If state clear fails (handled by ErrorHandler)
         """
         try:
-            # Get channel info to preserve
+            # Get state info to preserve
             channel = self.get("channel")
+            mock_testing = self.get("mock_testing")
 
-            # Reset to initial state
+            # Reset to initial state with preserved values
             self._state = {
                 "channel": channel,
+                "mock_testing": mock_testing,  # Always preserve mock flag even if None
                 "_metadata": {
                     "initialized_at": datetime.utcnow().isoformat(),
                     "updated_at": datetime.utcnow().isoformat()

@@ -222,14 +222,26 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
                 # Handle App->Server messages
                 logger.info("App -> Server: %s", message)
+
+                # Extract message content from WhatsApp format
+                if message.get("messaging_product") == "whatsapp":
+                    # Format for storage
+                    outgoing_message = {
+                        "type": "text",  # Force text type for storage
+                        "text": {
+                            "body": message.get("text", {}).get("body", message.get("text", ""))  # Handle both formats
+                        },
+                        "to": message.get("to")
+                    }
+                    # Save the extracted message
+                    self._save_message(outgoing_message)
+
                 # Acknowledge receipt to app
                 self._send_200({
                     "messaging_product": "whatsapp",
                     "contacts": [{"input": message.get("to"), "wa_id": message.get("to")}],
                     "messages": [{"id": f"wamid.{hex(int.from_bytes(os.urandom(16), 'big'))[2:]}"}]
                 })
-                # Save message to file
-                self._save_message(message)
 
         except Exception as e:
             # Just log and continue
