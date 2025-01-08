@@ -11,11 +11,17 @@ class WhatsAppMock {
 
     setupAppMessageStream() {
         console.log('Setting up SSE connection...');
+        console.log('Creating EventSource connection to /events...');
+
         // Connect to server events stream for app messages
-        const events = new EventSource('./events');
+        const events = new EventSource('/events');
 
         events.onopen = () => {
-            console.log('SSE connection opened');
+            console.log('SSE connection opened successfully');
+            this.ui.displayMessage({
+                type: 'text',
+                text: { body: 'Connected to mock server' }
+            });
         };
 
         events.onmessage = (event) => {
@@ -27,6 +33,10 @@ class WhatsAppMock {
 
         events.onerror = (error) => {
             console.error('EventSource error:', error);
+            this.ui.displayMessage({
+                type: 'text',
+                text: { body: 'Error: Lost connection to mock server. Retrying...' }
+            });
             events.close();
             // Retry connection after 1s
             console.log('Retrying SSE connection in 1s...');
@@ -80,7 +90,7 @@ class WhatsAppMock {
             console.log('Sending payload to server:', payload);
 
             // Send to mock server
-            const response = await fetch(`./bot/webhook?target=${this.ui.targetSelect.value}`, {
+            const response = await fetch(`/bot/webhook?target=${this.ui.targetSelect.value}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -94,7 +104,7 @@ class WhatsAppMock {
                 throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
             }
 
-            // Ignore empty response from UI->App message
+            // Just wait for response, no need to process it
             await response.text();
             this.ui.disableSendButton(false);
 
@@ -108,6 +118,7 @@ class WhatsAppMock {
         }
 
         this.ui.clearInput();
+        console.log('=== SEND MESSAGE END ===');
     }
 }
 

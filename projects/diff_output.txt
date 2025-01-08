@@ -1,1 +1,4251 @@
-placeholder
+Changed files:
+README.md
+app/config/settings.py
+app/config/urls.py
+app/core/api/__init__.py
+app/core/api/api_response.py
+app/core/api/base.py
+app/core/api/dashboard.py
+app/core/api/views.py
+app/core/components/__init__.py
+app/core/components/api/__init__.py
+app/core/components/api/accept_offer_api_call.py
+app/core/components/api/cancel_offer_api_call.py
+app/core/components/api/create_credex_api_call.py
+app/core/components/api/decline_offer_api_call.py
+app/core/components/api/get_ledger_api_call.py
+app/core/components/api/login_api_call.py
+app/core/components/api/onboard_member_api_call.py
+app/core/components/api/upgrade_membertier_api_call.py
+app/core/components/base.py
+app/core/components/confirm/__init__.py
+app/core/components/confirm/confirm_cancel_offer.py
+app/core/components/confirm/confirm_decline_offer.py
+app/core/components/confirm/confirm_offer_secured.py
+app/core/components/display/__init__.py
+app/core/components/display/account_dashboard.py
+app/core/components/display/display_ledger_section.py
+app/core/components/display/greeting.py
+app/core/components/display/offer_list_display.py
+app/core/components/display/welcome.py
+app/core/components/input/__init__.py
+app/core/components/input/first_name_input.py
+app/core/components/input/handle_input.py
+app/core/components/input/last_name_input.py
+app/core/config/atomic_state.py
+app/core/config/config.py
+app/core/config/state_manager.py
+app/core/config/state_utils.py
+app/core/config/timing.py
+app/core/messaging/base.py
+app/core/messaging/flow.py
+app/core/messaging/flow_processor.py
+app/core/messaging/formatters/whatsapp_menus.py
+app/core/messaging/service.py
+app/core/messaging/utils.py
+app/core/utils/error_handler.py
+app/core/utils/error_types.py
+app/core/utils/exceptions.py
+app/services/messaging/__init__.py
+app/services/messaging/service.py
+app/services/whatsapp/bot_service.py
+app/services/whatsapp/flow_processor.py
+app/services/whatsapp/service.py
+app/services/whatsapp/types.py
+docs/architecture.md
+docs/flow-framework.md
+docs/service-architecture.md
+docs/state-management.md
+mock/scripts/main.js
+mock/server.py
+
+Diff:
+```diff
+diff --git a/README.md b/README.md
+index 5e4803f..55e4927 100644
+--- a/README.md
++++ b/README.md
+@@ -79,11 +79,11 @@ fetchlogs 60
+ ## Core Features
+ 
+ ### Service Layer
+-- State-based service architecture
+-- Pure function implementation
++- Component-based architecture with clear responsibilities
++- Messaging service integration through state manager
+ - Single source of truth enforcement
+-- Consistent error handling
+-- Clear service boundaries
++- Standardized error handling through ErrorHandler
++- Clear component and service boundaries
+ 
+ ### WhatsApp Interface
+ - Interactive menus and buttons
+@@ -104,9 +104,9 @@ fetchlogs 60
+ 
+ ### Security
+ - State-based credential management
+-- No credential duplication
++- Secure messaging service integration
+ - Flow state validation
+-- Consistent error handling
++- Error handling with proper context
+ - JWT authentication
+ - Rate limiting
+ - Input validation
+diff --git a/app/config/settings.py b/app/config/settings.py
+index 93f3db1..3534018 100644
+--- a/app/config/settings.py
++++ b/app/config/settings.py
+@@ -38,9 +38,9 @@ else:
+ # Redis state configuration
+ REDIS_STATE_URL = env("REDIS_STATE_URL", default="redis://redis-state:6379/0")
+ 
+-# Redis state cache configuration
++# Redis cache configuration
+ CACHES = {
+-    "state": {
++    "default": {
+         "BACKEND": "django_redis.cache.RedisCache",
+         "LOCATION": REDIS_STATE_URL,
+         "OPTIONS": {
+diff --git a/app/config/urls.py b/app/config/urls.py
+index c28dea1..a5ae155 100644
+--- a/app/config/urls.py
++++ b/app/config/urls.py
+@@ -9,9 +9,9 @@ def health_check(request):
+     """Simple health check endpoint"""
+     try:
+         # Check state Redis
+-        state_cache = caches['state']
+-        state_cache.set("health_check", "ok", 10)
+-        result = state_cache.get("health_check")
++        default_cache = caches['default']
++        default_cache.set("health_check", "ok", 10)
++        result = default_cache.get("health_check")
+ 
+         if result == "ok":
+             return JsonResponse({"status": "ok", "message": "Service is healthy"})
+diff --git a/app/core/api/__init__.py b/app/core/api/__init__.py
+deleted file mode 100644
+index c3787b3..0000000
+--- a/app/core/api/__init__.py
++++ /dev/null
+@@ -1,8 +0,0 @@
+-"""API package exposing pure functions for API interactions"""
+-from .api_interactions import create_api_interactions
+-from .client import create_api_service
+-
+-__all__ = [
+-    'create_api_interactions',
+-    'create_api_service',
+-]
+diff --git a/app/core/api/action.py b/app/core/api/api_response.py
+similarity index 53%
+rename from app/core/api/action.py
+rename to app/core/api/api_response.py
+index ff714f4..d009169 100644
+--- a/app/core/api/action.py
++++ b/app/core/api/api_response.py
+@@ -1,12 +1,10 @@
+-"""Action state management
++"""API response management
+ 
+-This module handles action data from API responses.
+-All API responses include an action section describing what happened.
+-Action data represents operation results and details.
++This module handles validation and state injection of API responses.
++All API responses contain both dashboard and action sections that flow through here.
+ """
+ 
+ import logging
+-from datetime import datetime
+ from typing import Any, Dict, Optional, Tuple
+ 
+ from core.utils.error_handler import ErrorHandler
+@@ -16,18 +14,19 @@ from core.utils.exceptions import FlowException
+ logger = logging.getLogger(__name__)
+ 
+ 
+-def update_action_from_response(
++def update_state_from_response(
+     api_response: Dict[str, Any],
+     state_manager: Any
+ ) -> Tuple[bool, Optional[str]]:
+-    """Update action state from API response
++    """Update state from API response
+ 
+-    This is the main entry point for handling API response action data.
+-    All API responses include an action section that should flow through here.
++    This is the main entry point for handling API responses.
++    All API responses should route through here to maintain consistent state.
+ 
+     Args:
+-        api_response: Full API response containing action data
++        api_response: Full API response containing dashboard and action data
+         state_manager: State manager instance
++        auth_token: Optional auth token from response
+ 
+     Returns:
+         Tuple[bool, Optional[str]]: Success flag and optional error message
+@@ -37,29 +36,44 @@ def update_action_from_response(
+         if not isinstance(api_response, dict):
+             raise FlowException(
+                 message="Invalid API response format",
+-                step="action",
++                step="api_response",
+                 action="validate_response",
+                 data={"response": api_response}
+             )
+ 
++        # Get and validate dashboard data
++        dashboard_data = api_response.get("data", {}).get("dashboard")
++        if not dashboard_data:
++            raise FlowException(
++                message="Missing dashboard data",
++                step="api_response",
++                action="validate_dashboard",
++                data={"response": api_response}
++            )
++
++        # Validate member data exists
++        if not dashboard_data.get("member", {}).get("memberID"):
++            raise FlowException(
++                message="Missing member ID in dashboard",
++                step="api_response",
++                action="validate_member",
++                data={"dashboard": dashboard_data}
++            )
++
+         # Get and validate action data
+         action_data = api_response.get("data", {}).get("action")
+         if not action_data:
+             raise FlowException(
+                 message="Missing action data",
+-                step="action",
++                step="api_response",
+                 action="validate_action",
+                 data={"response": api_response}
+             )
+ 
+-        # Update state with action data
++        # Update state with API response data
+         state_update = {
+-            "flow_data": {
+-                "action": action_data,
+-                "_metadata": {
+-                    "updated_at": datetime.utcnow().isoformat()
+-                }
+-            }
++            "dashboard": dashboard_data,  # Complete dashboard data from API
++            "action": action_data  # Complete action data from API
+         }
+ 
+         try:
+@@ -67,12 +81,12 @@ def update_action_from_response(
+         except Exception as e:
+             raise FlowException(
+                 message="Failed to update state",
+-                step="action",
++                step="api_response",
+                 action="update_state",
+                 data={"error": str(e), "update": state_update}
+             )
+ 
+-        logger.info("Successfully updated action state")
++        logger.info("Successfully updated state from API response")
+         return True, None
+ 
+     except Exception as e:
+@@ -80,8 +94,8 @@ def update_action_from_response(
+             error_type="flow",
+             message=str(e),
+             details={
+-                "step": "action",
+-                "action": "update_action"
++                "step": "api_response",
++                "action": "update_state"
+             }
+         )
+         ErrorHandler.handle_flow_error(
+@@ -92,16 +106,3 @@ def update_action_from_response(
+             flow_state={}
+         )
+         return False, str(e)
+-
+-
+-def get_action_message(action: Dict[str, Any]) -> str:
+-    """Get human-friendly message from action data"""
+-    # Return explicit message if present
+-    if action.get("message"):
+-        return action["message"]
+-
+-    # Check details for message
+-    if action.get("details", {}).get("message"):
+-        return action["details"]["message"]
+-
+-    return ""
+diff --git a/app/core/api/base.py b/app/core/api/base.py
+index f8ff20f..7ad2a4c 100644
+--- a/app/core/api/base.py
++++ b/app/core/api/base.py
+@@ -3,17 +3,17 @@ import base64
+ import logging
+ import time
+ from datetime import datetime
+-from typing import Dict, Any, Optional, Tuple
++from typing import Any, Dict, Optional, Tuple
+ from urllib.parse import urljoin
+ 
+ import requests
+-from decouple import config
+-from requests.exceptions import RequestException
+-
+ from core.utils.error_handler import ErrorHandler
+ from core.utils.exceptions import SystemException
+ from core.utils.state_validator import StateValidator
+-from . import dashboard, action
++from decouple import config
++from requests.exceptions import RequestException
++
++from . import api_response
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -28,8 +28,7 @@ if not BASE_URL.endswith('/'):
+ 
+ def handle_api_response(
+     response: requests.Response,
+-    state_manager: Any,
+-    auth_token: Optional[str] = None
++    state_manager: Any
+ ) -> Tuple[Dict[str, Any], Optional[str]]:
+     """Handle API response with state updates
+ 
+@@ -40,7 +39,6 @@ def handle_api_response(
+     Args:
+         response: API response to handle
+         state_manager: State manager instance
+-        auth_token: Optional auth token from response
+ 
+     Returns:
+         Tuple[Dict[str, Any], Optional[str]]: Response data and optional error
+@@ -48,24 +46,19 @@ def handle_api_response(
+     try:
+         # Process response first
+         response_data = process_api_response(response)
++        logger.info(f"Response after processing: {response_data}")
++
+         if "error" in response_data:
+             return response_data, response_data["error"].get("message")
+ 
+-        # Update dashboard if present (member state)
+-        if "dashboard" in response_data.get("data", {}):
+-            success, error = dashboard.update_dashboard_from_response(
+-                api_response=response_data,
+-                state_manager=state_manager,
+-                auth_token=auth_token
+-            )
+-            if not success:
+-                return response_data, error
+-
+-        # Update action state (operation results)
+-        success, error = action.update_action_from_response(
++        # Update state with API response data
++        logger.info("Updating state with response data")
++        success, error = api_response.update_state_from_response(
+             api_response=response_data,
+             state_manager=state_manager
+         )
++        logger.info(f"State update result - success: {success}, error: {error}")
++
+         if not success:
+             return response_data, error
+ 
+@@ -74,14 +67,23 @@ def handle_api_response(
+         return {"error": str(e)}, str(e)
+ 
+ 
+-def get_headers(state_manager: Any, include_auth: bool = True) -> Dict[str, str]:
+-    """Get request headers with authentication"""
++def get_headers(state_manager: Any, url: str) -> Dict[str, str]:
++    """Get request headers with authentication if required
++
++    Args:
++        state_manager: State manager instance
++        url: Request URL to check if auth is required
++
++    Returns:
++        Dict[str, str]: Headers with auth token if needed
++    """
+     headers = {
+         "Content-Type": "application/json",
+         "x-client-api-key": config("CLIENT_API_KEY"),
+     }
+ 
+-    if include_auth:
++    # Check if endpoint needs auth
++    if is_auth_required(url):
+         # Get required state fields with validation at boundary
+         required_fields = {"channel"}
+         current_state = {
+@@ -100,10 +102,10 @@ def get_headers(state_manager: Any, include_auth: bool = True) -> Dict[str, str]
+             logger.error("Invalid channel structure")
+             return headers
+ 
+-        # Get auth token from flow data
++        # Get auth token from action details
+         flow_data = state_manager.get_flow_state() or {}
+-        auth_data = flow_data.get("data", {}).get("auth", {})
+-        jwt_token = auth_data.get("token")
++        action_data = flow_data.get("data", {}).get("action", {})
++        jwt_token = action_data.get("details", {}).get("token")
+ 
+         if jwt_token:
+             headers["Authorization"] = f"Bearer {jwt_token}"
+@@ -157,9 +159,15 @@ def validate_request_params(
+     return {"valid": True}
+ 
+ 
++def is_auth_required(url: str) -> bool:
++    """Check if URL requires authentication"""
++    # Strip any leading/trailing slashes and base URL
++    endpoint = url.rstrip('/').split('/')[-1]
++    return endpoint not in ['login', 'onboard']
++
++
+ def make_api_request(
+     url: str,
+-    headers: Dict[str, str],
+     payload: Dict[str, Any],
+     method: str = "POST",
+     retry_auth: bool = True,
+@@ -167,15 +175,28 @@ def make_api_request(
+ ) -> Dict:
+     """Make API request with logging, validation and error handling"""
+     try:
++        # Ensure URL is absolute
++        if not url.startswith(('http://', 'https://')):
++            url = urljoin(BASE_URL, url)
++
++        # Check if endpoint requires auth
++        requires_auth = is_auth_required(url)
++        if requires_auth and not state_manager:
++            return ErrorHandler.handle_system_error(
++                code="AUTH_ERROR",
++                service="api_client",
++                action="validate_auth",
++                message="State manager required for authenticated request"
++            )
++
++        # Get headers with auth if needed
++        headers = get_headers(state_manager, url) if state_manager else {}
++
+         # Validate request parameters
+         validation = validate_request_params(url, headers, payload)
+         if "error" in validation:
+             return validation
+ 
+-        # Ensure URL is absolute
+-        if not url.startswith(('http://', 'https://')):
+-            url = urljoin(BASE_URL, url)
+-
+         logger.info(f"Sending API request to: {url}")
+         logger.debug(f"Headers: {headers}")
+         logger.debug(f"Payload: {payload}")
+@@ -183,6 +204,7 @@ def make_api_request(
+         retries = 0
+         while retries < MAX_RETRIES:
+             try:
++                # Try request with current headers
+                 response = requests.request(
+                     method,
+                     url,
+@@ -193,18 +215,38 @@ def make_api_request(
+ 
+                 logger.info(f"API Response Status Code: {response.status_code}")
+                 logger.debug(f"API Response Headers: {response.headers}")
+-                logger.debug(f"API Response Content: {response.text[:500]}...")
++                logger.debug(f"API Response Content: {response.text}")
++
++                # Handle auth errors
++                if requires_auth and (
++                    # No token in headers
++                    ("Authorization" not in headers and retry_auth) or
++                    # Or got 401 response
++                    (response.status_code == 401 and retry_auth)
++                ):
++                    if not state_manager:
++                        return ErrorHandler.handle_system_error(
++                            code="AUTH_ERROR",
++                            service="api_client",
++                            action="validate_auth",
++                            message="State manager required for authenticated request"
++                        )
+ 
+-                # Handle 401 with retry
+-                if response.status_code == 401 and retry_auth and state_manager:
+-                    logger.warning("Received 401, attempting to refresh auth token")
+-                    from .login import login
+-                    # Create bot service for login
++                    logger.warning("Auth error, attempting login")
+                     from services.whatsapp.bot_service import get_bot_service
++                    from .login import login
+                     bot_service = get_bot_service(state_manager)
+                     success, _ = login(bot_service)
+-                    if success:
+-                        headers = get_headers(state_manager)  # Get fresh headers
++                    if not success:
++                        return ErrorHandler.handle_system_error(
++                            code="AUTH_ERROR",
++                            service="api_client",
++                            action="refresh_token",
++                            message="Failed to refresh auth token"
++                        )
++
++                    # Retry with new token
++                    headers = get_headers(state_manager, url)
+                     retries += 1
+                     time.sleep(RETRY_DELAY)
+                     continue
+@@ -277,6 +319,7 @@ def process_api_response(
+                 action="process_response",
+                 message="Response data must be a dictionary"
+             )
++        logger.info(f"Processed API response data: {data}")
+         return data
+ 
+     except ValueError as e:
+diff --git a/app/core/api/dashboard.py b/app/core/api/dashboard.py
+deleted file mode 100644
+index 3942470..0000000
+--- a/app/core/api/dashboard.py
++++ /dev/null
+@@ -1,199 +0,0 @@
+-"""Dashboard state management
+-
+-This module handles dashboard updates from API responses.
+-All API responses that include dashboard data should flow through here.
+-Dashboard data is the source of truth for member state.
+-"""
+-
+-import logging
+-from datetime import datetime
+-from typing import Any, Dict, Optional, Tuple
+-
+-from core.utils.error_handler import ErrorHandler
+-from core.utils.error_types import ErrorContext
+-from core.utils.exceptions import FlowException
+-
+-logger = logging.getLogger(__name__)
+-
+-
+-def update_dashboard_from_response(
+-    api_response: Dict[str, Any],
+-    state_manager: Any,
+-    auth_token: Optional[str] = None
+-) -> Tuple[bool, Optional[str]]:
+-    """Update dashboard state from API response
+-
+-    This is the main entry point for handling API responses that contain
+-    dashboard data. All API calls that return dashboard data should route
+-    through here to maintain consistent state.
+-
+-    Args:
+-        api_response: Full API response containing dashboard data
+-        state_manager: State manager instance
+-        auth_token: Optional auth token from response
+-
+-    Returns:
+-        Tuple[bool, Optional[str]]: Success flag and optional error message
+-    """
+-    try:
+-        # Validate response format
+-        if not isinstance(api_response, dict):
+-            raise FlowException(
+-                message="Invalid API response format",
+-                step="dashboard",
+-                action="validate_response",
+-                data={"response": api_response}
+-            )
+-
+-        # Get and validate dashboard data
+-        dashboard_data = api_response.get("data", {}).get("dashboard")
+-        if not dashboard_data:
+-            raise FlowException(
+-                message="Missing dashboard data",
+-                step="dashboard",
+-                action="validate_dashboard",
+-                data={"response": api_response}
+-            )
+-
+-        # Validate member data exists
+-        if not dashboard_data.get("member", {}).get("memberID"):
+-            raise FlowException(
+-                message="Missing member ID in dashboard",
+-                step="dashboard",
+-                action="validate_member",
+-                data={"dashboard": dashboard_data}
+-            )
+-
+-        # Handle account setup
+-        if not _handle_account_setup(dashboard_data, state_manager):
+-            raise FlowException(
+-                message="Failed to set up accounts",
+-                step="dashboard",
+-                action="setup_accounts",
+-                data={"dashboard": dashboard_data}
+-            )
+-
+-        # Structure action data
+-        action = api_response.get("data", {}).get("action", {})
+-        action_data = {
+-            "action": {
+-                "id": action.get("id", ""),
+-                "type": action.get("type", ""),
+-                "timestamp": datetime.utcnow().isoformat(),
+-                "actor": state_manager.get_channel_id() or "unknown",
+-                "details": action.get("details", {}),
+-                "message": _get_action_message(action),
+-                "status": action.get("status", "")
+-            }
+-        }
+-
+-        # Update state with dashboard and flow data
+-        state_update = {
+-            "flow_data": {
+-                "data": action_data,
+-                "auth": {"token": auth_token} if auth_token else {}
+-            }
+-        }
+-
+-        try:
+-            state_manager.update_state(state_update)
+-        except Exception as e:
+-            raise FlowException(
+-                message="Failed to update state",
+-                step="dashboard",
+-                action="update_state",
+-                data={"error": str(e), "update": state_update}
+-            )
+-
+-        logger.info("Successfully updated dashboard state")
+-        return True, None
+-
+-    except Exception as e:
+-        error_context = ErrorContext(
+-            error_type="flow",
+-            message=str(e),
+-            details={
+-                "step": "dashboard",
+-                "action": "update_dashboard"
+-            }
+-        )
+-        ErrorHandler.handle_flow_error(
+-            step=error_context.details["step"],
+-            action=error_context.details["action"],
+-            data={},
+-            message=error_context.message,
+-            flow_state={}
+-        )
+-        return False, str(e)
+-
+-
+-def _handle_account_setup(
+-    dashboard_data: Dict[str, Any],
+-    state_manager: Any
+-) -> bool:
+-    """Handle account setup through state validation"""
+-    try:
+-        # Find the PERSONAL account (API guarantees one per member)
+-        accounts = dashboard_data.get("accounts", [])
+-        personal_account = next(
+-            (acc for acc in accounts if acc.get("accountType") == "PERSONAL"),
+-            None
+-        )
+-
+-        if not personal_account:
+-            raise FlowException(
+-                message="No PERSONAL account found in dashboard",
+-                step="dashboard",
+-                action="setup_account",
+-                data={"accounts": accounts}
+-            )
+-
+-        # Store dashboard and active account ID
+-        state_update = {
+-            "dashboard": dashboard_data,  # Complete API response is the truth
+-            "active_account_id": personal_account["accountID"]  # Always set to PERSONAL account
+-        }
+-
+-        try:
+-            state_manager.update_state(state_update)
+-        except Exception as e:
+-            raise FlowException(
+-                message="Failed to update account state",
+-                step="dashboard",
+-                action="update_state",
+-                data={"error": str(e), "update": state_update}
+-            )
+-
+-        logger.info(f"Successfully set up account: {personal_account['accountHandle']}")
+-        return True
+-
+-    except Exception as e:
+-        error_context = ErrorContext(
+-            error_type="flow",
+-            message=str(e),
+-            details={
+-                "step": "dashboard",
+-                "action": "setup_account"
+-            }
+-        )
+-        ErrorHandler.handle_flow_error(
+-            step=error_context.details["step"],
+-            action=error_context.details["action"],
+-            data={},
+-            message=error_context.message,
+-            flow_state={}
+-        )
+-        return False
+-
+-
+-def _get_action_message(action: Dict[str, Any]) -> str:
+-    """Get action message from response"""
+-    # Return explicit message if present
+-    if action.get("message"):
+-        return action["message"]
+-
+-    # Check details for message
+-    if action.get("details", {}).get("message"):
+-        return action["details"]["message"]
+-
+-    return ""
+diff --git a/app/core/api/views.py b/app/core/api/views.py
+index a725735..bfedbe7 100644
+--- a/app/core/api/views.py
++++ b/app/core/api/views.py
+@@ -14,6 +14,7 @@ from rest_framework import status
+ from rest_framework.parsers import JSONParser
+ from rest_framework.views import APIView
+ from services.messaging.service import MessagingService
++from services.whatsapp.flow_processor import WhatsAppFlowProcessor
+ from services.whatsapp.service import WhatsAppMessagingService
+ 
+ # Configure logging with a standardized format
+@@ -67,9 +68,6 @@ class CredexCloudApiWebhook(APIView):
+         try:
+             logger.info("Received webhook request")
+ 
+-            # Log full request data for debugging
+-            logger.debug(f"Full webhook payload: {request.data}")
+-
+             # Validate basic webhook structure
+             if not isinstance(request.data, dict):
+                 logger.warning("Invalid request data format")
+@@ -88,54 +86,36 @@ class CredexCloudApiWebhook(APIView):
+             # Check for mock testing mode
+             is_mock_testing = request.headers.get('X-Mock-Testing') == 'true'
+ 
+-            # Get the raw payload
+-            payload = changes[0].get("value", {})
+-            if not payload or not isinstance(payload, dict):
+-                logger.warning("Invalid payload format")
++            # Get the raw payload and value
++            value = changes[0].get("value", {})
++            if not value or not isinstance(value, dict):
++                logger.warning("Invalid value format")
+                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+ 
+-            # Identify channel type from payload/headers and validate
++            # Identify channel type from value/headers and validate
+             channel_type = None
+             channel_id = None
+-            message_type = None
+-            message_text = None
+ 
+-            # Check for WhatsApp payload
+-            if "messaging_product" in payload and payload["messaging_product"] == "whatsapp":
++            # Check for WhatsApp value
++            if "messaging_product" in value and value["messaging_product"] == "whatsapp":
+                 channel_type = ChannelType.WHATSAPP
+ 
+-                # Validate WhatsApp payload
++                # Validate WhatsApp value
+                 if not is_mock_testing:
+-                    metadata = payload.get("metadata", {})
++                    metadata = value.get("metadata", {})
+                     if not metadata or metadata.get("phone_number_id") != config("WHATSAPP_PHONE_NUMBER_ID"):
+                         logger.warning(f"Mismatched WhatsApp phone_number_id: {metadata.get('phone_number_id')}")
+                         return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+ 
+                 # Handle WhatsApp status updates
+-                if payload.get("statuses"):
++                if value.get("statuses"):
+                     logger.info("Received WhatsApp status update")
+                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+ 
+-                # Get WhatsApp message
+-                messages = payload.get("messages", [])
+-                if not messages or not isinstance(messages, list):
+-                    logger.info("No WhatsApp messages in payload")
+-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+-
+-                message = messages[0]
+-                if not isinstance(message, dict):
+-                    logger.warning("Invalid WhatsApp message format")
+-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+-
+-                # Handle WhatsApp system messages
+-                if message.get("type") == "system" or message.get("system"):
+-                    logger.info("Ignoring WhatsApp system message")
+-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+-
+                 # Get WhatsApp contact info
+-                contacts = payload.get("contacts", [])
++                contacts = value.get("contacts", [])
+                 if not contacts or not isinstance(contacts, list):
+-                    logger.warning("No WhatsApp contacts in payload")
++                    logger.warning("No WhatsApp contacts in value")
+                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+ 
+                 contact = contacts[0]
+@@ -148,34 +128,9 @@ class CredexCloudApiWebhook(APIView):
+                     logger.warning("No WhatsApp channel ID in contact")
+                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+ 
+-                # Get WhatsApp message type and text
+-                message_type = message.get("type")
+-                if message_type == "text":
+-                    text = message.get("text", {})
+-                    if isinstance(text, dict):
+-                        message_text = text.get("body", "")
+-                elif message_type == "interactive":
+-                    interactive = message.get("interactive", {})
+-                    if isinstance(interactive, dict):
+-                        if "button_reply" in interactive:
+-                            button_reply = interactive["button_reply"]
+-                            if isinstance(button_reply, dict):
+-                                message_text = button_reply.get("id", "")
+-                        elif "list_reply" in interactive:
+-                            list_reply = interactive["list_reply"]
+-                            if isinstance(list_reply, dict):
+-                                message_text = list_reply.get("id", "")
+-                        else:
+-                            logger.warning(f"Unhandled WhatsApp interactive type: {interactive}")
+-                            message_text = str(interactive)
+-
+             # Check for SMS payload (stub for future implementation)
+-            elif "sms_provider" in payload:
++            elif "sms_provider" in value:
+                 channel_type = ChannelType.SMS
+-                # TODO: Add SMS-specific payload parsing
+-                # channel_id = payload.get("from")
+-                # message_type = "text"
+-                # message_text = payload.get("text")
+                 logger.info("SMS channel not yet implemented")
+                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+ 
+@@ -185,61 +140,37 @@ class CredexCloudApiWebhook(APIView):
+                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+ 
+             # Validate we got the required information
+-            if not all([channel_type, channel_id, message_type]):
++            if not all([channel_type, channel_id]):
+                 logger.warning("Missing required message information")
+                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+ 
+-            # Initialize state manager with channel info and mock status (SINGLE SOURCE OF TRUTH)
+-            logger.info(f"Initializing state manager for {channel_type.value} channel: {channel_id}")
++            # Initialize state manager
+             state_manager = StateManager(f"channel:{channel_id}")
+ 
+-            # Store mock testing status in state
++            # Store state
+             state_manager.update_state({
++                "channel": {
++                    "type": channel_type.value,
++                    "identifier": channel_id
++                },
+                 "mock_testing": is_mock_testing,
+                 "_metadata": {
+                     "updated_at": datetime.utcnow().isoformat()
+                 }
+             })
+ 
+-            # Log message details
+-            logger.info(f"Processing {channel_type.value} message: {message_text}")
+-
+             try:
+-                logger.info("Processing message...")
+-                # Update state with message data
+-                state_manager.update_state({
+-                    "message": {
+-                        "type": message_type,
+-                        "text": message_text
+-                    },
+-                    "_metadata": {
+-                        "updated_at": datetime.utcnow().isoformat()
+-                    }
+-                })
+-
+                 # Get messaging service for channel
+                 service = get_messaging_service(state_manager, channel_type)
+ 
+-                # Process message through service
+-                logger.info("Processing message...")
+-                response = service.handle_message()
+-
+-                # Validate response type
+-                if not isinstance(response, DomainMessage):
+-                    logger.error("Invalid response type from messaging service")
+-                    raise ValueError("Messaging service returned invalid response type")
+-
+-                # Send message through service
+-                sent_response = service.send_message(response)
+-
+-                # For mock testing return the WhatsApp payload
+-                if is_mock_testing:
+-                    # Return the response directly in mock mode
+-                    if isinstance(sent_response, DomainMessage):
+-                        return JsonResponse(sent_response.to_dict(), status=status.HTTP_200_OK)
+-                    return JsonResponse(sent_response, status=status.HTTP_200_OK)
++                # Create flow processor for channel type
++                if channel_type == ChannelType.WHATSAPP:
++                    flow_processor = WhatsAppFlowProcessor(service, state_manager)
++                else:
++                    raise ValueError(f"Unsupported channel type: {channel_type}")
+ 
+-                # For real requests return success
++                # Process message - component handles its own messaging
++                flow_processor.process_message(request.data)
+                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+ 
+             except Exception as e:
+diff --git a/app/core/components/__init__.py b/app/core/components/__init__.py
+index 3d272d1..fdb08aa 100644
+--- a/app/core/components/__init__.py
++++ b/app/core/components/__init__.py
+@@ -13,6 +13,7 @@ from .base import Component, InputComponent, DisplayComponent, ApiComponent
+ from .confirm import ConfirmBase
+ 
+ # Display components
++from .display.account_dashboard import AccountDashboard
+ from .display.display_ledger_section import DisplayLedgerSection
+ from .display.greeting import Greeting
+ from .display.offer_list_display import OfferListDisplay
+@@ -50,6 +51,7 @@ __all__ = [
+     "ConfirmBase",
+ 
+     # Display components
++    "AccountDashboard",
+     "DisplayLedgerSection",
+     "Greeting",
+     "OfferListDisplay",
+diff --git a/app/core/components/api/__init__.py b/app/core/components/api/__init__.py
+new file mode 100644
+index 0000000..5b42740
+--- /dev/null
++++ b/app/core/components/api/__init__.py
+@@ -0,0 +1,8 @@
++"""API components package
++
++This module provides components for API interactions:
++- Get member data from dashboard
++- Make API calls with proper data
++- Let handlers manage state updates
++- Use action data for flow control
++"""
+diff --git a/app/core/components/api/accept_offer_api_call.py b/app/core/components/api/accept_offer_api_call.py
+index d3683c5..12f7134 100644
+--- a/app/core/components/api/accept_offer_api_call.py
++++ b/app/core/components/api/accept_offer_api_call.py
+@@ -20,16 +20,11 @@ class AcceptOfferApiCall(ApiComponent):
+     def __init__(self):
+         super().__init__("accept_offer_api")
+         self.state_manager = None
+-        self.bot_service = None
+ 
+     def set_state_manager(self, state_manager: Any) -> None:
+         """Set state manager for accessing offer data"""
+         self.state_manager = state_manager
+ 
+-    def set_bot_service(self, bot_service: Any) -> None:
+-        """Set bot service for API access"""
+-        self.bot_service = bot_service
+-
+     def validate_api_call(self, value: Any) -> ValidationResult:
+         """Call acceptOffer endpoint and validate response"""
+         # Get member data from dashboard
+diff --git a/app/core/components/api/cancel_offer_api_call.py b/app/core/components/api/cancel_offer_api_call.py
+index f141d61..d1c519f 100644
+--- a/app/core/components/api/cancel_offer_api_call.py
++++ b/app/core/components/api/cancel_offer_api_call.py
+@@ -20,16 +20,11 @@ class CancelOfferApiCall(ApiComponent):
+     def __init__(self):
+         super().__init__("cancel_offer_api")
+         self.state_manager = None
+-        self.bot_service = None
+ 
+     def set_state_manager(self, state_manager: Any) -> None:
+         """Set state manager for accessing offer data"""
+         self.state_manager = state_manager
+ 
+-    def set_bot_service(self, bot_service: Any) -> None:
+-        """Set bot service for API access"""
+-        self.bot_service = bot_service
+-
+     def validate_api_call(self, value: Any) -> ValidationResult:
+         """Call cancelOffer endpoint and validate response"""
+         # Get member data from dashboard
+diff --git a/app/core/components/api/create_credex_api_call.py b/app/core/components/api/create_credex_api_call.py
+index 0826a5e..66da842 100644
+--- a/app/core/components/api/create_credex_api_call.py
++++ b/app/core/components/api/create_credex_api_call.py
+@@ -20,16 +20,11 @@ class CreateCredexApiCall(ApiComponent):
+     def __init__(self):
+         super().__init__("create_credex_api")
+         self.state_manager = None
+-        self.bot_service = None
+ 
+     def set_state_manager(self, state_manager: Any) -> None:
+         """Set state manager for accessing offer data"""
+         self.state_manager = state_manager
+ 
+-    def set_bot_service(self, bot_service: Any) -> None:
+-        """Set bot service for API access"""
+-        self.bot_service = bot_service
+-
+     def validate_api_call(self, value: Any) -> ValidationResult:
+         """Call createCredex endpoint and validate response"""
+         # Get member data from dashboard
+diff --git a/app/core/components/api/decline_offer_api_call.py b/app/core/components/api/decline_offer_api_call.py
+index 38810c1..4d7eb8e 100644
+--- a/app/core/components/api/decline_offer_api_call.py
++++ b/app/core/components/api/decline_offer_api_call.py
+@@ -20,16 +20,11 @@ class DeclineOfferApiCall(ApiComponent):
+     def __init__(self):
+         super().__init__("decline_offer_api")
+         self.state_manager = None
+-        self.bot_service = None
+ 
+     def set_state_manager(self, state_manager: Any) -> None:
+         """Set state manager for accessing offer data"""
+         self.state_manager = state_manager
+ 
+-    def set_bot_service(self, bot_service: Any) -> None:
+-        """Set bot service for API access"""
+-        self.bot_service = bot_service
+-
+     def validate_api_call(self, value: Any) -> ValidationResult:
+         """Call declineOffer endpoint and validate response"""
+         # Get member data from dashboard
+diff --git a/app/core/components/api/get_ledger_api_call.py b/app/core/components/api/get_ledger_api_call.py
+index 68d1c95..79fe424 100644
+--- a/app/core/components/api/get_ledger_api_call.py
++++ b/app/core/components/api/get_ledger_api_call.py
+@@ -20,16 +20,11 @@ class GetLedgerApiCall(ApiComponent):
+     def __init__(self):
+         super().__init__("get_ledger_api")
+         self.state_manager = None
+-        self.bot_service = None
+ 
+     def set_state_manager(self, state_manager: Any) -> None:
+-        """Set state manager for accessing account data"""
++        """Set state manager for accessing ledger data"""
+         self.state_manager = state_manager
+ 
+-    def set_bot_service(self, bot_service: Any) -> None:
+-        """Set bot service for API access"""
+-        self.bot_service = bot_service
+-
+     def validate_api_call(self, value: Any) -> ValidationResult:
+         """Call getLedger endpoint and validate response"""
+         # Get member data from dashboard
+diff --git a/app/core/components/api/login_api_call.py b/app/core/components/api/login_api_call.py
+index 9a58296..26513f6 100644
+--- a/app/core/components/api/login_api_call.py
++++ b/app/core/components/api/login_api_call.py
+@@ -6,10 +6,8 @@ Dashboard data is the source of truth for member state.
+ 
+ from typing import Any, Dict
+ 
+-from decouple import config
+-
++from core.api.base import handle_api_response, make_api_request
+ from core.utils.error_types import ValidationResult
+-from core.api.base import make_api_request, handle_api_response
+ 
+ from ..base import ApiComponent
+ 
+@@ -20,16 +18,11 @@ class LoginApiCall(ApiComponent):
+     def __init__(self):
+         super().__init__("login")
+         self.state_manager = None
+-        self.bot_service = None
+ 
+     def set_state_manager(self, state_manager: Any) -> None:
+         """Set state manager for accessing state data"""
+         self.state_manager = state_manager
+ 
+-    def set_bot_service(self, bot_service: Any) -> None:
+-        """Set bot service for API access"""
+-        self.bot_service = bot_service
+-
+     def validate_api_call(self, value: Any) -> ValidationResult:
+         """Call login endpoint and validate response"""
+         # Get channel info from state manager
+@@ -43,13 +36,15 @@ class LoginApiCall(ApiComponent):
+ 
+         # Make API call
+         url = "login"
+-        headers = {
+-            "Content-Type": "application/json",
+-            "x-client-api-key": config("CLIENT_API_KEY"),
+-        }
+         payload = {"phone": channel["identifier"]}
+ 
+-        response = make_api_request(url, headers, payload)
++        response = make_api_request(
++            url=url,
++            payload=payload,
++            method="POST",
++            retry_auth=False,
++            state_manager=self.state_manager
++        )
+ 
+         # Handle 400 for new users
+         if response.status_code == 400:
+@@ -72,9 +67,8 @@ class LoginApiCall(ApiComponent):
+                 details={"error": error}
+             )
+ 
+-        # Get action data for flow
+-        flow_data = self.state_manager.get_flow_state()
+-        action_data = flow_data.get("action", {})
++        # Get action data from state
++        action_data = self.state_manager.get("action") or {}
+ 
+         return ValidationResult.success(
+             {"action": action_data},
+@@ -83,6 +77,15 @@ class LoginApiCall(ApiComponent):
+             }
+         )
+ 
++    def to_message_content(self, value: Dict) -> str:
++        """Convert component result to message content"""
++        if isinstance(value, dict):
++            if "message" in value:
++                return value["message"]
++            if "action" in value:
++                return "Processing your request..."
++        return "Logging you in..."
++
+     def to_verified_data(self, value: Any) -> Dict:
+         """Convert API response to verified data
+ 
+diff --git a/app/core/components/api/onboard_member_api_call.py b/app/core/components/api/onboard_member_api_call.py
+index 9e44b91..17628f5 100644
+--- a/app/core/components/api/onboard_member_api_call.py
++++ b/app/core/components/api/onboard_member_api_call.py
+@@ -20,16 +20,11 @@ class OnBoardMemberApiCall(ApiComponent):
+     def __init__(self):
+         super().__init__("onboard_member_api")
+         self.state_manager = None
+-        self.bot_service = None
+ 
+     def set_state_manager(self, state_manager: Any) -> None:
+-        """Set state manager for accessing registration data"""
++        """Set state manager for accessing member data"""
+         self.state_manager = state_manager
+ 
+-    def set_bot_service(self, bot_service: Any) -> None:
+-        """Set bot service for API access"""
+-        self.bot_service = bot_service
+-
+     def validate_api_call(self, value: Any) -> ValidationResult:
+         """Call onboardMember endpoint and validate response"""
+         # Get registration data from state
+diff --git a/app/core/components/api/upgrade_membertier_api_call.py b/app/core/components/api/upgrade_membertier_api_call.py
+index 24dd949..df7cac5 100644
+--- a/app/core/components/api/upgrade_membertier_api_call.py
++++ b/app/core/components/api/upgrade_membertier_api_call.py
+@@ -20,16 +20,11 @@ class UpgradeMembertierApiCall(ApiComponent):
+     def __init__(self):
+         super().__init__("upgrade_membertier_api")
+         self.state_manager = None
+-        self.bot_service = None
+ 
+     def set_state_manager(self, state_manager: Any) -> None:
+-        """Set state manager for accessing upgrade data"""
++        """Set state manager for accessing member data"""
+         self.state_manager = state_manager
+ 
+-    def set_bot_service(self, bot_service: Any) -> None:
+-        """Set bot service for API access"""
+-        self.bot_service = bot_service
+-
+     def validate_api_call(self, value: Any) -> ValidationResult:
+         """Call upgradeMemberTier endpoint and validate response"""
+         # Get dashboard data from state
+diff --git a/app/core/components/base.py b/app/core/components/base.py
+index d3069d5..d815f42 100644
+--- a/app/core/components/base.py
++++ b/app/core/components/base.py
+@@ -4,6 +4,7 @@ This module defines the core Component interfaces that all components extend.
+ Each interface handles a specific type of component with clear validation patterns.
+ """
+ 
++import logging
+ from datetime import datetime
+ from typing import Any, Dict, Type, Union
+ 
+@@ -30,7 +31,30 @@ class Component:
+         }
+ 
+     def set_state_manager(self, state_manager: Any) -> None:
+-        """Set state manager for accessing state data"""
++        """Set state manager for accessing state data
++
++        Args:
++            state_manager: State manager instance
++
++        Raises:
++            ComponentException: If state manager is not properly initialized
++        """
++        if not state_manager:
++            raise ComponentException(
++                message="State manager is required",
++                component=self.type,
++                field="state_manager",
++                value="None"
++            )
++
++        if not hasattr(state_manager, 'messaging') or state_manager.messaging is None:
++            raise ComponentException(
++                message="State manager messaging service not initialized",
++                component=self.type,
++                field="state_manager.messaging",
++                value=str(state_manager)
++            )
++
+         self.state_manager = state_manager
+ 
+     def validate(self, value: Any) -> ValidationResult:
+@@ -67,38 +91,48 @@ class Component:
+             if result.valid:
+                 self.update_state(result.value, result)
+             else:
++                error_details = {}
++                if result.error:
++                    error_details = {
++                        "message": result.error.get("message"),
++                        "field": result.error.get("field"),
++                        "details": result.error.get("details", {})
++                    }
++
+                 self.validation_state.update({
+                     "in_progress": False,
+                     "error": {
+-                        "message": result.error.get("message"),
+-                        "field": result.error.get("field"),
+-                        "details": result.error.get("details", {}),
++                        **error_details,
+                         "validation": {
+                             "attempts": self.validation_state["attempts"],
+                             "last_attempt": value,
+                             "timestamp": datetime.utcnow().isoformat()
+                         }
+-                    }
++                    } if error_details else None
+                 })
+ 
+             return result
+ 
+         except Exception as e:
+-            # Update validation state
+-            self.validation_state.update({
++            # Update validation state with error details
++            validation_state = {
+                 "in_progress": False,
+                 "error": str(e),
+                 "operation": "validate_error",
+-                "timestamp": datetime.utcnow().isoformat()
+-            })
++                "attempts": self.validation_state["attempts"],
++                "last_attempt": value,
++                "timestamp": datetime.utcnow().isoformat(),
++                "component": self.type
++            }
++            self.validation_state.update(validation_state)
+ 
+-            # Raise ComponentException with validation context
++            # Raise ComponentException with complete validation context
+             raise ComponentException(
+-                message="Validation failed",
++                message=str(e),
+                 component=self.type,
+                 field="value",
+                 value=str(value),
+-                validation=self.validation_state
++                validation=validation_state
+             )
+ 
+     def _validate(self, value: Any) -> ValidationResult:
+@@ -124,6 +158,20 @@ class Component:
+             "validation": self.validation_state
+         }
+ 
++    def to_message_content(self, value: Dict) -> str:
++        """Convert component result to message content
++
++        Args:
++            value: Component result value
++
++        Returns:
++            str: Formatted message content
++
++        Raises:
++            NotImplementedError: If component doesn't implement conversion
++        """
++        raise NotImplementedError
++
+     def update_state(self, value: Any, validation_result: ValidationResult) -> None:
+         """Update component state with standardized validation tracking
+ 
+@@ -156,8 +204,21 @@ class DisplayComponent(Component):
+ 
+     def _validate(self, value: Any) -> ValidationResult:
+         """Validate display data with proper tracking"""
++        logger = logging.getLogger(__name__)
++        try:
++            # Log validation attempt
++            logger.info(f"Validating display component {self.type} with value: {value}")
++
+             # Subclasses implement specific validation
+-        return self.validate_display(value)
++            result = self.validate_display(value)
++
++            # Log validation result
++            logger.info(f"Display validation result: {result}")
++            return result
++
++        except Exception as e:
++            logger.error(f"Display validation error in {self.type}: {str(e)}")
++            raise
+ 
+     def validate_display(self, value: Any) -> ValidationResult:
+         """Component-specific display validation logic"""
+@@ -224,22 +285,9 @@ class ApiComponent(Component):
+ 
+     def __init__(self, component_type: str):
+         super().__init__(component_type)
+-        self.bot_service = None
+-
+-    def set_bot_service(self, bot_service: Any) -> None:
+-        """Set bot service for API access"""
+-        self.bot_service = bot_service
+ 
+     def _validate(self, value: Any) -> ValidationResult:
+         """Validate API call with proper tracking"""
+-        # Validate bot service is set
+-        if not self.bot_service:
+-            return ValidationResult.failure(
+-                message="Bot service not set",
+-                field="bot_service",
+-                details={"component": self.type}
+-            )
+-
+         # Subclasses implement specific validation
+         return self.validate_api_call(value)
+ 
+diff --git a/app/core/components/confirm.py b/app/core/components/confirm/__init__.py
+similarity index 98%
+rename from app/core/components/confirm.py
+rename to app/core/components/confirm/__init__.py
+index 4106483..5677b67 100644
+--- a/app/core/components/confirm.py
++++ b/app/core/components/confirm/__init__.py
+@@ -7,8 +7,7 @@ Specific confirmation components extend this with their own context and messagin
+ from typing import Any
+ 
+ from core.utils.error_types import ValidationResult
+-
+-from .base import Component
++from ..base import Component
+ 
+ 
+ class ConfirmBase(Component):
+diff --git a/app/core/components/confirm/confirm_cancel_offer.py b/app/core/components/confirm/confirm_cancel_offer.py
+index ace6426..7ea749f 100644
+--- a/app/core/components/confirm/confirm_cancel_offer.py
++++ b/app/core/components/confirm/confirm_cancel_offer.py
+@@ -7,7 +7,7 @@ from typing import Any, Dict
+ 
+ from core.utils.error_types import ValidationResult
+ 
+-from .confirm_base import ConfirmBase
++from . import ConfirmBase
+ 
+ 
+ class ConfirmCancelOffer(ConfirmBase):
+diff --git a/app/core/components/confirm/confirm_decline_offer.py b/app/core/components/confirm/confirm_decline_offer.py
+index 4b42664..0043084 100644
+--- a/app/core/components/confirm/confirm_decline_offer.py
++++ b/app/core/components/confirm/confirm_decline_offer.py
+@@ -7,7 +7,7 @@ from typing import Any, Dict
+ 
+ from core.utils.error_types import ValidationResult
+ 
+-from .confirm_base import ConfirmBase
++from . import ConfirmBase
+ 
+ 
+ class ConfirmDeclineOffer(ConfirmBase):
+diff --git a/app/core/components/confirm/confirm_offer_secured.py b/app/core/components/confirm/confirm_offer_secured.py
+index b14614f..a0a3e39 100644
+--- a/app/core/components/confirm/confirm_offer_secured.py
++++ b/app/core/components/confirm/confirm_offer_secured.py
+@@ -7,7 +7,7 @@ from typing import Any, Dict
+ 
+ from core.utils.error_types import ValidationResult
+ 
+-from .confirm_base import ConfirmBase
++from . import ConfirmBase
+ 
+ 
+ class ConfirmOfferSecured(ConfirmBase):
+diff --git a/app/core/components/display/__init__.py b/app/core/components/display/__init__.py
+new file mode 100644
+index 0000000..cf802a1
+--- /dev/null
++++ b/app/core/components/display/__init__.py
+@@ -0,0 +1,7 @@
++"""Display components package
++
++This module provides components for displaying formatted content:
++- Read-only state access
++- Format state data for display
++- No state modifications
++"""
+diff --git a/app/core/components/display/account_dashboard.py b/app/core/components/display/account_dashboard.py
+new file mode 100644
+index 0000000..7a417c6
+--- /dev/null
++++ b/app/core/components/display/account_dashboard.py
+@@ -0,0 +1,146 @@
++"""Account dashboard component
++
++This component handles displaying the account dashboard with proper validation.
++Also handles initial state setup after login.
++"""
++
++from typing import Any, Dict
++
++from core.messaging.formatters.formatters import AccountFormatters
++from core.messaging.types import Message
++from core.messaging.utils import get_recipient
++from core.utils.error_types import ValidationResult
++
++from ..base import DisplayComponent
++
++
++class AccountDashboard(DisplayComponent):
++    """Handles account dashboard display and initial state"""
++
++    def __init__(self):
++        super().__init__("account_dashboard")
++        self.state_manager = None
++
++    def set_state_manager(self, state_manager: Any) -> None:
++        """Set state manager for accessing dashboard data"""
++        self.state_manager = state_manager
++
++    def validate_display(self, value: Any) -> ValidationResult:
++        """Validate display and handle menu selection"""
++        # Validate state manager is set
++        if not self.state_manager:
++            return ValidationResult.failure(
++                message="State manager not set",
++                field="state_manager",
++                details={"component": "account_dashboard"}
++            )
++
++        try:
++            # Display Phase - First time through
++            if not isinstance(value, dict) or "type" not in value:
++                # Get and validate dashboard data
++                dashboard = self.state_manager.get("dashboard")
++                if not dashboard:
++                    return ValidationResult.failure(
++                        message="No dashboard data found",
++                        field="dashboard",
++                        details={"component": "account_dashboard"}
++                    )
++
++                # Get active account ID set by flow
++                active_account_id = self.state_manager.get("active_account_id")
++                if not active_account_id:
++                    return ValidationResult.failure(
++                        message="No active account set",
++                        field="active_account",
++                        details={"component": "account_dashboard"}
++                    )
++
++                # Find active account
++                accounts = dashboard.get("accounts", [])
++                active_account = next(
++                    (acc for acc in accounts if acc.get("accountID") == active_account_id),
++                    None
++                )
++                if not active_account:
++                    return ValidationResult.failure(
++                        message="Active account not found",
++                        field="accounts",
++                        details={"component": "account_dashboard"}
++                    )
++
++                # Format active account data for display
++                formatted_data = {
++                    "accountName": active_account.get("accountName", ""),
++                    "accountHandle": active_account.get("accountHandle", ""),
++                    "accountType": active_account.get("accountType", ""),
++                    "defaultDenom": active_account.get("defaultDenom", "USD"),
++                    "securedNetBalancesByDenom": active_account.get("balanceData", {}).get("securedNetBalancesByDenom", []),
++                    "netCredexAssetsInDefaultDenom": active_account.get("balanceData", {}).get("netCredexAssetsInDefaultDenom", "0.00")
++                }
++
++                # Add tier limit if member data exists
++                member = dashboard.get("member", {})
++                if member and member.get("memberTier"):
++                    formatted_data["tier_limit_raw"] = member.get("tierLimit", "0.00")
++
++                # Get recipient for messages
++                recipient = get_recipient(self.state_manager)
++
++                # Send account info as text
++                self.state_manager.messaging.send_text(
++                    recipient=recipient,
++                    text=self.to_message_content(formatted_data)
++                )
++
++                # Get interactive menu from WhatsApp formatter
++                from core.messaging.formatters.whatsapp_menus import \
++                    WhatsAppMenus
++                menu = WhatsAppMenus.get_interactive_menu()
++
++                # Send interactive menu using proper content type
++                from core.messaging.types import (InteractiveContent,
++                                                  InteractiveType)
++                menu_content = InteractiveContent(
++                    interactive_type=InteractiveType.LIST,
++                    body=menu["body"]["text"],
++                    sections=menu["action"]["sections"],
++                    button_text=menu["action"]["button"]
++                )
++                self.state_manager.messaging.send_message(
++                    Message(recipient=recipient, content=menu_content)
++                )
++
++                # Return success with await_input to stay active for input
++                return ValidationResult.success(
++                    formatted_data,
++                    metadata={"await_input": True}  # Signal flow to wait for input
++                )
++
++            # Input Phase - When we get a response
++            selection = value.get("text", "").strip()
++            from core.messaging.formatters.whatsapp_menus import WhatsAppMenus
++            if WhatsAppMenus.is_valid_option(selection):
++                # Valid selection, return to progress
++                return ValidationResult.success({"selection": selection})
++
++            # Invalid selection, return failure but stay on component
++            return ValidationResult.failure(
++                message="Invalid selection. Please choose from the available options.",
++                field="selection",
++                details={"component": "account_dashboard"}
++            )
++
++        except Exception as e:
++            return ValidationResult.failure(
++                message=str(e),
++                field="display",
++                details={
++                    "component": "account_dashboard",
++                    "error": str(e)
++                }
++            )
++
++    def to_message_content(self, value: Dict) -> str:
++        """Convert dashboard data to message content using AccountFormatters"""
++        return AccountFormatters.format_dashboard(value)
+diff --git a/app/core/components/display/display_ledger_section.py b/app/core/components/display/display_ledger_section.py
+index 4efcdd6..047e480 100644
+--- a/app/core/components/display/display_ledger_section.py
++++ b/app/core/components/display/display_ledger_section.py
+@@ -7,7 +7,7 @@ from typing import Any, Dict
+ 
+ from core.utils.error_types import ValidationResult
+ 
+-from .base import Component
++from core.components.base import Component
+ 
+ 
+ class DisplayLedgerSection(Component):
+diff --git a/app/core/components/display/greeting.py b/app/core/components/display/greeting.py
+index 6bbc8e2..6195e73 100644
+--- a/app/core/components/display/greeting.py
++++ b/app/core/components/display/greeting.py
+@@ -5,29 +5,79 @@ This component handles sending greetings as a separate step in flows.
+ 
+ from typing import Any, Dict
+ 
+-from core.messaging.greetings import get_random_greeting
++from core.messaging.formatters.greetings import get_random_greeting
++from core.messaging.utils import get_recipient
+ from core.utils.error_types import ValidationResult
++from core.utils.exceptions import ComponentException
+ 
+-from .base import Component
++from ..base import DisplayComponent
+ 
+ 
+-class Greeting(Component):
++class Greeting(DisplayComponent):
+     """Component for sending culturally-aware greetings"""
+ 
+     def __init__(self):
+         super().__init__("greeting")
+ 
+-    def _validate(self, value: Any) -> ValidationResult:
+-        """Generate greeting - base Component handles validation tracking"""
+-        # Get greeting text
++    def validate_display(self, value: Any) -> ValidationResult:
++        """Generate and send greeting with validation tracking"""
++        try:
++            # Display Phase - Send greeting
+             greeting = get_random_greeting()
++            recipient = get_recipient(self.state_manager)
++            message = self.state_manager.messaging.send_text(
++                recipient=recipient,
++                text=greeting
++            )
+ 
+-        # Return success with value only - base Component handles validation state
++            # No input needed, return success to progress
++            if message and message.metadata:
+                 return ValidationResult.success({
+-            "greeting": greeting,
+-            "type": "greeting"  # Include type for flow routing
++                    "sent": True,
++                    "message": greeting,
++                    "type": "greeting",
++                    "message_id": message.metadata.get("whatsapp_message_id")
+                 })
+ 
++            # Message wasn't sent successfully
++            return ValidationResult.failure(
++                message="Failed to send greeting message",
++                field="messaging",
++                details={
++                    "greeting": greeting,
++                    "error": "send_failed"
++                }
++            )
++        except ComponentException as e:
++            # Pass through ComponentException with proper error context
++            if hasattr(e, 'details'):
++                raise ComponentException(
++                    message=str(e),
++                    component=self.type,
++                    field=e.details.get("field", "messaging"),
++                    value=e.details.get("value", str(greeting))
++                )
++            # Handle case where details aren't available
++            raise ComponentException(
++                message=str(e),
++                component=self.type,
++                field="messaging",
++                value=str(greeting)
++            )
++        except Exception as e:
++            # Return validation failure with error context
++            return ValidationResult.failure(
++                message=str(e),
++                field="greeting",
++                details={
++                    "component": self.type,
++                    "error": str(e),
++                    "value": str(greeting)
++                }
++            )
++
+     def to_message_content(self, value: Dict) -> str:
+         """Convert validated value to message content"""
+-        return value["greeting"]
++        if not value or not isinstance(value, dict):
++            return "Processing your request..."
++        return value.get("message", "Processing your request...")
+diff --git a/app/core/components/display/offer_list_display.py b/app/core/components/display/offer_list_display.py
+index 653536c..1e5b8c0 100644
+--- a/app/core/components/display/offer_list_display.py
++++ b/app/core/components/display/offer_list_display.py
+@@ -5,12 +5,13 @@ This component handles displaying a list of Credex offers.
+ 
+ from typing import Any, Dict
+ 
++from core.messaging.formatters.formatters import CredexFormatters
+ from core.utils.error_types import ValidationResult
+ 
+-from .base import Component
++from ..base import DisplayComponent
+ 
+ 
+-class OfferListDisplay(Component):
++class OfferListDisplay(DisplayComponent):
+     """Handles displaying a list of Credex offers"""
+ 
+     def __init__(self):
+@@ -21,8 +22,8 @@ class OfferListDisplay(Component):
+         """Set state manager for accessing offer data"""
+         self.state_manager = state_manager
+ 
+-    def validate(self, value: Any) -> ValidationResult:
+-        """Validate and format offer data for display"""
++    def validate_display(self, value: Any) -> ValidationResult:
++        """Validate display and handle offer selection"""
+         # Validate state manager is set
+         if not self.state_manager:
+             return ValidationResult.failure(
+@@ -31,7 +32,58 @@ class OfferListDisplay(Component):
+                 details={"component": "offer_list"}
+             )
+ 
+-        # Get dashboard data from state
++        # If this is an offer selection, validate it
++        if isinstance(value, dict) and value.get("type") == "text":
++            # Get available offer IDs from state
++            dashboard = self.state_manager.get("dashboard")
++            if not dashboard:
++                return ValidationResult.failure(
++                    message="No dashboard data found",
++                    field="dashboard",
++                    details={"component": "offer_list"}
++                )
++
++            # Get context to determine which offers to check
++            flow_data = self.state_manager.get_flow_state()
++            context = flow_data.get("context") if flow_data else None
++            if not context:
++                return ValidationResult.failure(
++                    message="No context found",
++                    field="context",
++                    details={"component": "offer_list"}
++                )
++
++            # Get valid offer IDs based on context
++            if context in {"accept_offers", "decline_offers"}:
++                offers = dashboard.get("incomingOffers", [])
++            elif context == "cancel_offers":
++                offers = dashboard.get("outgoingOffers", [])
++            else:
++                return ValidationResult.failure(
++                    message="Invalid context for offer list",
++                    field="context",
++                    details={"context": context}
++                )
++
++            valid_ids = {str(offer["credexID"]) for offer in offers}
++            selection = value.get("text", "").strip()
++
++            if selection in valid_ids:
++                # Update state with selection using standard API key
++                self.state_manager.update_state({
++                    "flow_data": {
++                        "data": {"credex_id": selection}
++                    }
++                })
++                return ValidationResult.success({"selection": selection})
++
++            return ValidationResult.failure(
++                message="Invalid offer selection. Please choose from the available offers.",
++                field="selection",
++                details={"component": "offer_list"}
++            )
++
++        # Otherwise get and validate dashboard data for display
+         dashboard = self.state_manager.get("dashboard")
+         if not dashboard:
+             return ValidationResult.failure(
+@@ -100,11 +152,22 @@ class OfferListDisplay(Component):
+             "offers": formatted_offers
+         })
+ 
+-    def to_verified_data(self, value: Any) -> Dict:
+-        """Convert to verified display data"""
+-        return {
+-            "title": value["title"],
+-            "action": value["action"],
+-            "offers": value["offers"],
+-            "use_list": True  # Signal to use list format
+-        }
++    def to_message_content(self, value: Dict) -> str:
++        """Convert to message content using CredexFormatters"""
++        # Format header
++        header = f"📋 {value['title']}\n\n"
++
++        # Format each offer
++        offer_lines = []
++        for offer in value["offers"]:
++            offer_lines.append(
++                f"💰 Amount: {offer['amount']}\n"
++                f"👤 From: {offer['counterparty']}\n"
++                f"📊 Status: {offer['status']}\n"
++            )
++
++        # Format action prompt
++        action_prompt = CredexFormatters.format_action_prompt(value["action"].lower())
++
++        # Combine all sections
++        return header + "\n".join(offer_lines) + "\n" + action_prompt
+diff --git a/app/core/components/display/welcome.py b/app/core/components/display/welcome.py
+index ffc439a..d5f3866 100644
+--- a/app/core/components/display/welcome.py
++++ b/app/core/components/display/welcome.py
+@@ -5,41 +5,22 @@ This component handles the registration welcome screen with proper validation.
+ 
+ from typing import Any
+ 
+-from core.messaging.types import (Button, ChannelIdentifier, ChannelType,
+-                                  InteractiveContent, InteractiveType, Message,
+-                                  MessageRecipient)
++from core.messaging.formatters.formatters import RegistrationFormatters
+ from core.utils.error_types import ValidationResult
+ 
+-from .base import InputComponent
++from ..base import DisplayComponent
+ 
+ 
+-class Welcome(InputComponent):
++class Welcome(DisplayComponent):
+     """Handles registration welcome screen"""
+ 
+     def __init__(self):
+         super().__init__("welcome")
+ 
+-    def validate(self, value: Any) -> ValidationResult:
++    def validate_display(self, value: Any) -> ValidationResult:
+         """Simple validation for welcome step"""
+-        return ValidationResult.success(value)
+-
+-    def get_message(self, channel_id: str) -> Message:
+-        """Get welcome message"""
+-        return Message(
+-            recipient=MessageRecipient(
+-                channel_id=ChannelIdentifier(
+-                    channel=ChannelType.WHATSAPP,
+-                    value=channel_id
+-                )
+-            ),
+-            content=InteractiveContent(
+-                interactive_type=InteractiveType.BUTTON,
+-                body="Welcome to VimbisoPay 💰\n\nWe're your portal 🚪to the credex ecosystem 🌱\n\nBecome a member 🌐 and open a free account 💳 to get started 📈",
+-                buttons=[
+-                    Button(
+-                        id="start_registration",
+-                        title="Become a Member"
+-                    )
+-                ]
+-            )
+-        )
++        return ValidationResult.success({})
++
++    def to_message_content(self, value: Any) -> str:
++        """Convert to message content using RegistrationFormatters"""
++        return RegistrationFormatters.format_welcome()
+diff --git a/app/core/components/input.py b/app/core/components/input/__init__.py
+similarity index 99%
+rename from app/core/components/input.py
+rename to app/core/components/input/__init__.py
+index c22b6bf..1534235 100644
+--- a/app/core/components/input.py
++++ b/app/core/components/input/__init__.py
+@@ -8,8 +8,7 @@ Business logic validation happens in services.
+ from typing import Any
+ 
+ from core.utils.error_types import ValidationResult
+-
+-from .base import InputComponent
++from ..base import InputComponent
+ 
+ 
+ class AmountInput(InputComponent):
+diff --git a/app/core/components/input/first_name_input.py b/app/core/components/input/first_name_input.py
+index 6a5603c..235476e 100644
+--- a/app/core/components/input/first_name_input.py
++++ b/app/core/components/input/first_name_input.py
+@@ -7,7 +7,7 @@ from typing import Any, Dict
+ 
+ from core.utils.error_types import ValidationResult
+ 
+-from .base import InputComponent
++from core.components.base import InputComponent
+ 
+ 
+ class FirstNameInput(InputComponent):
+diff --git a/app/core/components/input/handle_input.py b/app/core/components/input/handle_input.py
+index 27e0415..c4368f9 100644
+--- a/app/core/components/input/handle_input.py
++++ b/app/core/components/input/handle_input.py
+@@ -7,7 +7,7 @@ from typing import Any
+ 
+ from core.utils.error_types import ValidationResult
+ 
+-from .base import InputComponent
++from core.components.base import InputComponent
+ 
+ 
+ class HandleInput(InputComponent):
+diff --git a/app/core/components/input/last_name_input.py b/app/core/components/input/last_name_input.py
+index 099f5cb..ef95793 100644
+--- a/app/core/components/input/last_name_input.py
++++ b/app/core/components/input/last_name_input.py
+@@ -7,7 +7,7 @@ from typing import Any, Dict
+ 
+ from core.utils.error_types import ValidationResult
+ 
+-from .base import InputComponent
++from core.components.base import InputComponent
+ 
+ 
+ class LastNameInput(InputComponent):
+diff --git a/app/core/config/atomic_state.py b/app/core/config/atomic_state.py
+index 05ee2c5..5a02656 100644
+--- a/app/core/config/atomic_state.py
++++ b/app/core/config/atomic_state.py
+@@ -60,14 +60,11 @@ class AtomicStateManager:
+             SystemException: If cache operation fails
+         """
+         try:
+-            logger.debug(f"Attempting to get state from Redis for key: {key}")
+             state_data = self.cache.get(key)
+-            logger.debug(f"Retrieved state data from Redis: {state_data}")
+             validation = self._track_attempt(key, "get")
+ 
+             if state_data:
+                 state_data["_validation"] = validation
+-                logger.debug(f"Added validation to state data: {state_data}")
+ 
+             return state_data
+ 
+@@ -122,10 +119,7 @@ class AtomicStateManager:
+         try:
+             # Add validation state
+             value["_validation"] = self._track_attempt(key, "update")
+-            logger.debug(f"Attempting to update Redis state for key {key} with value: {value}")
+-
+             self.cache.set(key, value, timeout=ttl)
+-            logger.debug(f"Successfully updated Redis state for key: {key}")
+ 
+         except Exception as e:
+             error = str(e)
+diff --git a/app/core/config/config.py b/app/core/config/config.py
+index 2b31af5..d40ef7a 100644
+--- a/app/core/config/config.py
++++ b/app/core/config/config.py
+@@ -8,6 +8,9 @@ from django.core.cache import cache
+ 
+ logger = logging.getLogger(__name__)
+ 
++# Activity timeout in seconds (5 minutes as per API spec)
++ACTIVITY_TTL = 300
++
+ # Cache Configuration
+ try:
+     # Test cache connection
+diff --git a/app/core/config/state_manager.py b/app/core/config/state_manager.py
+index 94dd9e5..deafcc9 100644
+--- a/app/core/config/state_manager.py
++++ b/app/core/config/state_manager.py
+@@ -44,8 +44,36 @@ class StateManager:
+             )
+ 
+         self.key_prefix = key_prefix
+-        self.atomic_state = AtomicStateManager(caches['state'])
++        self.atomic_state = AtomicStateManager(caches['default'])
+         self._state = self._initialize_state()
++        self._messaging = None  # Will be set by MessagingService
++
++    @property
++    def messaging(self) -> Any:
++        """Get messaging service with validation
++
++        Returns:
++            Messaging service instance
++
++        Raises:
++            ComponentException: If messaging service not initialized
++        """
++        if self._messaging is None:
++            raise ComponentException(
++                message="Messaging service not initialized",
++                component="state_manager",
++                field="messaging"
++            )
++        return self._messaging
++
++    @messaging.setter
++    def messaging(self, service: Any) -> None:
++        """Set messaging service
++
++        Args:
++            service: Messaging service instance
++        """
++        self._messaging = service
+ 
+     def _initialize_state(self) -> Dict[str, Any]:
+         """Initialize state structure"""
+@@ -65,10 +93,9 @@ class StateManager:
+         }
+ 
+         # Get existing state
++        state_data = None
+         try:
+-            logger.debug(f"Attempting to get state for key: {self.key_prefix}")
+             state_data = self.atomic_state.atomic_get(self.key_prefix)
+-            logger.debug(f"Retrieved state data: {state_data}")
+         except Exception as e:
+             # Handle error through ErrorHandler
+             error_context = ErrorContext(
+@@ -83,10 +110,8 @@ class StateManager:
+             )
+             ErrorHandler.handle_error(e, self, error_context)
+ 
+-        # Use existing or initial state
+-        result = state_data or initial_state
+-        logger.debug(f"Using state: {result}")
+-        return result
++        # Always return valid state
++        return state_data if state_data is not None else initial_state
+ 
+     def update_state(self, updates: Dict[str, Any]) -> None:
+         """Update state with validation
+@@ -115,9 +140,7 @@ class StateManager:
+             update_state_core(self, updates)
+ 
+             # Persist to Redis
+-            logger.debug(f"Persisting state to Redis for key {self.key_prefix}: {self._state}")
+             self.atomic_state.atomic_update(self.key_prefix, self._state)
+-            logger.debug("State persisted successfully")
+         except Exception as e:
+             # Handle error through ErrorHandler
+             error_context = ErrorContext(
+@@ -294,9 +317,7 @@ class StateManager:
+             }
+ 
+             # Persist to Redis
+-            logger.debug(f"Persisting cleared state to Redis for key {self.key_prefix}: {self._state}")
+             self.atomic_state.atomic_update(self.key_prefix, self._state)
+-            logger.debug("State cleared successfully")
+ 
+         except Exception as e:
+             # Handle error through ErrorHandler
+diff --git a/app/core/config/state_utils.py b/app/core/config/state_utils.py
+index 076a0b2..f97fd67 100644
+--- a/app/core/config/state_utils.py
++++ b/app/core/config/state_utils.py
+@@ -53,13 +53,17 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
+                 current_flow = current_state.get("flow_data", {})
+ 
+                 # Update flow state with validation
++                # Safely merge flow data
++                new_data = {}
++                if current_flow and isinstance(current_flow.get("data"), dict):
++                    new_data.update(current_flow["data"])
++                if flow_data and isinstance(flow_data.get("data"), dict):
++                    new_data.update(flow_data["data"])
++
+                 current_state["flow_data"] = {
+                     "context": flow_data.get("context", current_flow.get("context")),
+                     "component": flow_data.get("component", current_flow.get("component")),
+-                    "data": {
+-                        **(current_flow.get("data", {})),
+-                        **(flow_data.get("data", {}))
+-                    },
++                    "data": new_data,
+                     "validation": {
+                         **validation_state,
+                         "in_progress": False,
+diff --git a/app/core/config/timing.py b/app/core/config/timing.py
+deleted file mode 100644
+index 64fe8f4..0000000
+--- a/app/core/config/timing.py
++++ /dev/null
+@@ -1,13 +0,0 @@
+-"""Timing and TTL related constants"""
+-
+-# Cache TTL
+-ACTIVITY_TTL = 300  # 5 minutes
+-
+-# API Timeouts
+-API_TIMEOUT = 30  # seconds
+-API_RETRY_DELAY = 1  # seconds
+-MAX_API_RETRIES = 3
+-
+-# Rate Limiting
+-RATE_LIMIT_WINDOW = 60  # 1 minute
+-MAX_REQUESTS_PER_WINDOW = 60
+diff --git a/app/core/messaging/base.py b/app/core/messaging/base.py
+new file mode 100644
+index 0000000..60e40a7
+--- /dev/null
++++ b/app/core/messaging/base.py
+@@ -0,0 +1,120 @@
++"""Base messaging service
++
++This module provides the base messaging service that implements common functionality
++and enforces the messaging service interface.
++"""
++
++from abc import abstractmethod
++from typing import Any, Dict, List, Optional
++
++from .interface import MessagingServiceInterface
++from .types import Button, Message, MessageRecipient
++
++
++class BaseMessagingService(MessagingServiceInterface):
++    """Base class for messaging services
++
++    This class:
++    1. Implements common functionality
++    2. Enforces the messaging service interface
++    3. Provides hooks for channel-specific implementations
++    """
++
++    def __init__(self):
++        """Initialize base messaging service"""
++        self.state_manager = None
++
++    @abstractmethod
++    def send_message(self, message: Message) -> Message:
++        """Send a message through the channel
++
++        Args:
++            message: Message to send
++
++        Returns:
++            Sent message with delivery details
++        """
++        pass
++
++    @abstractmethod
++    def send_text(
++        self,
++        recipient: MessageRecipient,
++        text: str,
++        preview_url: bool = False
++    ) -> Message:
++        """Send a text message
++
++        Args:
++            recipient: Message recipient
++            text: Text content
++            preview_url: Whether to show URL previews
++
++        Returns:
++            Sent message with delivery details
++        """
++        pass
++
++    @abstractmethod
++    def send_interactive(
++        self,
++        recipient: MessageRecipient,
++        body: str,
++        buttons: Optional[List[Button]] = None,
++        header: Optional[str] = None,
++        footer: Optional[str] = None,
++        sections: Optional[List[Dict[str, Any]]] = None,
++        button_text: Optional[str] = None,
++    ) -> Message:
++        """Send an interactive message
++
++        Args:
++            recipient: Message recipient
++            body: Message body text
++            buttons: Optional interactive buttons
++            header: Optional header text
++            footer: Optional footer text
++            sections: Optional list sections
++            button_text: Optional custom button text
++
++        Returns:
++            Sent message with delivery details
++        """
++        pass
++
++    @abstractmethod
++    def send_template(
++        self,
++        recipient: MessageRecipient,
++        template_name: str,
++        language: Dict[str, str],
++        components: Optional[List[Dict[str, Any]]] = None,
++    ) -> Message:
++        """Send a template message
++
++        Args:
++            recipient: Message recipient
++            template_name: Name of template to use
++            language: Language parameters
++            components: Optional template components
++
++        Returns:
++            Sent message with delivery details
++        """
++        pass
++
++    def validate_message(self, message: Message) -> bool:
++        """Validate a message before sending
++
++        Args:
++            message: Message to validate
++
++        Returns:
++            True if valid, False otherwise
++        """
++        # Basic validation - subclasses can override for channel-specific validation
++        if not message.recipient:
++            return False
++        if not message.content:
++            return False
++        return True
+diff --git a/app/core/messaging/flow.py b/app/core/messaging/flow.py
+index 2ede681..7b49a7b 100644
+--- a/app/core/messaging/flow.py
++++ b/app/core/messaging/flow.py
+@@ -3,11 +3,57 @@
+ This module handles activating components and branching based on their results.
+ Components handle their own validation and processing, this just handles "what's next".
+ Context is maintained to support reusable components.
++
++Also handles default account setup for entry points (login/onboard).
+ """
+ 
+-from typing import Any, Tuple
++import logging
++from typing import Any, Optional, Tuple
+ 
+ from core import components
++from core.utils.exceptions import ComponentException
++
++logger = logging.getLogger(__name__)
++
++
++def _set_default_account(state_manager: Any) -> bool:
++    """Set default account (currently PERSONAL) for new flows
++
++    Returns:
++        bool: True if account was set successfully
++    """
++    try:
++        # Get dashboard directly from state
++        dashboard = state_manager.get("dashboard")
++        logger.info(f"Dashboard data: {dashboard}")
++        if not dashboard:
++            logger.error("No dashboard data when setting default account")
++            return False
++
++        accounts = dashboard.get("accounts", [])
++        logger.info(f"Found accounts: {accounts}")
++        if not accounts:
++            logger.error("No accounts found when setting default account")
++            return False
++
++        personal_account = next(
++            (acc for acc in accounts if acc.get("accountType") == "PERSONAL"),
++            None
++        )
++        logger.info(f"Found personal account: {personal_account}")
++        if not personal_account:
++            logger.error("No PERSONAL account found when setting default account")
++            return False
++
++        state_manager.update_state({
++            "active_account_id": personal_account["accountID"]
++        })
++        logger.info(f"Set active account ID: {personal_account['accountID']}")
++        return True
++
++    except Exception as e:
++        logger.error(f"Error setting default account: {str(e)}")
++        return False
+ 
+ 
+ def activate_component(component_type: str, state_manager: Any) -> Any:
+@@ -20,17 +66,34 @@ def activate_component(component_type: str, state_manager: Any) -> Any:
+     Returns:
+         Component result
+     """
++    try:
+         component_class = getattr(components, component_type)
+         component = component_class()
+-    component.state_manager = state_manager
+-
+-    # Get input data from state
+-    message_data = state_manager.get("message", {})
+-
+-    return component.validate(message_data)
+-
+-
+-def handle_component_result(context: str, component: str, result: Any) -> Tuple[str, str]:
++        component.set_state_manager(state_manager)  # Use proper setter
++
++        # Get flow data for component
++        flow_data = state_manager.get_flow_data()
++
++        # For display components, start fresh
++        if hasattr(component, 'type') and isinstance(component.type, str):
++            if component.type.endswith('_dashboard') or component.type == 'greeting':
++                return component.validate({})
++
++        return component.validate(flow_data)
++    except ComponentException as e:
++        # Ensure all required parameters are present
++        if not all(k in e.details for k in ["component", "field", "value"]):
++            raise ComponentException(
++                message=str(e),
++                component=component_type,
++                field="validation",
++                value=str(flow_data),
++                validation=e.details.get("validation")
++            )
++        raise
++
++
++def handle_component_result(context: str, component: str, result: Any, state_manager: Optional[Any] = None) -> Tuple[str, str]:
+     """Handle component result and determine next component
+ 
+     Args:
+@@ -41,9 +104,40 @@ def handle_component_result(context: str, component: str, result: Any) -> Tuple[
+     Returns:
+         Tuple[str, str]: Next (context, component) to activate
+     """
+-    # Handle errors uniformly
++    # Handle errors with validation state
+     if isinstance(result, Exception):
+-        return context, component  # Retry same component in same context
++        if isinstance(result, ComponentException):
++            # Component validation failed with tracking
++            validation = result.details.get("validation", {})
++            if validation.get("attempts", 0) >= 3:
++                # After 3 attempts, return to dashboard
++                return "account", "AccountDashboard"
++        # For other errors or validation attempts < 3, retry
++        return context, component
++
++    # Handle ValidationResult objects
++    if hasattr(result, "valid"):
++        if not result.valid:
++            return context, component  # Retry on validation failure
++
++        # Get value and metadata for flow control
++        value = result.value or {}
++        metadata = getattr(result, 'metadata', {}) or {}
++
++        # Components can explicitly request to wait for input
++        # This is needed for display/confirm components that need user interaction
++        if metadata.get("await_input"):
++            return context, component
++
++        # Default behavior is to advance with the flow
++        result = {
++            **(value if isinstance(value, dict) else {"value": value}),
++            "exit_condition": metadata.get("exit_condition"),
++            "_metadata": {
++                "value_type": type(value).__name__,
++                "has_metadata": bool(metadata)
++            }
++        }
+ 
+     # Branch based on context and component
+     match (context, component):
+@@ -52,9 +146,22 @@ def handle_component_result(context: str, component: str, result: Any) -> Tuple[
+             return "login", "LoginApiCall"
+ 
+         case ("login", "LoginApiCall"):
+-            if result.get("not_found"):
++            # Get metadata for flow control
++            metadata = getattr(result, 'metadata', {}) or {}
++            exit_condition = metadata.get("exit_condition")
++
++            if exit_condition == "not_member":
+                 return "onboard", "Welcome"
++            elif exit_condition == "success":
++                # Set default account before proceeding
++                if not state_manager:
++                    return context, component  # Retry if no state manager
++                if not _set_default_account(state_manager):
++                    return context, component  # Retry if account setup fails
+                 return "account", "AccountDashboard"
++            else:
++                # No valid exit condition, stay on component
++                return context, component
+ 
+         # Onboard context
+         case ("onboard", "Welcome"):
+@@ -70,6 +177,11 @@ def handle_component_result(context: str, component: str, result: Any) -> Tuple[
+             return "onboard", "OnBoardMemberApiCall"
+ 
+         case ("onboard", "OnBoardMemberApiCall"):
++            if not state_manager:
++                return context, component  # Retry if no state manager
++            # Set default account before proceeding
++            if not _set_default_account(state_manager):
++                return context, component  # Retry if account setup fails
+             return "account", "AccountDashboard"
+ 
+         # Account context
+@@ -176,5 +288,5 @@ def process_component(context: str, component: str, state_manager: Any) -> Tuple
+         Tuple[Any, str, str]: (result, next_context, next_component)
+     """
+     result = activate_component(component, state_manager)
+-    next_context, next_component = handle_component_result(context, component, result)
++    next_context, next_component = handle_component_result(context, component, result, state_manager)
+     return result, next_context, next_component
+diff --git a/app/core/messaging/flow_processor.py b/app/core/messaging/flow_processor.py
+new file mode 100644
+index 0000000..9fc761a
+--- /dev/null
++++ b/app/core/messaging/flow_processor.py
+@@ -0,0 +1,191 @@
++"""Flow processor for handling message flows through components.
++
++This module handles the complete flow processing lifecycle:
++1. Takes channel input and prepares for flow
++2. Manages flow state
++3. Processes through components
++4. Converts results to messages
++
++The flow processor is channel-agnostic and works with any messaging service
++that implements the MessagingServiceInterface.
++"""
++
++import logging
++from datetime import datetime
++from typing import Any, Dict
++
++from core.messaging.types import Message, TextContent
++from core.messaging.utils import get_recipient
++from core.utils.error_handler import ErrorHandler
++from core.utils.error_types import ValidationResult
++from core.utils.exceptions import ComponentException
++from services.messaging.service import MessagingService
++
++logger = logging.getLogger(__name__)
++
++
++class FlowProcessor:
++    """Processes messages through the flow framework"""
++
++    def __init__(self, messaging_service: MessagingService, state_manager: Any):
++        """Initialize with messaging service and state manager
++
++        Args:
++            messaging_service: Channel-agnostic messaging service
++            state_manager: State manager instance
++        """
++        self.messaging = messaging_service
++        self.state_manager = state_manager
++        # Ensure bidirectional relationship is set up
++        if not hasattr(state_manager, 'messaging') or state_manager.messaging is None:
++            state_manager.messaging = messaging_service
++
++    def process_message(self, payload: Dict[str, Any]) -> Message:
++        """Process message through flow framework
++
++        Args:
++            payload: Raw message payload
++
++        Returns:
++            Message: Response message
++        """
++        try:
++            # Extract message data
++            message_data = self._extract_message_data(payload)
++
++            # Extract message content and update state
++            message_type = message_data.get("type", "")
++            message_text = message_data.get("text", {}).get("body", "") if message_type == "text" else ""
++
++            # Create message recipient
++            recipient = get_recipient(self.state_manager)
++
++            # Get current flow state or initialize new flow
++            flow_state = self.state_manager.get("flow_data")
++            if not flow_state:
++                # Initialize new flow with message data
++                flow_state = {
++                    "context": "login",
++                    "component": "Greeting",
++                    "data": {
++                        "message": {
++                            "type": message_type,
++                            "text": message_text,
++                            "_metadata": {
++                                "received_at": datetime.utcnow().isoformat()
++                            }
++                        }
++                    },
++                    "_metadata": {
++                        "initialized_at": datetime.utcnow().isoformat()
++                    }
++                }
++            else:
++                # Update existing flow with message data
++                flow_state["data"] = flow_state.get("data", {})
++                flow_state["data"]["message"] = {
++                    "type": message_type,
++                    "text": message_text,
++                    "_metadata": {
++                        "received_at": datetime.utcnow().isoformat()
++                    }
++                }
++
++            # Update flow state
++            self.state_manager.update_state({"flow_data": flow_state})
++
++            context = flow_state.get("context", "login")
++            component = flow_state.get("component", "Greeting")
++
++            # Process through flow framework
++            from core.messaging.flow import (activate_component,
++                                             handle_component_result)
++            logger.info(f"Processing flow: {context} -> {component}")
++
++            # Log state before processing
++            logger.info(f"Flow state before processing: {flow_state}")
++
++            # Process component and get next step
++            logger.info(f"Activating component: {component}")
++            result = activate_component(component, self.state_manager)
++            logger.info(f"Component result: {result}")
++
++            # Get next component
++            logger.info(f"Handling component result for {context}.{component}")
++            next_step = handle_component_result(
++                context=context,
++                component=component,
++                result=result,
++                state_manager=self.state_manager
++            )
++            logger.info(f"Got next step: {next_step}")
++
++            if next_step is None:
++                logger.error(f"handle_component_result returned None for {context}.{component}")
++                # Default to staying on current component
++                next_context, next_component = context, component
++            else:
++                next_context, next_component = next_step
++
++            logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
++
++            # Update flow state with just context and component
++            self.state_manager.update_flow_state(
++                context=next_context,
++                component=next_component
++            )
++            logger.info(f"Updated flow state: {next_context}.{next_component}")
++
++            # Only return messages for errors, components handle their own messaging
++            if isinstance(result, ValidationResult):
++                if not result.valid:
++                    # Component returned an error
++                    content = TextContent(body=result.error.get("message", "Validation failed"))
++                    return Message(recipient=recipient, content=content)
++                # Component succeeded
++                return None
++            # Non-ValidationResult returns also succeed silently
++            return None
++
++        except ComponentException as e:
++            # Handle component errors with validation state
++            error_response = ErrorHandler.handle_component_error(
++                component=e.details["component"],
++                field=e.details["field"],
++                value=e.details["value"],
++                message=str(e),
++                validation_state=e.details.get("validation")
++            )
++            recipient = get_recipient(self.state_manager)
++            content = TextContent(body=error_response["error"]["message"])
++            return Message(recipient=recipient, content=content)
++
++        except Exception as e:
++            # Handle system errors
++            error_response = ErrorHandler.handle_system_error(
++                code="FLOW_ERROR",
++                service="flow_processor",
++                action="process_message",
++                message=str(e),
++                error=e
++            )
++            recipient = get_recipient(self.state_manager)
++            content = TextContent(body=error_response["error"]["message"])
++            return Message(recipient=recipient, content=content)
++
++    def _extract_message_data(self, payload: Dict[str, Any]) -> Dict[str, Any]:
++        """Extract message data from payload
++
++        This method should be overridden by channel-specific processors
++        to handle channel-specific payload formats.
++
++        Args:
++            payload: Raw message payload
++
++        Returns:
++            Dict[str, Any]: Extracted message data
++
++        Raises:
++            ComponentException: If payload is invalid
++        """
++        raise NotImplementedError("Channel-specific processors must implement _extract_message_data")
+diff --git a/app/core/messaging/formatters/whatsapp_menus.py b/app/core/messaging/formatters/whatsapp_menus.py
+new file mode 100644
+index 0000000..7f97f7c
+--- /dev/null
++++ b/app/core/messaging/formatters/whatsapp_menus.py
+@@ -0,0 +1,62 @@
++"""WhatsApp-specific menu formatters
++
++This module provides menu formatting specific to WhatsApp interactions.
++Organizes options into logical sections for better UX.
++"""
++
++from typing import Dict, Any
++
++
++class WhatsAppMenus:
++    """WhatsApp menu formatters"""
++
++    # Menu sections with options
++    MENU_SECTIONS = {
++        "Credex Actions": {
++            "offer_secured": "💸 Make a secured offer",
++            "accept_offers": "✅ Accept pending offers",
++            "decline_offers": "❌ Decline pending offers",
++            "cancel_offers": "🚫 Cancel your offers"
++        },
++        "Account Actions": {
++            "view_ledger": "📊 View your ledger"
++        },
++        "Member Actions": {
++            "upgrade_membertier": "⭐ Upgrade your tier"
++        }
++    }
++
++    @staticmethod
++    def get_interactive_menu() -> Dict[str, Any]:
++        """Get menu in WhatsApp interactive list format"""
++        sections = []
++        for section_title, options in WhatsAppMenus.MENU_SECTIONS.items():
++            section_rows = [
++                {
++                    "id": option_id,
++                    "title": option_text.split(" ", 1)[1],  # Remove emoji for title
++                    "description": option_text  # Keep emoji in description
++                }
++                for option_id, option_text in options.items()
++            ]
++            sections.append({
++                "title": section_title,
++                "rows": section_rows
++            })
++
++        return {
++            "type": "list",
++            "body": {"text": "*Account Dashboard Actions*\nChoose an option from the menu below:"},
++            "action": {
++                "button": "🕹️ Select Action",
++                "sections": sections
++            }
++        }
++
++    @staticmethod
++    def is_valid_option(option: str) -> bool:
++        """Check if option is valid menu selection"""
++        return any(
++            option in section_options
++            for section_options in WhatsAppMenus.MENU_SECTIONS.values()
++        )
+diff --git a/app/core/messaging/service.py b/app/core/messaging/service.py
+index 7ce97fc..844ec45 100644
+--- a/app/core/messaging/service.py
++++ b/app/core/messaging/service.py
+@@ -9,13 +9,13 @@ Message formatting is handled by formatters.py.
+ import logging
+ from typing import Any, Dict, Optional
+ 
+-from core.messaging.flow import process_component
+ from core.messaging.base import BaseMessagingService
++from core.messaging.flow import process_component
++from core.messaging.formatters.formatters import AccountFormatters
+ from core.messaging.interface import MessagingServiceInterface
+ from core.messaging.types import Message, TextContent
+-from core.utils.exceptions import SystemException
+-from core.messaging.formatters.formatters import AccountFormatters
+ from core.messaging.utils import get_recipient
++from core.utils.exceptions import SystemException
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -28,7 +28,7 @@ class MessagingService(MessagingServiceInterface):
+ 
+         Args:
+             channel_service: Channel-specific messaging service (WhatsApp, SMS, etc)
+-            state_manager: State manager for tracking state
++            state_manager: State manager instance
+         """
+         self.channel_service = channel_service
+         self.state_manager = state_manager
+@@ -37,6 +37,9 @@ class MessagingService(MessagingServiceInterface):
+         if hasattr(self.channel_service, 'state_manager'):
+             self.channel_service.state_manager = state_manager
+ 
++        # Set messaging service on state manager for component access
++        state_manager.messaging = self
++
+     def handle_message(self) -> Optional[Message]:
+         """Handle incoming message
+ 
+@@ -52,7 +55,7 @@ class MessagingService(MessagingServiceInterface):
+         """
+         try:
+             # Get message data from state
+-            message_data = self.state_manager.get("message", {})
++            message_data = self.state_manager.get("message") or {}
+             if not message_data:
+                 raise ValueError("No message data in state")
+ 
+@@ -126,9 +129,15 @@ class MessagingService(MessagingServiceInterface):
+ 
+                 case (_, "Greeting"):
+                     # Simple text message for greetings
++                    if isinstance(result, dict) and "message" in result:
+                         return Message(
+                             recipient=recipient,
+-                        content=TextContent(body=result)
++                            content=TextContent(body=result["message"])
++                        )
++                    # Fallback for backward compatibility
++                    return Message(
++                        recipient=recipient,
++                        content=TextContent(body=str(result))
+                     )
+ 
+                 case _:
+diff --git a/app/core/messaging/utils.py b/app/core/messaging/utils.py
+index 8cb08f8..b557690 100644
+--- a/app/core/messaging/utils.py
++++ b/app/core/messaging/utils.py
+@@ -1,13 +1,38 @@
+-"""Shared utilities for messaging services"""
++"""Core messaging utilities"""
++
+ from typing import Any
++
+ from core.messaging.types import ChannelIdentifier, ChannelType, MessageRecipient
+ 
+ 
+ def get_recipient(state_manager: Any) -> MessageRecipient:
+-    """Get message recipient from state with validation"""
++    """Get message recipient from state
++
++    Args:
++        state_manager: State manager instance
++
++    Returns:
++        MessageRecipient: Message recipient with channel info
++
++    Raises:
++        ComponentException: If channel identifier is missing
++    """
++    from core.utils.exceptions import ComponentException
++
++    channel_data = state_manager.get("channel") or {}
++    channel_id = channel_data.get("identifier")
++
++    if not channel_id:
++        raise ComponentException(
++            message="Channel identifier is required",
++            component="messaging",
++            field="channel.identifier",
++            value=str(channel_data)
++        )
++
+     return MessageRecipient(
+         channel_id=ChannelIdentifier(
+-            channel=ChannelType(state_manager.get_channel_type()),
+-            value=state_manager.get_channel_id()
++            channel=ChannelType(channel_data.get("type", "whatsapp")),
++            value=channel_id
+         )
+     )
+diff --git a/app/core/utils/error_handler.py b/app/core/utils/error_handler.py
+index 237d4ff..4452787 100644
+--- a/app/core/utils/error_handler.py
++++ b/app/core/utils/error_handler.py
+@@ -45,9 +45,9 @@ class ErrorHandler:
+         """
+         error = {
+             "type": error_type,
+-            "message": message,
+-            "details": details,
+-            "context": context or {},
++            "message": message or "An error occurred",  # Ensure message is never None
++            "details": details or {},  # Ensure details is never None
++            "context": context or {},  # Already handles None
+             "timestamp": datetime.utcnow().isoformat()
+         }
+ 
+diff --git a/app/core/utils/error_types.py b/app/core/utils/error_types.py
+index 9ac00b7..e0ee922 100644
+--- a/app/core/utils/error_types.py
++++ b/app/core/utils/error_types.py
+@@ -22,15 +22,22 @@ class ValidationResult:
+         valid: Whether validation passed
+         error: Optional error details if validation failed
+         value: Optional transformed value if validation passed
++        metadata: Optional metadata for flow control
+     """
+     valid: bool
+     error: Optional[Dict] = None
+     value: Optional[Any] = None
++    metadata: Optional[Dict] = None
+ 
+     @classmethod
+-    def success(cls, value: Any = None) -> 'ValidationResult':
+-        """Create successful validation result"""
+-        return cls(valid=True, value=value)
++    def success(cls, value: Any = None, metadata: Optional[Dict] = None) -> 'ValidationResult':
++        """Create successful validation result
++
++        Args:
++            value: Optional transformed value
++            metadata: Optional metadata for flow control
++        """
++        return cls(valid=True, value=value, metadata=metadata)
+ 
+     @classmethod
+     def failure(cls, message: str, field: str = "value", details: Optional[Dict] = None) -> 'ValidationResult':
+diff --git a/app/core/utils/exceptions.py b/app/core/utils/exceptions.py
+index 7db4e4e..d35e356 100644
+--- a/app/core/utils/exceptions.py
++++ b/app/core/utils/exceptions.py
+@@ -22,12 +22,14 @@ class ComponentException(BaseException):
+         message: str,
+         component: str,
+         field: str,
+-        value: str
++        value: str,
++        validation: Optional[Dict] = None
+     ):
+         details = {
+             "component": component,
+             "field": field,
+-            "value": value
++            "value": value,
++            "validation": validation
+         }
+         super().__init__(message, details)
+ 
+diff --git a/app/services/messaging/__init__.py b/app/services/messaging/__init__.py
+new file mode 100644
+index 0000000..ce604f0
+--- /dev/null
++++ b/app/services/messaging/__init__.py
+@@ -0,0 +1,10 @@
++"""Core messaging service package
++
++This package provides the messaging service orchestration layer that:
++1. Implements the core messaging interfaces
++2. Manages channel-specific implementations
++3. Maintains consistent interface across channels
++"""
++from .service import MessagingService
++
++__all__ = ['MessagingService']
+diff --git a/app/services/messaging/service.py b/app/services/messaging/service.py
+new file mode 100644
+index 0000000..e501317
+--- /dev/null
++++ b/app/services/messaging/service.py
+@@ -0,0 +1,87 @@
++"""Core messaging service that orchestrates channel-specific implementations
++
++This service maintains the layered architecture:
++1. Core messaging module defines interfaces
++2. Channel services implement specific channels
++3. MessagingService orchestrates which implementation to use
++"""
++import logging
++from typing import Any, Dict, List, Optional
++
++from core.messaging.base import BaseMessagingService
++from core.messaging.types import Button, Message, MessageRecipient
++
++logger = logging.getLogger(__name__)
++
++
++class MessagingService:
++    """Core messaging service that orchestrates channel implementations"""
++
++    def __init__(self, channel_service: BaseMessagingService, state_manager: Optional[any] = None):
++        """Initialize messaging service with channel implementation
++
++        Args:
++            channel_service: Channel-specific messaging service that implements BaseMessagingService
++            state_manager: Optional state manager instance
++        """
++        # Validate channel service implements base interface
++        if not isinstance(channel_service, BaseMessagingService):
++            raise ValueError(
++                f"Channel service must implement BaseMessagingService, got {type(channel_service)}"
++            )
++
++        self.channel_service = channel_service
++        self.state_manager = state_manager
++        if state_manager:
++            # Set up bidirectional relationship
++            self.channel_service.state_manager = state_manager
++            state_manager.messaging = self
++
++    def send_message(self, message: Message) -> Message:
++        """Send message through appropriate channel service"""
++        return self.channel_service.send_message(message)
++
++    def send_text(
++        self,
++        recipient: MessageRecipient,
++        text: str,
++        preview_url: bool = False
++    ) -> Message:
++        """Send text message through appropriate channel service"""
++        return self.channel_service.send_text(recipient, text, preview_url)
++
++    def send_interactive(
++        self,
++        recipient: MessageRecipient,
++        body: str,
++        buttons: Optional[List[Button]] = None,
++        header: Optional[str] = None,
++        footer: Optional[str] = None,
++        sections: Optional[List[Dict[str, Any]]] = None,
++        button_text: Optional[str] = None,
++    ) -> Message:
++        """Send interactive message through appropriate channel service"""
++        return self.channel_service.send_interactive(
++            recipient,
++            body,
++            buttons,
++            header=header,
++            footer=footer,
++            sections=sections,
++            button_text=button_text
++        )
++
++    def send_template(
++        self,
++        recipient: MessageRecipient,
++        template_name: str,
++        language: Dict[str, str],
++        components: Optional[List[Dict[str, Any]]] = None,
++    ) -> Message:
++        """Send template message through appropriate channel service"""
++        return self.channel_service.send_template(
++            recipient,
++            template_name,
++            language,
++            components
++        )
+diff --git a/app/services/whatsapp/bot_service.py b/app/services/whatsapp/bot_service.py
+deleted file mode 100644
+index a0dfa99..0000000
+--- a/app/services/whatsapp/bot_service.py
++++ /dev/null
+@@ -1,140 +0,0 @@
+-"""WhatsApp bot service implementation"""
+-import logging
+-from typing import Any, Dict
+-
+-from core.messaging.types import Message, TextContent
+-from core.utils.error_handler import ErrorHandler
+-from core.utils.exceptions import ComponentException
+-from services.messaging.service import MessagingService
+-from services.messaging.utils import get_recipient
+-
+-from .service import WhatsAppMessagingService
+-
+-logger = logging.getLogger(__name__)
+-
+-
+-def process_bot_message(payload: Dict[str, Any], state_manager: Any) -> Message:
+-    """Process bot message through flow framework
+-
+-    Args:
+-        payload: Message payload
+-        state_manager: State manager instance
+-
+-    Returns:
+-        Message: Core message object for response
+-    """
+-    try:
+-        # Get bot service instance through proper initialization
+-        bot_service = get_bot_service(state_manager)
+-
+-        # Process through bot service
+-        return bot_service.process_message(payload, state_manager)
+-
+-    except Exception as e:
+-        # Handle system errors
+-        error_response = ErrorHandler.handle_system_error(
+-            code="BOT_ERROR",
+-            service="bot_service",
+-            action="process_message",
+-            message=str(e),
+-            error=e
+-        )
+-
+-        recipient = get_recipient(state_manager)
+-        content = TextContent(body=error_response["error"]["message"])
+-        return Message(recipient=recipient, content=content)
+-
+-
+-def get_bot_service(state_manager: Any) -> 'BotService':
+-    """Get bot service instance through proper initialization"""
+-    # Create WhatsApp messaging service for message formatting
+-    whatsapp_service = WhatsAppMessagingService()  # Handles message formatting and sending
+-    whatsapp_service.state_manager = state_manager  # Set state manager for mock mode
+-
+-    # Create messaging service with WhatsApp implementation
+-    messaging_service = MessagingService(whatsapp_service)
+-    messaging_service.state_manager = state_manager  # Set state manager for messaging service
+-
+-    # Create and return bot service
+-    return BotService(messaging_service, state_manager)
+-
+-
+-class BotService:
+-    """WhatsApp bot service using messaging service interface"""
+-
+-    def __init__(self, messaging_service: MessagingService, state_manager: Any):
+-        """Initialize with messaging service and state manager"""
+-        self.messaging = messaging_service
+-        self.state_manager = state_manager
+-
+-    def process_message(self, payload: Dict[str, Any], state_manager: Any) -> Message:
+-        """Process bot message using messaging service
+-
+-        Args:
+-            payload: Message payload
+-            state_manager: State manager instance
+-
+-        Returns:
+-            Message: Core message object for response
+-        """
+-        try:
+-            # Extract message data
+-            message_data = self._extract_message_data(payload)
+-
+-            # Extract message content
+-            message_type = message_data.get("type", "")
+-            message_text = message_data.get("text", {}).get("body", "") if message_type == "text" else ""
+-
+-            # Create message recipient
+-            recipient = get_recipient(state_manager)
+-
+-            # Process through messaging service
+-            if message_type == "text":
+-                # Use messaging service's handle_message for full flow handling
+-                return self.messaging.handle_message(
+-                    state_manager=state_manager,
+-                    message_type=message_type,
+-                    message_text=message_text
+-                )
+-
+-            # Fallback for unsupported message types
+-            logger.error(f"Unsupported message type: {message_type}")
+-            return self.messaging.send_text(
+-                recipient=recipient,
+-                text="Sorry, I can only handle text messages right now."
+-            )
+-
+-        except Exception as e:
+-            # Handle system errors
+-            error_response = ErrorHandler.handle_system_error(
+-                code="BOT_ERROR",
+-                service="bot_service",
+-                action="process_message",
+-                message=str(e),
+-                error=e
+-            )
+-
+-            recipient = get_recipient(state_manager)
+-            content = TextContent(body=error_response["error"]["message"])
+-            return Message(recipient=recipient, content=content)
+-
+-    def _extract_message_data(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+-        """Extract message data from WhatsApp payload"""
+-        if not payload:
+-            raise ComponentException(
+-                message="Message payload is required",
+-                component="bot_service",
+-                field="payload",
+-                value="None"
+-            )
+-
+-        try:
+-            value = payload.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
+-            return value.get("messages", [{}])[0]
+-        except Exception:
+-            raise ComponentException(
+-                message="Invalid message payload format",
+-                component="bot_service",
+-                field="payload",
+-                value=str(payload)
+-            )
+diff --git a/app/services/whatsapp/flow_processor.py b/app/services/whatsapp/flow_processor.py
+new file mode 100644
+index 0000000..0fe6201
+--- /dev/null
++++ b/app/services/whatsapp/flow_processor.py
+@@ -0,0 +1,72 @@
++"""WhatsApp-specific flow processor implementation"""
++
++from typing import Any, Dict
++
++from core.messaging.flow_processor import FlowProcessor
++from core.utils.exceptions import ComponentException
++
++
++class WhatsAppFlowProcessor(FlowProcessor):
++    """WhatsApp implementation of flow processor"""
++
++    def _extract_message_data(self, payload: Dict[str, Any]) -> Dict[str, Any]:
++        """Extract message data from WhatsApp payload
++
++        Args:
++            payload: WhatsApp message payload
++
++        Returns:
++            Dict[str, Any]: Extracted message data
++
++        Raises:
++            ComponentException: If payload is invalid
++        """
++        if not payload:
++            raise ComponentException(
++                message="Message payload is required",
++                component="whatsapp_flow_processor",
++                field="payload",
++                value=str(payload)
++            )
++
++        try:
++            # Extract and validate each level
++            entry = payload.get("entry", [])
++            if not entry:
++                raise ValueError("Missing entry array")
++
++            changes = entry[0].get("changes", [])
++            if not changes:
++                raise ValueError("Missing changes array")
++
++            value = changes[0].get("value", {})
++            if not value:
++                raise ValueError("Missing value object")
++
++            messages = value.get("messages", [])
++            if not messages:
++                raise ValueError("Missing messages array")
++
++            message = messages[0]
++            if not message:
++                raise ValueError("Empty message object")
++
++            return message
++
++        except (IndexError, KeyError, ValueError) as e:
++            # Get as much info as possible for error context
++            value = payload.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
++            messages = value.get("messages", [])
++            message = messages[0] if messages else {}
++
++            raise ComponentException(
++                message=f"Invalid message payload format: {str(e)}",
++                component="whatsapp_flow_processor",
++                field="payload",
++                value=str({
++                    "error": str(e),
++                    "payload": payload,
++                    "value": value,
++                    "message": message
++                })
++            )
+diff --git a/app/services/whatsapp/service.py b/app/services/whatsapp/service.py
+index 10d5c8e..7ab3c78 100644
+--- a/app/services/whatsapp/service.py
++++ b/app/services/whatsapp/service.py
+@@ -1,6 +1,6 @@
+ """WhatsApp messaging service implementation"""
+-import json
+ import logging
++from datetime import datetime
+ from typing import Any, Dict, List, Optional
+ 
+ import requests
+@@ -9,7 +9,6 @@ from core.messaging.exceptions import MessageValidationError
+ from core.messaging.types import (Button, InteractiveContent, InteractiveType,
+                                   Message, MessageRecipient, TemplateContent,
+                                   TextContent)
+-from core.utils.exceptions import SystemException
+ from decouple import config
+ 
+ from .types import WhatsAppMessage
+@@ -200,13 +199,15 @@ class WhatsAppMessagingService(BaseMessagingService):
+             MessageValidationError: If message sending fails
+         """
+         try:
+-            # Convert and validate core Message
++            # Convert message to WhatsApp format
+             whatsapp_message = WhatsAppMessage.from_core_message(message)
+-            logger.info("WhatsApp request: %s", json.dumps({
+-                "payload": whatsapp_message
+-            }, indent=2))
+ 
+-            # Route to appropriate handler based on mode
++            # Log basic info - full payload not needed since we're async
++            logger.info("Sending %s message to %s",
++                        message.content.type,
++                        message.recipient.channel_id.value)
++
++            # Send through appropriate handler
+             handler = (
+                 self._handle_mock_send if self._is_mock_mode()
+                 else self._handle_production_send
+@@ -235,11 +236,39 @@ class WhatsAppMessagingService(BaseMessagingService):
+         Returns:
+             Message: Message with mock metadata
+         """
+-        logger.info("Mock mode: returning payload")
++        logger.info("Mock mode: sending to mock server")
++
++        try:
++            # Send and wait for response
++            response = requests.post(
++                "http://mock:8001/bot/webhook",
++                json=whatsapp_message,
++                headers={"Content-Type": "application/json"},
++                timeout=10  # Increased timeout
++            )
++
++            # Track when sent and response
++            message.metadata = {
++                "sent_at": datetime.utcnow().isoformat(),
++                "mock": True,
++                "status_code": response.status_code
++            }
++
++            # Try to parse response
++            try:
++                message.metadata["response"] = response.json()
++            except Exception:
++                message.metadata["response"] = response.text
++
++            return message
++
++        except Exception as e:
++            # Log error and include in metadata
++            logger.warning("Mock server request failed: %s", e)
+             message.metadata = {
+-            "whatsapp_message_id": "mock_message_id",
++                "sent_at": datetime.utcnow().isoformat(),
+                 "mock": True,
+-            "payload": whatsapp_message
++                "error": str(e)
+             }
+             return message
+ 
+@@ -251,10 +280,7 @@ class WhatsAppMessagingService(BaseMessagingService):
+             whatsapp_message: Converted WhatsApp format message
+ 
+         Returns:
+-            Message: Message with API response metadata
+-
+-        Raises:
+-            SystemException: If API call fails
++            Message: Message with metadata
+         """
+         logger.info("Production mode: sending to WhatsApp")
+ 
+@@ -267,31 +293,35 @@ class WhatsAppMessagingService(BaseMessagingService):
+             "Content-Type": "application/json",
+         }
+ 
+-        # Make API request
+         try:
+-            response = requests.post(url, json=whatsapp_message, headers=headers)
+-            response_data = response.json()
+-            logger.info("WhatsApp response: %s", json.dumps(response_data, indent=2))
+-
+-            if response.status_code != 200:
+-                raise SystemException(
+-                    message=f"WhatsApp API Error: {response.text}",
+-                    code="WHATSAPP_API_ERROR",
+-                    service="whatsapp",
+-                    action="send_message"
++            # Send and wait for response
++            response = requests.post(
++                url,
++                json=whatsapp_message,
++                headers=headers,
++                timeout=10  # Increased timeout
+             )
+ 
+-        except requests.RequestException as e:
+-            raise SystemException(
+-                message=f"WhatsApp API request failed: {str(e)}",
+-                code="WHATSAPP_API_ERROR",
+-                service="whatsapp",
+-                action="send_message"
+-            )
++            # Track when sent and response
++            message.metadata = {
++                "sent_at": datetime.utcnow().isoformat(),
++                "status_code": response.status_code
++            }
++
++            # Try to parse response
++            try:
++                message.metadata["response"] = response.json()
++            except Exception:
++                message.metadata["response"] = response.text
+ 
+-        # Update message metadata with response
++            return message
++
++        except Exception as e:
++            # Log error and include in metadata
++            logger.warning("WhatsApp API request failed: %s", e)
+             message.metadata = {
+-            "whatsapp_message_id": response_data["messages"][0]["id"]
++                "sent_at": datetime.utcnow().isoformat(),
++                "error": str(e)
+             }
+             return message
+ 
+diff --git a/app/services/whatsapp/types.py b/app/services/whatsapp/types.py
+index 1f92054..eb5a65a 100644
+--- a/app/services/whatsapp/types.py
++++ b/app/services/whatsapp/types.py
+@@ -42,7 +42,18 @@ class WhatsAppMessage(Dict[str, Any]):
+         }
+ 
+         if message_type == "text":
+-            message["text"] = {"body": str(content.get("text", ""))}
++            text = content.get("text")
++            if text is None:
++                raise MessageValidationError(
++                    message="Text content is required",
++                    service="whatsapp",
++                    action="create_message",
++                    validation_details={
++                        "error": "missing_text",
++                        "message_type": message_type
++                    }
++                )
++            message["text"] = {"body": str(text)}
+         elif message_type == "interactive":
+             message["interactive"] = content.get("interactive", {})
+         elif message_type == "template":
+@@ -74,10 +85,31 @@ class WhatsAppMessage(Dict[str, Any]):
+     def from_core_message(cls, message: CoreMessage) -> Dict[str, Any]:
+         """Convert core Message to WhatsApp format"""
+         try:
++            if not message or not message.content:
++                raise MessageValidationError(
++                    message="Message or content is missing",
++                    service="whatsapp",
++                    action="from_core_message",
++                    validation_details={
++                        "error": "missing_content",
++                        "message": str(message)
++                    }
++                )
++
+             content = message.content
+             content_type = content.type.value
+ 
+             if content_type == "text":
++                if not content.body:
++                    raise MessageValidationError(
++                        message="Text content body is required",
++                        service="whatsapp",
++                        action="from_core_message",
++                        validation_details={
++                            "error": "missing_text",
++                            "content_type": content_type
++                        }
++                    )
+                 return cls.create_message(
+                     to=message.recipient.channel_value,
+                     message_type="text",
+diff --git a/docs/architecture.md b/docs/architecture.md
+index f84f4fa..35e0122 100644
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -10,13 +10,21 @@
+ - Progress tracking through state
+ - Validation tracking through state
+ 
+-2. **Pure Functions**
+-- Services use stateless functions
+-- No stored instance variables
+-- No service-level state
+-- Clear input/output contracts
+-- Standard validation patterns
+-- Standard error handling
++2. **Component Responsibilities**
++- Components handle their own operations:
++  * API calls through make_api_request
++  * Message sending through state_manager.messaging
++  * Error handling through ErrorHandler
++  * State updates with validation
++- Clear boundaries between components:
++  * Display components -> UI and messaging
++  * Input components -> Validation and state updates
++  * API components -> External calls and state updates
++  * Confirm components -> User confirmation flows
++- Standard patterns:
++  * All operations wrapped in try/except
++  * All errors handled through ErrorHandler
++  * All results returned as ValidationResult
+ 
+ 3. **Single Source of Truth**
+ - Member ID ONLY at top level
+@@ -84,16 +92,50 @@ state_manager.update_state({
+ ### 4. Error Handling
+ ```python
+ # WRONG - Handle errors manually
++try:
++    response = make_api_request(url, headers, payload)
++    if response.status_code != 200:
++        return {"error": str(response.text)}  # Don't handle directly!
++except Exception as e:
++    return {"error": str(e)}  # Don't handle directly!
++
++# CORRECT - Use ErrorHandler with proper context
++try:
++    response = make_api_request(url, headers, payload)
++    response_data, error = handle_api_response(response, state_manager)
+     if error:
+-    return {"error": str(error)}  # Don't handle directly!
++        return ValidationResult.failure(message=error)
++    return ValidationResult.success({"action": response_data})
++except Exception as e:
++    error_response = ErrorHandler.handle_component_error(
++        component=self.type,
++        field="api_call",
++        value=str(payload),
++        message=str(e)
++    )
++    return ValidationResult.failure(message=error_response["error"]["message"])
++```
+ 
+-# CORRECT - Use ErrorHandler with context
+-error_context = ErrorContext(
+-    error_type="api",
+-    message=str(error),
+-    details={"operation": operation}
++### 5. Messaging Service Integration
++```python
++# WRONG - Access messaging service directly
++messaging_service = WhatsAppMessagingService()
++messaging_service.send_text(recipient, text)  # Don't access directly!
++
++# CORRECT - Access through state manager
++try:
++    self.state_manager.messaging.send_text(
++        recipient=recipient,
++        text=message_text
++    )
++except Exception as e:
++    error_response = ErrorHandler.handle_component_error(
++        component=self.type,
++        field="messaging",
++        value=str(message_text),
++        message=str(e)
+     )
+-ErrorHandler.handle_error(error, state_manager, error_context)
++    return ValidationResult.failure(message=error_response["error"]["message"])
+ ```
+ 
+ ## Pre-Change Checklist
+diff --git a/docs/flow-framework.md b/docs/flow-framework.md
+index 6567f7c..3fd7165 100644
+--- a/docs/flow-framework.md
++++ b/docs/flow-framework.md
+@@ -131,16 +131,34 @@ Example state structure:
+ - Pure functional approach
+ 
+ 2. **Clear Boundaries**
+-- Components handle validation
+-- State manages persistence
+-- Flow handles routing
+-- No mixed responsibilities
+-
+-3. **Strong Validation**
+-- Component-level validation
+-- State validation
+-- Flow validation
+-- Clear error handling
++- Components handle their own operations:
++  * API calls and message sending
++  * State validation and updates
++  * Error handling with proper context
++- State manager provides:
++  * Central state storage
++  * Atomic operations
++  * Validation tracking
++- Flow framework handles:
++  * Component activation
++  * State transitions
++  * Error recovery
++
++3. **Strong Validation & Error Handling**
++- Component-level validation:
++  * Input format validation
++  * Business logic validation
++  * API response validation
++  * Message sending validation
++- State validation:
++  * Atomic updates
++  * Validation tracking
++  * Error state management
++- Error handling:
++  * Standardized through ErrorHandler
++  * Clear error context
++  * Proper validation state
++  * Consistent error patterns
+ 
+ 4. **Pure Functions**
+ - No stored state
+diff --git a/docs/service-architecture.md b/docs/service-architecture.md
+index fd5c356..fd8950c 100644
+--- a/docs/service-architecture.md
++++ b/docs/service-architecture.md
+@@ -25,10 +25,13 @@
+ - Clear operation tracking
+ - Flow control through actions
+ 
+-4. **Component Pattern**
++4. **Component Patterns**
++
++### API Component Pattern
+ ```python
+ class ApiComponent(Component):
+     def validate(self, value: Any) -> ValidationResult:
++        try:
+             # 1. Get member data from dashboard
+             dashboard = self.state_manager.get("dashboard")
+             member_id = dashboard.get("member", {}).get("memberID")
+@@ -50,6 +53,48 @@ class ApiComponent(Component):
+             flow_data = self.state_manager.get_flow_state()
+             action_data = flow_data.get("action", {})
+             return ValidationResult.success({"action": action_data})
++
++        except Exception as e:
++            # Handle errors through ErrorHandler
++            error_response = ErrorHandler.handle_component_error(
++                component=self.type,
++                field="api_call",
++                value=str(payload),
++                message=str(e)
++            )
++            return ValidationResult.failure(message=error_response["error"]["message"])
++```
++
++### Display Component Pattern
++```python
++class DisplayComponent(Component):
++    def validate_display(self, value: Any) -> ValidationResult:
++        try:
++            # 1. Get display data from state
++            display_data = self.get_display_data()
++
++            # 2. Send through messaging service
++            recipient = get_recipient(self.state_manager)
++            self.state_manager.messaging.send_text(
++                recipient=recipient,
++                text=display_data
++            )
++
++            # 3. Return success with sent data
++            return ValidationResult.success({
++                "sent": True,
++                "message": display_data
++            })
++
++        except Exception as e:
++            # Handle errors through ErrorHandler
++            error_response = ErrorHandler.handle_component_error(
++                component=self.type,
++                field="display",
++                value=str(value),
++                message=str(e)
++            )
++            return ValidationResult.failure(message=error_response["error"]["message"])
+ ```
+ 
+ ## Implementation Guide
+@@ -99,41 +144,85 @@ class ApiComponent(Component):
+    - Clear boundaries
+    - No state duplication
+ 
+-### Common Anti-Patterns
++### Common Patterns
+ 
+-1. Using API Modules
++1. Direct API Calls with Error Handling
+ ```python
+-# WRONG - Extra layer through module
+-from core.api.credex import create_credex
+-success, message = create_credex(bot_service, member_id, amount)
+-
+-# CORRECT - Direct API call
++try:
++    # Make API call directly
+     response = make_api_request(url, headers, payload)
++
++    # Let handlers manage state and errors
+     response_data, error = handle_api_response(response, state_manager)
++    if error:
++        return ValidationResult.failure(message=error)
++
++    return ValidationResult.success({"action": response_data})
++
++except Exception as e:
++    # Use ErrorHandler for all errors
++    error_response = ErrorHandler.handle_component_error(
++        component=self.type,
++        field="api_call",
++        value=str(payload),
++        message=str(e)
++    )
++    return ValidationResult.failure(message=error_response["error"]["message"])
+ ```
+ 
+-2. Extra State Validation
++2. Message Sending with Error Handling
+ ```python
+-# WRONG - Extra validation layer
+-state_manager.update_state({
+-    "api_request": {"type": "credex_offer"}
++try:
++    # Send through messaging service
++    recipient = get_recipient(self.state_manager)
++    self.state_manager.messaging.send_text(
++        recipient=recipient,
++        text=message_text
++    )
++
++    # Return success with sent data
++    return ValidationResult.success({
++        "sent": True,
++        "message": message_text
+     })
+ 
+-# CORRECT - Let handlers manage state
+-response_data, error = handle_api_response(response, state_manager)
++except Exception as e:
++    # Use ErrorHandler for all errors
++    error_response = ErrorHandler.handle_component_error(
++        component=self.type,
++        field="messaging",
++        value=str(message_text),
++        message=str(e)
++    )
++    return ValidationResult.failure(message=error_response["error"]["message"])
+ ```
+ 
+-3. Duplicate Error Handling
++3. State Updates with Error Handling
+ ```python
+-# WRONG - Custom error handling
+-if response.status_code == 200:
+-    return {"success": True, "data": response.json()}
+-return handle_error_response(...)
++try:
++    # Update state with validation
++    self.state_manager.update_state({
++        "flow_data": {
++            "context": context,
++            "component": component,
++            "data": data,
++            "validation": {
++                "in_progress": False,
++                "attempts": current_attempts + 1,
++                "last_attempt": datetime.utcnow().isoformat()
++            }
++        }
++    })
+ 
+-# CORRECT - Use ValidationResult
+-if error:
+-    return ValidationResult.failure(message=error)
+-return ValidationResult.success({"action": action_data})
++except Exception as e:
++    # Use ErrorHandler for all errors
++    error_response = ErrorHandler.handle_component_error(
++        component=self.type,
++        field="state_update",
++        value=str(data),
++        message=str(e)
++    )
++    return ValidationResult.failure(message=error_response["error"]["message"])
+ ```
+ 
+ ## Code Reading Guide
+diff --git a/docs/state-management.md b/docs/state-management.md
+index 269e35a..90c761b 100644
+--- a/docs/state-management.md
++++ b/docs/state-management.md
+@@ -35,17 +35,59 @@ Common mistakes to avoid:
+ - Channel info accessed through get_channel_id()
+ - JWT token accessed through flow_data auth
+ - Member data accessed through dashboard state
++- Messaging service accessed through state_manager.messaging
+ - NO direct state access
+ - NO state passing
+ - NO transformation
+ 
+-2. **Simple Structure**
+-- Context-based organization
+-- Clear boundaries
+-- Standard validation
+-- Flow metadata
+-- NO complex hierarchies
+-- NO redundant wrapping
++2. **Messaging Service Integration**
++- MessagingService sets up bidirectional relationship:
++  ```python
++  def __init__(self, channel_service: BaseMessagingService, state_manager: Any):
++      self.channel_service = channel_service
++      self.state_manager = state_manager
++      if state_manager:
++          # Set up bidirectional relationship
++          self.channel_service.state_manager = state_manager
++          state_manager.messaging = self
++  ```
++- Components access messaging through state_manager:
++  ```python
++  # Send message through messaging service
++  self.state_manager.messaging.send_text(
++      recipient=recipient,
++      text=message_text
++  )
++  ```
++- Error handling through ErrorHandler:
++  ```python
++  try:
++      self.state_manager.messaging.send_text(...)
++  except Exception as e:
++      error_response = ErrorHandler.handle_component_error(
++          component=self.type,
++          field="messaging",
++          value=str(message_text),
++          message=str(e)
++      )
++      return ValidationResult.failure(message=error_response["error"]["message"])
++  ```
++
++3. **Component Responsibilities**
++- Components handle their own operations:
++  * API calls through make_api_request
++  * Message sending through state_manager.messaging
++  * Error handling through ErrorHandler
++  * State updates with validation
++- Clear boundaries between components:
++  * Display components -> UI and messaging
++  * Input components -> Validation and state updates
++  * API components -> External calls and state updates
++  * Confirm components -> User confirmation flows
++- Standard validation and error handling:
++  * All operations wrapped in try/except
++  * All errors handled through ErrorHandler
++  * All results returned as ValidationResult
+ 
+ 3. **Pure Functions**
+ - Stateless operations
+diff --git a/mock/scripts/main.js b/mock/scripts/main.js
+index 52ff04b..b947c0a 100644
+--- a/mock/scripts/main.js
++++ b/mock/scripts/main.js
+@@ -1,4 +1,4 @@
+-import { createFormReply, createMessagePayload } from './handlers.js';
++import { createFormReply } from './handlers.js';
+ import { ChatUI } from './ui.js';
+ 
+ class WhatsAppMock {
+@@ -6,6 +6,32 @@ class WhatsAppMock {
+         this.ui = new ChatUI();
+         this.ui.setupEventListeners(() => this.sendMessage());
+         this.ui.updateStatus();
++        this.setupAppMessageStream();
++    }
++
++    setupAppMessageStream() {
++        console.log('Setting up SSE connection...');
++        // Connect to server events stream for app messages
++        const events = new EventSource('./events');
++
++        events.onopen = () => {
++            console.log('SSE connection opened');
++        };
++
++        events.onmessage = (event) => {
++            console.log('Received SSE message:', event.data);
++            const message = JSON.parse(event.data);
++            console.log('Parsed message:', message);
++            this.ui.displayMessage(message);
++        };
++
++        events.onerror = (error) => {
++            console.error('EventSource error:', error);
++            events.close();
++            // Retry connection after 1s
++            console.log('Retrying SSE connection in 1s...');
++            setTimeout(() => this.setupAppMessageStream(), 1000);
++        };
+     }
+ 
+     async sendMessage() {
+@@ -44,7 +70,7 @@ class WhatsAppMock {
+         this.ui.displayUserMessage(displayText);
+ 
+         try {
+-            // Create payload matching WhatsApp format
++            // Create simple message payload
+             const payload = {
+                 type: messageType,
+                 message: processedMessage,
+@@ -68,29 +94,10 @@ class WhatsAppMock {
+                 throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
+             }
+ 
+-            const data = await response.json();
+-            console.log('Raw response from server:', data);
+-
+-            // Display response after a short delay
+-            setTimeout(() => {
+-                // Get the response content
+-                const responseData = data.response || data;
+-                console.log('Processed response data:', responseData);
+-
+-                // Log the type and structure
+-                console.log('Response type:', typeof responseData);
+-                console.log('Response keys:', Object.keys(responseData));
+-                if (responseData.type === 'interactive') {
+-                    console.log('Interactive type:', responseData.interactive?.type);
+-                    console.log('Interactive content:', responseData.interactive);
+-                }
+-
+-                this.ui.displayMessage(responseData);
++            // Ignore empty response from UI->App message
++            await response.text();
+             this.ui.disableSendButton(false);
+ 
+-                console.log('=== SEND MESSAGE END ===');
+-            }, 1000);
+-
+         } catch (error) {
+             console.error('Error:', error);
+             this.ui.displayMessage({
+diff --git a/mock/server.py b/mock/server.py
+index 11ad4d5..fefdd19 100644
+--- a/mock/server.py
++++ b/mock/server.py
+@@ -3,20 +3,27 @@ import json
+ import logging
+ import os
+ import socketserver
++import time
+ from http.server import SimpleHTTPRequestHandler
+ 
+ import requests
+-from whatsapp_utils import create_whatsapp_payload, extract_message_text
+ 
++# Configure logging - show all messages
+ logging.basicConfig(
+     level=logging.DEBUG,
+-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
++    format='%(levelname)s: %(message)s'
+ )
+ logger = logging.getLogger(__name__)
+ 
++# Silence connection logs
++logging.getLogger("urllib3").setLevel(logging.WARNING)
++
+ # The actual app endpoint we're testing
+ APP_ENDPOINT = 'http://app:8000/bot/webhook'
+ 
++# Connected SSE clients
++sse_clients = set()
++
+ 
+ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
+     """Handler for serving mock WhatsApp interface and handling webhooks."""
+@@ -25,137 +32,235 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
+         # Set directory before parent initialization
+         if directory is None:
+             directory = '/app/mock' if os.path.exists('/app/mock') else os.path.dirname(os.path.abspath(__file__))
++        super().__init__(*args, directory=directory, **kwargs)
++
++    def _send_200(self, content=None):
++        """Send 200 OK with optional JSON content"""
++        try:
++            self.send_response(200)
++            self.send_header("Content-type", "application/json")
++            self.end_headers()
++            if content:
++                self.wfile.write(json.dumps(content).encode('utf-8'))
++                self.wfile.flush()
++        except Exception as e:
++            # Ignore all errors - client probably disconnected
++            logger.debug("Connection closed: %s", e)
+ 
+-        logger.info(f"Setting server directory to: {directory}")
+-        logger.info(f"Directory contents: {os.listdir(directory)}")
++    def _broadcast_to_ui(self, message):
++        """Broadcast message to all connected SSE clients."""
++        try:
++            # Ensure message is JSON serializable
++            if isinstance(message, str):
++                try:
++                    message = json.loads(message)
++                except json.JSONDecodeError as e:
++                    logger.error("Failed to parse message as JSON: %s", e)
++                    message = {"error": str(e)}
+ 
+-        # Initialize with directory
+-        super().__init__(*args, directory=directory, **kwargs)
++            logger.info("Broadcasting to %d clients", len(sse_clients))
+ 
+-    def _handle_webhook(self):
+-        """Handle webhook POST request."""
+-        content_length = int(self.headers["Content-Length"])
+-        post_data = self.rfile.read(content_length)
+-        mock_request = json.loads(post_data.decode("utf-8"))
+-
+-        logger.info("=== WEBHOOK REQUEST START ===")
+-        logger.info(f"Received webhook request: {json.dumps(mock_request, indent=2)}")
+-
+-        # Create WhatsApp-formatted webhook payload
+-        whatsapp_payload = create_whatsapp_payload(
+-            phone_number=mock_request.get("phone", "263778177125"),
+-            message_type=mock_request.get("type", "text"),
+-            message_text=mock_request.get("message", ""),
+-            phone_number_id="390447444143042"  # Match staging phone number ID
+-        )
++            # Extract text content from message
++            text_content = None
++            if isinstance(message, dict):
++                if "text" in message and isinstance(message["text"], dict):
++                    text_content = message["text"].get("body")
++                elif "message" in message:
++                    text_content = message["message"]
++                elif "success" in message:
++                    # Don't broadcast success responses
++                    return
+ 
+-        # Extract message details for logging
+-        message_data = whatsapp_payload["entry"][0]["changes"][0]["value"]
+-        message = message_data["messages"][0]
+-        text = extract_message_text(message)
++            # Don't broadcast if no text content found
++            if not text_content:
++                return
+ 
+-        # Log request details
+-        logger.info(f"\nReceived message: {text}")
+-        logger.info(f"WhatsApp webhook payload: {json.dumps(whatsapp_payload, indent=2)}")
++            # Create simple message object
++            simple_message = {
++                "type": "text",
++                "text": {"body": text_content}
++            }
+ 
++            # Send to all connected clients
++            for client in list(sse_clients):
+                 try:
+-            # Add message context for interactive messages
+-            if mock_request.get("type") == "interactive":
+-                # Get original message that triggered this interaction
+-                context_id = mock_request.get("context_id")
+-                if context_id:
+-                    whatsapp_payload["entry"][0]["changes"][0]["value"]["messages"][0]["context"] = {
+-                        "from": mock_request.get("context_from", "15550783881"),
+-                        "id": context_id
++                    logger.info("Sending to client: %s", id(client))
++                    client.wfile.write(f"data: {json.dumps(simple_message)}\n\n".encode('utf-8'))
++                    client.wfile.flush()
++                    logger.info("Successfully sent to client: %s", id(client))
++                except Exception as e:
++                    # Remove failed client
++                    logger.error("Failed to send to client %s: %s", id(client), e)
++                    sse_clients.remove(client)
++        except Exception as e:
++            logger.error("Failed to broadcast message: %s", e)
++
++    def _forward_to_app(self, message):
++        """Transform and forward message to app."""
++        try:
++            # Transform simple message to WhatsApp webhook format
++            webhook_message = {
++                "object": "whatsapp_business_account",
++                "entry": [{
++                    "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
++                    "changes": [{
++                        "value": {
++                            "messaging_product": "whatsapp",
++                            "metadata": {
++                                "display_phone_number": "263787274250",
++                                "phone_number_id": "390447444143042"
++                            },
++                            "contacts": [{
++                                "profile": {
++                                    "name": "Test User"
++                                },
++                                "wa_id": message.get("phone")
++                            }],
++                            "messages": [{
++                                "from": message.get("phone"),
++                                "id": f"wamid.{hex(int.from_bytes(os.urandom(16), 'big'))[2:]}",
++                                "timestamp": str(int(time.time())),
++                                "type": message.get("type", "text"),
++                                "text": {
++                                    "body": message.get("message")
++                                }
++                            }]
++                        },
++                        "field": "messages"
++                    }]
++                }]
+             }
+ 
+-            # Only forward to app if this is a user message (not an app response)
+-            if "recipient" not in mock_request:
+-                # Forward to app with WhatsApp webhook format
++            # Add mock testing headers
+             headers = {
+                 "Content-Type": "application/json",
+                 "Accept": "application/json",
+-                    "X-Mock-Testing": "true",  # Indicate this is from mock
+-                    "X-Mock-Context": json.dumps({  # Include context for response handling
+-                        "message_type": mock_request.get("type"),
+-                        "has_context": bool(mock_request.get("context_id"))
+-                    })
++                "X-Mock-Testing": "true"
+             }
+ 
+-                logger.info(f"\nSending request to app: {json.dumps(whatsapp_payload, indent=2)}")
+-                try:
++            # Log what we're forwarding
++            logger.info("Forwarding to app: %s", json.dumps(webhook_message))
++
++            # Send request and handle response
+             response = requests.post(
+                 APP_ENDPOINT,
+-                        json=whatsapp_payload,
++                json=webhook_message,
+                 headers=headers,
+-                        timeout=30
++                timeout=10
+             )
+-                except requests.exceptions.RequestException as e:
+-                    logger.error(f"Request error: {str(e)}")
+-                    if hasattr(e, 'response'):
+-                        logger.error(f"Response text: {e.response.text}")
+-                    raise
+-                response.raise_for_status()
+-                response_data = response.json()
+-                logger.info(f"\nReceived raw response from app: {json.dumps(response_data, indent=2)}")
+-
+-                # Send response with app's response data
+-                self.send_response(200)
+-                self.send_header("Content-type", "application/json")
+-                self.end_headers()
+ 
+-                # If this is a text message response, send it immediately
+-                if response_data.get("type") == "text":
+-                    logger.info(f"\nSending text response to client: {json.dumps(response_data, indent=2)}")
+-                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
+-                # If this is an interactive message (dashboard), send it in a separate response
+-                elif response_data.get("type") == "interactive":
+-                    logger.info(f"\nSending interactive response to client: {json.dumps(response_data, indent=2)}")
+-                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
+-            else:
+-                # This is an app response, just acknowledge it
+-                self.send_response(200)
+-                self.send_header("Content-type", "application/json")
+-                self.end_headers()
+-                self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
++            # Log response details
++            logger.info("App response status: %d", response.status_code)
++            try:
++                response_json = response.json()
++                logger.info("App response: %s", json.dumps(response_json))
++                # Forward response to UI
++                self._broadcast_to_ui(response_json)
++            except json.JSONDecodeError as e:
++                logger.error("Failed to parse app response as JSON: %s", e)
++                logger.info("Raw response: %s", response.text)
++                # Send error to UI
++                self._broadcast_to_ui({"error": "Invalid JSON response from app"})
++        except Exception as e:
++            # Log but continue
++            logger.error("Failed to forward to app: %s", e)
++            # Send error to UI
++            self._broadcast_to_ui({"error": f"Failed to forward message: {str(e)}"})
++
++    def _handle_webhook(self):
++        """Handle webhook POST request."""
++        try:
++            # Read and process request
++            content_length = int(self.headers.get('Content-Length', 0))
++            if content_length > 0:
++                body = self.rfile.read(content_length)
++                # Log raw payload
++                raw_payload = body.decode('utf-8')
++                logger.info("Raw webhook payload: %s", raw_payload)
++                message = json.loads(raw_payload)
+ 
+-            logger.info("=== WEBHOOK REQUEST END ===\n")
++                # For UI->App messages, forward and respond with success
++                if "type" in message and "message" in message and "phone" in message:
++                    # UI->App message (simple format)
++                    logger.info("UI -> App: %s", message)
++                    self._forward_to_app(message)
++                    # Send success response back to UI
++                    self._send_200({"success": True})
++                    return
++
++                # For App->UI messages, broadcast and send WhatsApp-style response
++                # App->UI message
++                logger.info("App -> UI: %s", message)
++                self._broadcast_to_ui(message)
++                # Send WhatsApp-style success response back to app
++                self._send_200({
++                    "messaging_product": "whatsapp",
++                    "contacts": [{
++                        "input": message.get("to"),
++                        "wa_id": message.get("to")
++                    }],
++                    "messages": [{
++                        "id": f"wamid.{hex(int.from_bytes(os.urandom(16), 'big'))[2:]}"
++                    }]
++                })
+ 
+         except Exception as e:
+-            logger.error(f"Error: {str(e)}")
+-            if isinstance(e, requests.exceptions.RequestException) and hasattr(e, 'response'):
+-                logger.error(f"App response: {e.response.text}")
+-            self.send_error(500, "Internal Server Error", str(e))
++            # Just log and continue
++            logger.error("Error handling webhook: %s", e)
+ 
+-    def do_POST(self):
+-        """Handle POST requests."""
++    def _handle_sse(self):
++        """Handle SSE connection."""
+         try:
+-            if self.path.startswith("/bot/webhook"):
+-                self._handle_webhook()
+-            else:
+-                self.send_error(404, "Not Found")
++            logger.info("New SSE connection from %s", self.client_address)
++            self.send_response(200)
++            self.send_header('Content-Type', 'text/event-stream')
++            self.send_header('Cache-Control', 'no-cache')
++            self.send_header('Connection', 'keep-alive')
++            self.end_headers()
++
++            # Add client
++            sse_clients.add(self)
++            logger.info("Added SSE client %s (total: %d)", id(self), len(sse_clients))
++
++            # Keep alive
++            while True:
++                self.wfile.write(b': ping\n\n')
++                self.wfile.flush()
++                logger.debug("Sent ping to client %s", id(self))
++                self.rfile.readline()
++
+         except Exception as e:
+-            logger.error(f"Error: {str(e)}")
+-            self.send_error(500, "Internal Server Error")
++            logger.error("SSE client %s disconnected: %s", id(self), e)
++        finally:
++            sse_clients.remove(self)
++            logger.info("Removed SSE client %s (remaining: %d)", id(self), len(sse_clients))
+ 
+     def do_GET(self):
+         """Handle GET requests."""
+-        # Log request details
+-        logger.info(f"GET request for path: {self.path}")
+-
+-        # Serve index.html for root path
++        logger.info("GET request to: %s", self.path)
++        if self.path == "/events":
++            logger.info("Handling SSE connection request")
++            return self._handle_sse()
+         if self.path == "/" or self.path == "":
+             self.path = "/index.html"
+-
+-        # Let parent class handle file serving
+         return SimpleHTTPRequestHandler.do_GET(self)
+ 
++    def do_POST(self):
++        """Handle POST requests."""
++        if self.path.startswith("/bot/webhook"):
++            self._handle_webhook()
++        else:
++            try:
++                self.send_response(404)
++                self.end_headers()
++            except Exception as e:
++                logger.debug("Error sending 404: %s", e)
++
+ 
+ def run_server(port=8001):
+     """Run the mock server."""
+-    logger.info(f"\nStarting mock WhatsApp server on port {port}")
+-    logger.info(f"Forwarding requests to: {APP_ENDPOINT}")
+-    logger.info("\nOpen http://localhost:8001 in your browser")
++    logger.info("Mock server running on port %d", port)
++    logger.info("Mock WhatsApp interface available at: http://localhost:%d", port)
+ 
+     server = socketserver.TCPServer(("", port), MockWhatsAppHandler)
+     server.allow_reuse_address = True
+@@ -163,7 +268,7 @@ def run_server(port=8001):
+     try:
+         server.serve_forever()
+     except KeyboardInterrupt:
+-        logger.info("\nShutting down...")
++        logger.info("Shutting down...")
+     finally:
+         server.server_close()
+ 
+```

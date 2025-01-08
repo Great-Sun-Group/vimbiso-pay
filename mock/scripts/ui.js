@@ -18,6 +18,12 @@ export class ChatUI {
         console.log('Message type:', messageData?.type);
         console.log('Interactive data:', messageData?.interactive);
 
+        // Skip success acknowledgments
+        if (messageData?.success === true) {
+            console.log('Skipping success acknowledgment');
+            return;
+        }
+
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message bot-message';
 
@@ -138,12 +144,10 @@ export class ChatUI {
                 messageDiv.innerHTML = formatWhatsAppText(messageData.text.body);
                 console.log('Formatted text message:', messageDiv.innerHTML);
             }
-            // Handle unknown message types
+            // Skip unknown message types
             else {
-                console.log('Unknown message type, displaying raw data');
-                messageDiv.className += ' whatsapp-text';
-                messageDiv.innerHTML = formatWhatsAppText(JSON.stringify(messageData, null, 2));
-                console.log('Raw data display:', messageDiv.innerHTML);
+                console.log('Unknown message type, skipping display');
+                return;
             }
 
             // Log final HTML

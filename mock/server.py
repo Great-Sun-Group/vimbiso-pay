@@ -56,42 +56,26 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                     message = json.loads(message)
                 except json.JSONDecodeError as e:
                     logger.error("Failed to parse message as JSON: %s", e)
-                    message = {"error": str(e)}
+                    return
 
             logger.info("Broadcasting to %d clients", len(sse_clients))
 
-            # Extract text content from message
-            text_content = None
-            if isinstance(message, dict):
-                if "text" in message and isinstance(message["text"], dict):
-                    text_content = message["text"].get("body")
-                elif "message" in message:
-                    text_content = message["message"]
-                elif "success" in message:
-                    # Don't broadcast success responses
-                    return
+            # Only broadcast actual messages, not acknowledgments
+            if isinstance(message, dict) and message.get("type") == "text" and message.get("text", {}).get("body"):
+                # Send to all connected clients
+                for client in list(sse_clients):
+                    try:
+                        logger.info("Sending to client: %s", id(client))
+                        client.wfile.write(f"data: {json.dumps(message)}\n\n".encode('utf-8'))
+                        client.wfile.flush()
+                        logger.info("Successfully sent to client: %s", id(client))
+                    except Exception as e:
+                        # Remove failed client
+                        logger.error("Failed to send to client %s: %s", id(client), e)
+                        sse_clients.remove(client)
+            else:
+                logger.debug("Skipping non-message broadcast: %s", message)
 
-            # Don't broadcast if no text content found
-            if not text_content:
-                return
-
-            # Create simple message object
-            simple_message = {
-                "type": "text",
-                "text": {"body": text_content}
-            }
-
-            # Send to all connected clients
-            for client in list(sse_clients):
-                try:
-                    logger.info("Sending to client: %s", id(client))
-                    client.wfile.write(f"data: {json.dumps(simple_message)}\n\n".encode('utf-8'))
-                    client.wfile.flush()
-                    logger.info("Successfully sent to client: %s", id(client))
-                except Exception as e:
-                    # Remove failed client
-                    logger.error("Failed to send to client %s: %s", id(client), e)
-                    sse_clients.remove(client)
         except Exception as e:
             logger.error("Failed to broadcast message: %s", e)
 
@@ -151,21 +135,13 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
             # Log response details
             logger.info("App response status: %d", response.status_code)
-            try:
-                response_json = response.json()
-                logger.info("App response: %s", json.dumps(response_json))
-                # Forward response to UI
-                self._broadcast_to_ui(response_json)
-            except json.JSONDecodeError as e:
-                logger.error("Failed to parse app response as JSON: %s", e)
-                logger.info("Raw response: %s", response.text)
-                # Send error to UI
-                self._broadcast_to_ui({"error": "Invalid JSON response from app"})
+            if response.status_code != 200:
+                logger.error("App error response: %s", response.text)
+                return
+
         except Exception as e:
             # Log but continue
             logger.error("Failed to forward to app: %s", e)
-            # Send error to UI
-            self._broadcast_to_ui({"error": f"Failed to forward message: {str(e)}"})
 
     def _handle_webhook(self):
         """Handle webhook POST request."""
@@ -179,30 +155,26 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 logger.info("Raw webhook payload: %s", raw_payload)
                 message = json.loads(raw_payload)
 
-                # For UI->App messages, forward and respond with success
+                # Handle UI->Server messages
                 if "type" in message and "message" in message and "phone" in message:
-                    # UI->App message (simple format)
-                    logger.info("UI -> App: %s", message)
-                    self._forward_to_app(message)
-                    # Send success response back to UI
+                    logger.info("UI -> Server: %s", message)
+                    # Acknowledge receipt immediately and close connection
                     self._send_200({"success": True})
+                    # Start forwarding to app in a separate thread
+                    import threading
+                    threading.Thread(target=self._forward_to_app, args=(message,)).start()
                     return
 
-                # For App->UI messages, broadcast and send WhatsApp-style response
-                # App->UI message
-                logger.info("App -> UI: %s", message)
-                self._broadcast_to_ui(message)
-                # Send WhatsApp-style success response back to app
+                # Handle App->Server messages
+                logger.info("App -> Server: %s", message)
+                # Acknowledge receipt to app
                 self._send_200({
                     "messaging_product": "whatsapp",
-                    "contacts": [{
-                        "input": message.get("to"),
-                        "wa_id": message.get("to")
-                    }],
-                    "messages": [{
-                        "id": f"wamid.{hex(int.from_bytes(os.urandom(16), 'big'))[2:]}"
-                    }]
+                    "contacts": [{"input": message.get("to"), "wa_id": message.get("to")}],
+                    "messages": [{"id": f"wamid.{hex(int.from_bytes(os.urandom(16), 'big'))[2:]}"}]
                 })
+                # Broadcast to UI via SSE
+                self._broadcast_to_ui(message)
 
         except Exception as e:
             # Just log and continue
@@ -222,18 +194,23 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             sse_clients.add(self)
             logger.info("Added SSE client %s (total: %d)", id(self), len(sse_clients))
 
-            # Keep alive
+            # Keep connection alive with ping events
             while True:
-                self.wfile.write(b': ping\n\n')
-                self.wfile.flush()
-                logger.debug("Sent ping to client %s", id(self))
-                self.rfile.readline()
+                try:
+                    self.wfile.write(b': ping\n\n')
+                    self.wfile.flush()
+                    logger.debug("Sent ping to client %s", id(self))
+                    time.sleep(30)  # Send ping every 30 seconds
+                except Exception as e:
+                    logger.error("Error sending ping to client %s: %s", id(self), e)
+                    break
 
         except Exception as e:
             logger.error("SSE client %s disconnected: %s", id(self), e)
         finally:
-            sse_clients.remove(self)
-            logger.info("Removed SSE client %s (remaining: %d)", id(self), len(sse_clients))
+            if self in sse_clients:
+                sse_clients.remove(self)
+                logger.info("Removed SSE client %s (remaining: %d)", id(self), len(sse_clients))
 
     def do_GET(self):
         """Handle GET requests."""
