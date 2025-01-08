@@ -53,12 +53,21 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
                 current_flow = current_state.get("flow_data", {})
 
                 # Update flow state with validation
-                # Safely merge flow data
-                new_data = {}
-                if current_flow and isinstance(current_flow.get("data"), dict):
-                    new_data.update(current_flow["data"])
+                # Start with current flow data
+                new_data = current_flow.get("data", {}) if current_flow else {}
+
+                # Only update with new data if provided
                 if flow_data and isinstance(flow_data.get("data"), dict):
-                    new_data.update(flow_data["data"])
+                    # Deep merge to preserve nested structure
+                    for key, value in flow_data["data"].items():
+                        if isinstance(value, dict) and isinstance(new_data.get(key), dict):
+                            # Merge nested dicts
+                            new_data[key] = {**new_data[key], **value}
+                        else:
+                            # Replace or add non-dict values
+                            new_data[key] = value
+
+                logger.info(f"Merged flow data: {new_data}")
 
                 current_state["flow_data"] = {
                     "context": flow_data.get("context", current_flow.get("context")),
@@ -70,6 +79,8 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
                         "operation": "update"
                     }
                 }
+
+                logger.info(f"Updated flow state: {current_state['flow_data']}")
             else:
                 validation_state.update({
                     "in_progress": False,

@@ -4,6 +4,7 @@ This component handles the login API call with proper validation.
 Dashboard data is the source of truth for member state.
 """
 
+import logging
 from typing import Any, Dict
 
 from core.api.base import handle_api_response, make_api_request
@@ -16,8 +17,7 @@ class LoginApiCall(ApiComponent):
     """Handles login API call with proper exit conditions"""
 
     def __init__(self):
-        super().__init__("login")
-        self.state_manager = None
+        super().__init__("LoginApiCall")  # Match the class name used for lookup
 
     def set_state_manager(self, state_manager: Any) -> None:
         """Set state manager for accessing state data"""
@@ -26,17 +26,23 @@ class LoginApiCall(ApiComponent):
     def validate_api_call(self, value: Any) -> ValidationResult:
         """Call login endpoint and validate response"""
         # Get channel info from state manager
+        logger = logging.getLogger(__name__)
+        logger.info("Getting channel info from state manager")
         channel = self.state_manager.get("channel")
+        logger.info(f"Got channel info: {channel}")
+
         if not channel or not channel.get("identifier"):
+            logger.error("No channel identifier found in state")
             return ValidationResult.failure(
                 message="No channel identifier found",
                 field="channel",
-                details={"component": "login"}
+                details={"component": self.type}  # Use component type from base class
             )
 
         # Make API call
         url = "login"
         payload = {"phone": channel["identifier"]}
+        logger.info(f"Making login API call with payload: {payload}")
 
         response = make_api_request(
             url=url,

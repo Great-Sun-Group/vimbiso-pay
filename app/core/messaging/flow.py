@@ -67,19 +67,29 @@ def activate_component(component_type: str, state_manager: Any) -> Any:
         Component result
     """
     try:
+        logger.info(f"Activating component: {component_type}")
+
+        # Get component class
         component_class = getattr(components, component_type)
+        logger.info(f"Found component class: {component_class.__name__}")
+
+        # Create instance
         component = component_class()
-        component.set_state_manager(state_manager)  # Use proper setter
+        logger.info(f"Created component instance: {component}")
+
+        # Set state manager
+        component.set_state_manager(state_manager)
+        logger.info("Set state manager on component")
 
         # Get flow data for component
         flow_data = state_manager.get_flow_data()
+        logger.info(f"Got flow data: {flow_data}")
 
-        # For display components, start fresh
-        if hasattr(component, 'type') and isinstance(component.type, str):
-            if component.type.endswith('_dashboard') or component.type == 'greeting':
-                return component.validate({})
-
-        return component.validate(flow_data)
+        # Let component handle its own validation
+        logger.info("Validating component with flow data")
+        result = component.validate(flow_data)
+        logger.info(f"Component validation result: {result}")
+        return result
     except ComponentException as e:
         # Ensure all required parameters are present
         if not all(k in e.details for k in ["component", "field", "value"]):
@@ -146,9 +156,13 @@ def handle_component_result(context: str, component: str, result: Any, state_man
             return "login", "LoginApiCall"
 
         case ("login", "LoginApiCall"):
-            # Get metadata for flow control
-            metadata = getattr(result, 'metadata', {}) or {}
-            exit_condition = metadata.get("exit_condition")
+            # Check for exit condition in result dict
+            exit_condition = result.get("exit_condition")
+
+            # If no exit condition in dict, try metadata
+            if not exit_condition and hasattr(result, 'metadata'):
+                metadata = getattr(result, 'metadata', {}) or {}
+                exit_condition = metadata.get("exit_condition")
 
             if exit_condition == "not_member":
                 return "onboard", "Welcome"
@@ -161,6 +175,7 @@ def handle_component_result(context: str, component: str, result: Any, state_man
                 return "account", "AccountDashboard"
             else:
                 # No valid exit condition, stay on component
+                logger.error(f"No valid exit condition in result: {result}")
                 return context, component
 
         # Onboard context

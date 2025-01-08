@@ -3,7 +3,7 @@ import { ChatUI } from './ui.js';
 class WhatsAppMock {
     constructor() {
         this.ui = new ChatUI();
-        this.ui.setupEventListeners(() => this.sendMessage());
+        this.ui.setupEventListeners(() => this.sendMessage.bind(this)());
         this.ui.updateStatus();
     }
 
@@ -36,7 +36,7 @@ class WhatsAppMock {
             }
 
             // Show refresh notification
-            this.ui.showNotification('Message sent! Click Refresh to update conversation.');
+            this.ui.showNotification('Click Refresh to update conversation. Wait a few seconds to make sure app response is included.');
             this.ui.disableSendButton(false);
         } catch (error) {
             console.error('Error:', error);

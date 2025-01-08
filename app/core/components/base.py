@@ -288,8 +288,21 @@ class ApiComponent(Component):
 
     def _validate(self, value: Any) -> ValidationResult:
         """Validate API call with proper tracking"""
-        # Subclasses implement specific validation
-        return self.validate_api_call(value)
+        logger = logging.getLogger(__name__)
+        try:
+            # Log validation attempt
+            logger.info(f"Validating API component {self.type} with value: {value}")
+
+            # Subclasses implement specific validation
+            result = self.validate_api_call(value)
+
+            # Log validation result
+            logger.info(f"API validation result: {result}")
+            return result
+
+        except Exception as e:
+            logger.error(f"API validation error in {self.type}: {str(e)}")
+            raise
 
     def validate_api_call(self, value: Any) -> ValidationResult:
         """Component-specific API validation logic"""

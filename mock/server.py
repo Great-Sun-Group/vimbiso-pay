@@ -8,21 +8,25 @@ from http.server import SimpleHTTPRequestHandler
 
 import requests
 
-# Configure logging - show all messages
+# Configure logging - show important messages only
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Silence connection logs
+# Silence connection and http logs
 logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("http.server").setLevel(logging.WARNING)
 
 # The actual app endpoint we're testing
 APP_ENDPOINT = 'http://app:8000/bot/webhook'
 
 # Directory to store messages
 MESSAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "messages")
+
+# Create messages directory if it doesn't exist
+os.makedirs(MESSAGES_DIR, exist_ok=True)
 
 
 class MockWhatsAppHandler(SimpleHTTPRequestHandler):
@@ -31,9 +35,6 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, directory=None, **kwargs):
         # Serve from current directory
         directory = os.path.dirname(os.path.abspath(__file__))
-        logger.info("Serving files from directory: %s", directory)
-        logger.info("Current working directory: %s", os.getcwd())
-        logger.info("Directory contents: %s", os.listdir(directory))
         super().__init__(*args, directory=directory, **kwargs)
 
     def guess_type(self, path):
@@ -90,9 +91,6 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 # Save message to file
                 with open(filepath, 'w') as f:
                     json.dump(message_with_meta, f, indent=2)
-                logger.info("Saved message to file: %s", filepath)
-            else:
-                logger.debug("Skipping non-message save: %s", message)
 
         except Exception as e:
             logger.error("Failed to save message: %s", e)
@@ -169,9 +167,6 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 "X-Mock-Testing": "true"
             }
 
-            # Log what we're forwarding
-            logger.info("Forwarding to app: %s", json.dumps(webhook_message))
-
             # Send request and handle response
             response = requests.post(
                 APP_ENDPOINT,
@@ -180,8 +175,6 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 timeout=10
             )
 
-            # Log response details
-            logger.info("App response status: %d", response.status_code)
             if response.status_code != 200:
                 logger.error("App error response: %s", response.text)
                 return
@@ -197,14 +190,10 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             if content_length > 0:
                 body = self.rfile.read(content_length)
-                # Log raw payload
-                raw_payload = body.decode('utf-8')
-                logger.info("Raw webhook payload: %s", raw_payload)
-                message = json.loads(raw_payload)
+                message = json.loads(body.decode('utf-8'))
 
                 # Handle UI->Server messages
                 if "type" in message and "message" in message and "phone" in message:
-                    logger.info("UI -> Server: %s", message)
                     # Save outgoing message
                     outgoing_message = {
                         "type": "text",
@@ -218,23 +207,29 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                     # Start forwarding to app in a separate thread
                     import threading
                     threading.Thread(target=self._forward_to_app, args=(message,)).start()
+                    logger.info("UI -> Server-> app-1 complete: %s", message["message"])
                     return
 
                 # Handle App->Server messages
-                logger.info("App -> Server: %s", message)
-
                 # Extract message content from WhatsApp format
                 if message.get("messaging_product") == "whatsapp":
-                    # Format for storage
+                    # Get message text, handling both direct text and text object formats
+                    message_text = message.get("text", {})
+                    if isinstance(message_text, str):
+                        body = message_text
+                    else:
+                        body = message_text.get("body", "")
+
+                    # Format for storage with explicit from field
                     outgoing_message = {
-                        "type": "text",  # Force text type for storage
-                        "text": {
-                            "body": message.get("text", {}).get("body", message.get("text", ""))  # Handle both formats
-                        },
-                        "to": message.get("to")
+                        "type": "text",
+                        "text": {"body": body},
+                        "from": "app",  # Explicitly mark as from app
+                        "to": None  # App messages don't have a to field
                     }
                     # Save the extracted message
                     self._save_message(outgoing_message)
+                    logger.info("app-1 -> Server -> save complete. first line: %s", body.split('\n')[0])
 
                 # Acknowledge receipt to app
                 self._send_200({
@@ -249,8 +244,9 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
     def log_request(self, code='-', size='-'):
         """Log an accepted request."""
-        logger.info('"%s" %s %s', self.requestline, str(code), str(size))
-        logger.info("Headers: %s", self.headers)
+        if hasattr(self, 'requestline') and self.path == "/":
+            logger.info("VimbisoPay Mock reloaded")
+        return
 
     def log_error(self, format, *args):
         """Log an error."""
@@ -258,13 +254,10 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
     def log_message(self, format, *args):
         """Log a message."""
-        logger.info(format, *args)
+        pass  # Suppress default logging
 
     def do_GET(self):
         """Handle GET requests."""
-        logger.info("GET request to: %s", self.path)
-        logger.info("Headers: %s", self.headers)
-
         if self.path == "/" or self.path == "" or self.path == "/index.html":
             # Get all messages
             messages = self._get_messages()
@@ -301,6 +294,7 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 for filename in os.listdir(MESSAGES_DIR):
                     if filename.endswith('.json'):
                         os.remove(os.path.join(MESSAGES_DIR, filename))
+                logger.info("VimbisoPay Mock cleared")
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self._send_cors_headers()
@@ -331,20 +325,11 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(messages).encode())
             return
 
-        # Log file path resolution
         try:
             file_path = self.translate_path(self.path)
-            logger.info("Resolved file path: %s", file_path)
-            logger.info("File exists: %s", os.path.exists(file_path))
-            if os.path.exists(file_path):
-                logger.info("File contents: %s", os.listdir(os.path.dirname(file_path)))
-                if os.path.isfile(file_path):
-                    logger.info("File size: %d", os.path.getsize(file_path))
-                    with open(file_path, 'rb') as f:
-                        content = f.read()
-                        logger.info("First 100 bytes: %s", content[:100])
-                    logger.info("Content-Type: %s", self.guess_type(file_path))
-
+            if os.path.exists(file_path) and os.path.isfile(file_path):
+                with open(file_path, 'rb') as f:
+                    content = f.read()
                     # Send response with CORS headers
                     self.send_response(200)
                     self.send_header('Content-Type', self.guess_type(file_path))
@@ -380,9 +365,6 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         """Handle POST requests."""
-        logger.info("POST request to: %s", self.path)
-        logger.info("Headers: %s", self.headers)
-
         if self.path.startswith("/bot/webhook"):
             self._handle_webhook()
         else:
@@ -395,8 +377,7 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
 def run_server(port=8001):
     """Run the mock server."""
-    logger.info("Mock server running on port %d", port)
-    logger.info("Mock WhatsApp interface available at: http://localhost:%d", port)
+    logger.info("VimbisoPay Mock up at: http://localhost:%d", port)
 
     server = socketserver.TCPServer(("", port), MockWhatsAppHandler)
     server.allow_reuse_address = True

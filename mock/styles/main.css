@@ -39,8 +39,8 @@ h1 {
 }
 
 .message {
-    margin: 10px;
-    padding: 10px;
+    margin: 8px;
+    padding: 8px 12px;
     border-radius: 10px;
     max-width: 70%;
     word-wrap: break-word;
@@ -53,10 +53,13 @@ h1 {
 }
 
 .bot-message, .incoming-message {
-    background: var(--dark-blue-lighter);
-    border: 1px solid var(--bright-blue);
+    background: var(--dark-blue);
     color: var(--white);
-    white-space: pre-wrap;
+    margin-right: auto;
+}
+
+.bot-message strong, .incoming-message strong {
+    color: var(--gold);
 }
 
 .message.notification {
