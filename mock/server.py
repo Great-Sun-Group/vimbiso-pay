@@ -75,11 +75,17 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             if not text_content:
                 return
 
+            # Create simple message object
+            simple_message = {
+                "type": "text",
+                "text": {"body": text_content}
+            }
+
             # Send to all connected clients
             for client in list(sse_clients):
                 try:
                     logger.info("Sending to client: %s", id(client))
-                    client.wfile.write(f"data: {text_content}\n\n".encode('utf-8'))
+                    client.wfile.write(f"data: {json.dumps(simple_message)}\n\n".encode('utf-8'))
                     client.wfile.flush()
                     logger.info("Successfully sent to client: %s", id(client))
                 except Exception as e:
