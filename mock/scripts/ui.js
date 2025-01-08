@@ -8,6 +8,19 @@ export class ChatUI {
         this.sendButton = document.getElementById('sendButton');
         this.chatContainer = document.getElementById('chatContainer');
         this.statusDiv = document.getElementById('status');
+
+        // Format any existing messages
+        this.formatExistingMessages();
+    }
+
+    formatExistingMessages() {
+        const messages = document.querySelectorAll('.message.whatsapp-text');
+        messages.forEach(message => {
+            const rawText = message.getAttribute('data-raw-text');
+            if (rawText) {
+                message.innerHTML = formatWhatsAppText(rawText);
+            }
+        });
     }
 
     showNotification(text) {
@@ -16,6 +29,9 @@ export class ChatUI {
         notificationDiv.textContent = text;
         this.chatContainer.appendChild(notificationDiv);
         this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+
+        // Format any new messages that were added
+        this.formatExistingMessages();
     }
 
     updateStatus() {

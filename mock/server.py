@@ -271,10 +271,11 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             for msg in messages:
                 if msg.get('type') == 'text' and msg.get('text', {}).get('body'):
                     direction = 'incoming' if msg.get('from') else 'outgoing'
+                    body = msg['text']['body']
+                    # Escape special characters for HTML attribute
+                    escaped_body = body.replace('"', '&quot;').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
                     messages_html += f"""
-                    <div class="message {direction}-message whatsapp-text">
-                        {msg['text']['body']}
-                    </div>
+                    <div class="message {direction}-message whatsapp-text" data-raw-text="{escaped_body}"></div>
                     """
 
             # Replace placeholder with messages

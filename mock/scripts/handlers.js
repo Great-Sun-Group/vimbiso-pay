@@ -5,8 +5,12 @@ export function formatWhatsAppText(text) {
     console.log('Formatting text:', text);
 
     // Handle WhatsApp markdown
-    const formattedText = text
-        .replace(/\*(.*?)\*/g, '<strong>$1</strong>') // Bold
+    let formattedText = text
+        // First handle double asterisks for italic
+        .replace(/\*\*(.*?)\*\*/g, '<em>$1</em>')
+        // Then handle single asterisks for bold with our gold color
+        .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+        // Other formatting
         .replace(/_(.*?)_/g, '<em>$1</em>')          // Italic
         .replace(/~(.*?)~/g, '<del>$1</del>')        // Strikethrough
         .replace(/```(.*?)```/g, '<code>$1</code>')  // Code
