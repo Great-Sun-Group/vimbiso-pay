@@ -11,10 +11,10 @@ class WhatsAppMock {
 
     setupAppMessageStream() {
         console.log('Setting up SSE connection...');
-        console.log('Creating EventSource connection to /events...');
+        console.log('Creating EventSource connection to ./events...');
 
         // Connect to server events stream for app messages
-        const events = new EventSource('/events');
+        const events = new EventSource('./events');
 
         events.onopen = () => {
             console.log('SSE connection opened successfully');
@@ -28,7 +28,10 @@ class WhatsAppMock {
             console.log('Received SSE message:', event.data);
             const message = JSON.parse(event.data);
             console.log('Parsed message:', message);
-            this.ui.displayMessage(message);
+            // Only display actual messages, not acknowledgments
+            if (message.type === 'text' && message.text?.body) {
+                this.ui.displayMessage(message);
+            }
         };
 
         events.onerror = (error) => {
@@ -90,7 +93,7 @@ class WhatsAppMock {
             console.log('Sending payload to server:', payload);
 
             // Send to mock server
-            const response = await fetch(`/bot/webhook?target=${this.ui.targetSelect.value}`, {
+            const response = await fetch(`./bot/webhook?target=${this.ui.targetSelect.value}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -104,8 +107,19 @@ class WhatsAppMock {
                 throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
             }
 
-            // Just wait for response, no need to process it
-            await response.text();
+            // Get response but ignore success acknowledgments
+            const responseText = await response.text();
+            try {
+                const responseData = JSON.parse(responseText);
+                console.log('Response data:', responseData);
+                // Don't display success acknowledgments
+                if (!responseData.success) {
+                    console.log('Non-success response:', responseData);
+                }
+            } catch (e) {
+                console.log('Non-JSON response:', responseText);
+            }
+
             this.ui.disableSendButton(false);
 
         } catch (error) {

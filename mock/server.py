@@ -29,10 +29,25 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
     """Handler for serving mock WhatsApp interface and handling webhooks."""
 
     def __init__(self, *args, directory=None, **kwargs):
-        # Set directory before parent initialization
-        if directory is None:
-            directory = '/app/mock' if os.path.exists('/app/mock') else os.path.dirname(os.path.abspath(__file__))
+        # Serve from current directory
+        directory = os.path.dirname(os.path.abspath(__file__))
+        logger.info("Serving files from directory: %s", directory)
+        logger.info("Current working directory: %s", os.getcwd())
+        logger.info("Directory contents: %s", os.listdir(directory))
         super().__init__(*args, directory=directory, **kwargs)
+
+    def guess_type(self, path):
+        """Guess the type of a file based on its path.
+
+        Override to ensure proper MIME types for our files.
+        """
+        if path.endswith('.js'):
+            return 'application/javascript'
+        if path.endswith('.css'):
+            return 'text/css'
+        if path.endswith('.html'):
+            return 'text/html'
+        return super().guess_type(path)
 
     def _send_200(self, content=None):
         """Send 200 OK with optional JSON content"""
@@ -212,18 +227,52 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 sse_clients.remove(self)
                 logger.info("Removed SSE client %s (remaining: %d)", id(self), len(sse_clients))
 
+    def log_request(self, code='-', size='-'):
+        """Log an accepted request."""
+        logger.info('"%s" %s %s', self.requestline, str(code), str(size))
+        logger.info("Headers: %s", self.headers)
+
+    def log_error(self, format, *args):
+        """Log an error."""
+        logger.error(format, *args)
+
+    def log_message(self, format, *args):
+        """Log a message."""
+        logger.info(format, *args)
+
     def do_GET(self):
         """Handle GET requests."""
         logger.info("GET request to: %s", self.path)
+        logger.info("Headers: %s", self.headers)
+
         if self.path == "/events":
             logger.info("Handling SSE connection request")
             return self._handle_sse()
         if self.path == "/" or self.path == "":
             self.path = "/index.html"
+
+        # Log file path resolution
+        try:
+            file_path = self.translate_path(self.path)
+            logger.info("Resolved file path: %s", file_path)
+            logger.info("File exists: %s", os.path.exists(file_path))
+            if os.path.exists(file_path):
+                logger.info("File contents: %s", os.listdir(os.path.dirname(file_path)))
+                if os.path.isfile(file_path):
+                    logger.info("File size: %d", os.path.getsize(file_path))
+                    with open(file_path, 'rb') as f:
+                        logger.info("First 100 bytes: %s", f.read(100))
+                    logger.info("Content-Type: %s", self.guess_type(file_path))
+        except Exception as e:
+            logger.error("Error checking file path: %s", e)
+
         return SimpleHTTPRequestHandler.do_GET(self)
 
     def do_POST(self):
         """Handle POST requests."""
+        logger.info("POST request to: %s", self.path)
+        logger.info("Headers: %s", self.headers)
+
         if self.path.startswith("/bot/webhook"):
             self._handle_webhook()
         else:
