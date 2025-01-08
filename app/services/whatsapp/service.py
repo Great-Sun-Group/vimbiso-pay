@@ -1,7 +1,7 @@
 """WhatsApp messaging service implementation"""
 import logging
-from typing import Any, Dict, List, Optional
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import requests
 from core.messaging.base import BaseMessagingService
@@ -239,25 +239,32 @@ class WhatsAppMessagingService(BaseMessagingService):
         logger.info("Mock mode: sending to mock server")
 
         try:
-            # Fire-and-forget request to mock server
-            requests.post(
+            # Send and wait for response
+            response = requests.post(
                 "http://mock:8001/bot/webhook",
                 json=whatsapp_message,
                 headers={"Content-Type": "application/json"},
-                timeout=1,  # Just for connection timeout
-                stream=True  # Don't wait for response body
-            ).close()  # Close immediately
+                timeout=10  # Increased timeout
+            )
 
-            # Just track when we sent it
+            # Track when sent and response
             message.metadata = {
                 "sent_at": datetime.utcnow().isoformat(),
-                "mock": True
+                "mock": True,
+                "status_code": response.status_code
             }
+
+            # Try to parse response
+            try:
+                message.metadata["response"] = response.json()
+            except Exception:
+                message.metadata["response"] = response.text
+
             return message
 
         except Exception as e:
-            logger.warning(f"Non-blocking request to mock failed: {str(e)}")
-            # Track error but continue
+            # Log error and include in metadata
+            logger.warning("Mock server request failed: %s", e)
             message.metadata = {
                 "sent_at": datetime.utcnow().isoformat(),
                 "mock": True,
@@ -287,25 +294,31 @@ class WhatsAppMessagingService(BaseMessagingService):
         }
 
         try:
-            # Fire-and-forget request to WhatsApp
-            # They'll send delivery/read status via webhooks
-            requests.post(
+            # Send and wait for response
+            response = requests.post(
                 url,
                 json=whatsapp_message,
                 headers=headers,
-                timeout=1,  # Just for connection timeout
-                stream=True  # Don't wait for response
-            ).close()  # Close immediately
+                timeout=10  # Increased timeout
+            )
 
-            # Just track when we sent it
+            # Track when sent and response
             message.metadata = {
-                "sent_at": datetime.utcnow().isoformat()
+                "sent_at": datetime.utcnow().isoformat(),
+                "status_code": response.status_code
             }
+
+            # Try to parse response
+            try:
+                message.metadata["response"] = response.json()
+            except Exception:
+                message.metadata["response"] = response.text
+
             return message
 
         except Exception as e:
-            logger.warning(f"Non-blocking request to WhatsApp failed: {str(e)}")
-            # Track error but continue
+            # Log error and include in metadata
+            logger.warning("WhatsApp API request failed: %s", e)
             message.metadata = {
                 "sent_at": datetime.utcnow().isoformat(),
                 "error": str(e)

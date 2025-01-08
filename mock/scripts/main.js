@@ -1,4 +1,4 @@
-import { createFormReply, createMessagePayload } from './handlers.js';
+import { createFormReply } from './handlers.js';
 import { ChatUI } from './ui.js';
 
 class WhatsAppMock {
@@ -6,6 +6,32 @@ class WhatsAppMock {
         this.ui = new ChatUI();
         this.ui.setupEventListeners(() => this.sendMessage());
         this.ui.updateStatus();
+        this.setupAppMessageStream();
+    }
+
+    setupAppMessageStream() {
+        console.log('Setting up SSE connection...');
+        // Connect to server events stream for app messages
+        const events = new EventSource('./events');
+
+        events.onopen = () => {
+            console.log('SSE connection opened');
+        };
+
+        events.onmessage = (event) => {
+            console.log('Received SSE message:', event.data);
+            const message = JSON.parse(event.data);
+            console.log('Parsed message:', message);
+            this.ui.displayMessage(message);
+        };
+
+        events.onerror = (error) => {
+            console.error('EventSource error:', error);
+            events.close();
+            // Retry connection after 1s
+            console.log('Retrying SSE connection in 1s...');
+            setTimeout(() => this.setupAppMessageStream(), 1000);
+        };
     }
 
     async sendMessage() {
@@ -44,12 +70,12 @@ class WhatsAppMock {
         this.ui.displayUserMessage(displayText);
 
         try {
-            // Create WhatsApp-formatted payload
-            const payload = createMessagePayload(
-                messageType,
-                processedMessage,
-                this.ui.phoneInput.value
-            );
+            // Create simple message payload
+            const payload = {
+                type: messageType,
+                message: processedMessage,
+                phone: this.ui.phoneInput.value
+            };
 
             console.log('Sending payload to server:', payload);
 
@@ -68,7 +94,7 @@ class WhatsAppMock {
                 throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
             }
 
-            // Ignore the empty response
+            // Ignore empty response from UI->App message
             await response.text();
             this.ui.disableSendButton(false);
 
