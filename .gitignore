@@ -170,3 +170,6 @@ dump.rdb
 **/data/redis/
 appendonly.aof
 *.aof.manifest
+
+# message storage for the mock
+mock/messages

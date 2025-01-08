@@ -4,16 +4,22 @@
     <title>VimbisoPay Mock Interface</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="./styles/main.css">
+    <link rel="stylesheet" href="/styles/main.css">
 </head>
 <body>
     <h1>VimbisoPay Mock Interface</h1>
 
-    <div class="chat-container" id="chatContainer"></div>
+    <div class="chat-container" id="chatContainer">
+        <div id="messageList">
+            {messages_placeholder}
+        </div>
+    </div>
 
     <div class="input-container">
         <input type="text" id="messageInput" placeholder="Type a message...">
         <button id="sendButton">Send</button>
+        <button id="refreshButton">Refresh</button>
+        <button id="clearButton" class="danger">Clear</button>
     </div>
 
     <div class="settings-row">
@@ -33,6 +39,6 @@
         <div class="status" id="status">Connected: Local Server</div>
     </div>
 
-    <script type="module" src="./scripts/main.js"></script>
+    <script type="module" src="/scripts/main.js"></script>
 </body>
 </html>

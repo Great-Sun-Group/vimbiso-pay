@@ -3,84 +3,20 @@
 import argparse
 import json
 import sys
-from typing import Dict, Any
+import time
 from urllib.parse import urlencode
 
 import requests
 
-from whatsapp_utils import (
-    create_whatsapp_payload,
-    extract_message_text,
-    format_json_response
-)
-
-
-def format_display_text(response: Dict[str, Any]) -> str:
-    """Format response for display."""
-    if isinstance(response, str):
-        return response
-
-    # Extract message text
-    message_text = extract_message_text(response)
-    if message_text and isinstance(message_text, str):
-        return message_text
-
-    # Format interactive messages
-    if response.get("type") == "interactive":
-        interactive = response.get("interactive", {})
-        text_parts = []
-
-        # Add body text
-        if interactive.get("body", {}).get("text"):
-            text_parts.append(interactive["body"]["text"])
-
-        # Add button/options
-        action = interactive.get("action", {})
-        if action.get("button"):
-            text_parts.append(f"\n[Button: {action['button']}]")
-        if action.get("sections"):
-            for section in action["sections"]:
-                if section.get("title"):
-                    text_parts.append(f"\n{section['title']}:")
-                for row in section.get("rows", []):
-                    description = row.get("description", "")
-                    text_parts.append(f"- {row['title']}" + (f" ({description})" if description else ""))
-
-        return "\n".join(text_parts)
-
-    # Format text messages
-    if response.get("type") == "text":
-        return response.get("text", {}).get("body", "")
-
-    # Default to JSON string
-    return json.dumps(response, indent=2, ensure_ascii=False)
-
 
 def send_message(args: argparse.Namespace) -> None:
     """Send message to mock server."""
-    # Parse message for list selections
-    message = args.message
-    if args.type == "list":
-        try:
-            message = json.loads(message)
-        except json.JSONDecodeError:
-            print("Error: List selection must be valid JSON")
-            sys.exit(1)
-
-    # Create WhatsApp-formatted payload
-    whatsapp_payload = create_whatsapp_payload(
-        phone_number=args.phone,
-        message_type=args.type,
-        message_text=message,
-        phone_number_id=args.phone_number_id
-    )
-
-    # Add context for interactive messages
-    if args.context_id:
-        whatsapp_payload["entry"][0]["changes"][0]["value"]["messages"][0]["context"] = {
-            "from": args.context_from or "15550783881",
-            "id": args.context_id
-        }
+    # Create simple payload matching UI format
+    payload = {
+        "type": args.type,
+        "message": args.message,
+        "phone": args.phone
+    }
 
     # Send request
     params = {'target': args.target}
@@ -92,19 +28,50 @@ def send_message(args: argparse.Namespace) -> None:
     }
 
     try:
+        print(f"Sending request to: {url}")
+        print(f"Headers: {headers}")
+        print(f"Payload: {json.dumps(payload, indent=2)}")
+
         response = requests.post(
             url,
-            json=whatsapp_payload,
+            json=payload,
             headers=headers,
             timeout=30
         )
         response.raise_for_status()
 
-        # Format and display response
-        print("Server Response:")
-        formatted_response = format_json_response(response.text)
-        display_text = format_display_text(formatted_response)
-        print(display_text)
+        # Display raw response
+        print("\nServer Response:")
+        print(response.text)
+
+        # Start polling for messages
+        last_check = int(time.time() * 1000)  # Start from current time
+        print("\nWaiting for responses...")
+
+        while True:
+            try:
+                # Poll messages endpoint
+                messages_url = f"http://localhost:{args.port}/messages?since={last_check}"
+                response = requests.get(messages_url)
+                response.raise_for_status()
+
+                # Process any new messages
+                messages = response.json()
+                if messages:
+                    for message in messages:
+                        print(f"\nReceived: {json.dumps(message, indent=2)}")
+                        # Update last check time from filename
+                        last_check = max(last_check, int(time.time() * 1000))
+
+                # Wait before next poll
+                time.sleep(1)
+
+            except KeyboardInterrupt:
+                print("\nStopping message polling...")
+                break
+            except Exception as e:
+                print(f"Error polling messages: {e}")
+                time.sleep(1)  # Wait before retry
 
     except requests.exceptions.RequestException as e:
         print(f"Error sending message: {e}")
