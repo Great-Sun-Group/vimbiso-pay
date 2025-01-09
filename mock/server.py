@@ -226,11 +226,9 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                         # Message from app in WhatsApp format
                         value = message.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
                         messages = value.get("messages", [{}])[0]
-                        logger.info("Received message from app: %s", json.dumps(messages, indent=2))
                     else:
                         # Direct message from app
                         messages = message
-                        logger.info("Received direct message: %s", json.dumps(messages, indent=2))
 
                     # Create outgoing message
                     outgoing_message = {
@@ -243,14 +241,13 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                     if outgoing_message["type"] == "text":
                         text_content = messages.get("text", {}).get("body", "") if isinstance(messages.get("text"), dict) else messages.get("text", "")
                         outgoing_message["text"] = {"body": text_content}
-                        logger.info("Saving text message: %s", text_content.split('\n')[0])
+                        logger.info("app-1 -> Server - >save complete: %s", text_content)
                     elif outgoing_message["type"] == "interactive":
                         interactive_content = messages.get("interactive", {})
                         outgoing_message["interactive"] = interactive_content
-                        logger.info("Saving interactive message: %s", json.dumps(interactive_content, indent=2))
+                        logger.info("app-1 -> Server - >save complete: %s", interactive_content.get('body', {}).get('text', '').split('\n')[0])
 
                     # Save message
-                    logger.info("Saving message: %s", json.dumps(outgoing_message, indent=2))
                     self._save_message(outgoing_message)
 
                 # Acknowledge receipt to app

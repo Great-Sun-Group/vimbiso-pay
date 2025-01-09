@@ -125,24 +125,9 @@ def handle_component_result(
         if not result.valid:
             return context, component  # Retry on validation failure
 
-        # Get value and metadata for flow control
-        value = result.value or {}
-        metadata = getattr(result, 'metadata', {}) or {}
-
-        # Components can explicitly request to wait for input
-        # This is needed for display/confirm components that need user interaction
-        if metadata.get("await_input"):
-            return context, component
-
-        # Default behavior is to advance with the flow
-        result = {
-            **(value if isinstance(value, dict) else {"value": value}),
-            "exit_condition": metadata.get("exit_condition"),
-            "_metadata": {
-                "value_type": type(value).__name__,
-                "has_metadata": bool(metadata)
-            }
-        }
+        # Get value for flow control
+        value = result.value if isinstance(result.value, dict) else {"value": result.value}
+        result = value
 
     # Branch based on context and component
     match (context, component):
@@ -151,17 +136,10 @@ def handle_component_result(
             return "login", "LoginApiCall"
 
         case ("login", "LoginApiCall"):
-            # Check for exit condition in result dict
-            exit_condition = result.get("exit_condition")
-
-            # If no exit condition in dict, try metadata
-            if not exit_condition and hasattr(result, 'metadata'):
-                metadata = getattr(result, 'metadata', {}) or {}
-                exit_condition = metadata.get("exit_condition")
-
-            if exit_condition == "not_member":
+            status = result.get("status")
+            if status == "not_found":
                 return "onboard", "Welcome"
-            elif exit_condition == "success":
+            elif status == "success":
                 # Set default account before proceeding
                 if not state_manager:
                     return context, component  # Retry if no state manager
@@ -224,10 +202,7 @@ def handle_component_result(
             return "offer_secured", "CreateCredexApiCall"
 
         case ("offer_secured", "CreateCredexApiCall"):
-            if result.get("credex_created"):
-                return "account", "AccountDashboard"
-            else:
-                return "account", "AccountDashboard"
+            return "account", "AccountDashboard"  # Always return to dashboard
 
         # Accept offer context
         case ("accept_offer", "OfferListDisplay"):

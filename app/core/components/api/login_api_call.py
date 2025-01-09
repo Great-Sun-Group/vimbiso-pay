@@ -1,7 +1,8 @@
 """Login API call component
 
-This component handles the login API call with proper validation.
-Dashboard data is the source of truth for member state.
+Handles the login flow for both new and existing members:
+- For new users: Returns not_found to trigger onboarding
+- For existing users: Updates state with dashboard data
 """
 
 import logging
@@ -14,7 +15,7 @@ from ..base import ApiComponent
 
 
 class LoginApiCall(ApiComponent):
-    """Handles login API call with proper exit conditions"""
+    """Processes login API calls and manages member state"""
 
     def __init__(self):
         super().__init__("LoginApiCall")  # Match the class name used for lookup
@@ -24,7 +25,16 @@ class LoginApiCall(ApiComponent):
         self.state_manager = state_manager
 
     def validate_api_call(self, value: Any) -> ValidationResult:
-        """Call login endpoint and validate response"""
+        """Process login API call and update state
+
+        For existing members:
+        - Makes login API call
+        - Updates state with dashboard data
+        - Returns success status
+
+        For new users:
+        - Returns not_found status for onboarding
+        """
         logger = logging.getLogger(__name__)
 
         # Get channel info from state manager
@@ -53,12 +63,9 @@ class LoginApiCall(ApiComponent):
 
         # Handle 400 for new users
         if response.status_code == 400:
-            return ValidationResult.success(
-                {"message": "Welcome! Let's get you set up."},
-                metadata={
-                    "exit_condition": "not_member"  # Exit to onboarding
-                }
-            )
+            return ValidationResult.success({
+                "status": "not_found"
+            })
 
         # Let handlers update state
         response_data, error = handle_api_response(
@@ -72,33 +79,16 @@ class LoginApiCall(ApiComponent):
                 details={"error": error}
             )
 
-        # Get action data from state
-        action_data = self.state_manager.get("action") or {}
-
-        return ValidationResult.success(
-            {"action": action_data},
-            metadata={
-                "exit_condition": "success"  # Exit to dashboard
-            }
-        )
-
-    def to_message_content(self, value: Dict) -> str:
-        """Convert component result to message content"""
-        if isinstance(value, dict):
-            if "message" in value:
-                return value["message"]
-            if "action" in value:
-                return "Processing your request..."
-        return "Logging you in..."
+        return ValidationResult.success({
+            "status": "success"
+        })
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert API response to verified data
 
-        Note: Most data is in dashboard state, we just need
-        success indicators and action details here.
+        Note: Dashboard/action data is handled by handle_api_response.
+        We just track authentication status here.
         """
         return {
-            "authenticated": "message" not in value,  # True if we got API data
-            "action_type": value.get("action", {}).get("type"),
-            "action_id": value.get("action", {}).get("id")
+            "authenticated": value.get("status") == "success"
         }
