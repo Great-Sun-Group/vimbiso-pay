@@ -9,6 +9,7 @@ from typing import Any, Dict
 from core.messaging.types import Message
 from core.messaging.utils import get_recipient
 from core.utils.error_types import ValidationResult
+from core.utils.exceptions import ComponentException
 
 from ..base import DisplayComponent
 
@@ -118,19 +119,28 @@ class AccountDashboard(DisplayComponent):
                                                   InteractiveType)
                 menu_content = InteractiveContent(
                     interactive_type=InteractiveType.LIST,
-                    body=f"{account_info}{menu['body']['text']}",
+                    body=account_info,  # Just use account info as body
                     sections=menu["action"]["sections"],
                     button_text=menu["action"]["button"]
                 )
-                self.state_manager.messaging.send_message(
-                    Message(recipient=recipient, content=menu_content)
-                )
+                try:
+                    self.state_manager.messaging.send_message(
+                        Message(recipient=recipient, content=menu_content)
+                    )
 
-                # Return success with await_input to stay active for input
-                return ValidationResult.success(
-                    formatted_data,
-                    metadata={"await_input": True}  # Signal flow to wait for input
-                )
+                    # Return success with await_input to stay active for input
+                    return ValidationResult.success(
+                        formatted_data,
+                        metadata={"await_input": True}  # Signal flow to wait for input
+                    )
+                except Exception as e:
+                    raise ComponentException(
+                        message=f"Failed to send menu message: {str(e)}",
+                        component=self.type,
+                        field="messaging",
+                        value=str(menu_content),
+                        validation=self.validation_state
+                    )
 
             # Input Phase - When we get a response
             selection = value.get("text", "").strip()

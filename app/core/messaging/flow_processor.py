@@ -15,7 +15,6 @@ from datetime import datetime
 from typing import Any, Dict
 
 from core.config.interface import StateManagerInterface
-
 from core.messaging.types import Message, TextContent
 from core.messaging.utils import get_recipient
 from core.utils.error_handler import ErrorHandler

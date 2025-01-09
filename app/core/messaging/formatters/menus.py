@@ -78,10 +78,12 @@ class WhatsAppMenus:
                 }
                 for option_id, option_text in options.items()
             ]
-            sections.append({
-                "title": section_title,
-                "rows": section_rows
-            })
+            # Only add sections that have rows
+            if section_rows:
+                sections.append({
+                    "title": section_title,
+                    "rows": section_rows
+                })
 
         return {
             "type": "list",

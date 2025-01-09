@@ -69,7 +69,7 @@ LOGGING = {
         # Core application logging
         "core": {
             "handlers": ["console"],
-            "level": env("APP_LOG_LEVEL", default="INFO"),
+            "level": env("APP_LOG_LEVEL", default="DEBUG"),
             "propagate": False,
         },
         # Django framework logging

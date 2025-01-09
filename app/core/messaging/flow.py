@@ -125,6 +125,10 @@ def handle_component_result(
         if not result.valid:
             return context, component  # Retry on validation failure
 
+        # Check if component wants to await input
+        if hasattr(result, "metadata") and result.metadata and result.metadata.get("await_input"):
+            return context, component  # Stay on current component
+
         # Get value for flow control
         value = result.value if isinstance(result.value, dict) else {"value": result.value}
         result = value
