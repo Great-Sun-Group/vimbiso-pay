@@ -6,10 +6,10 @@ Handles the login flow for both new and existing members:
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from core.api.base import handle_api_response, make_api_request
-from core.utils.error_types import ValidationResult
+from core.utils.exceptions import ComponentException
 
 from ..base import ApiComponent
 
@@ -24,16 +24,18 @@ class LoginApiCall(ApiComponent):
         """Set state manager for accessing state data"""
         self.state_manager = state_manager
 
-    def validate_api_call(self, value: Any) -> ValidationResult:
+    def validate_api_call(self, value: Any) -> None:
         """Process login API call and update state
 
         For existing members:
         - Makes login API call
         - Updates state with dashboard data
-        - Returns success status
 
         For new users:
-        - Returns not_found status for onboarding
+        - 400 response updates state for onboarding
+
+        Raises:
+            ComponentException: If API call fails
         """
         logger = logging.getLogger(__name__)
 
@@ -41,10 +43,11 @@ class LoginApiCall(ApiComponent):
         channel = self.state_manager.get("channel")
         if not channel or not channel.get("identifier"):
             logger.error("Missing channel identifier")
-            return ValidationResult.failure(
+            raise ComponentException(
                 message="No channel identifier found",
+                component=self.type,
                 field="channel",
-                details={"component": self.type}
+                value=str(channel)
             )
 
         # Make API call
@@ -61,34 +64,15 @@ class LoginApiCall(ApiComponent):
             state_manager=self.state_manager
         )
 
-        # Handle 400 for new users
-        if response.status_code == 400:
-            return ValidationResult.success({
-                "status": "not_found"
-            })
-
-        # Let handlers update state
-        response_data, error = handle_api_response(
+        # Let handlers update state (including 400 for new users)
+        _, error = handle_api_response(
             response=response,
             state_manager=self.state_manager
         )
         if error:
-            return ValidationResult.failure(
+            raise ComponentException(
                 message=f"Login failed: {error}",
+                component=self.type,
                 field="api_call",
-                details={"error": error}
+                value=str(payload)
             )
-
-        return ValidationResult.success({
-            "status": "success"
-        })
-
-    def to_verified_data(self, value: Any) -> Dict:
-        """Convert API response to verified data
-
-        Note: Dashboard/action data is handled by handle_api_response.
-        We just track authentication status here.
-        """
-        return {
-            "authenticated": value.get("status") == "success"
-        }

@@ -250,12 +250,22 @@ class StateManager(StateManagerInterface):
         }
 
         try:
+            # Get current flow data to preserve
+            current_flow = self.get_flow_state() or {}
+            current_data = current_flow.get("data", {})
+
+            # Merge new data with existing data
+            merged_data = {
+                **current_data,  # Preserve existing data
+                **(data or {})   # Add new data
+            }
+
             # Prepare and apply flow state update
             self.update_state({
                 "flow_data": {
                     "context": context,
                     "component": component,
-                    "data": data or {},
+                    "data": merged_data,
                     "validation": validation_state,
                     "_metadata": {
                         "updated_at": datetime.utcnow().isoformat()

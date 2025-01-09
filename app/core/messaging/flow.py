@@ -1,281 +1,188 @@
-"""Component activation and branching logic.
+"""State machine for application flow paths.
 
-This module handles activating components and branching based on their results.
-Components handle their own validation and processing, this just handles "what's next".
-Context is maintained to support reusable components.
+This module defines a simple state machine that manages user flows through:
+1. Authentication and registration paths
+2. Main menu navigation
+3. Feature-specific paths (offers, ledger, upgrades)
 
-Also handles default account setup for entry points (login/onboard).
+The state machine:
+- Activates components at each step
+- Determines next step through branching logic
+- Returns to main menu after completing operations
+
+Components are responsible for their own:
+- Validation and processing
+- State management
+- Error handling
+
+The branching logic (embedded in match statements) organizes paths into:
+- Authentication paths (login, verification)
+- Registration paths (user details, account creation)
+- Main menu path (dashboard navigation)
+- Offer paths (creation, acceptance, decline, cancellation)
+- Account management paths (ledger, tier upgrades)
 """
 
 import logging
-from typing import Optional, Tuple
+from typing import Tuple
 
 from core import components
 from core.config.interface import StateManagerInterface
-from core.utils.exceptions import ComponentException
-from .types import ComponentResult
 
 logger = logging.getLogger(__name__)
 
 
-def _set_default_account(state_manager: StateManagerInterface) -> bool:
-    """Set default account (currently PERSONAL) for new flows
+def activate_component(component_type: str, state_manager: StateManagerInterface) -> None:
+    """Create and activate a component for the current path step.
 
-    Returns:
-        bool: True if account was set successfully
-    """
-    try:
-        # Get dashboard directly from state
-        dashboard = state_manager.get("dashboard")
-        if not dashboard:
-            logger.error("No dashboard data available")
-            return False
-
-        accounts = dashboard.get("accounts", [])
-        if not accounts:
-            logger.error("No accounts found")
-            return False
-
-        personal_account = next(
-            (acc for acc in accounts if acc.get("accountType") == "PERSONAL"),
-            None
-        )
-        if not personal_account:
-            logger.error("No personal account found")
-            return False
-
-        state_manager.update_state({
-            "active_account_id": personal_account["accountID"]
-        })
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Set active account: {personal_account['accountID']}")
-        return True
-
-    except Exception as e:
-        logger.error(f"Error setting default account: {str(e)}")
-        return False
-
-
-def activate_component(component_type: str, state_manager: StateManagerInterface) -> ComponentResult:
-    """Create and activate a component using state data
+    Handles component processing:
+    1. Creates component instance
+    2. Configures state management
+    3. Activates component logic
+    4. Validates component state
 
     Args:
-        component_type: Type of component to activate
-        state_manager: State manager instance for accessing data
+        component_type: Component for this step (e.g. "Greeting", "LoginApiCall")
+        state_manager: State manager for component configuration and validation
 
-    Returns:
-        Component result
+    Raises:
+        ComponentException: If component creation, activation, or validation fails
     """
-    try:
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Activating component: {component_type}")
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(f"Creating component for step: {component_type}")
 
-        # Get component class and create instance
-        component_class = getattr(components, component_type)
-        component = component_class()
-        component.set_state_manager(state_manager)
+    # Create component for this step
+    component_class = getattr(components, component_type)
+    component = component_class()
+    component.set_state_manager(state_manager)
 
-        # Get flow data and validate
-        flow_data = state_manager.get_flow_data()
-        result = component.validate(flow_data)
-        return result
-    except ComponentException as e:
-        # Ensure all required parameters are present
-        if not all(k in e.details for k in ["component", "field", "value"]):
-            raise ComponentException(
-                message=str(e),
-                component=component_type,
-                field="validation",
-                value=str(flow_data),
-                validation=e.details.get("validation")
-            )
-        raise
+    # Activate component (it will get data from state_manager)
+    component.validate(None)
 
 
-def handle_component_result(
+def get_next_component(
     context: str,
     component: str,
-    result: ComponentResult,
-    state_manager: Optional[StateManagerInterface] = None
+    state_manager: StateManagerInterface
 ) -> Tuple[str, str]:
-    """Handle component result and determine next component
+    """Determine next step based on current path and state.
+
+    Handles progression through:
+    - Authentication and registration flows
+    - Main menu navigation
+    - Feature-specific operations
+    - Return to main menu after completion
 
     Args:
-        context: Current context (e.g. "login", "onboard", "account")
-        component: Currently active component
-        result: Result from component
-        state_manager: Optional state manager for state-dependent branching
+        context: Path category (e.g. "login", "offer_secured", "account")
+        component: Current step's component in the path
+        state_manager: State manager for checking awaiting_input and path state
 
     Returns:
-        Tuple[str, str]: Next (context, component) to activate
+        Tuple[str, str]: Next step (context, component) in the current path
     """
-    # Handle errors with validation state
-    if isinstance(result, Exception):
-        if isinstance(result, ComponentException):
-            # Component validation failed with tracking
-            validation = result.details.get("validation", {})
-            if validation.get("attempts", 0) >= 3:
-                # After 3 attempts, return to dashboard
-                return "account", "AccountDashboard"
-        # For other errors or validation attempts < 3, retry
-        return context, component
+    # Check if component is awaiting input
+    flow_state = state_manager.get_flow_state()
+    if flow_state.get("awaiting_input"):
+        return context, component  # Stay at current step until input received
 
-    # Handle ValidationResult objects
-    if hasattr(result, "valid"):
-        if not result.valid:
-            return context, component  # Retry on validation failure
-
-        # Check if component wants to await input
-        if hasattr(result, "metadata") and result.metadata and result.metadata.get("await_input"):
-            return context, component  # Stay on current component
-
-        # Get value for flow control
-        value = result.value if isinstance(result.value, dict) else {"value": result.value}
-        result = value
-
-    # Branch based on context and component
+    # Branch based on current path
     match (context, component):
-        # Login context
+        # Authentication paths
         case ("login", "Greeting"):
-            return "login", "LoginApiCall"
-
+            return "login", "LoginApiCall"  # Check if user exists in system
         case ("login", "LoginApiCall"):
-            status = result.get("status")
-            if status == "not_found":
-                return "onboard", "Welcome"
-            elif status == "success":
-                # Set default account before proceeding
-                if not state_manager:
-                    return context, component  # Retry if no state manager
-                if not _set_default_account(state_manager):
-                    return context, component  # Retry if account setup fails
-                return "account", "AccountDashboard"
-            else:
-                # No valid exit condition
-                logger.error("Missing valid exit condition")
-                return context, component
+            return "onboard", "Welcome"  # Component updates state for new/existing user
 
-        # Onboard context
+        # Registration paths
         case ("onboard", "Welcome"):
-            return "onboard", "FirstNameInput"
-
+            return "onboard", "FirstNameInput"  # Start collecting user details
         case ("onboard", "FirstNameInput"):
-            return "onboard", "LastNameInput"
-
+            return "onboard", "LastNameInput"  # Continue with user details
         case ("onboard", "LastNameInput"):
-            return "onboard", "Greeting"
-
+            return "onboard", "Greeting"  # Show welcome after details collected
         case ("onboard", "Greeting"):
-            return "onboard", "OnBoardMemberApiCall"
-
+            return "onboard", "OnBoardMemberApiCall"  # Create account with collected details
         case ("onboard", "OnBoardMemberApiCall"):
-            if not state_manager:
-                return context, component  # Retry if no state manager
-            # Set default account before proceeding
-            if not _set_default_account(state_manager):
-                return context, component  # Retry if account setup fails
-            return "account", "AccountDashboard"
+            return "account", "AccountDashboard"  # Return to main menu after completing onboarding
 
-        # Account context
+        # Main menu path
         case ("account", "AccountDashboard"):
-            match result.get("selection"):
-                case "offer_secured":
-                    return "offer_secured", "AmountInput"
-                case "accept_offer":
-                    return "accept_offer", "OfferListDisplay"
-                case "decline_offer":
-                    return "decline_offer", "OfferListDisplay"
-                case "cancel_offer":
-                    return "cancel_offer", "OfferListDisplay"
-                case "view_ledger":
-                    return "view_ledger", "ViewLedger"
-                case "upgrade_membertier":
-                    return "upgrade_membertier", "ConfirmUpgrade"
+            return "account", "AccountDashboard"  # Component updates state based on user selection
 
-        # Offer context
+        # Offer creation paths
         case ("offer_secured", "AmountInput"):
-            return "offer_secured", "HandleInput"
-
+            return "offer_secured", "HandleInput"  # Start collecting offer details
         case ("offer_secured", "HandleInput"):
-            return "offer_secured", "ConfirmInput"
-
+            return "offer_secured", "ConfirmInput"  # Get recipient handle
         case ("offer_secured", "ConfirmInput"):
-            return "offer_secured", "CreateCredexApiCall"
-
+            return "offer_secured", "CreateCredexApiCall"  # Verify offer details
         case ("offer_secured", "Greeting"):
-            return "offer_secured", "CreateCredexApiCall"
-
+            return "offer_secured", "CreateCredexApiCall"  # Create offer with verified details
         case ("offer_secured", "CreateCredexApiCall"):
-            return "account", "AccountDashboard"  # Always return to dashboard
+            return "account", "AccountDashboard"  # Return to main menu after offer creation
 
-        # Accept offer context
+        # Offer management paths
         case ("accept_offer", "OfferListDisplay"):
-            return "accept_offer", "Greeting"
-
+            return "accept_offer", "Greeting"  # Show available offers
         case ("accept_offer", "Greeting"):
-            return "accept_offer", "AcceptOfferApiCall"
-
+            return "accept_offer", "AcceptOfferApiCall"  # Process selected offer
         case ("accept_offer", "AcceptOfferApiCall"):
-            return "account", "AccountDashboard"
+            return "account", "AccountDashboard"  # Return to main menu after accepting offer
 
-        # Decline offer context
         case ("decline_offer", "OfferListDisplay"):
-            return "decline_offer", "ConfirmAction"
-
+            return "decline_offer", "ConfirmAction"  # Show offers and request confirmation
         case ("decline_offer", "ConfirmAction"):
-            return "decline_offer", "Greeting"
-
+            return "decline_offer", "Greeting"  # Confirm decline action
         case ("decline_offer", "Greeting"):
-            return "decline_offer", "DeclineOfferApiCall"
-
+            return "decline_offer", "DeclineOfferApiCall"  # Process decline after confirmation
         case ("decline_offer", "DeclineOfferApiCall"):
-            return "account", "AccountDashboard"
+            return "account", "AccountDashboard"  # Return to main menu after declining offer
 
-        # Cancel offer context
         case ("cancel_offer", "OfferListDisplay"):
-            return "cancel_offer", "ConfirmAction"
-
+            return "cancel_offer", "ConfirmAction"  # Show offers and request confirmation
         case ("cancel_offer", "ConfirmAction"):
-            return "cancel_offer", "Greeting"
-
+            return "cancel_offer", "Greeting"  # Confirm cancel action
         case ("cancel_offer", "Greeting"):
-            return "cancel_offer", "CancelOfferApiCall"
-
+            return "cancel_offer", "CancelOfferApiCall"  # Process cancel after confirmation
         case ("cancel_offer", "CancelOfferApiCall"):
-            return "account", "AccountDashboard"
+            return "account", "AccountDashboard"  # Return to main menu after canceling offer
 
-        # Ledger context
+        # Account management paths
         case ("view_ledger", "ViewLedger"):
-            return "view_ledger", "Greeting"
-
+            return "view_ledger", "Greeting"  # Show ledger view options
         case ("view_ledger", "Greeting"):
-            return "view_ledger", "GetLedgerApiCall"
-
+            return "view_ledger", "GetLedgerApiCall"  # Fetch ledger data
         case ("view_ledger", "GetLedgerApiCall"):
-            return "view_ledger", "DisplayLedgerSection"
+            return "view_ledger", "DisplayLedgerSection"  # Show fetched ledger data
 
-        # Upgrade context
         case ("upgrade_membertier", "ConfirmUpgrade"):
-            return "upgrade_membertier", "Greeting"
-
+            return "upgrade_membertier", "Greeting"  # Request upgrade confirmation
         case ("upgrade_membertier", "Greeting"):
-            return "upgrade_membertier", "UpgradeMembertierApiCall"
-
+            return "upgrade_membertier", "UpgradeMembertierApiCall"  # Process tier upgrade
         case ("upgrade_membertier", "UpgradeMembertierApiCall"):
-            return "account", "AccountDashboard"
+            return "account", "AccountDashboard"  # Return to main menu after upgrading tier
 
 
-def process_component(context: str, component: str, state_manager: StateManagerInterface) -> Tuple[ComponentResult, str, str]:
-    """Process a component and get next component with context
+def process_component(context: str, component: str, state_manager: StateManagerInterface) -> Tuple[str, str]:
+    """Process current step and determine next step in application paths.
+
+    Handles the complete step processing:
+    1. Activates component for current step
+    2. Lets component process its logic
+    3. Determines next step in path
+    4. Returns to main menu when complete
 
     Args:
-        context: Current context
-        component: Component to process
-        state_manager: State manager instance for accessing data
+        context: Path category (e.g. "login", "offer_secured", "account")
+        component: Current step's component in the path
+        state_manager: State manager for component activation and path control
 
     Returns:
-        Tuple[Any, str, str]: (result, next_context, next_component)
+        Tuple[str, str]: Next step (context, component) in the current path
     """
-    result = activate_component(component, state_manager)
-    next_context, next_component = handle_component_result(context, component, result, state_manager)
-    return result, next_context, next_component
+    # Activate component for current step (errors will bubble up)
+    activate_component(component, state_manager)
+
+    # Determine next step in path
+    return get_next_component(context, component, state_manager)

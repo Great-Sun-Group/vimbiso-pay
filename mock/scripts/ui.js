@@ -37,7 +37,9 @@ export class ChatUI {
                         element.addEventListener('click', () => {
                             const id = element.getAttribute('data-id');
                             const type = element.classList.contains('whatsapp-button') ? 'button' : 'list';
-                            // Simulate user selecting this option
+                            const title = element.querySelector('.item-description')?.textContent || id;
+
+                            // Simulate user selecting this option with WhatsApp standard format
                             this.messageInput.value = `${type}:${id}`;
                             if (this.onSendMessage) {
                                 this.onSendMessage('interactive');

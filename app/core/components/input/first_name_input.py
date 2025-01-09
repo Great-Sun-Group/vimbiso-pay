@@ -5,9 +5,8 @@ This component handles first name input with proper validation.
 
 from typing import Any, Dict
 
-from core.utils.error_types import ValidationResult
-
 from core.components.base import InputComponent
+from core.utils.error_types import ValidationResult
 
 
 class FirstNameInput(InputComponent):
@@ -18,6 +17,11 @@ class FirstNameInput(InputComponent):
 
     def validate(self, value: Any) -> ValidationResult:
         """Validate first name with proper tracking"""
+        # If no value provided, we're being activated - await input
+        if value is None:
+            self.set_awaiting_input(True)
+            return ValidationResult.success(None)
+
         # Validate type
         type_result = self._validate_type(value, str, "text")
         if not type_result.valid:
@@ -41,6 +45,9 @@ class FirstNameInput(InputComponent):
                 }
             )
 
+        # Update state and mark as not awaiting input
+        self.update_state(firstname, ValidationResult.success(firstname))
+        self.set_awaiting_input(False)
         return ValidationResult.success(firstname)
 
     def to_verified_data(self, value: Any) -> Dict:

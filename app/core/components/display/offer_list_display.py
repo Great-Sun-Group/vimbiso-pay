@@ -76,6 +76,8 @@ class OfferListDisplay(DisplayComponent):
                         "data": {"credex_id": selection}
                     }
                 })
+                # Release our hold since we got valid selection
+                self.set_awaiting_input(False)  # Release our own hold
                 return ValidationResult.success({"selection": selection})
 
             return ValidationResult.failure(
@@ -147,6 +149,8 @@ class OfferListDisplay(DisplayComponent):
                 "status": offer.get("status")
             })
 
+        # Set hold since we need user to select an offer
+        self.set_awaiting_input(True)
         return ValidationResult.success({
             "title": title,
             "action": action,

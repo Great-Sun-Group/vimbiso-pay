@@ -11,7 +11,6 @@ that implements the MessagingServiceInterface.
 """
 
 import logging
-from datetime import datetime
 from typing import Any, Dict
 
 from core.config.interface import StateManagerInterface
@@ -56,70 +55,42 @@ class FlowProcessor:
             # Extract message data
             message_data = self._extract_message_data(payload)
 
-            # Extract message content and update state
-            message_type = message_data.get("type", "")
-            message_text = message_data.get("text", {}).get("body", "") if message_type == "text" else ""
-
-            # Create message recipient
+            # Create message recipient for error handling
             recipient = get_recipient(self.state_manager)
+
+            # Get message type and text
+            message_type = message_data.get("type", "")
+            message_text = message_data.get("text", {}).get("body", "").lower().strip()
 
             # Check if message is a greeting
             current_component = self.state_manager.get_component()
             if (message_type == "text" and
-                message_text.lower().strip() in GREETING_COMMANDS and
+                message_text in GREETING_COMMANDS and
                     (not current_component or not current_component.lower().endswith('input'))):
-                # Wipe state and set login flow
+                # Start login flow
                 self.state_manager.clear_all_state()
                 self.state_manager.update_flow_state(
                     context="login",
                     component="Greeting"
                 )
 
-            # Get current flow state or initialize new flow
-            flow_state = self.state_manager.get("flow_data")
-            if not flow_state:
-                # Initialize new flow with message data
-                flow_state = {
-                    "context": "login",
-                    "component": "Greeting",
-                    "data": {
-                        "message": {
-                            "type": message_type,
-                            "text": message_text,
-                            "_metadata": {
-                                "received_at": datetime.utcnow().isoformat()
-                            }
-                        }
-                    },
-                    "_metadata": {
-                        "initialized_at": datetime.utcnow().isoformat()
-                    }
-                }
-            else:
-                # Update existing flow with message data
-                flow_state["data"] = flow_state.get("data", {})
-                flow_state["data"]["message"] = {
-                    "type": message_type,
-                    "text": message_text,
-                    "_metadata": {
-                        "received_at": datetime.utcnow().isoformat()
-                    }
-                }
-
-            # Update flow state
-            self.state_manager.update_state({"flow_data": flow_state})
-
-            context = flow_state.get("context", "login")
-            component = flow_state.get("component", "Greeting")
+            # Get current flow state
+            flow_state = self.state_manager.get("flow_data") or {
+                "context": "login",
+                "component": "Greeting"
+            }
+            context = flow_state.get("context")
+            component = flow_state.get("component")
 
             # Process through flow framework
             from core.messaging.flow import (activate_component,
                                              handle_component_result)
 
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Starting flow: {context}.{component}")
-                logger.debug(f"Initial state: {flow_state}")
+                logger.debug(f"Processing message in flow: {context}.{component}")
+                logger.debug(f"Flow state: {flow_state}")
 
+            # Pass message data to component for processing
             result = activate_component(component, self.state_manager)
 
             while True:

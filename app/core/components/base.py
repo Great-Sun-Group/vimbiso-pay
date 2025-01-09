@@ -173,6 +173,17 @@ class Component:
         """
         raise NotImplementedError
 
+    def set_awaiting_input(self, awaiting: bool) -> None:
+        """Update component's awaiting input state
+
+        Args:
+            awaiting: Whether component is awaiting input
+        """
+        if self.state_manager:
+            self.state_manager.update_flow_data({
+                "awaiting_input": awaiting
+            })
+
     def update_state(self, value: Any, validation_result: ValidationResult) -> None:
         """Update component state with standardized validation tracking
 

@@ -164,12 +164,12 @@ export function createMessagePayload(messageType, messageText, phoneNumber, cont
             };
         } else if (messageText.startsWith('list:')) {
             // Handle list selections
-            const listId = messageText.split(':')[1];
+            const [_, selection] = messageText.split(':');
             message.interactive = {
                 type: 'list_reply',
                 list_reply: {
-                    id: listId,
-                    title: listId
+                    id: selection,
+                    title: selection
                 }
             };
         } else if (typeof messageText === 'object') {
