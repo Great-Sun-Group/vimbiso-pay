@@ -5,7 +5,7 @@ This component handles displaying a list of Credex offers.
 
 from typing import Any, Dict
 
-from core.messaging.formatters.formatters import CredexFormatters
+from core.messaging.templates.messages import ACTION_PROMPT, OFFER_LIST, OFFER_ITEM
 from core.utils.error_types import ValidationResult
 
 from ..base import DisplayComponent
@@ -153,21 +153,19 @@ class OfferListDisplay(DisplayComponent):
         })
 
     def to_message_content(self, value: Dict) -> str:
-        """Convert to message content using CredexFormatters"""
-        # Format header
-        header = f"📋 {value['title']}\n\n"
-
-        # Format each offer
-        offer_lines = []
-        for offer in value["offers"]:
-            offer_lines.append(
-                f"💰 Amount: {offer['amount']}\n"
-                f"👤 From: {offer['counterparty']}\n"
-                f"📊 Status: {offer['status']}\n"
+        """Format offer list using templates"""
+        # Format each offer using template
+        offer_lines = [
+            OFFER_ITEM.format(
+                amount=offer["amount"],
+                counterparty=offer["counterparty"],
+                status=offer["status"]
             )
+            for offer in value["offers"]
+        ]
 
-        # Format action prompt
-        action_prompt = CredexFormatters.format_action_prompt(value["action"].lower())
-
-        # Combine all sections
-        return header + "\n".join(offer_lines) + "\n" + action_prompt
+        # Format complete message using templates
+        return OFFER_LIST.format(
+            title=value["title"],
+            offers="\n".join(offer_lines)
+        ) + "\n" + ACTION_PROMPT.format(action_type=value["action"].lower())

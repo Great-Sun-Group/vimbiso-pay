@@ -1,9 +1,10 @@
 """Messaging service implementation
 
-This service handles message processing and responses.
-Flow routing is handled by core/messaging/flow.py.
-Component processing is handled by the components themselves.
-Message formatting is handled by formatters.py.
+This service handles message processing and delivery.
+- Flow routing is handled by core/messaging/flow.py
+- Component processing is handled by the components themselves
+- Message templates are in core/messaging/templates/
+- Message formatting is handled by display components
 """
 
 import logging
@@ -11,7 +12,6 @@ from typing import Any, Dict, Optional
 
 from core.messaging.base import BaseMessagingService
 from core.messaging.flow import process_component
-from core.messaging.formatters.formatters import AccountFormatters
 from core.messaging.interface import MessagingServiceInterface
 from core.messaging.types import Message, TextContent
 from core.messaging.utils import get_recipient
@@ -83,37 +83,17 @@ class MessagingService(MessagingServiceInterface):
             # Format appropriate message based on context/component
             match (next_context, next_component):
                 case ("account", "AccountDashboard"):
-                    # Format dashboard using account data
-                    active_account = result["active_account"]
-                    balance_data = active_account.get("balanceData", {})
+                    # Get message content from result
+                    message = result.get("message", "")
 
-                    # Get member tier from dashboard data
-                    member_data = result["dashboard"].get("member", {})
-                    member_tier = member_data.get("memberTier")
-                    account_data = {
-                        "accountName": active_account.get("accountName"),
-                        "accountHandle": active_account.get("accountHandle"),
-                        "netCredexAssetsInDefaultDenom": balance_data.get('netCredexAssetsInDefaultDenom', '0.00'),
-                        "defaultDenom": member_data.get('defaultDenom', 'USD'),
-                        **balance_data
-                    }
-
-                    # Only include tier limit for tier < 2
-                    if member_tier < 2:
-                        account_data["tier_limit_raw"] = member_data.get("remainingAvailableUSD", "0.00")
-
-                    message = AccountFormatters.format_dashboard(account_data)
-
-                    # Check if we should use interactive format
+                    # Send with appropriate format
                     if "buttons" in result:
-                        # Use button format for simple interactions
                         return self.send_interactive(
                             recipient=recipient,
                             body=message,
                             buttons=result["buttons"][:3]  # Limit to 3 buttons for WhatsApp
                         )
                     elif result.get("use_list"):
-                        # Use list format for multiple options
                         return self.send_interactive(
                             recipient=recipient,
                             body=message,
@@ -121,7 +101,6 @@ class MessagingService(MessagingServiceInterface):
                             button_text=result.get("button_text", "Select Option")
                         )
                     else:
-                        # Fallback to simple text message
                         return Message(
                             recipient=recipient,
                             content=TextContent(body=message)

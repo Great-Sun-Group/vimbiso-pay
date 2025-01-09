@@ -5,7 +5,8 @@ This component handles the registration welcome screen with proper validation.
 
 from typing import Any
 
-from core.messaging.formatters.formatters import RegistrationFormatters
+from core.messaging.formatters.greetings import get_random_greeting
+from core.messaging.utils import get_recipient
 from core.utils.error_types import ValidationResult
 
 from ..base import DisplayComponent
@@ -18,9 +19,39 @@ class Welcome(DisplayComponent):
         super().__init__("welcome")
 
     def validate_display(self, value: Any) -> ValidationResult:
-        """Simple validation for welcome step"""
-        return ValidationResult.success({})
+        """Display welcome message with greeting"""
+        try:
+            # Get greeting and format welcome message
+            from core.messaging.templates.messages import REGISTER
+            greeting = get_random_greeting()
 
-    def to_message_content(self, value: Any) -> str:
-        """Convert to message content using RegistrationFormatters"""
-        return RegistrationFormatters.format_welcome()
+            # Send welcome message
+            recipient = get_recipient(self.state_manager)
+            message = self.state_manager.messaging.send_text(
+                recipient=recipient,
+                text=REGISTER.format(greeting=greeting)
+            )
+
+            # Return success to progress
+            if message and message.metadata:
+                return ValidationResult.success({
+                    "sent": True,
+                    "message_id": message.metadata.get("whatsapp_message_id")
+                })
+
+            # Message wasn't sent successfully
+            return ValidationResult.failure(
+                message="Failed to send welcome message",
+                field="messaging",
+                details={"error": "send_failed"}
+            )
+
+        except Exception as e:
+            return ValidationResult.failure(
+                message=str(e),
+                field="welcome",
+                details={
+                    "component": self.type,
+                    "error": str(e)
+                }
+            )
