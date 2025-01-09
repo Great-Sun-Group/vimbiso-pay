@@ -35,19 +35,8 @@ else:
     BASE_PATH = BASE_DIR / 'data'
     os.makedirs(BASE_PATH, exist_ok=True)
 
-# Redis state configuration
-REDIS_STATE_URL = env("REDIS_STATE_URL", default="redis://redis-state:6379/0")
-
-# Redis cache configuration
-CACHES = {
-    "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": REDIS_STATE_URL,
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        },
-    }
-}
+# Redis configuration
+REDIS_URL = env("REDIS_STATE_URL", default="redis://redis-state:6379/0")
 
 # Security settings
 CORS_ALLOW_HEADERS = ["apiKey"]  # For WhatsApp webhook
@@ -55,23 +44,45 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 USE_X_FORWARDED_PORT = True
 
-# Basic logging
+# Logging configuration
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {
+            "format": "[%(asctime)s] %(levelname)s [%(name)s] %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "filters": {
+        "require_debug_false": {
+            "()": "django.utils.log.RequireDebugFalse",
+        },
+    },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
+            "formatter": "standard",
         },
     },
     "loggers": {
+        # Core application logging
         "core": {
             "handlers": ["console"],
             "level": env("APP_LOG_LEVEL", default="DEBUG"),
+            "propagate": False,
         },
+        # Django framework logging
         "django": {
             "handlers": ["console"],
-            "level": env("DJANGO_LOG_LEVEL", default="INFO"),
+            "level": env("DJANGO_LOG_LEVEL", default="WARNING"),
+            "propagate": False,
+        },
+        # Third party libraries
+        "urllib3": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
         },
     },
 }

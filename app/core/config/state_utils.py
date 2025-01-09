@@ -10,126 +10,117 @@ from typing import Any, Dict, Optional
 
 from core.utils.exceptions import (ComponentException, FlowException,
                                    SystemException)
-
-from .config import ACTIVITY_TTL
+from .interface import StateManagerInterface
 
 logger = logging.getLogger(__name__)
 
 
-def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
-    """Update state with validation tracking
+def prepare_state_update(state_manager: StateManagerInterface, updates: Dict[str, Any]) -> Dict[str, Any]:
+    """Prepare state update with validation tracking
 
     Args:
         state_manager: State manager instance
         updates: Dictionary of updates to apply
 
+    Returns:
+        Dict[str, Any]: Prepared state updates
+
     Raises:
         ComponentException: If updates format is invalid
-        SystemException: If state update fails
     """
-    try:
-        # Get current state with validation tracking
-        current_state = state_manager._state.copy()
-        validation_state = {
-            "in_progress": True,
-            "attempts": current_state.get("update_attempts", 0) + 1,
-            "last_attempt": datetime.utcnow().isoformat()
-        }
+    # Get current state with validation tracking
+    current_state = {}
+    for key in ["flow_data", "update_attempts"]:
+        value = state_manager.get(key)
+        if value is not None:
+            current_state[key] = value
 
-        # Handle flow data updates with validation
-        if "flow_data" in updates:
-            flow_data = updates["flow_data"]
-            if flow_data is None:
-                # Clear flow state with validation
-                current_state["flow_data"] = {
-                    "validation": {
-                        **validation_state,
-                        "in_progress": False,
-                        "operation": "clear"
-                    }
-                }
-            elif isinstance(flow_data, dict):
-                # Get current flow state
-                current_flow = current_state.get("flow_data", {})
+    validation_state = {
+        "in_progress": True,
+        "attempts": current_state.get("update_attempts", 0) + 1,
+        "last_attempt": datetime.utcnow().isoformat()
+    }
 
-                # Update flow state with validation
-                # Safely merge flow data
-                new_data = {}
-                if current_flow and isinstance(current_flow.get("data"), dict):
-                    new_data.update(current_flow["data"])
-                if flow_data and isinstance(flow_data.get("data"), dict):
-                    new_data.update(flow_data["data"])
-
-                current_state["flow_data"] = {
-                    "context": flow_data.get("context", current_flow.get("context")),
-                    "component": flow_data.get("component", current_flow.get("component")),
-                    "data": new_data,
-                    "validation": {
-                        **validation_state,
-                        "in_progress": False,
-                        "operation": "update"
-                    }
-                }
-            else:
-                validation_state.update({
+    # Handle flow data updates with validation
+    if "flow_data" in updates:
+        flow_data = updates["flow_data"]
+        if flow_data is None:
+            # Clear flow state with validation
+            current_state["flow_data"] = {
+                "validation": {
+                    **validation_state,
                     "in_progress": False,
-                    "error": "Invalid flow data format"
-                })
-                raise ComponentException(
-                    message="Invalid flow data format",
-                    component="state_utils",
-                    field="flow_data",
-                    value=str(type(flow_data)),
-                    validation=validation_state
-                )
-
-        # Handle other updates with validation
-        for key, value in updates.items():
-            if key != "flow_data":
-                if isinstance(value, dict) and "validation" not in value:
-                    value["validation"] = {
-                        **validation_state,
-                        "in_progress": False,
-                        "operation": f"update_{key}"
-                    }
-                current_state[key] = value
-
-        # Store state atomically with validation
-        state_manager.atomic_state.atomic_update(
-            state_manager.key_prefix,
-            current_state,
-            ACTIVITY_TTL
-        )
-
-        # Update internal state with validation
-        current_state["update_attempts"] = validation_state["attempts"]
-        state_manager._state = current_state
-
-    except Exception as e:
-        validation_state = {
-            "in_progress": False,
-            "error": str(e),
-            "attempts": current_state.get("update_attempts", 0) + 1,
-            "last_attempt": datetime.utcnow().isoformat()
-        }
-        logger.error(
-            "State update error",
-            extra={
-                "error": str(e),
-                "update_keys": list(updates.keys()),
-                "validation": validation_state
+                    "operation": "clear"
+                }
             }
-        )
-        raise SystemException(
-            message=f"Failed to update state: {str(e)}",
-            code="STATE_UPDATE_ERROR",
-            service="state_utils",
-            action="update_state"
-        )
+        elif isinstance(flow_data, dict):
+            # Get current flow state
+            current_flow = current_state.get("flow_data", {})
+
+            # Update flow state with validation
+            # Start with current flow data
+            new_data = current_flow.get("data", {}) if current_flow else {}
+
+            # Only update with new data if provided
+            if flow_data and isinstance(flow_data.get("data"), dict):
+                # Deep merge to preserve nested structure
+                for key, value in flow_data["data"].items():
+                    if isinstance(value, dict) and isinstance(new_data.get(key), dict):
+                        # Merge nested dicts
+                        new_data[key] = {**new_data[key], **value}
+                    else:
+                        # Replace or add non-dict values
+                        new_data[key] = value
+
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Merged flow data: {new_data}")
+
+            current_state["flow_data"] = {
+                "context": flow_data.get("context", current_flow.get("context")),
+                "component": flow_data.get("component", current_flow.get("component")),
+                "data": new_data,
+                "validation": {
+                    **validation_state,
+                    "in_progress": False,
+                    "operation": "update"
+                }
+            }
+
+            # Only log context/component changes at INFO level
+            if (flow_data.get("context") != current_flow.get("context") or
+               flow_data.get("component") != current_flow.get("component")):
+                logger.info(f"State transition: {current_flow.get('context')}.{current_flow.get('component')} -> {flow_data.get('context')}.{flow_data.get('component')}")
+        else:
+            validation_state.update({
+                "in_progress": False,
+                "error": "Invalid flow data format"
+            })
+            raise ComponentException(
+                message="Invalid flow data format",
+                component="state_utils",
+                field="flow_data",
+                value=str(type(flow_data)),
+                validation=validation_state
+            )
+
+    # Handle other updates with validation
+    for key, value in updates.items():
+        if key != "flow_data":
+            if isinstance(value, dict) and "validation" not in value:
+                value["validation"] = {
+                    **validation_state,
+                    "in_progress": False,
+                    "operation": f"update_{key}"
+                }
+            current_state[key] = value
+
+    # Add validation tracking
+    current_state["update_attempts"] = validation_state["attempts"]
+    return current_state
 
 
 def update_flow_state(
-    state_manager: Any,
+    state_manager: StateManagerInterface,
     context: str,
     component: str,
     data: Optional[Dict] = None
@@ -161,27 +152,14 @@ def update_flow_state(
             }
         }
 
-        # Update state with validation
-        update_state_core(state_manager, {
+        # Prepare and apply state update
+        prepared_state = prepare_state_update(state_manager, {
             "flow_data": flow_data
         })
+        state_manager.update_state(prepared_state)
 
     except Exception as e:
-        validation_state = {
-            "in_progress": False,
-            "error": str(e),
-            "attempts": current_flow.get("validation_attempts", 0) + 1,
-            "last_attempt": datetime.utcnow().isoformat()
-        }
-        logger.error(
-            "Flow state update error",
-            extra={
-                "error": str(e),
-                "context": context,
-                "component": component,
-                "validation": validation_state
-            }
-        )
+        logger.error(f"Failed to update flow state {context}.{component}: {str(e)}")
         raise SystemException(
             message=f"Failed to update flow state: {str(e)}",
             code="FLOW_STATE_ERROR",
@@ -191,7 +169,7 @@ def update_flow_state(
 
 
 def update_flow_data(
-    state_manager: Any,
+    state_manager: StateManagerInterface,
     data: Dict[str, Any]
 ) -> None:
     """Update flow data
@@ -215,21 +193,16 @@ def update_flow_data(
                 data={"data_keys": list(data.keys())}
             )
 
-        # Update flow data
-        update_state_core(state_manager, {
+        # Prepare and apply state update
+        prepared_state = prepare_state_update(state_manager, {
             "flow_data": {
                 "data": data
             }
         })
+        state_manager.update_state(prepared_state)
 
     except Exception as e:
-        logger.error(
-            "Flow data update error",
-            extra={
-                "error": str(e),
-                "data_keys": list(data.keys())
-            }
-        )
+        logger.error(f"Failed to update flow data: {str(e)}")
         raise SystemException(
             message=f"Failed to update flow data: {str(e)}",
             code="FLOW_DATA_ERROR",
@@ -238,7 +211,7 @@ def update_flow_data(
         )
 
 
-def clear_flow_state(state_manager: Any) -> None:
+def clear_flow_state(state_manager: StateManagerInterface) -> None:
     """Clear flow state
 
     Args:
@@ -248,15 +221,14 @@ def clear_flow_state(state_manager: Any) -> None:
         SystemException: If flow state clear fails
     """
     try:
-        update_state_core(state_manager, {
+        # Prepare and apply state update
+        prepared_state = prepare_state_update(state_manager, {
             "flow_data": None
         })
+        state_manager.update_state(prepared_state)
 
     except Exception as e:
-        logger.error(
-            "Clear flow state error",
-            extra={"error": str(e)}
-        )
+        logger.error(f"Failed to clear flow state: {str(e)}")
         raise SystemException(
             message=f"Failed to clear flow state: {str(e)}",
             code="FLOW_CLEAR_ERROR",

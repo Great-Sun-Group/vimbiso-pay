@@ -1,7 +1,9 @@
 """Onboard member API call component
 
-This component handles the onboard member API call with proper validation.
-Dashboard data is the source of truth for member state.
+Handles member registration:
+- Gets registration data from flow state
+- Creates new member account
+- Updates state with dashboard data
 """
 
 from typing import Any, Dict
@@ -15,7 +17,7 @@ from ..base import ApiComponent
 
 
 class OnBoardMemberApiCall(ApiComponent):
-    """Handles onboarding API call with proper exit conditions"""
+    """Processes member registration and manages state"""
 
     def __init__(self):
         super().__init__("onboard_member_api")
@@ -26,14 +28,20 @@ class OnBoardMemberApiCall(ApiComponent):
         self.state_manager = state_manager
 
     def validate_api_call(self, value: Any) -> ValidationResult:
-        """Call onboardMember endpoint and validate response"""
+        """Process registration and update state
+
+        - Gets registration data (firstname, lastname) from flow state
+        - Creates new member account via API
+        - Updates state with dashboard data via handle_api_response
+        - Returns success status
+        """
         # Get registration data from state
         flow_data = self.state_manager.get_flow_state()
         if not flow_data or "data" not in flow_data:
             return ValidationResult.failure(
                 message="No registration data found",
                 field="flow_data",
-                details={"component": "onboard_member"}
+                details={"component": self.type}
             )
 
         # Get registration data
@@ -47,7 +55,7 @@ class OnBoardMemberApiCall(ApiComponent):
             return ValidationResult.failure(
                 message="No channel identifier found",
                 field="channel",
-                details={"component": "onboard_member"}
+                details={"component": self.type}
             )
 
         # Make API call
@@ -77,24 +85,16 @@ class OnBoardMemberApiCall(ApiComponent):
                 details={"error": error}
             )
 
-        # Get action data for flow
-        flow_data = self.state_manager.get_flow_state()
-        action_data = flow_data.get("action", {})
-
         return ValidationResult.success({
-            "action": action_data,
-            "registered": True
+            "status": "success",
         })
 
     def to_verified_data(self, value: Any) -> Dict:
-        """Convert registration data to verified data
+        """Convert API response to verified data
 
-        Note: Most data is in dashboard state, we just need
-        success indicators and action details here.
+        Note: Dashboard/action data is handled by handle_api_response.
+        We just track registration status here.
         """
         return {
-            "authenticated": True,
-            "registered": True,
-            "action_type": value.get("action", {}).get("type"),
-            "action_id": value.get("action", {}).get("id")
+            "registered": value.get("status") == "success"
         }

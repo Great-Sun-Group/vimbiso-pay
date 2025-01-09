@@ -3,12 +3,12 @@ import { ChatUI } from './ui.js';
 class WhatsAppMock {
     constructor() {
         this.ui = new ChatUI();
-        this.ui.setupEventListeners(() => this.sendMessage());
+        this.ui.setupEventListeners((messageType) => this.sendMessage(messageType));
         this.ui.updateStatus();
     }
 
 
-    async sendMessage() {
+    async sendMessage(messageType = 'text') {
         const messageText = this.ui.messageInput.value.trim();
         if (!messageText) return;
 
@@ -16,8 +16,14 @@ class WhatsAppMock {
 
         try {
             const payload = {
-                type: 'text',
-                message: messageText,
+                type: messageType,
+                message: messageType === 'text' ? messageText : {
+                    type: messageText.startsWith('button:') ? 'button_reply' : 'list_reply',
+                    [messageText.startsWith('button:') ? 'button_reply' : 'list_reply']: {
+                        id: messageText.split(':')[1],
+                        title: messageText.split(':')[1]
+                    }
+                },
                 phone: this.ui.phoneInput.value
             };
 
@@ -36,7 +42,7 @@ class WhatsAppMock {
             }
 
             // Show refresh notification
-            this.ui.showNotification('Message sent! Click Refresh to update conversation.');
+            this.ui.showNotification('Click Refresh to update conversation. Wait a few seconds to make sure app response is included.');
             this.ui.disableSendButton(false);
         } catch (error) {
             console.error('Error:', error);

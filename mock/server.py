@@ -8,21 +8,25 @@ from http.server import SimpleHTTPRequestHandler
 
 import requests
 
-# Configure logging - show all messages
+# Configure logging - show important messages only
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Silence connection logs
+# Silence connection and http logs
 logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("http.server").setLevel(logging.WARNING)
 
 # The actual app endpoint we're testing
 APP_ENDPOINT = 'http://app:8000/bot/webhook'
 
 # Directory to store messages
 MESSAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "messages")
+
+# Create messages directory if it doesn't exist
+os.makedirs(MESSAGES_DIR, exist_ok=True)
 
 
 class MockWhatsAppHandler(SimpleHTTPRequestHandler):
@@ -31,9 +35,6 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, directory=None, **kwargs):
         # Serve from current directory
         directory = os.path.dirname(os.path.abspath(__file__))
-        logger.info("Serving files from directory: %s", directory)
-        logger.info("Current working directory: %s", os.getcwd())
-        logger.info("Directory contents: %s", os.listdir(directory))
         super().__init__(*args, directory=directory, **kwargs)
 
     def guess_type(self, path):
@@ -74,8 +75,11 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                     logger.error("Failed to parse message as JSON: %s", e)
                     return
 
-            # Only save actual messages, not acknowledgments
-            if isinstance(message, dict) and message.get("type") == "text" and message.get("text", {}).get("body"):
+            # Save actual messages (text and interactive), not acknowledgments
+            if isinstance(message, dict) and (
+                (message.get("type") == "text" and message.get("text", {}).get("body")) or
+                (message.get("type") == "interactive" and message.get("interactive"))
+            ):
                 # Create timestamp-based filename
                 timestamp = int(time.time() * 1000)  # millisecond precision
                 filename = f"{timestamp}.json"
@@ -90,9 +94,6 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 # Save message to file
                 with open(filepath, 'w') as f:
                     json.dump(message_with_meta, f, indent=2)
-                logger.info("Saved message to file: %s", filepath)
-            else:
-                logger.debug("Skipping non-message save: %s", message)
 
         except Exception as e:
             logger.error("Failed to save message: %s", e)
@@ -152,9 +153,7 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                                 "id": f"wamid.{hex(int.from_bytes(os.urandom(16), 'big'))[2:]}",
                                 "timestamp": str(int(time.time())),
                                 "type": message.get("type", "text"),
-                                "text": {
-                                    "body": message.get("message")
-                                }
+                                **({"text": {"body": message.get("message")}} if message.get("type") == "text" else {"interactive": message.get("interactive", {})})
                             }]
                         },
                         "field": "messages"
@@ -169,19 +168,14 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 "X-Mock-Testing": "true"
             }
 
-            # Log what we're forwarding
-            logger.info("Forwarding to app: %s", json.dumps(webhook_message))
-
             # Send request and handle response
             response = requests.post(
                 APP_ENDPOINT,
                 json=webhook_message,
                 headers=headers,
-                timeout=10
+                timeout=30  # Match CLI client timeout
             )
 
-            # Log response details
-            logger.info("App response status: %d", response.status_code)
             if response.status_code != 200:
                 logger.error("App error response: %s", response.text)
                 return
@@ -197,20 +191,23 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             if content_length > 0:
                 body = self.rfile.read(content_length)
-                # Log raw payload
-                raw_payload = body.decode('utf-8')
-                logger.info("Raw webhook payload: %s", raw_payload)
-                message = json.loads(raw_payload)
+                message = json.loads(body.decode('utf-8'))
 
                 # Handle UI->Server messages
                 if "type" in message and "message" in message and "phone" in message:
-                    logger.info("UI -> Server: %s", message)
                     # Save outgoing message
-                    outgoing_message = {
-                        "type": "text",
-                        "text": {"body": message["message"]},
-                        "to": message["phone"]
-                    }
+                    if message["type"] == "text":
+                        outgoing_message = {
+                            "type": "text",
+                            "text": {"body": message["message"]},
+                            "to": message["phone"]
+                        }
+                    elif message["type"] == "interactive":
+                        outgoing_message = {
+                            "type": "interactive",
+                            "interactive": message["message"],
+                            "to": message["phone"]
+                        }
                     self._save_message(outgoing_message)
 
                     # Acknowledge receipt immediately and close connection
@@ -218,22 +215,39 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                     # Start forwarding to app in a separate thread
                     import threading
                     threading.Thread(target=self._forward_to_app, args=(message,)).start()
+                    logger.info("UI -> Server-> app-1 complete: %s", message["message"])
                     return
 
                 # Handle App->Server messages
-                logger.info("App -> Server: %s", message)
-
                 # Extract message content from WhatsApp format
                 if message.get("messaging_product") == "whatsapp":
-                    # Format for storage
+                    # Extract message from WhatsApp format
+                    if "entry" in message:
+                        # Message from app in WhatsApp format
+                        value = message.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
+                        messages = value.get("messages", [{}])[0]
+                    else:
+                        # Direct message from app
+                        messages = message
+
+                    # Create outgoing message
                     outgoing_message = {
-                        "type": "text",  # Force text type for storage
-                        "text": {
-                            "body": message.get("text", {}).get("body", message.get("text", ""))  # Handle both formats
-                        },
-                        "to": message.get("to")
+                        "from": "app",  # Explicitly mark as from app
+                        "to": None,  # App messages don't have a to field
+                        "type": messages.get("type", "text")
                     }
-                    # Save the extracted message
+
+                    # Handle message content
+                    if outgoing_message["type"] == "text":
+                        text_content = messages.get("text", {}).get("body", "") if isinstance(messages.get("text"), dict) else messages.get("text", "")
+                        outgoing_message["text"] = {"body": text_content}
+                        logger.info("app-1 -> Server - >save complete: %s", text_content)
+                    elif outgoing_message["type"] == "interactive":
+                        interactive_content = messages.get("interactive", {})
+                        outgoing_message["interactive"] = interactive_content
+                        logger.info("app-1 -> Server - >save complete: %s", interactive_content.get('body', {}).get('text', '').split('\n')[0])
+
+                    # Save message
                     self._save_message(outgoing_message)
 
                 # Acknowledge receipt to app
@@ -249,8 +263,9 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
     def log_request(self, code='-', size='-'):
         """Log an accepted request."""
-        logger.info('"%s" %s %s', self.requestline, str(code), str(size))
-        logger.info("Headers: %s", self.headers)
+        if hasattr(self, 'requestline') and self.path == "/":
+            logger.info("VimbisoPay Mock reloaded")
+        return
 
     def log_error(self, format, *args):
         """Log an error."""
@@ -258,13 +273,10 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
     def log_message(self, format, *args):
         """Log a message."""
-        logger.info(format, *args)
+        pass  # Suppress default logging
 
     def do_GET(self):
         """Handle GET requests."""
-        logger.info("GET request to: %s", self.path)
-        logger.info("Headers: %s", self.headers)
-
         if self.path == "/" or self.path == "" or self.path == "/index.html":
             # Get all messages
             messages = self._get_messages()
@@ -278,11 +290,24 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             for msg in messages:
                 if msg.get('type') == 'text' and msg.get('text', {}).get('body'):
                     direction = 'incoming' if msg.get('from') else 'outgoing'
+                    body = msg['text']['body']
+                    # Escape special characters for HTML attribute
+                    escaped_body = body.replace('"', '&quot;').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
                     messages_html += f"""
-                    <div class="message {direction}-message whatsapp-text">
-                        {msg['text']['body']}
-                    </div>
+                    <div class="message {direction}-message whatsapp-text" data-raw-text="{escaped_body}"></div>
                     """
+                elif msg.get('type') == 'interactive':
+                    direction = 'incoming' if msg.get('from') else 'outgoing'
+                    interactive = msg.get('interactive', {})
+                    # Convert interactive message to JSON string and escape for HTML attribute
+                    escaped_json = json.dumps(interactive).replace('"', '&quot;')
+                    # Add debug info
+                    logger.info("Generating HTML for interactive message: %s", json.dumps(interactive, indent=2))
+                    messages_html += f"""
+                    <div class="message whatsapp-interactive {direction}-message" data-interactive="{escaped_json}"></div>
+                    """
+                    # Add debug info
+                    logger.info("Generated HTML: %s", messages_html)
 
             # Replace placeholder with messages
             html_content = html_content.replace('{messages_placeholder}', messages_html)
@@ -301,6 +326,7 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 for filename in os.listdir(MESSAGES_DIR):
                     if filename.endswith('.json'):
                         os.remove(os.path.join(MESSAGES_DIR, filename))
+                logger.info("VimbisoPay Mock cleared")
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self._send_cors_headers()
@@ -331,20 +357,11 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(messages).encode())
             return
 
-        # Log file path resolution
         try:
             file_path = self.translate_path(self.path)
-            logger.info("Resolved file path: %s", file_path)
-            logger.info("File exists: %s", os.path.exists(file_path))
-            if os.path.exists(file_path):
-                logger.info("File contents: %s", os.listdir(os.path.dirname(file_path)))
-                if os.path.isfile(file_path):
-                    logger.info("File size: %d", os.path.getsize(file_path))
-                    with open(file_path, 'rb') as f:
-                        content = f.read()
-                        logger.info("First 100 bytes: %s", content[:100])
-                    logger.info("Content-Type: %s", self.guess_type(file_path))
-
+            if os.path.exists(file_path) and os.path.isfile(file_path):
+                with open(file_path, 'rb') as f:
+                    content = f.read()
                     # Send response with CORS headers
                     self.send_response(200)
                     self.send_header('Content-Type', self.guess_type(file_path))
@@ -380,9 +397,6 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         """Handle POST requests."""
-        logger.info("POST request to: %s", self.path)
-        logger.info("Headers: %s", self.headers)
-
         if self.path.startswith("/bot/webhook"):
             self._handle_webhook()
         else:
@@ -395,8 +409,7 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
 
 def run_server(port=8001):
     """Run the mock server."""
-    logger.info("Mock server running on port %d", port)
-    logger.info("Mock WhatsApp interface available at: http://localhost:%d", port)
+    logger.info("VimbisoPay Mock up at: http://localhost:%d", port)
 
     server = socketserver.TCPServer(("", port), MockWhatsAppHandler)
     server.allow_reuse_address = True

@@ -6,8 +6,9 @@ Each interface handles a specific type of component with clear validation patter
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, Type, Union
+from typing import Any, Dict, Optional, Type, Union
 
+from core.config.interface import StateManagerInterface
 from core.utils.error_types import ValidationResult
 from core.utils.exceptions import ComponentException
 
@@ -19,7 +20,7 @@ class Component:
         """Initialize component with standardized validation tracking"""
         self.type = component_type
         self.value = None
-        self.state_manager = None
+        self.state_manager: Optional[StateManagerInterface] = None
         self.validation_state = {
             "in_progress": False,
             "error": None,
@@ -30,7 +31,7 @@ class Component:
             "timestamp": None
         }
 
-    def set_state_manager(self, state_manager: Any) -> None:
+    def set_state_manager(self, state_manager: StateManagerInterface) -> None:
         """Set state manager for accessing state data
 
         Args:
@@ -206,14 +207,14 @@ class DisplayComponent(Component):
         """Validate display data with proper tracking"""
         logger = logging.getLogger(__name__)
         try:
-            # Log validation attempt
-            logger.info(f"Validating display component {self.type} with value: {value}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Validating display component {self.type}")
 
             # Subclasses implement specific validation
             result = self.validate_display(value)
 
-            # Log validation result
-            logger.info(f"Display validation result: {result}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Display validation result: {result}")
             return result
 
         except Exception as e:
@@ -288,8 +289,21 @@ class ApiComponent(Component):
 
     def _validate(self, value: Any) -> ValidationResult:
         """Validate API call with proper tracking"""
-        # Subclasses implement specific validation
-        return self.validate_api_call(value)
+        logger = logging.getLogger(__name__)
+        try:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Validating API component {self.type}")
+
+            # Subclasses implement specific validation
+            result = self.validate_api_call(value)
+
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"API validation result: {result}")
+            return result
+
+        except Exception as e:
+            logger.error(f"API validation error in {self.type}: {str(e)}")
+            raise
 
     def validate_api_call(self, value: Any) -> ValidationResult:
         """Component-specific API validation logic"""

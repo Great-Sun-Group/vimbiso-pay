@@ -54,16 +54,9 @@ class StateManager:
             SystemException: If state update fails
         """
         try:
-            logger.debug(
-                "Updating state",
-                extra={"update_keys": list(updates.keys())}
-            )
-            result = self._core.update_state(updates)
-            logger.info(
-                "State updated successfully",
-                extra={"update_keys": list(updates.keys())}
-            )
-            return result
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Updating state")
+            return self._core.update_state(updates)
         except Exception as e:
             raise SystemException(
                 message="Failed to update state",

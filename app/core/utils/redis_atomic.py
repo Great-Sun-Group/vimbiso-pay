@@ -1,202 +1,83 @@
-"""Redis atomic operations for state management"""
+"""Pure Redis atomic operations"""
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from redis import Redis, WatchError
-
-from .exceptions import SystemException
 
 logger = logging.getLogger(__name__)
 
 
-class AtomicStateManager:
-    """Manages atomic state operations with Redis"""
+class RedisAtomic:
+    """Pure atomic Redis operations"""
 
     def __init__(self, redis_client: Redis):
         self.redis = redis_client
 
-    def atomic_update(
+    def execute_atomic(
         self,
-        key_prefix: str,
-        state: Dict[str, Any],
-        ttl: int,
+        key: str,
+        operation: str,
+        value: Optional[Dict[str, Any]] = None,
+        ttl: Optional[int] = None,
         max_retries: int = 3
-    ) -> None:
-        """Atomically update state components in Redis
+    ) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+        """Execute atomic Redis operation
 
         Args:
-            key_prefix: Redis key prefix
-            state: State data to store
-            ttl: Time to live in seconds
-            max_retries: Maximum number of retry attempts
+            key: Redis key
+            operation: Operation type ('get', 'set', 'delete')
+            value: Optional value for set operation
+            ttl: Optional TTL for set operation
+            max_retries: Maximum retry attempts for set/delete
 
-        Raises:
-            SystemException: If update fails or max retries exceeded
+        Returns:
+            Tuple of (success, result_data, error_message)
         """
         retry_count = 0
         while retry_count < max_retries:
             try:
-                # Start pipeline with optimistic locking
                 pipe = self.redis.pipeline()
-                pipe.watch(key_prefix)
+                pipe.watch(key)
 
                 try:
-                    # Start transaction
                     pipe.multi()
 
-                    # Store state with TTL (already validated by state_manager)
-                    state_json = json.dumps(state)
-                    logger.debug(f"Storing validated state with TTL {ttl}")
-                    pipe.setex(key_prefix, ttl, state_json)
+                    if operation == 'get':
+                        pipe.get(key)
+                        result = pipe.execute()
+                        if not result or not result[0]:
+                            return True, None, None
+                        return True, json.loads(result[0]), None
 
-                    # Execute transaction
-                    pipe.execute()
-                    return
+                    elif operation == 'set':
+                        if value is None or ttl is None:
+                            return False, None, "Missing value or TTL for set operation"
+                        pipe.setex(key, ttl, json.dumps(value))
+                        pipe.execute()
+                        return True, None, None
+
+                    elif operation == 'delete':
+                        pipe.delete(key)
+                        pipe.execute()
+                        return True, None, None
+
+                    else:
+                        return False, None, f"Unknown operation: {operation}"
 
                 except WatchError:
-                    logger.warning(
-                        f"Concurrent modification detected for {key_prefix}, "
-                        f"retry {retry_count + 1}/{max_retries}"
-                    )
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f"Retry {retry_count + 1}/{max_retries}")
                     retry_count += 1
                     continue
 
-                except Exception as e:
-                    logger.error(f"Transaction error: {str(e)}")
-                    raise SystemException(
-                        message=f"Transaction failed: {str(e)}",
-                        code="REDIS_TRANSACTION_ERROR",
-                        service="redis_atomic",
-                        action="update"
-                    )
+                except json.JSONDecodeError:
+                    return False, None, "Invalid JSON data"
 
                 finally:
                     pipe.reset()
 
             except Exception as e:
-                logger.error(f"Redis operation error: {str(e)}")
-                raise SystemException(
-                    message=f"Redis operation failed: {str(e)}",
-                    code="REDIS_OPERATION_ERROR",
-                    service="redis_atomic",
-                    action="update"
-                )
+                return False, None, str(e)
 
-        raise SystemException(
-            message="Max retries exceeded for atomic update",
-            code="REDIS_MAX_RETRIES",
-            service="redis_atomic",
-            action="update"
-        )
-
-    def atomic_get(
-        self,
-        key_prefix: str
-    ) -> Optional[Dict[str, Any]]:
-        """Atomically get state from Redis
-
-        Args:
-            key_prefix: Redis key prefix
-
-        Returns:
-            State data if found, None if not found
-
-        Raises:
-            SystemException: If get operation fails
-        """
-        try:
-            # Get state
-            pipe = self.redis.pipeline()
-            try:
-                # Queue get operation
-                pipe.get(key_prefix)
-
-                # Execute and get result
-                result = pipe.execute()
-
-                if not result or not result[0]:
-                    return None
-
-                try:
-                    # Parse state (validation handled by state_manager)
-                    state = json.loads(result[0])
-                    return state
-                except json.JSONDecodeError:
-                    logger.error("Failed to parse state data from Redis")
-                    raise SystemException(
-                        message="Invalid state data format",
-                        code="REDIS_INVALID_DATA",
-                        service="redis_atomic",
-                        action="get"
-                    )
-
-            except WatchError:
-                logger.warning(f"Concurrent modification detected for {key_prefix}")
-                raise SystemException(
-                    message="Concurrent modification detected",
-                    code="REDIS_CONCURRENT_MOD",
-                    service="redis_atomic",
-                    action="get"
-                )
-
-            finally:
-                pipe.reset()
-
-        except Exception as e:
-            logger.error(f"Redis get operation error: {str(e)}")
-            raise SystemException(
-                message=f"Redis get operation failed: {str(e)}",
-                code="REDIS_GET_ERROR",
-                service="redis_atomic",
-                action="get"
-            )
-
-    def atomic_delete(
-        self,
-        key_prefix: str
-    ) -> None:
-        """Atomically delete state from Redis
-
-        Args:
-            key_prefix: Redis key prefix
-
-        Raises:
-            SystemException: If delete operation fails
-        """
-        try:
-            # Start pipeline with optimistic locking
-            pipe = self.redis.pipeline()
-            pipe.watch(key_prefix)
-
-            try:
-                # Start transaction
-                pipe.multi()
-
-                # Delete state
-                pipe.delete(key_prefix)
-
-                # Execute transaction
-                pipe.execute()
-                return
-
-            except Exception as e:
-                logger.error(f"Delete transaction error: {str(e)}")
-                raise SystemException(
-                    message=f"Delete failed: {str(e)}",
-                    code="REDIS_DELETE_ERROR",
-                    service="redis_atomic",
-                    action="delete"
-                )
-
-            finally:
-                pipe.reset()
-
-        except Exception as e:
-            logger.error(f"Redis delete operation error: {str(e)}")
-            raise SystemException(
-                message=f"Redis delete operation failed: {str(e)}",
-                code="REDIS_DELETE_ERROR",
-                service="redis_atomic",
-                action="delete"
-            )
+        return False, None, "Max retries exceeded"

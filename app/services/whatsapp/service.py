@@ -256,9 +256,34 @@ class WhatsAppMessagingService(BaseMessagingService):
 
             # Try to parse response
             try:
-                message.metadata["response"] = response.json()
-            except Exception:
+                response_data = response.json()
+                message.metadata["response"] = response_data
+                logger.debug(f"Mock server response: {response_data}")
+
+                # Check if response indicates success
+                if response.status_code != 200 or not response_data.get("messaging_product"):
+                    logger.error(f"Mock server error response: {response_data}")
+                    raise MessageValidationError(
+                        message="Mock server returned error response",
+                        service="whatsapp",
+                        action="send_message",
+                        validation_details={
+                            "status_code": response.status_code,
+                            "response": response_data
+                        }
+                    )
+            except Exception as e:
                 message.metadata["response"] = response.text
+                logger.error(f"Error parsing mock response: {str(e)}")
+                raise MessageValidationError(
+                    message=f"Failed to parse mock response: {str(e)}",
+                    service="whatsapp",
+                    action="send_message",
+                    validation_details={
+                        "status_code": response.status_code,
+                        "response": response.text
+                    }
+                )
 
             return message
 

@@ -1,4 +1,4 @@
-"""Command and input recognition patterns"""
+"""Messaging constants and command recognition patterns"""
 
 # Greeting Commands
 GREETING_COMMANDS = {
@@ -13,3 +13,8 @@ ACTION_COMMANDS = {
     "decline": {"no", "n", "decline", "reject"},
     "cancel": {"x", "c", "cancel", "stop"}
 }
+
+__all__ = [
+    'GREETING_COMMANDS',
+    'ACTION_COMMANDS'
+]

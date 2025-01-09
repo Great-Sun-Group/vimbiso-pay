@@ -14,7 +14,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict
 
-from core.config.recognition import GREETING_COMMANDS
+from core.config.interface import StateManagerInterface
 from core.messaging.types import Message, TextContent
 from core.messaging.utils import get_recipient
 from core.utils.error_handler import ErrorHandler
@@ -22,13 +22,15 @@ from core.utils.error_types import ValidationResult
 from core.utils.exceptions import ComponentException
 from services.messaging.service import MessagingService
 
+from .constants import GREETING_COMMANDS
+
 logger = logging.getLogger(__name__)
 
 
 class FlowProcessor:
     """Processes messages through the flow framework"""
 
-    def __init__(self, messaging_service: MessagingService, state_manager: Any):
+    def __init__(self, messaging_service: MessagingService, state_manager: StateManagerInterface):
         """Initialize with messaging service and state manager
 
         Args:
@@ -113,41 +115,49 @@ class FlowProcessor:
             # Process through flow framework
             from core.messaging.flow import (activate_component,
                                              handle_component_result)
-            logger.info(f"Processing flow: {context} -> {component}")
 
-            # Log state before processing
-            logger.info(f"Flow state before processing: {flow_state}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Starting flow: {context}.{component}")
+                logger.debug(f"Initial state: {flow_state}")
 
-            # Process component and get next step
-            logger.info(f"Activating component: {component}")
             result = activate_component(component, self.state_manager)
-            logger.info(f"Component result: {result}")
 
-            # Get next component
-            logger.info(f"Handling component result for {context}.{component}")
-            next_step = handle_component_result(
-                context=context,
-                component=component,
-                result=result,
-                state_manager=self.state_manager
-            )
-            logger.info(f"Got next step: {next_step}")
+            while True:
+                next_step = handle_component_result(
+                    context=context,
+                    component=component,
+                    result=result,
+                    state_manager=self.state_manager
+                )
 
-            if next_step is None:
-                logger.error(f"handle_component_result returned None for {context}.{component}")
-                # Default to staying on current component
-                next_context, next_component = context, component
-            else:
+                if next_step is None:
+                    logger.error(f"Component failed: {context}.{component}")
+                    break
+
                 next_context, next_component = next_step
+                if next_context == context and next_component == component:
+                    break  # Component wants to stay active
 
-            logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
+                # Log only state transitions
+                logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
 
-            # Update flow state with just context and component
-            self.state_manager.update_flow_state(
-                context=next_context,
-                component=next_component
-            )
-            logger.info(f"Updated flow state: {next_context}.{next_component}")
+                # Update flow state
+                current_flow_data = self.state_manager.get_flow_data()
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Updating flow state: {current_flow_data}")
+
+                self.state_manager.update_flow_state(
+                    context=next_context,
+                    component=next_component,
+                    data=current_flow_data
+                )
+
+                # Activate next component
+                result = activate_component(next_component, self.state_manager)
+
+                # Update for next iteration
+                context = next_context
+                component = next_component
 
             # Only return messages for errors, components handle their own messaging
             if isinstance(result, ValidationResult):

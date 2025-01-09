@@ -4,8 +4,7 @@
 
 VimbisoPay uses Docker for:
 - Application (Django)
-- Redis Cache (General caching)
-- Redis State (State management)
+- Redis (State management)
 - Mock WhatsApp server (Testing)
 
 ## Services
@@ -16,66 +15,56 @@ app:
   build:
     context: ..
     target: development  # or production
+  volumes:
+    - ./data:/app/data
+    - .:/app
   ports:
     - "8000:8000"
   environment:
     - DJANGO_ENV=development
-    - REDIS_URL=redis://redis-cache:6379/0
+    - DEBUG=True
+    - ALLOWED_HOSTS=*
+    - DJANGO_SECRET=local-secret-key
     - REDIS_STATE_URL=redis://redis-state:6379/0
-  volumes:
-    - ./data:/app/data
-    - .:/app
   depends_on:
-    redis-cache:
-      condition: service_healthy
     redis-state:
       condition: service_healthy
-```
-
-### Redis Services
-
-#### Cache Redis
-```yaml
-redis-cache:
-  image: redis:7.0-alpine
-  command: >
-    redis-server
-    --maxmemory 256mb
-    --maxmemory-policy allkeys-lru
-    --appendonly no
-    --save ""
-  volumes:
-    - ./data/redis/cache:/data
-  ports:
-    - "6379:6379"
   healthcheck:
-    test: ["CMD", "redis-cli", "ping"]
-    interval: 5s
-    timeout: 3s
+    test: ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
+    interval: 30s
+    timeout: 10s
     retries: 3
 ```
 
-#### State Redis
+### Redis Service
 ```yaml
 redis-state:
   image: redis:7.0-alpine
+  volumes:
+    - ./data/redis/state:/data
+  ports:
+    - "6379:6379"
   command: >
     redis-server
-    --maxmemory 256mb
+    --maxmemory 512mb
     --maxmemory-policy allkeys-lru
     --appendonly yes
     --appendfsync everysec
     --save ""
-  volumes:
-    - ./data/redis/state:/data
-  ports:
-    - "6380:6379"
   healthcheck:
     test: ["CMD", "redis-cli", "ping"]
     interval: 5s
     timeout: 3s
     retries: 3
 ```
+
+Key features:
+- Memory limit: 512MB
+- LRU eviction policy
+- AOF persistence enabled
+- Optimized fsync (everysec)
+- No RDB persistence
+- Regular health checks
 
 ### Mock Server
 ```yaml
@@ -87,6 +76,9 @@ mock:
     - ../mock:/app/mock
   ports:
     - "8001:8001"
+  command: ["python3", "mock/server.py"]
+  depends_on:
+    - app
 ```
 
 ## Development
@@ -100,15 +92,13 @@ make dev-up
 # Access services
 Application: http://localhost:8000
 Mock WhatsApp: http://localhost:8001
-Redis Cache: localhost:6379
-Redis State: localhost:6380
+Redis: localhost:6379
 ```
 
 ### Service Communication
 Within Docker network:
 - Application: http://app:8000
-- Redis Cache: redis://redis-cache:6379
-- Redis State: redis://redis-state:6379
+- Redis: redis://redis-state:6379
 - Mock Server: http://mock:8001
 
 ## Production
@@ -138,6 +128,28 @@ healthcheck:
   retries: 3
 ```
 
+## Redis Configuration
+
+### Memory Management
+- Memory limit: 512MB
+- LRU eviction policy
+- AOF persistence
+- No RDB persistence
+- See [Redis Management](redis-memory-management.md)
+
+### Persistence
+- AOF enabled
+- Fsync: everysec
+- Auto-rewrite: 100%
+- Min size: 64mb
+- No RDB saves
+
+### Health Checks
+- Regular ping tests
+- 5s intervals
+- 3s timeout
+- 3 retries
+
 ## Troubleshooting
 
 Common issues:
@@ -153,4 +165,12 @@ Common issues:
 2. **Redis Issues**
    - Check memory usage
    - Verify configuration
+   - Review AOF status
+   - Monitor eviction rates
    - See [Redis Management](redis-memory-management.md)
+
+3. **Application Issues**
+   - Check app logs
+   - Verify Redis connection
+   - Validate environment variables
+   - Check health endpoints

@@ -6,10 +6,10 @@ Also handles initial state setup after login.
 
 from typing import Any, Dict
 
-from core.messaging.formatters.formatters import AccountFormatters
 from core.messaging.types import Message
 from core.messaging.utils import get_recipient
 from core.utils.error_types import ValidationResult
+from core.utils.exceptions import ComponentException
 
 from ..base import DisplayComponent
 
@@ -69,57 +69,82 @@ class AccountDashboard(DisplayComponent):
                         details={"component": "account_dashboard"}
                     )
 
-                # Format active account data for display
-                formatted_data = {
-                    "accountName": active_account.get("accountName", ""),
-                    "accountHandle": active_account.get("accountHandle", ""),
-                    "accountType": active_account.get("accountType", ""),
-                    "defaultDenom": active_account.get("defaultDenom", "USD"),
-                    "securedNetBalancesByDenom": active_account.get("balanceData", {}).get("securedNetBalancesByDenom", []),
-                    "netCredexAssetsInDefaultDenom": active_account.get("balanceData", {}).get("netCredexAssetsInDefaultDenom", "0.00")
-                }
+                # Format header data
+                account = active_account.get("accountName", "")
+                handle = active_account.get("accountHandle", "")
 
-                # Add tier limit if member data exists
+                # Format secured balances
+                secured_balances = active_account.get("balanceData", {}).get("securedNetBalancesByDenom", [])
+                secured_balances_str = "\n".join(secured_balances) if secured_balances else "0.00 USD"
+
+                # Format net assets
+                try:
+                    net_value = float(active_account.get("balanceData", {}).get("netCredexAssetsInDefaultDenom", "0.00"))
+                    denom = active_account.get("defaultDenom", "USD")
+                    net_assets = f"  {net_value:.2f} {denom}"
+                except (ValueError, TypeError):
+                    net_assets = f"  0.00 {active_account.get('defaultDenom', 'USD')}"
+
+                # Format tier limit display
                 member = dashboard.get("member", {})
-                if member and member.get("memberTier"):
-                    formatted_data["tier_limit_raw"] = member.get("tierLimit", "0.00")
+                tier_limit_display = ""
+                if member and member.get("memberTier", 0) < 3:
+                    try:
+                        amount_remaining = float(member.get("amountRemainingUSD", "0.00"))
+                        tier_limit_display = f"\n\n⏳ DAILY MEMBER TIER LIMIT: {amount_remaining:.2f} USD"
+                    except (ValueError, TypeError):
+                        tier_limit_display = "\n\n⏳ DAILY MEMBER TIER LIMIT: 0.00 USD"
+
+                # Format final display data
+                formatted_data = {
+                    "account": account,
+                    "handle": handle,
+                    "secured_balances": secured_balances_str,
+                    "net_assets": net_assets,
+                    "tier_limit_display": tier_limit_display
+                }
 
                 # Get recipient for messages
                 recipient = get_recipient(self.state_manager)
 
-                # Send account info as text
-                self.state_manager.messaging.send_text(
-                    recipient=recipient,
-                    text=self.to_message_content(formatted_data)
-                )
+                # Get account info text
+                account_info = self.to_message_content(formatted_data)
 
-                # Get interactive menu from WhatsApp formatter
-                from core.messaging.formatters.whatsapp_menus import \
-                    WhatsAppMenus
-                menu = WhatsAppMenus.get_interactive_menu()
+                # Get interactive menu with active account data for pending counts
+                from core.messaging.formatters.menus import WhatsAppMenus
+                menu = WhatsAppMenus.get_interactive_menu(active_account)
 
-                # Send interactive menu using proper content type
+                # Combine account info with menu in a single interactive message
                 from core.messaging.types import (InteractiveContent,
                                                   InteractiveType)
                 menu_content = InteractiveContent(
                     interactive_type=InteractiveType.LIST,
-                    body=menu["body"]["text"],
+                    body=account_info,  # Just use account info as body
                     sections=menu["action"]["sections"],
                     button_text=menu["action"]["button"]
                 )
-                self.state_manager.messaging.send_message(
-                    Message(recipient=recipient, content=menu_content)
-                )
+                try:
+                    self.state_manager.messaging.send_message(
+                        Message(recipient=recipient, content=menu_content)
+                    )
 
-                # Return success with await_input to stay active for input
-                return ValidationResult.success(
-                    formatted_data,
-                    metadata={"await_input": True}  # Signal flow to wait for input
-                )
+                    # Return success with await_input to stay active for input
+                    return ValidationResult.success(
+                        formatted_data,
+                        metadata={"await_input": True}  # Signal flow to wait for input
+                    )
+                except Exception as e:
+                    raise ComponentException(
+                        message=f"Failed to send menu message: {str(e)}",
+                        component=self.type,
+                        field="messaging",
+                        value=str(menu_content),
+                        validation=self.validation_state
+                    )
 
             # Input Phase - When we get a response
             selection = value.get("text", "").strip()
-            from core.messaging.formatters.whatsapp_menus import WhatsAppMenus
+            from core.messaging.formatters.menus import WhatsAppMenus
             if WhatsAppMenus.is_valid_option(selection):
                 # Valid selection, return to progress
                 return ValidationResult.success({"selection": selection})
@@ -142,5 +167,6 @@ class AccountDashboard(DisplayComponent):
             )
 
     def to_message_content(self, value: Dict) -> str:
-        """Convert dashboard data to message content using AccountFormatters"""
-        return AccountFormatters.format_dashboard(value)
+        """Format dashboard data using template"""
+        from core.messaging.templates.messages import ACCOUNT_DASHBOARD
+        return ACCOUNT_DASHBOARD.format(**value)

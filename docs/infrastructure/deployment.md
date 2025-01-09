@@ -12,7 +12,7 @@ VimbisoPay is deployed on AWS using a containerized architecture with the follow
 - **Route53**: DNS management and health checks
 - **ECR (Elastic Container Registry)**: For storing Docker images
 - **CloudWatch**: For logging and monitoring
-- **Redis Services**: Dedicated instances for caching and state management
+- **Redis**: State management with AOF persistence
 
 ### Security Features
 - WAF (Web Application Firewall) protection
@@ -27,7 +27,7 @@ VimbisoPay is deployed on AWS using a containerized architecture with the follow
 - Auto-scaling based on CPU and memory metrics
 - Health checks and automatic recovery
 - Load balancing across multiple containers
-- Redis failover configuration
+- Redis persistence and recovery
 
 ## Local Development Setup
 
@@ -46,8 +46,7 @@ VimbisoPay is deployed on AWS using a containerized architecture with the follow
 
 4. Access services:
    - Application: http://localhost:8000
-   - Redis Cache: localhost:6379
-   - Redis State: localhost:6380
+   - Redis: localhost:6379
 
 ### Local Development Commands
 ```bash
@@ -77,7 +76,7 @@ The application uses GitHub Actions for automated deployments:
 1. **Infrastructure Setup**:
    - Initializes Terraform backend
    - Deploys base infrastructure (VPC, ECS, etc.)
-   - Sets up Redis instances
+   - Sets up Redis instance
    - Sets up SSL certificates and DNS
 
 2. **Application Deployment**:
@@ -90,7 +89,7 @@ The application uses GitHub Actions for automated deployments:
 The deployment process includes extensive health checks:
 - Container health status
 - Application health endpoint
-- Redis instance health
+- Redis health checks
 - Service stability checks
 - Automatic log collection on failures
 
@@ -104,8 +103,7 @@ DJANGO_ENV                 # Environment (development/production)
 DEBUG                      # Debug mode (True/False)
 
 # Redis Configuration
-REDIS_URL                 # Cache Redis URL
-REDIS_STATE_URL          # State Redis URL
+REDIS_STATE_URL           # Redis URL for state management
 
 # API Configuration
 MYCREDEX_APP_URL          # Credex core API URL
@@ -183,7 +181,7 @@ aws cloudwatch get-metric-statistics \
    - Memory usage
    - CPU utilization
    - Network throughput
-   - Cache hit rates
+   - Operation latency
    - Connected clients
 
 3. **Alerts**:
@@ -202,10 +200,10 @@ aws cloudwatch get-metric-statistics \
   - Maximum capacity: 4 tasks
   - Scale-out on 80% resource utilization
 - Redis optimization:
-  - Memory limits
-  - Eviction policies
+  - Memory limits (512MB)
+  - LRU eviction policy
+  - AOF persistence
   - Connection pooling
-  - Persistence configuration
 
 ### Troubleshooting
 1. **Deployment Issues**:
@@ -261,7 +259,7 @@ aws cloudwatch get-metric-statistics \
 
 ### Automated Backups
 - EFS: Daily backups with 30-day retention
-- Redis State: AOF persistence
+- Redis: AOF persistence
 - ECR: Image retention policy (20 images)
 - Terraform state: Versioned S3 bucket
 
