@@ -59,11 +59,16 @@ class ConfirmUpgrade(ConfirmBase):
                 details={"component": "confirm_upgrade"}
             )
 
-        return ValidationResult.success({
+        # Create confirmation result
+        result = {
             "confirmed": True,
             "member_id": member_id,
             "account_id": active_account_id
-        })
+        }
+
+        # Update state with confirmation data
+        self.update_state(result, ValidationResult.success(result))
+        return ValidationResult.success(result)
 
     def get_rejection_message(self) -> str:
         """Get message for when upgrade is rejected"""

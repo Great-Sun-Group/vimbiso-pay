@@ -26,6 +26,11 @@ class AmountInput(InputComponent):
 
         Business validation (limits etc) happens in service layer
         """
+        # If no value provided, we're being activated - await input
+        if value is None:
+            self.set_awaiting_input(True)
+            return ValidationResult.success(None)
+
         try:
             # Validate type
             type_result = self._validate_type(value, (int, float, str), "numeric")
@@ -42,7 +47,9 @@ class AmountInput(InputComponent):
                     field="amount"
                 )
 
+            # Update state and release our hold on the flow
             self.update_state(str(amount), ValidationResult.success(amount))
+            self.set_awaiting_input(False)  # Release our own hold
             return ValidationResult.success(amount)
 
         except ValueError:

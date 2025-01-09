@@ -128,11 +128,9 @@ class AccountDashboard(DisplayComponent):
                         Message(recipient=recipient, content=menu_content)
                     )
 
-                    # Return success with await_input to stay active for input
-                    return ValidationResult.success(
-                        formatted_data,
-                        metadata={"await_input": True}  # Signal flow to wait for input
-                    )
+                    # Set component to await input and return formatted data
+                    self.set_awaiting_input(True)
+                    return ValidationResult.success(formatted_data)
                 except Exception as e:
                     raise ComponentException(
                         message=f"Failed to send menu message: {str(e)}",
@@ -143,11 +141,20 @@ class AccountDashboard(DisplayComponent):
                     )
 
             # Input Phase - When we get a response
-            selection = value.get("text", "").strip()
             from core.messaging.formatters.menus import WhatsAppMenus
-            if WhatsAppMenus.is_valid_option(selection):
-                # Valid selection, return to progress
-                return ValidationResult.success({"selection": selection})
+            flow_data = self.state_manager.get_flow_data()
+            message = flow_data.get("message", {})
+            if WhatsAppMenus.is_valid_option(message):
+                # For interactive messages, extract selection ID
+                if message.get("type") == "interactive":
+                    interactive = message.get("interactive", {})
+                    if interactive.get("type") == "list_reply":
+                        selection = interactive.get("list_reply", {}).get("id")
+                        if selection:
+                            # Update selection in state and release our hold on the flow
+                            self.state_manager.update_flow_data({"selection": selection})
+                            self.set_awaiting_input(False)  # Release our own hold
+                            return ValidationResult.success(True)
 
             # Invalid selection, return failure but stay on component
             return ValidationResult.failure(

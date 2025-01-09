@@ -22,6 +22,11 @@ class ConfirmBase(Component):
         Converts string inputs to boolean and validates type.
         Subclasses handle specific confirmation logic.
         """
+        # If no value provided, we're being activated - await input
+        if value is None:
+            self.set_awaiting_input(True)
+            return ValidationResult.success(None)
+
         # Handle string inputs
         if isinstance(value, str):
             value = value.lower()
@@ -54,7 +59,13 @@ class ConfirmBase(Component):
                 field="confirmation"
             )
 
-        return self.handle_confirmation(value)
+        # Let subclass handle specific confirmation
+        result = self.handle_confirmation(value)
+
+        # Release our hold if confirmation was successful
+        if result.valid:
+            self.set_awaiting_input(False)  # Release our own hold
+        return result
 
     def handle_confirmation(self, value: bool) -> ValidationResult:
         """Handle specific confirmation logic

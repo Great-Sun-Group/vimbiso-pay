@@ -87,7 +87,6 @@ fetchlogs 60
 
 ### WhatsApp Interface
 - Interactive menus and buttons
-- Form-based data collection
 - Rich message formatting
 - State-based conversation flow
 - Navigation commands

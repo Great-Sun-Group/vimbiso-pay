@@ -13,6 +13,7 @@ from typing import Optional, Tuple
 from core import components
 from core.config.interface import StateManagerInterface
 from core.utils.exceptions import ComponentException
+
 from .types import ComponentResult
 
 logger = logging.getLogger(__name__)
@@ -75,9 +76,8 @@ def activate_component(component_type: str, state_manager: StateManagerInterface
         component = component_class()
         component.set_state_manager(state_manager)
 
-        # Get flow data and validate
-        flow_data = state_manager.get_flow_data()
-        result = component.validate(flow_data)
+        # Validate component
+        result = component.validate(None)  # Component will get data from state_manager
         return result
     except ComponentException as e:
         # Ensure all required parameters are present
@@ -86,7 +86,7 @@ def activate_component(component_type: str, state_manager: StateManagerInterface
                 message=str(e),
                 component=component_type,
                 field="validation",
-                value=str(flow_data),
+                value="validation_failed",
                 validation=e.details.get("validation")
             )
         raise
@@ -125,13 +125,14 @@ def handle_component_result(
         if not result.valid:
             return context, component  # Retry on validation failure
 
-        # Check if component wants to await input
-        if hasattr(result, "metadata") and result.metadata and result.metadata.get("await_input"):
+        # Check if component is awaiting input
+        flow_data = state_manager.get_flow_data() if state_manager else {}
+        if flow_data.get("awaiting_input"):
             return context, component  # Stay on current component
 
-        # Get value for flow control
-        value = result.value if isinstance(result.value, dict) else {"value": result.value}
-        result = value
+        # Get flow data from state for branching
+        flow_data = state_manager.get_flow_data() if state_manager else {}
+        result = flow_data
 
     # Branch based on context and component
     match (context, component):

@@ -58,12 +58,17 @@ class ConfirmDeclineOffer(ConfirmBase):
                 }
             )
 
-        return ValidationResult.success({
+        # Create confirmation result
+        result = {
             "confirmed": True,
             "credex_id": credex_id,
             "amount": amount,
             "counterparty": counterparty
-        })
+        }
+
+        # Update state with confirmation data
+        self.update_state(result, ValidationResult.success(result))
+        return ValidationResult.success(result)
 
     def get_rejection_message(self) -> str:
         """Get message for when decline is rejected"""

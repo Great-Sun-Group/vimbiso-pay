@@ -56,11 +56,16 @@ class ConfirmOfferSecured(ConfirmBase):
                 }
             )
 
-        return ValidationResult.success({
+        # Create confirmation result
+        result = {
             "confirmed": True,
             "amount": amount,
             "handle": handle
-        })
+        }
+
+        # Update state with confirmation data
+        self.update_state(result, ValidationResult.success(result))
+        return ValidationResult.success(result)
 
     def get_rejection_message(self) -> str:
         """Get message for when offer is rejected"""

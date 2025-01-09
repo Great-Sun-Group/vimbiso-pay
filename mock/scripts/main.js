@@ -18,10 +18,13 @@ class WhatsAppMock {
             const payload = {
                 type: messageType,
                 message: messageType === 'text' ? messageText : {
-                    type: messageText.startsWith('button:') ? 'button_reply' : 'list_reply',
-                    [messageText.startsWith('button:') ? 'button_reply' : 'list_reply']: {
-                        id: messageText.split(':')[1],
-                        title: messageText.split(':')[1]
+                    type: "interactive",
+                    interactive: {
+                        type: messageText.startsWith('button:') ? 'button_reply' : 'list_reply',
+                        [messageText.startsWith('button:') ? 'button_reply' : 'list_reply']: {
+                            id: messageText.split(':')[1],
+                            title: messageText.split(':')[1]
+                        }
                     }
                 },
                 phone: this.ui.phoneInput.value

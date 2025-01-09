@@ -63,6 +63,9 @@ def prepare_state_update(state_manager: StateManagerInterface, updates: Dict[str
 
             # Only update with new data if provided
             if flow_data and isinstance(flow_data.get("data"), dict):
+                # Preserve selection data if present
+                selection = new_data.get("selection")
+
                 # Deep merge to preserve nested structure
                 for key, value in flow_data["data"].items():
                     if isinstance(value, dict) and isinstance(new_data.get(key), dict):
@@ -72,6 +75,10 @@ def prepare_state_update(state_manager: StateManagerInterface, updates: Dict[str
                         # Replace or add non-dict values
                         new_data[key] = value
 
+                # Restore selection data if it was present
+                if selection:
+                    new_data["selection"] = selection
+
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Merged flow data: {new_data}")
 
@@ -79,11 +86,7 @@ def prepare_state_update(state_manager: StateManagerInterface, updates: Dict[str
                 "context": flow_data.get("context", current_flow.get("context")),
                 "component": flow_data.get("component", current_flow.get("component")),
                 "data": new_data,
-                "validation": {
-                    **validation_state,
-                    "in_progress": False,
-                    "operation": "update"
-                }
+                "awaiting_input": flow_data.get("awaiting_input", current_flow.get("awaiting_input", False))
             }
 
             # Only log context/component changes at INFO level

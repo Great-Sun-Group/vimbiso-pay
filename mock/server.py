@@ -153,7 +153,16 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                                 "id": f"wamid.{hex(int.from_bytes(os.urandom(16), 'big'))[2:]}",
                                 "timestamp": str(int(time.time())),
                                 "type": message.get("type", "text"),
-                                **({"text": {"body": message.get("message")}} if message.get("type") == "text" else {"interactive": message.get("interactive", {})})
+                                **(
+                                    {"text": {"body": message.get("message")}}
+                                    if message.get("type") == "text"
+                                    else {
+                                        "type": "interactive",
+                                        "interactive": message.get("message", {}).get("interactive", {})
+                                    }
+                                    if isinstance(message.get("message"), dict) and message.get("message", {}).get("type") == "interactive"
+                                    else {"interactive": message.get("interactive", {})}
+                                )
                             }]
                         },
                         "field": "messages"
@@ -241,11 +250,11 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                     if outgoing_message["type"] == "text":
                         text_content = messages.get("text", {}).get("body", "") if isinstance(messages.get("text"), dict) else messages.get("text", "")
                         outgoing_message["text"] = {"body": text_content}
-                        logger.info("app-1 -> Server - >save complete: %s", text_content)
+                        logger.info("app-1 -> Server -> save complete: %s", text_content)
                     elif outgoing_message["type"] == "interactive":
                         interactive_content = messages.get("interactive", {})
                         outgoing_message["interactive"] = interactive_content
-                        logger.info("app-1 -> Server - >save complete: %s", interactive_content.get('body', {}).get('text', '').split('\n')[0])
+                        logger.info("app-1 -> Server -> save complete: %s", interactive_content.get('body', {}).get('text', '').split('\n')[0])
 
                     # Save message
                     self._save_message(outgoing_message)
@@ -302,12 +311,9 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                     # Convert interactive message to JSON string and escape for HTML attribute
                     escaped_json = json.dumps(interactive).replace('"', '&quot;')
                     # Add debug info
-                    logger.info("Generating HTML for interactive message: %s", json.dumps(interactive, indent=2))
                     messages_html += f"""
                     <div class="message whatsapp-interactive {direction}-message" data-interactive="{escaped_json}"></div>
                     """
-                    # Add debug info
-                    logger.info("Generated HTML: %s", messages_html)
 
             # Replace placeholder with messages
             html_content = html_content.replace('{messages_placeholder}', messages_html)

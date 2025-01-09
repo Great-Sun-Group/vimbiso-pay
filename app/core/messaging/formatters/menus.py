@@ -95,9 +95,30 @@ class WhatsAppMenus:
         }
 
     @staticmethod
-    def is_valid_option(option: str) -> bool:
-        """Check if option is valid menu selection"""
-        return any(
-            option in section_options
-            for section_options in WhatsAppMenus.ACCOUNT_DASHBOARD_MENU.values()
-        )
+    def is_valid_option(option: Any) -> bool:
+        """Check if option is valid menu selection
+
+        Args:
+            option: Either a string option ID or a dict containing interactive message data
+        """
+        # Handle interactive list selections
+        if isinstance(option, dict):
+            if option.get("type") == "interactive":
+                interactive = option.get("interactive", {})
+                if interactive.get("type") == "list_reply":
+                    option_id = interactive.get("list_reply", {}).get("id")
+                    if option_id:
+                        return any(
+                            option_id in section_options
+                            for section_options in WhatsAppMenus.ACCOUNT_DASHBOARD_MENU.values()
+                        )
+            return False
+
+        # Handle direct string options
+        if isinstance(option, str):
+            return any(
+                option in section_options
+                for section_options in WhatsAppMenus.ACCOUNT_DASHBOARD_MENU.values()
+            )
+
+        return False

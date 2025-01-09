@@ -58,7 +58,24 @@ class FlowProcessor:
 
             # Extract message content and update state
             message_type = message_data.get("type", "")
-            message_text = message_data.get("text", {}).get("body", "") if message_type == "text" else ""
+            message_content = {}
+
+            # Handle different message types
+            if message_type == "text":
+                message_content = {
+                    "type": "text",
+                    "text": message_data.get("text", {}).get("body", "")
+                }
+            elif message_type == "interactive":
+                message_content = {
+                    "type": "interactive",
+                    "interactive": message_data.get("interactive", {})
+                }
+            else:
+                message_content = {
+                    "type": message_type,
+                    "text": ""
+                }
 
             # Create message recipient
             recipient = get_recipient(self.state_manager)
@@ -66,7 +83,7 @@ class FlowProcessor:
             # Check if message is a greeting
             current_component = self.state_manager.get_component()
             if (message_type == "text" and
-                message_text.lower().strip() in GREETING_COMMANDS and
+                message_content.get("text", "").lower().strip() in GREETING_COMMANDS and
                     (not current_component or not current_component.lower().endswith('input'))):
                 # Wipe state and set login flow
                 self.state_manager.clear_all_state()
@@ -84,8 +101,7 @@ class FlowProcessor:
                     "component": "Greeting",
                     "data": {
                         "message": {
-                            "type": message_type,
-                            "text": message_text,
+                            **message_content,
                             "_metadata": {
                                 "received_at": datetime.utcnow().isoformat()
                             }
@@ -96,30 +112,45 @@ class FlowProcessor:
                     }
                 }
             else:
-                # Update existing flow with message data
-                flow_state["data"] = flow_state.get("data", {})
-                flow_state["data"]["message"] = {
-                    "type": message_type,
-                    "text": message_text,
-                    "_metadata": {
-                        "received_at": datetime.utcnow().isoformat()
+                # Update existing flow with message data while preserving other data
+                flow_data = flow_state.get("data", {})
+                flow_state["data"] = {
+                    **flow_data,  # Preserve existing data
+                    "message": {
+                        **message_content,
+                        "_metadata": {
+                            "received_at": datetime.utcnow().isoformat()
+                        }
                     }
                 }
 
             # Update flow state
             self.state_manager.update_state({"flow_data": flow_state})
 
-            context = flow_state.get("context", "login")
-            component = flow_state.get("component", "Greeting")
+            # Get current flow state
+            context = flow_state.get("context")
+            component = flow_state.get("component")
+
+            # If no active flow, start login flow
+            if not context or not component:
+                context = "login"
+                component = "Greeting"
+                # Update flow state with initial context/component
+                self.state_manager.update_flow_state(
+                    context=context,
+                    component=component,
+                    data=flow_state.get("data")
+                )
 
             # Process through flow framework
             from core.messaging.flow import (activate_component,
                                              handle_component_result)
 
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Starting flow: {context}.{component}")
-                logger.debug(f"Initial state: {flow_state}")
+                logger.debug(f"Processing message in flow: {context}.{component}")
+                logger.debug(f"Flow state: {flow_state}")
 
+            # Pass message data to component for processing
             result = activate_component(component, self.state_manager)
 
             while True:
