@@ -5,7 +5,8 @@ This component handles displaying a list of Credex offers.
 
 from typing import Any, Dict
 
-from core.messaging.templates.messages import ACTION_PROMPT, OFFER_LIST, OFFER_ITEM
+from core.messaging.templates.messages import (ACTION_PROMPT, OFFER_ITEM,
+                                               OFFER_LIST)
 from core.utils.error_types import ValidationResult
 
 from ..base import DisplayComponent
@@ -54,9 +55,9 @@ class OfferListDisplay(DisplayComponent):
                 )
 
             # Get valid offer IDs based on context
-            if context in {"accept_offers", "decline_offers"}:
+            if context in {"accept_offer", "decline_offer"}:
                 offers = dashboard.get("incomingOffers", [])
-            elif context == "cancel_offers":
+            elif context == "cancel_offer":
                 offers = dashboard.get("outgoingOffers", [])
             else:
                 return ValidationResult.failure(
@@ -110,15 +111,15 @@ class OfferListDisplay(DisplayComponent):
             )
 
         # Get relevant offers based on context
-        if context == "accept_offers":
+        if context == "accept_offer":
             offers = dashboard.get("incomingOffers", [])
             title = "Incoming Offers"
             action = "Accept"
-        elif context == "decline_offers":
+        elif context == "decline_offer":
             offers = dashboard.get("incomingOffers", [])
             title = "Incoming Offers"
             action = "Decline"
-        elif context == "cancel_offers":
+        elif context == "cancel_offer":
             offers = dashboard.get("outgoingOffers", [])
             title = "Outgoing Offers"
             action = "Cancel"

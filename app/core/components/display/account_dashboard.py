@@ -112,9 +112,9 @@ class AccountDashboard(DisplayComponent):
                     text=self.to_message_content(formatted_data)
                 )
 
-                # Get interactive menu
+                # Get interactive menu with active account data for pending counts
                 from core.messaging.formatters.menus import WhatsAppMenus
-                menu = WhatsAppMenus.get_interactive_menu()
+                menu = WhatsAppMenus.get_interactive_menu(active_account)
 
                 # Send interactive menu using proper content type
                 from core.messaging.types import (InteractiveContent,

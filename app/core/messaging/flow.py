@@ -204,12 +204,12 @@ def handle_component_result(context: str, component: str, result: Any, state_man
             match result.get("selection"):
                 case "offer_secured":
                     return "offer_secured", "AmountInput"
-                case "accept_offers":
-                    return "accept_offers", "OfferListDisplay"
-                case "decline_offers":
-                    return "decline_offers", "OfferListDisplay"
-                case "cancel_offers":
-                    return "cancel_offers", "OfferListDisplay"
+                case "accept_offer":
+                    return "accept_offer", "OfferListDisplay"
+                case "decline_offer":
+                    return "decline_offer", "OfferListDisplay"
+                case "cancel_offer":
+                    return "cancel_offer", "OfferListDisplay"
                 case "view_ledger":
                     return "view_ledger", "ViewLedger"
                 case "upgrade_membertier":
@@ -235,39 +235,39 @@ def handle_component_result(context: str, component: str, result: Any, state_man
                 return "account", "AccountDashboard"
 
         # Accept offer context
-        case ("accept_offers", "OfferListDisplay"):
-            return "accept_offers", "Greeting"
+        case ("accept_offer", "OfferListDisplay"):
+            return "accept_offer", "Greeting"
 
-        case ("accept_offers", "Greeting"):
-            return "accept_offers", "AcceptOfferApiCall"
+        case ("accept_offer", "Greeting"):
+            return "accept_offer", "AcceptOfferApiCall"
 
-        case ("accept_offers", "AcceptOfferApiCall"):
+        case ("accept_offer", "AcceptOfferApiCall"):
             return "account", "AccountDashboard"
 
         # Decline offer context
-        case ("decline_offers", "OfferListDisplay"):
-            return "decline_offers", "ConfirmAction"
+        case ("decline_offer", "OfferListDisplay"):
+            return "decline_offer", "ConfirmAction"
 
-        case ("decline_offers", "ConfirmAction"):
-            return "decline_offers", "Greeting"
+        case ("decline_offer", "ConfirmAction"):
+            return "decline_offer", "Greeting"
 
-        case ("decline_offers", "Greeting"):
-            return "decline_offers", "DeclineOfferApiCall"
+        case ("decline_offer", "Greeting"):
+            return "decline_offer", "DeclineOfferApiCall"
 
-        case ("decline_offers", "DeclineOfferApiCall"):
+        case ("decline_offer", "DeclineOfferApiCall"):
             return "account", "AccountDashboard"
 
         # Cancel offer context
-        case ("cancel_offers", "OfferListDisplay"):
-            return "cancel_offers", "ConfirmAction"
+        case ("cancel_offer", "OfferListDisplay"):
+            return "cancel_offer", "ConfirmAction"
 
-        case ("cancel_offers", "ConfirmAction"):
-            return "cancel_offers", "Greeting"
+        case ("cancel_offer", "ConfirmAction"):
+            return "cancel_offer", "Greeting"
 
-        case ("cancel_offers", "Greeting"):
-            return "cancel_offers", "CancelOfferApiCall"
+        case ("cancel_offer", "Greeting"):
+            return "cancel_offer", "CancelOfferApiCall"
 
-        case ("cancel_offers", "CancelOfferApiCall"):
+        case ("cancel_offer", "CancelOfferApiCall"):
             return "account", "AccountDashboard"
 
         # Ledger context
