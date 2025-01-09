@@ -8,8 +8,9 @@ This service handles message processing and delivery.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
+from core.config.interface import StateManagerInterface
 from core.messaging.base import BaseMessagingService
 from core.messaging.flow import process_component
 from core.messaging.interface import MessagingServiceInterface
@@ -23,12 +24,12 @@ logger = logging.getLogger(__name__)
 class MessagingService(MessagingServiceInterface):
     """Main messaging service"""
 
-    def __init__(self, channel_service: BaseMessagingService, state_manager: Any):
+    def __init__(self, channel_service: BaseMessagingService, state_manager: StateManagerInterface):
         """Initialize messaging service
 
         Args:
             channel_service: Channel-specific messaging service (WhatsApp, SMS, etc)
-            state_manager: State manager instance
+            state_manager: State manager implementation
         """
         self.channel_service = channel_service
         self.state_manager = state_manager
@@ -38,6 +39,7 @@ class MessagingService(MessagingServiceInterface):
             self.channel_service.state_manager = state_manager
 
         # Set messaging service on state manager for component access
+        # This is safe because we implement MessagingServiceInterface
         state_manager.messaging = self
 
     def handle_message(self) -> Optional[Message]:

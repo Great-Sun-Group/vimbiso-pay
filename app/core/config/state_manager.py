@@ -1,6 +1,6 @@
-"""State management with clear boundaries
+"""State management implementation
 
-This module provides state management with:
+This module implements the StateManagerInterface with:
 - Single source of truth
 - Clear boundaries
 - Simple validation
@@ -11,18 +11,20 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from core.messaging.interface import MessagingServiceInterface
 from core.utils.error_handler import ErrorHandler
 from core.utils.error_types import ErrorContext
 from core.utils.exceptions import ComponentException
 from core.utils.redis_client import get_redis_client
+
 from .atomic_state import AtomicStateManager
-from .state_utils import (clear_flow_state, update_flow_data,
-                          update_flow_state, update_state_core)
+from .interface import StateManagerInterface
+from .state_utils import prepare_state_update
 
 logger = logging.getLogger(__name__)
 
 
-class StateManager:
+class StateManager(StateManagerInterface):
     """Manages state with clear boundaries"""
 
     def __init__(self, key_prefix: str):
@@ -49,11 +51,11 @@ class StateManager:
         self._messaging = None  # Will be set by MessagingService
 
     @property
-    def messaging(self) -> Any:
+    def messaging(self) -> MessagingServiceInterface:
         """Get messaging service with validation
 
         Returns:
-            Messaging service instance
+            MessagingServiceInterface: Messaging service implementation
 
         Raises:
             ComponentException: If messaging service not initialized
@@ -67,11 +69,11 @@ class StateManager:
         return self._messaging
 
     @messaging.setter
-    def messaging(self, service: Any) -> None:
+    def messaging(self, service: MessagingServiceInterface) -> None:
         """Set messaging service
 
         Args:
-            service: Messaging service instance
+            service: Messaging service implementation
         """
         self._messaging = service
 
@@ -136,11 +138,17 @@ class StateManager:
                 "updated_at": datetime.utcnow().isoformat()
             }
 
-            # Update local state
-            update_state_core(self, updates)
+            # Prepare and validate state update
+            prepared_state = prepare_state_update(self, updates)
 
-            # Persist to Redis
-            self.atomic_state.atomic_update(self.key_prefix, self._state)
+            # Merge updates with current state
+            new_state = {**self._state, **prepared_state}
+
+            # Persist to Redis first to ensure atomic update
+            self.atomic_state.atomic_update(self.key_prefix, new_state)
+
+            # Update local state only after successful Redis update
+            self._state = new_state
         except Exception as e:
             # Handle error through ErrorHandler
             error_context = ErrorContext(
@@ -242,12 +250,16 @@ class StateManager:
         }
 
         try:
-            # Update flow state - will raise exception on failure
-            update_flow_state(self, context, component, {
-                **(data or {}),
-                "validation": validation_state,
-                "_metadata": {
-                    "updated_at": datetime.utcnow().isoformat()
+            # Prepare and apply flow state update
+            self.update_state({
+                "flow_data": {
+                    "context": context,
+                    "component": component,
+                    "data": data or {},
+                    "validation": validation_state,
+                    "_metadata": {
+                        "updated_at": datetime.utcnow().isoformat()
+                    }
                 }
             })
 
@@ -282,8 +294,12 @@ class StateManager:
         Raises:
             Exception: If flow data update fails (handled by ErrorHandler)
         """
-        # Update flow data - will raise exception on failure
-        update_flow_data(self, data)
+        # Prepare and apply flow data update
+        self.update_state({
+            "flow_data": {
+                "data": data
+            }
+        })
 
     def clear_flow_state(self) -> None:
         """Clear flow state
@@ -291,8 +307,10 @@ class StateManager:
         Raises:
             Exception: If flow state clear fails (handled by ErrorHandler)
         """
-        # Clear flow state - will raise exception on failure
-        clear_flow_state(self)
+        # Clear flow state
+        self.update_state({
+            "flow_data": None
+        })
 
     def clear_all_state(self) -> None:
         """Clear all state data except channel info

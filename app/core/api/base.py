@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
+from core.config.interface import StateManagerInterface
 from core.utils.error_handler import ErrorHandler
 from core.utils.exceptions import SystemException
 from core.utils.state_validator import StateValidator
@@ -28,7 +29,7 @@ if not BASE_URL.endswith('/'):
 
 def handle_api_response(
     response: requests.Response,
-    state_manager: Any
+    state_manager: StateManagerInterface
 ) -> Tuple[Dict[str, Any], Optional[str]]:
     """Handle API response with state updates
 
@@ -65,7 +66,7 @@ def handle_api_response(
         return {"error": str(e)}, str(e)
 
 
-def get_headers(state_manager: Any, url: str) -> Dict[str, str]:
+def get_headers(state_manager: StateManagerInterface, url: str) -> Dict[str, str]:
     """Get request headers with authentication if required
 
     Args:
@@ -169,7 +170,7 @@ def make_api_request(
     payload: Dict[str, Any],
     method: str = "POST",
     retry_auth: bool = True,
-    state_manager: Optional[Any] = None
+    state_manager: Optional[StateManagerInterface] = None
 ) -> Dict:
     """Make API request with logging, validation and error handling"""
     try:

@@ -14,7 +14,8 @@ import logging
 from datetime import datetime
 from typing import Any, Dict
 
-from core.config.recognition import GREETING_COMMANDS
+from core.config.interface import StateManagerInterface
+
 from core.messaging.types import Message, TextContent
 from core.messaging.utils import get_recipient
 from core.utils.error_handler import ErrorHandler
@@ -22,13 +23,15 @@ from core.utils.error_types import ValidationResult
 from core.utils.exceptions import ComponentException
 from services.messaging.service import MessagingService
 
+from .constants import GREETING_COMMANDS
+
 logger = logging.getLogger(__name__)
 
 
 class FlowProcessor:
     """Processes messages through the flow framework"""
 
-    def __init__(self, messaging_service: MessagingService, state_manager: Any):
+    def __init__(self, messaging_service: MessagingService, state_manager: StateManagerInterface):
         """Initialize with messaging service and state manager
 
         Args:

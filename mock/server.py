@@ -172,7 +172,7 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 APP_ENDPOINT,
                 json=webhook_message,
                 headers=headers,
-                timeout=10
+                timeout=30  # Match CLI client timeout
             )
 
             if response.status_code != 200:

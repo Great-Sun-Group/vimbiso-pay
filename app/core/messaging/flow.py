@@ -8,15 +8,17 @@ Also handles default account setup for entry points (login/onboard).
 """
 
 import logging
-from typing import Any, Optional, Tuple
+from typing import Optional, Tuple
 
 from core import components
+from core.config.interface import StateManagerInterface
 from core.utils.exceptions import ComponentException
+from .types import ComponentResult
 
 logger = logging.getLogger(__name__)
 
 
-def _set_default_account(state_manager: Any) -> bool:
+def _set_default_account(state_manager: StateManagerInterface) -> bool:
     """Set default account (currently PERSONAL) for new flows
 
     Returns:
@@ -54,7 +56,7 @@ def _set_default_account(state_manager: Any) -> bool:
         return False
 
 
-def activate_component(component_type: str, state_manager: Any) -> Any:
+def activate_component(component_type: str, state_manager: StateManagerInterface) -> ComponentResult:
     """Create and activate a component using state data
 
     Args:
@@ -90,13 +92,19 @@ def activate_component(component_type: str, state_manager: Any) -> Any:
         raise
 
 
-def handle_component_result(context: str, component: str, result: Any, state_manager: Optional[Any] = None) -> Tuple[str, str]:
+def handle_component_result(
+    context: str,
+    component: str,
+    result: ComponentResult,
+    state_manager: Optional[StateManagerInterface] = None
+) -> Tuple[str, str]:
     """Handle component result and determine next component
 
     Args:
         context: Current context (e.g. "login", "onboard", "account")
         component: Currently active component
         result: Result from component
+        state_manager: Optional state manager for state-dependent branching
 
     Returns:
         Tuple[str, str]: Next (context, component) to activate
@@ -278,7 +286,7 @@ def handle_component_result(context: str, component: str, result: Any, state_man
             return "account", "AccountDashboard"
 
 
-def process_component(context: str, component: str, state_manager: Any) -> Tuple[Any, str, str]:
+def process_component(context: str, component: str, state_manager: StateManagerInterface) -> Tuple[ComponentResult, str, str]:
     """Process a component and get next component with context
 
     Args:

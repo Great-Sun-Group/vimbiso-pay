@@ -6,8 +6,9 @@ Each interface handles a specific type of component with clear validation patter
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, Type, Union
+from typing import Any, Dict, Optional, Type, Union
 
+from core.config.interface import StateManagerInterface
 from core.utils.error_types import ValidationResult
 from core.utils.exceptions import ComponentException
 
@@ -19,7 +20,7 @@ class Component:
         """Initialize component with standardized validation tracking"""
         self.type = component_type
         self.value = None
-        self.state_manager = None
+        self.state_manager: Optional[StateManagerInterface] = None
         self.validation_state = {
             "in_progress": False,
             "error": None,
@@ -30,7 +31,7 @@ class Component:
             "timestamp": None
         }
 
-    def set_state_manager(self, state_manager: Any) -> None:
+    def set_state_manager(self, state_manager: StateManagerInterface) -> None:
         """Set state manager for accessing state data
 
         Args:

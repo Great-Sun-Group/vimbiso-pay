@@ -1,24 +1,43 @@
 # State Management
 
+## Overview
+
+VimbisoPay uses a layered state management approach with Redis as the persistence layer:
+
+1. **StateManager**: High-level interface for state operations
+2. **AtomicStateManager**: Validation and transaction handling
+3. **RedisAtomic**: Low-level atomic Redis operations
+
 ## Code Reading Guide
+
 Before modifying state management, read these files in order:
 
-1. core/config/state_manager.py - Understand central state management
+1. core/config/interface.py - Understand state management interface
+   - Learn interface methods
+   - Understand type safety
+   - Review state boundaries
+
+2. core/config/state_utils.py - Understand state update preparation
+   - Learn validation patterns
+   - Understand state preparation
+   - Review update flow
+
+3. core/config/state_manager.py - Understand state management implementation
    - Learn state access patterns
-   - Understand state updates
+   - Understand atomic updates
    - Review state validation
 
-2. core/utils/state_validator.py - Learn validation rules
+4. core/utils/state_validator.py - Learn validation rules
    - Understand state validation
    - Learn validation patterns
    - Review validation rules
 
-3. core/messaging/base.py - Understand state usage
+5. core/messaging/base.py - Understand state usage
    - Learn state integration
    - Understand state flow
    - Review state patterns
 
-4. core/config/atomic_state.py - Learn atomic operations
+6. core/config/atomic_state.py - Learn atomic operations
    - Understand state atomicity
    - Learn transaction patterns
    - Review rollback handling
@@ -28,10 +47,20 @@ Common mistakes to avoid:
 2. DON'T bypass state manager for direct access
 3. DON'T mix state responsibilities
 4. DON'T duplicate state across components
+5. DON'T access internal state directly (e.g., _state)
+6. DON'T create circular dependencies between modules
 
 ## Core Principles
 
-1. **Single Source of Truth**
+1. **Clear Module Boundaries**
+- Interface defines state management contract
+- Utils prepare state updates with validation
+- Manager implements atomic state updates
+- NO circular dependencies
+- NO direct state access
+- NO implementation leaks
+
+2. **Single Source of Truth**
 - Channel info accessed through get_channel_id()
 - JWT token accessed through flow_data auth
 - Member data accessed through dashboard state
@@ -40,40 +69,15 @@ Common mistakes to avoid:
 - NO state passing
 - NO transformation
 
-2. **Messaging Service Integration**
-- MessagingService sets up bidirectional relationship:
-  ```python
-  def __init__(self, channel_service: BaseMessagingService, state_manager: Any):
-      self.channel_service = channel_service
-      self.state_manager = state_manager
-      if state_manager:
-          # Set up bidirectional relationship
-          self.channel_service.state_manager = state_manager
-          state_manager.messaging = self
-  ```
-- Components access messaging through state_manager:
-  ```python
-  # Send message through messaging service
-  self.state_manager.messaging.send_text(
-      recipient=recipient,
-      text=message_text
-  )
-  ```
-- Error handling through ErrorHandler:
-  ```python
-  try:
-      self.state_manager.messaging.send_text(...)
-  except Exception as e:
-      error_response = ErrorHandler.handle_component_error(
-          component=self.type,
-          field="messaging",
-          value=str(message_text),
-          message=str(e)
-      )
-      return ValidationResult.failure(message=error_response["error"]["message"])
-  ```
+3. **State Persistence**
+- Redis as persistent storage
+- Atomic operations for consistency
+- AOF persistence for durability
+- Transaction handling for safety
+- NO direct Redis access
+- NO manual persistence
 
-3. **Component Responsibilities**
+4. **Component Responsibilities**
 - Components handle their own operations:
   * API calls through make_api_request
   * Message sending through state_manager.messaging
@@ -89,7 +93,7 @@ Common mistakes to avoid:
   * All errors handled through ErrorHandler
   * All results returned as ValidationResult
 
-3. **Pure Functions**
+5. **Pure Functions**
 - Stateless operations
 - Clear validation
 - Standard updates
@@ -97,7 +101,7 @@ Common mistakes to avoid:
 - NO side effects
 - NO manual handling
 
-4. **Central Management**
+6. **Central Management**
 - Single state manager
 - Standard validation
 - Clear boundaries
@@ -107,7 +111,42 @@ Common mistakes to avoid:
 
 ## State Structure
 
-### 1. Core Identity
+### 1. Core State
+```python
+{
+    "channel": {
+        "type": str,        # Channel type (e.g., "whatsapp")
+        "identifier": str   # Channel ID
+    },
+    "flow_data": {
+        "context": str,     # Current flow context
+        "component": str,   # Active component
+        "data": dict,       # Flow-specific data
+        "validation": {     # Validation state
+            "in_progress": bool,
+            "attempts": int,
+            "last_attempt": dict
+        }
+    },
+    "_metadata": {
+        "initialized_at": datetime,
+        "updated_at": datetime
+    },
+    "_validation": {
+        "in_progress": bool,
+        "attempts": dict,
+        "last_attempt": dict,
+        "error": Optional[str]
+    }
+}
+```
+
+### 2. Redis Storage
+- Key format: `channel:{channel_id}`
+- TTL: 300 seconds (5 minutes)
+- JSON serialization
+- AOF persistence
+- Atomic operations
 
 ### Component Integration
 
@@ -220,36 +259,31 @@ Common mistakes to avoid:
    - Maintain validation state
    - Follow validation patterns
 
-1. DON'T create new patterns when existing ones exist
-2. DON'T bypass state manager
-3. DON'T mix validation responsibilities
-4. DON'T duplicate validation logic
-
 ## Architecture Rules
 
 Key principles that must be followed:
 
-1. State Manager is Single Source of Truth
+1. **State Manager is Single Source of Truth**
    - All state access through manager
    - No direct state modification
    - No state duplication
 
-2. Proper State Validation
+2. **Proper State Validation**
    - All updates validated
    - No invalid state
    - No validation bypass
 
-3. Atomic State Updates
+3. **Atomic State Updates**
    - Use atomic operations
    - Handle rollbacks properly
    - Maintain consistency
 
-4. Clear State Boundaries
+4. **Clear State Boundaries**
    - State properly isolated
    - No mixed responsibilities
    - No cross-boundary access
 
-5. Secure State Handling
+5. **Secure State Handling**
    - Credentials properly managed
    - No sensitive data exposure
    - No security bypass
@@ -260,27 +294,98 @@ Common mistakes to avoid:
 3. DON'T break atomicity
 4. DON'T mix state responsibilities
 
-## State Management
+## State Operations
 
-### State Access
-- Use proper accessor methods
-- Validate all access
-- Track access patterns
+### 1. State Access
+```python
+# CORRECT - Use proper accessor methods
+channel_id = state_manager.get_channel_id()
+member_id = state_manager.get_member_id()
 
-### State Updates
-- Use atomic operations
-- Include validation
-- Track all updates
+# WRONG - Direct state access
+channel = state_manager.get("channel")  # Don't access directly!
+member_id = state_manager.get("member_id")  # Don't access directly!
+```
 
-### Validation State
-- Track all validation
-- Include timestamps
-- Maintain context
+### 2. State Updates
+```python
+# CORRECT - Update with validation tracking
+state_manager.update_state({
+    "flow_data": {
+        "context": context,
+        "component": component,
+        "data": data,
+        "validation": {
+            "in_progress": True,
+            "attempts": current + 1,
+            "last_attempt": datetime.utcnow()
+        }
+    }
+})
 
-### State History
-- Track state changes
-- Maintain timestamps
-- Record context
+# WRONG - Update without validation
+state_manager.update_state({
+    "value": new_value  # Don't update without validation!
+})
+```
+
+### 3. Error Handling
+```python
+# CORRECT - Use ErrorHandler
+try:
+    result = state_manager.atomic_state.atomic_get(key)
+except Exception as e:
+    error_context = ErrorContext(
+        error_type="system",
+        message=str(e),
+        details={
+            "code": "STATE_GET_ERROR",
+            "service": "state_manager",
+            "action": "get"
+        }
+    )
+    ErrorHandler.handle_error(e, state_manager, error_context)
+
+# WRONG - Handle errors directly
+try:
+    result = redis_client.get(key)  # Don't access directly!
+except Exception as e:
+    logger.error(str(e))  # Don't handle directly!
+```
+
+### 4. Atomic Operations
+```python
+# CORRECT - Use atomic operations
+success, data, error = atomic_state.execute_atomic(
+    key=key,
+    operation='set',
+    value=value,
+    ttl=300
+)
+
+# WRONG - Direct Redis operations
+redis_client.set(key, value)  # Don't use Redis directly!
+```
+
+## State Recovery
+
+1. **Initialization**
+- Check existing state
+- Create initial state if needed
+- Preserve channel info
+- Track initialization
+
+2. **Error Recovery**
+- Handle operation failures
+- Maintain validation state
+- Track error context
+- Follow recovery patterns
+
+3. **State Cleanup**
+- Clear flow state
+- Preserve core state
+- Track cleanup
+- Handle errors
 
 Common mistakes to avoid:
 1. DON'T access state directly

@@ -1,9 +1,23 @@
-"""Message types for WhatsApp interactions"""
+"""Message and component types for messaging system"""
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
+from core.utils.exceptions import ComponentException
+
 from core.messaging.exceptions import MessageValidationError
+
+
+@dataclass
+class ValidationResult:
+    """Result from component validation."""
+    valid: bool
+    value: Optional[Union[Dict[str, Any], Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+# Type for component results that can be ValidationResult, dict, or exception
+ComponentResult = Union[ValidationResult, Dict[str, Any], ComponentException]
 
 
 class MessageType(Enum):

@@ -7,6 +7,7 @@ All API responses contain both dashboard and action sections that flow through h
 import logging
 from typing import Any, Dict, Optional, Tuple
 
+from core.config.interface import StateManagerInterface
 from core.utils.error_handler import ErrorHandler
 from core.utils.error_types import ErrorContext
 from core.utils.exceptions import FlowException
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def update_state_from_response(
     api_response: Dict[str, Any],
-    state_manager: Any
+    state_manager: StateManagerInterface
 ) -> Tuple[bool, Optional[str]]:
     """Update state from API response
 

@@ -3,9 +3,8 @@
 This module exports all constants and configurations used across the application.
 Follows proper layering to avoid circular dependencies:
 1. timing.py - Basic timing constants
-2. recognition.py - Command recognition patterns
-3. state_manager.py - State management
-4. Utility functions
+2. state_manager.py - State management
+3. Utility functions
 """
 from typing import Dict, Any
 
@@ -18,10 +17,6 @@ from .timing import (
     MAX_FLOW_RETRIES,
     RATE_LIMIT_WINDOW,
     MAX_REQUESTS_PER_WINDOW
-)
-from .recognition import (
-    GREETING_COMMANDS,
-    ACTION_COMMANDS
 )
 from .config import get_greeting
 
@@ -60,10 +55,6 @@ __all__ = [
     'MAX_FLOW_RETRIES',
     'RATE_LIMIT_WINDOW',
     'MAX_REQUESTS_PER_WINDOW',
-
-    # Recognition patterns
-    'GREETING_COMMANDS',
-    'ACTION_COMMANDS',
 
     # Action configurations
     'CREDEX_ACTIONS',

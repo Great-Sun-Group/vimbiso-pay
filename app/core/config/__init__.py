@@ -15,9 +15,8 @@ The architecture follows these principles:
 
 Import order matters to avoid circular dependencies:
 1. timing.py - Basic timing constants
-2. recognition.py - Command recognition patterns
-3. state_manager.py - State management interface
-4. config.py - Utility functions
+2. state_manager.py - State management interface
+3. config.py - Utility functions
 """
 
 from .timing import (
@@ -28,7 +27,6 @@ from .timing import (
     FLOW_TIMEOUT,
     MAX_FLOW_RETRIES
 )
-from .recognition import GREETING_COMMANDS, ACTION_COMMANDS
 from .state_manager import StateManager
 from .config import get_greeting
 
@@ -40,7 +38,5 @@ __all__ = [
     'API_RETRY_DELAY',
     'MAX_API_RETRIES',
     'FLOW_TIMEOUT',
-    'MAX_FLOW_RETRIES',
-    'GREETING_COMMANDS',
-    'ACTION_COMMANDS'
+    'MAX_FLOW_RETRIES'
 ]

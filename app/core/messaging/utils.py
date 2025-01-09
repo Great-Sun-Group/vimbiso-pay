@@ -1,11 +1,10 @@
 """Core messaging utilities"""
 
-from typing import Any
-
+from core.config.interface import StateManagerInterface
 from core.messaging.types import ChannelIdentifier, ChannelType, MessageRecipient
 
 
-def get_recipient(state_manager: Any) -> MessageRecipient:
+def get_recipient(state_manager: StateManagerInterface) -> MessageRecipient:
     """Get message recipient from state
 
     Args:
