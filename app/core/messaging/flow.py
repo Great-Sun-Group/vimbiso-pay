@@ -25,30 +25,28 @@ def _set_default_account(state_manager: Any) -> bool:
     try:
         # Get dashboard directly from state
         dashboard = state_manager.get("dashboard")
-        logger.info(f"Dashboard data: {dashboard}")
         if not dashboard:
-            logger.error("No dashboard data when setting default account")
+            logger.error("No dashboard data available")
             return False
 
         accounts = dashboard.get("accounts", [])
-        logger.info(f"Found accounts: {accounts}")
         if not accounts:
-            logger.error("No accounts found when setting default account")
+            logger.error("No accounts found")
             return False
 
         personal_account = next(
             (acc for acc in accounts if acc.get("accountType") == "PERSONAL"),
             None
         )
-        logger.info(f"Found personal account: {personal_account}")
         if not personal_account:
-            logger.error("No PERSONAL account found when setting default account")
+            logger.error("No personal account found")
             return False
 
         state_manager.update_state({
             "active_account_id": personal_account["accountID"]
         })
-        logger.info(f"Set active account ID: {personal_account['accountID']}")
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Set active account: {personal_account['accountID']}")
         return True
 
     except Exception as e:
@@ -67,28 +65,17 @@ def activate_component(component_type: str, state_manager: Any) -> Any:
         Component result
     """
     try:
-        logger.info(f"Activating component: {component_type}")
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Activating component: {component_type}")
 
-        # Get component class
+        # Get component class and create instance
         component_class = getattr(components, component_type)
-        logger.info(f"Found component class: {component_class.__name__}")
-
-        # Create instance
         component = component_class()
-        logger.info(f"Created component instance: {component}")
-
-        # Set state manager
         component.set_state_manager(state_manager)
-        logger.info("Set state manager on component")
 
-        # Get flow data for component
+        # Get flow data and validate
         flow_data = state_manager.get_flow_data()
-        logger.info(f"Got flow data: {flow_data}")
-
-        # Let component handle its own validation
-        logger.info("Validating component with flow data")
         result = component.validate(flow_data)
-        logger.info(f"Component validation result: {result}")
         return result
     except ComponentException as e:
         # Ensure all required parameters are present
@@ -174,8 +161,8 @@ def handle_component_result(context: str, component: str, result: Any, state_man
                     return context, component  # Retry if account setup fails
                 return "account", "AccountDashboard"
             else:
-                # No valid exit condition, stay on component
-                logger.error(f"No valid exit condition in result: {result}")
+                # No valid exit condition
+                logger.error("Missing valid exit condition")
                 return context, component
 
         # Onboard context

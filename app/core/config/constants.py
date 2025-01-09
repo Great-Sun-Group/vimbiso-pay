@@ -1,10 +1,14 @@
-"""Constants and state management exports"""
+"""Constants and configuration exports
+
+This module exports all constants and configurations used across the application.
+Follows proper layering to avoid circular dependencies:
+1. timing.py - Basic timing constants
+2. recognition.py - Command recognition patterns
+3. state_manager.py - State management
+4. Utility functions
+"""
 from typing import Dict, Any
 
-from .config import (
-    get_greeting,
-    atomic_state,
-)
 from .timing import (
     ACTIVITY_TTL,
     API_TIMEOUT,
@@ -19,8 +23,7 @@ from .recognition import (
     GREETING_COMMANDS,
     ACTION_COMMANDS
 )
-from .state_manager import StateManager
-from .state_utils import merge_updates, get_channel_info
+from .config import get_greeting
 
 # Credex action configuration
 CREDEX_ACTIONS: Dict[str, Dict[str, Any]] = {
@@ -66,9 +69,5 @@ __all__ = [
     'CREDEX_ACTIONS',
 
     # Utility functions
-    'get_greeting',
-    'atomic_state',
-    'StateManager',
-    'merge_updates',
-    'get_channel_info',
+    'get_greeting'
 ]

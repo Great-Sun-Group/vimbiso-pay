@@ -14,8 +14,7 @@ from typing import Any, Dict, Optional
 from core.utils.error_handler import ErrorHandler
 from core.utils.error_types import ErrorContext
 from core.utils.exceptions import ComponentException
-from django.core.cache import caches
-
+from core.utils.redis_client import get_redis_client
 from .atomic_state import AtomicStateManager
 from .state_utils import (clear_flow_state, update_flow_data,
                           update_flow_state, update_state_core)
@@ -44,7 +43,8 @@ class StateManager:
             )
 
         self.key_prefix = key_prefix
-        self.atomic_state = AtomicStateManager(caches['default'])
+        redis_client = get_redis_client()
+        self.atomic_state = AtomicStateManager(redis_client)
         self._state = self._initialize_state()
         self._messaging = None  # Will be set by MessagingService
 
@@ -391,8 +391,8 @@ class StateManager:
                 return False
 
             # Validate token expiry locally
-            from jwt import decode, InvalidTokenError
             from decouple import config
+            from jwt import InvalidTokenError, decode
             try:
                 # Decode token and check expiry
                 decode(jwt_token, config("JWT_SECRET"), algorithms=["HS256"])

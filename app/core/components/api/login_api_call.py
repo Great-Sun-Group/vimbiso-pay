@@ -25,24 +25,23 @@ class LoginApiCall(ApiComponent):
 
     def validate_api_call(self, value: Any) -> ValidationResult:
         """Call login endpoint and validate response"""
-        # Get channel info from state manager
         logger = logging.getLogger(__name__)
-        logger.info("Getting channel info from state manager")
-        channel = self.state_manager.get("channel")
-        logger.info(f"Got channel info: {channel}")
 
+        # Get channel info from state manager
+        channel = self.state_manager.get("channel")
         if not channel or not channel.get("identifier"):
-            logger.error("No channel identifier found in state")
+            logger.error("Missing channel identifier")
             return ValidationResult.failure(
                 message="No channel identifier found",
                 field="channel",
-                details={"component": self.type}  # Use component type from base class
+                details={"component": self.type}
             )
 
         # Make API call
         url = "login"
         payload = {"phone": channel["identifier"]}
-        logger.info(f"Making login API call with payload: {payload}")
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Making login API call")
 
         response = make_api_request(
             url=url,

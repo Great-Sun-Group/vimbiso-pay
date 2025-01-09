@@ -46,18 +46,16 @@ def handle_api_response(
     try:
         # Process response first
         response_data = process_api_response(response)
-        logger.info(f"Response after processing: {response_data}")
-
         if "error" in response_data:
             return response_data, response_data["error"].get("message")
 
         # Update state with API response data
-        logger.info("Updating state with response data")
         success, error = api_response.update_state_from_response(
             api_response=response_data,
             state_manager=state_manager
         )
-        logger.info(f"State update result - success: {success}, error: {error}")
+        if not success:
+            logger.error(f"Failed to update state: {error}")
 
         if not success:
             return response_data, error
@@ -197,9 +195,10 @@ def make_api_request(
         if "error" in validation:
             return validation
 
-        logger.info(f"Sending API request to: {url}")
-        logger.debug(f"Headers: {headers}")
-        logger.debug(f"Payload: {payload}")
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Making API request to {url}")
+            logger.debug(f"Headers: {headers}")
+            logger.debug(f"Payload: {payload}")
 
         retries = 0
         while retries < MAX_RETRIES:
@@ -213,9 +212,9 @@ def make_api_request(
                     timeout=TIMEOUT
                 )
 
-                logger.info(f"API Response Status Code: {response.status_code}")
-                logger.debug(f"API Response Headers: {response.headers}")
-                logger.debug(f"API Response Content: {response.text}")
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"API Response Status: {response.status_code}")
+                    logger.debug(f"API Response Headers: {response.headers}")
 
                 # Handle auth errors
                 if requires_auth and (
@@ -319,7 +318,6 @@ def process_api_response(
                 action="process_response",
                 message="Response data must be a dictionary"
             )
-        logger.info(f"Processed API response data: {data}")
         return data
 
     except ValueError as e:
@@ -355,14 +353,8 @@ def handle_error_response(
         f"{operation} failed: {response.status_code}. Response: {response.text}"
     )
 
-    # Log detailed error info
-    logger.error({
-        "operation": operation,
-        "status_code": response.status_code,
-        "error_message": error_msg,
-        "response_headers": dict(response.headers),
-        "response_body": response.text[:1000]  # Truncate long responses
-    })
+    # Log error summary
+    logger.error(f"{operation} failed: {response.status_code} - {error_msg}")
 
     # Create validation state with response details
     validation_state = {

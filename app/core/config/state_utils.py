@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 from core.utils.exceptions import (ComponentException, FlowException,
                                    SystemException)
 
-from .config import ACTIVITY_TTL
+from .timing import ACTIVITY_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,8 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
                             # Replace or add non-dict values
                             new_data[key] = value
 
-                logger.info(f"Merged flow data: {new_data}")
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Merged flow data: {new_data}")
 
                 current_state["flow_data"] = {
                     "context": flow_data.get("context", current_flow.get("context")),
@@ -80,7 +81,10 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
                     }
                 }
 
-                logger.info(f"Updated flow state: {current_state['flow_data']}")
+                # Only log context/component changes at INFO level
+                if (flow_data.get("context") != current_flow.get("context") or
+                   flow_data.get("component") != current_flow.get("component")):
+                    logger.info(f"State transition: {current_flow.get('context')}.{current_flow.get('component')} -> {flow_data.get('context')}.{flow_data.get('component')}")
             else:
                 validation_state.update({
                     "in_progress": False,
@@ -117,20 +121,7 @@ def update_state_core(state_manager: Any, updates: Dict[str, Any]) -> None:
         state_manager._state = current_state
 
     except Exception as e:
-        validation_state = {
-            "in_progress": False,
-            "error": str(e),
-            "attempts": current_state.get("update_attempts", 0) + 1,
-            "last_attempt": datetime.utcnow().isoformat()
-        }
-        logger.error(
-            "State update error",
-            extra={
-                "error": str(e),
-                "update_keys": list(updates.keys()),
-                "validation": validation_state
-            }
-        )
+        logger.error(f"Failed to update state: {str(e)}")
         raise SystemException(
             message=f"Failed to update state: {str(e)}",
             code="STATE_UPDATE_ERROR",
@@ -178,21 +169,7 @@ def update_flow_state(
         })
 
     except Exception as e:
-        validation_state = {
-            "in_progress": False,
-            "error": str(e),
-            "attempts": current_flow.get("validation_attempts", 0) + 1,
-            "last_attempt": datetime.utcnow().isoformat()
-        }
-        logger.error(
-            "Flow state update error",
-            extra={
-                "error": str(e),
-                "context": context,
-                "component": component,
-                "validation": validation_state
-            }
-        )
+        logger.error(f"Failed to update flow state {context}.{component}: {str(e)}")
         raise SystemException(
             message=f"Failed to update flow state: {str(e)}",
             code="FLOW_STATE_ERROR",
@@ -234,13 +211,7 @@ def update_flow_data(
         })
 
     except Exception as e:
-        logger.error(
-            "Flow data update error",
-            extra={
-                "error": str(e),
-                "data_keys": list(data.keys())
-            }
-        )
+        logger.error(f"Failed to update flow data: {str(e)}")
         raise SystemException(
             message=f"Failed to update flow data: {str(e)}",
             code="FLOW_DATA_ERROR",
@@ -264,10 +235,7 @@ def clear_flow_state(state_manager: Any) -> None:
         })
 
     except Exception as e:
-        logger.error(
-            "Clear flow state error",
-            extra={"error": str(e)}
-        )
+        logger.error(f"Failed to clear flow state: {str(e)}")
         raise SystemException(
             message=f"Failed to clear flow state: {str(e)}",
             code="FLOW_CLEAR_ERROR",

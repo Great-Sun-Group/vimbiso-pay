@@ -206,14 +206,14 @@ class DisplayComponent(Component):
         """Validate display data with proper tracking"""
         logger = logging.getLogger(__name__)
         try:
-            # Log validation attempt
-            logger.info(f"Validating display component {self.type} with value: {value}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Validating display component {self.type}")
 
             # Subclasses implement specific validation
             result = self.validate_display(value)
 
-            # Log validation result
-            logger.info(f"Display validation result: {result}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Display validation result: {result}")
             return result
 
         except Exception as e:
@@ -290,14 +290,14 @@ class ApiComponent(Component):
         """Validate API call with proper tracking"""
         logger = logging.getLogger(__name__)
         try:
-            # Log validation attempt
-            logger.info(f"Validating API component {self.type} with value: {value}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Validating API component {self.type}")
 
             # Subclasses implement specific validation
             result = self.validate_api_call(value)
 
-            # Log validation result
-            logger.info(f"API validation result: {result}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"API validation result: {result}")
             return result
 
         except Exception as e:

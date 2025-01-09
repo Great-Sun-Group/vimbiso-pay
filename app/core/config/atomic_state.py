@@ -1,17 +1,20 @@
+"""Atomic state operations with validation tracking"""
 import logging
-from typing import Any, Dict, Optional
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 from core.utils.exceptions import SystemException
+from core.utils.redis_atomic import RedisAtomic
 
 logger = logging.getLogger(__name__)
 
 
 class AtomicStateManager:
-    """Atomic state manager using Django cache with validation tracking"""
+    """Atomic state operations with validation tracking"""
 
-    def __init__(self, cache_backend):
-        self.cache = cache_backend
+    def __init__(self, redis_client):
+        """Initialize with Redis client"""
+        self.storage = RedisAtomic(redis_client)
         self._validation_state = {
             "attempts": {},  # Track attempts per key
             "last_attempts": {},  # Track last attempt timestamps
@@ -48,29 +51,11 @@ class AtomicStateManager:
         }
 
     def atomic_get(self, key: str) -> Optional[Dict[str, Any]]:
-        """Get state with validation tracking
+        """Get state with validation tracking"""
+        success, data, error = self.storage.execute_atomic(key, 'get')
+        validation = self._track_attempt(key, "get", error)
 
-        Args:
-            key: Cache key
-
-        Returns:
-            State data if found, None if not found
-
-        Raises:
-            SystemException: If cache operation fails
-        """
-        try:
-            state_data = self.cache.get(key)
-            validation = self._track_attempt(key, "get")
-
-            if state_data:
-                state_data["_validation"] = validation
-
-            return state_data
-
-        except Exception as e:
-            error = str(e)
-            validation = self._track_attempt(key, "get", error)
+        if not success:
             raise SystemException(
                 message=f"Failed to get state: {error}",
                 code="STATE_GET_ERROR",
@@ -78,25 +63,24 @@ class AtomicStateManager:
                 action="get"
             )
 
+        if data:
+            data["_validation"] = validation
+
+        return data
+
     def atomic_set(self, key: str, value: Dict[str, Any], ttl: int = 300) -> None:
-        """Set state with validation tracking
+        """Set state with validation tracking"""
+        # Add validation state
+        value["_validation"] = self._track_attempt(key, "set")
 
-        Args:
-            key: Cache key
-            value: State data to set
-            ttl: Time to live in seconds
+        success, _, error = self.storage.execute_atomic(
+            key=key,
+            operation='set',
+            value=value,
+            ttl=ttl
+        )
 
-        Raises:
-            SystemException: If cache operation fails
-        """
-        try:
-            # Add validation state
-            value["_validation"] = self._track_attempt(key, "set")
-
-            self.cache.set(key, value, timeout=ttl)
-
-        except Exception as e:
-            error = str(e)
+        if not success:
             self._track_attempt(key, "set", error)
             raise SystemException(
                 message=f"Failed to set state: {error}",
@@ -106,27 +90,35 @@ class AtomicStateManager:
             )
 
     def atomic_update(self, key: str, value: Dict[str, Any], ttl: int = 300) -> None:
-        """Update state with validation tracking
+        """Update state with validation tracking"""
+        # Add validation state
+        value["_validation"] = self._track_attempt(key, "update")
 
-        Args:
-            key: Cache key
-            value: State data to update
-            ttl: Time to live in seconds
+        success, _, error = self.storage.execute_atomic(
+            key=key,
+            operation='set',
+            value=value,
+            ttl=ttl
+        )
 
-        Raises:
-            SystemException: If cache operation fails
-        """
-        try:
-            # Add validation state
-            value["_validation"] = self._track_attempt(key, "update")
-            self.cache.set(key, value, timeout=ttl)
-
-        except Exception as e:
-            error = str(e)
+        if not success:
             self._track_attempt(key, "update", error)
             raise SystemException(
                 message=f"Failed to update state: {error}",
                 code="STATE_UPDATE_ERROR",
                 service="atomic_state",
                 action="update"
+            )
+
+    def atomic_delete(self, key: str) -> None:
+        """Delete state with validation tracking"""
+        success, _, error = self.storage.execute_atomic(key, 'delete')
+
+        if not success:
+            self._track_attempt(key, "delete", error)
+            raise SystemException(
+                message=f"Failed to delete state: {error}",
+                code="STATE_DELETE_ERROR",
+                service="atomic_state",
+                action="delete"
             )

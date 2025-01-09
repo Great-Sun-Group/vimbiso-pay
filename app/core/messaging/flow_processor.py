@@ -113,53 +113,45 @@ class FlowProcessor:
             # Process through flow framework
             from core.messaging.flow import (activate_component,
                                              handle_component_result)
-            logger.info(f"Processing flow: {context} -> {component}")
 
-            # Log state before processing
-            logger.info(f"Flow state before processing: {flow_state}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Starting flow: {context}.{component}")
+                logger.debug(f"Initial state: {flow_state}")
 
-            # Process component and get next step
-            logger.info(f"Activating component: {component}")
             result = activate_component(component, self.state_manager)
-            logger.info(f"Component result: {result}")
 
             while True:
-                # Get next component
-                logger.info(f"Handling component result for {context}.{component}")
                 next_step = handle_component_result(
                     context=context,
                     component=component,
                     result=result,
                     state_manager=self.state_manager
                 )
-                logger.info(f"Got next step: {next_step}")
 
                 if next_step is None:
-                    logger.error(f"handle_component_result returned None for {context}.{component}")
-                    break  # Component failed, stop here
+                    logger.error(f"Component failed: {context}.{component}")
+                    break
 
                 next_context, next_component = next_step
                 if next_context == context and next_component == component:
                     break  # Component wants to stay active
 
+                # Log only state transitions
                 logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
 
-                # Update flow state while preserving existing data
+                # Update flow state
                 current_flow_data = self.state_manager.get_flow_data()
-                logger.info(f"Current flow data before update: {current_flow_data}")
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Updating flow state: {current_flow_data}")
 
-                # Preserve existing data when updating flow state
                 self.state_manager.update_flow_state(
                     context=next_context,
                     component=next_component,
                     data=current_flow_data
                 )
-                logger.info(f"Updated flow state: {next_context}.{next_component}")
 
                 # Activate next component
-                logger.info(f"Activating next component: {next_component}")
                 result = activate_component(next_component, self.state_manager)
-                logger.info(f"Component result: {result}")
 
                 # Update for next iteration
                 context = next_context

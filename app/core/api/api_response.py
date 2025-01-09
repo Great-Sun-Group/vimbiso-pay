@@ -77,17 +77,17 @@ def update_state_from_response(
         }
 
         try:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Updating state from API response")
             state_manager.update_state(state_update)
+            return True, None
         except Exception as e:
             raise FlowException(
                 message="Failed to update state",
                 step="api_response",
                 action="update_state",
-                data={"error": str(e), "update": state_update}
+                data={"error": str(e)}
             )
-
-        logger.info("Successfully updated state from API response")
-        return True, None
 
     except Exception as e:
         error_context = ErrorContext(

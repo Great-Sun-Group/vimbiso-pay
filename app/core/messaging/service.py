@@ -132,9 +132,8 @@ class MessagingService(MessagingServiceInterface):
                             content=TextContent(body=f"⚠️ {result['error']}")
                         )
                     else:
-                        logger.info(
-                            f"No message handler for {next_context}/{next_component}"
-                        )
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(f"No message handler for {next_context}/{next_component}")
                         return None
 
         except SystemException as e:

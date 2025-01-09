@@ -1,43 +1,15 @@
-"""Redis configuration and state management"""
+"""Core configuration utilities
+
+This module provides utility functions for the application.
+All state operations should go through StateManager.
+"""
+
 import logging
 from datetime import datetime, timedelta
 
 from core.utils.exceptions import SystemException
-from core.utils.redis_atomic import AtomicStateManager
-from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
-
-# Activity timeout in seconds (5 minutes as per API spec)
-ACTIVITY_TTL = 300
-
-# Cache Configuration
-try:
-    # Test cache connection
-    cache.set('test_key', 'test_value', timeout=5)
-    if cache.get('test_key') != 'test_value':
-        raise SystemException(
-            message="Cache test failed",
-            code="CACHE_TEST_ERROR",
-            service="config",
-            action="test_cache"
-        )
-    logger.info("Cache connection established successfully")
-
-except Exception as e:
-    logger.error(
-        "Cache connection error",
-        extra={"error": str(e)}
-    )
-    raise SystemException(
-        message="Failed to connect to cache",
-        code="CACHE_CONNECT_ERROR",
-        service="config",
-        action="initialize_cache"
-    ) from e
-
-# Initialize atomic state manager
-atomic_state = AtomicStateManager(cache)
 
 
 def get_greeting(name: str) -> str:
@@ -66,14 +38,7 @@ def get_greeting(name: str) -> str:
             return f"Hello There {name} 🌙"
 
     except Exception as e:
-        logger.error(
-            "Greeting generation error",
-            extra={
-                "error": str(e),
-                "name": name,
-                "hour": hour if 'hour' in locals() else None
-            }
-        )
+        logger.error(f"Failed to generate greeting: {str(e)}")
         raise SystemException(
             message="Failed to generate greeting",
             code="GREETING_ERROR",

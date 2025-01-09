@@ -66,21 +66,19 @@ class CredexCloudApiWebhook(APIView):
     @staticmethod
     def post(request):
         try:
-            logger.info("Received webhook request")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Processing webhook request")
 
             # Validate basic webhook structure
             if not isinstance(request.data, dict):
-                logger.warning("Invalid request data format")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             entries = request.data.get("entry", [])
             if not entries or not isinstance(entries, list):
-                logger.warning("No entries in webhook data")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             changes = entries[0].get("changes", [])
             if not changes or not isinstance(changes, list):
-                logger.warning("No changes in webhook data")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             # Check for mock testing mode
@@ -89,7 +87,6 @@ class CredexCloudApiWebhook(APIView):
             # Get the raw payload and value
             value = changes[0].get("value", {})
             if not value or not isinstance(value, dict):
-                logger.warning("Invalid value format")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             # Identify channel type from value/headers and validate
@@ -104,44 +101,38 @@ class CredexCloudApiWebhook(APIView):
                 if not is_mock_testing:
                     metadata = value.get("metadata", {})
                     if not metadata or metadata.get("phone_number_id") != config("WHATSAPP_PHONE_NUMBER_ID"):
-                        logger.warning(f"Mismatched WhatsApp phone_number_id: {metadata.get('phone_number_id')}")
                         return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
                 # Handle WhatsApp status updates
                 if value.get("statuses"):
-                    logger.info("Received WhatsApp status update")
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug("Received status update")
                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
                 # Get WhatsApp contact info
                 contacts = value.get("contacts", [])
                 if not contacts or not isinstance(contacts, list):
-                    logger.warning("No WhatsApp contacts in value")
                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
                 contact = contacts[0]
                 if not contact or not isinstance(contact, dict):
-                    logger.warning("Invalid WhatsApp contact information")
                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
                 channel_id = contact.get("wa_id")
                 if not channel_id:
-                    logger.warning("No WhatsApp channel ID in contact")
                     return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             # Check for SMS payload (stub for future implementation)
             elif "sms_provider" in value:
                 channel_type = ChannelType.SMS
-                logger.info("SMS channel not yet implemented")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             # Unknown channel type
             else:
-                logger.warning("Unknown message channel type")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             # Validate we got the required information
             if not all([channel_type, channel_id]):
-                logger.warning("Missing required message information")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             # Initialize state manager
@@ -174,20 +165,21 @@ class CredexCloudApiWebhook(APIView):
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
             except Exception as e:
-                logger.error(f"Error processing message: {str(e)}", exc_info=True)
+                logger.error(f"Message processing error: {str(e)}")
                 return JsonResponse(
                     {"error": str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
         except Exception as e:
-            logger.error(f"Webhook error: {str(e)}", exc_info=True)
+            logger.error(f"Webhook error: {str(e)}")
             return JsonResponse(
                 {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     def get(self, request, *args, **kwargs):
-        logger.info(f"Webhook verification request: {request.query_params}")
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Webhook verification request")
         return HttpResponse(request.query_params.get("hub.challenge"), 200)
 
 
@@ -212,7 +204,8 @@ class CredexSendMessageWebhook(APIView):
 
     @staticmethod
     def post(request):
-        logger.info("Received send message request")
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Processing send message request")
 
         # Validate API key
         if request.headers.get("apiKey", "").lower() != config("CLIENT_API_KEY").lower():
@@ -281,7 +274,7 @@ class CredexSendMessageWebhook(APIView):
             return JsonResponse(response.to_dict(), status=status.HTTP_200_OK)
 
         except Exception as e:
-            logger.error(f"Error sending message: {str(e)}", exc_info=True)
+            logger.error(f"Message sending error: {str(e)}")
             return JsonResponse(
                 {"status": "error", "message": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
