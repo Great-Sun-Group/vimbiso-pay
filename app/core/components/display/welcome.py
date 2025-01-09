@@ -27,19 +27,16 @@ class Welcome(DisplayComponent):
 
             # Send welcome message
             recipient = get_recipient(self.state_manager)
-            message = self.state_manager.messaging.send_text(
+            send_result = self.state_manager.messaging.send_text(
                 recipient=recipient,
                 text=REGISTER.format(greeting=greeting)
             )
 
-            # Return success to progress
-            if message and message.metadata:
-                return ValidationResult.success({
-                    "sent": True,
-                    "message_id": message.metadata.get("whatsapp_message_id")
-                })
+            if send_result:
+                # Just return success to progress flow
+                return ValidationResult.success()
 
-            # Message wasn't sent successfully
+            # Message wasn't sent successfully - track error in state
             return ValidationResult.failure(
                 message="Failed to send welcome message",
                 field="messaging",

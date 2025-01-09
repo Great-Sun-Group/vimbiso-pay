@@ -25,21 +25,17 @@ class Greeting(DisplayComponent):
             # Display Phase - Send greeting
             greeting = get_random_greeting()
             recipient = get_recipient(self.state_manager)
-            message = self.state_manager.messaging.send_text(
+            # Send greeting
+            send_result = self.state_manager.messaging.send_text(
                 recipient=recipient,
                 text=greeting
             )
 
-            # No input needed, return success to progress
-            if message and message.metadata:
-                return ValidationResult.success({
-                    "sent": True,
-                    "message": greeting,
-                    "type": "greeting",
-                    "message_id": message.metadata.get("whatsapp_message_id")
-                })
+            if send_result:
+                # Just return success to progress flow
+                return ValidationResult.success()
 
-            # Message wasn't sent successfully
+            # Message wasn't sent successfully - track error in state
             return ValidationResult.failure(
                 message="Failed to send greeting message",
                 field="messaging",
