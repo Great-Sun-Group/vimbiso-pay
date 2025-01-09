@@ -75,8 +75,11 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                     logger.error("Failed to parse message as JSON: %s", e)
                     return
 
-            # Only save actual messages, not acknowledgments
-            if isinstance(message, dict) and message.get("type") == "text" and message.get("text", {}).get("body"):
+            # Save actual messages (text and interactive), not acknowledgments
+            if isinstance(message, dict) and (
+                (message.get("type") == "text" and message.get("text", {}).get("body")) or
+                (message.get("type") == "interactive" and message.get("interactive"))
+            ):
                 # Create timestamp-based filename
                 timestamp = int(time.time() * 1000)  # millisecond precision
                 filename = f"{timestamp}.json"
@@ -150,9 +153,7 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                                 "id": f"wamid.{hex(int.from_bytes(os.urandom(16), 'big'))[2:]}",
                                 "timestamp": str(int(time.time())),
                                 "type": message.get("type", "text"),
-                                "text": {
-                                    "body": message.get("message")
-                                }
+                                **({"text": {"body": message.get("message")}} if message.get("type") == "text" else {"interactive": message.get("interactive", {})})
                             }]
                         },
                         "field": "messages"
@@ -195,11 +196,18 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 # Handle UI->Server messages
                 if "type" in message and "message" in message and "phone" in message:
                     # Save outgoing message
-                    outgoing_message = {
-                        "type": "text",
-                        "text": {"body": message["message"]},
-                        "to": message["phone"]
-                    }
+                    if message["type"] == "text":
+                        outgoing_message = {
+                            "type": "text",
+                            "text": {"body": message["message"]},
+                            "to": message["phone"]
+                        }
+                    elif message["type"] == "interactive":
+                        outgoing_message = {
+                            "type": "interactive",
+                            "interactive": message["message"],
+                            "to": message["phone"]
+                        }
                     self._save_message(outgoing_message)
 
                     # Acknowledge receipt immediately and close connection
@@ -213,23 +221,37 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                 # Handle App->Server messages
                 # Extract message content from WhatsApp format
                 if message.get("messaging_product") == "whatsapp":
-                    # Get message text, handling both direct text and text object formats
-                    message_text = message.get("text", {})
-                    if isinstance(message_text, str):
-                        body = message_text
+                    # Extract message from WhatsApp format
+                    if "entry" in message:
+                        # Message from app in WhatsApp format
+                        value = message.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
+                        messages = value.get("messages", [{}])[0]
+                        logger.info("Received message from app: %s", json.dumps(messages, indent=2))
                     else:
-                        body = message_text.get("body", "")
+                        # Direct message from app
+                        messages = message
+                        logger.info("Received direct message: %s", json.dumps(messages, indent=2))
 
-                    # Format for storage with explicit from field
+                    # Create outgoing message
                     outgoing_message = {
-                        "type": "text",
-                        "text": {"body": body},
                         "from": "app",  # Explicitly mark as from app
-                        "to": None  # App messages don't have a to field
+                        "to": None,  # App messages don't have a to field
+                        "type": messages.get("type", "text")
                     }
-                    # Save the extracted message
+
+                    # Handle message content
+                    if outgoing_message["type"] == "text":
+                        text_content = messages.get("text", {}).get("body", "") if isinstance(messages.get("text"), dict) else messages.get("text", "")
+                        outgoing_message["text"] = {"body": text_content}
+                        logger.info("Saving text message: %s", text_content.split('\n')[0])
+                    elif outgoing_message["type"] == "interactive":
+                        interactive_content = messages.get("interactive", {})
+                        outgoing_message["interactive"] = interactive_content
+                        logger.info("Saving interactive message: %s", json.dumps(interactive_content, indent=2))
+
+                    # Save message
+                    logger.info("Saving message: %s", json.dumps(outgoing_message, indent=2))
                     self._save_message(outgoing_message)
-                    logger.info("app-1 -> Server -> save complete. first line: %s", body.split('\n')[0])
 
                 # Acknowledge receipt to app
                 self._send_200({
@@ -277,6 +299,18 @@ class MockWhatsAppHandler(SimpleHTTPRequestHandler):
                     messages_html += f"""
                     <div class="message {direction}-message whatsapp-text" data-raw-text="{escaped_body}"></div>
                     """
+                elif msg.get('type') == 'interactive':
+                    direction = 'incoming' if msg.get('from') else 'outgoing'
+                    interactive = msg.get('interactive', {})
+                    # Convert interactive message to JSON string and escape for HTML attribute
+                    escaped_json = json.dumps(interactive).replace('"', '&quot;')
+                    # Add debug info
+                    logger.info("Generating HTML for interactive message: %s", json.dumps(interactive, indent=2))
+                    messages_html += f"""
+                    <div class="message whatsapp-interactive {direction}-message" data-interactive="{escaped_json}"></div>
+                    """
+                    # Add debug info
+                    logger.info("Generated HTML: %s", messages_html)
 
             # Replace placeholder with messages
             html_content = html_content.replace('{messages_placeholder}', messages_html)

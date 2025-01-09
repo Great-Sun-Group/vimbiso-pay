@@ -68,7 +68,7 @@ class AccountDashboard(DisplayComponent):
                         details={"component": "account_dashboard"}
                     )
 
-                # Format all display data
+                # Format header data
                 account = active_account.get("accountName", "")
                 handle = active_account.get("accountHandle", "")
 
@@ -106,22 +106,19 @@ class AccountDashboard(DisplayComponent):
                 # Get recipient for messages
                 recipient = get_recipient(self.state_manager)
 
-                # Send account info as text
-                self.state_manager.messaging.send_text(
-                    recipient=recipient,
-                    text=self.to_message_content(formatted_data)
-                )
+                # Get account info text
+                account_info = self.to_message_content(formatted_data)
 
                 # Get interactive menu with active account data for pending counts
                 from core.messaging.formatters.menus import WhatsAppMenus
                 menu = WhatsAppMenus.get_interactive_menu(active_account)
 
-                # Send interactive menu using proper content type
+                # Combine account info with menu in a single interactive message
                 from core.messaging.types import (InteractiveContent,
                                                   InteractiveType)
                 menu_content = InteractiveContent(
                     interactive_type=InteractiveType.LIST,
-                    body=menu["body"]["text"],
+                    body=f"{account_info}{menu['body']['text']}",
                     sections=menu["action"]["sections"],
                     button_text=menu["action"]["button"]
                 )

@@ -1,7 +1,7 @@
 """Message templates for different content types"""
 
 # Account templates
-ACCOUNT_DASHBOARD = """*{account}* 💳
+ACCOUNT_DASHBOARD = """💳 *{account}* 💳
 *Account Handle:* {handle}
 
 *💰 SECURED BALANCES*

@@ -1,3 +1,78 @@
+export function formatInteractiveMessage(interactive) {
+    if (!interactive) return '';
+
+    // Enhanced debug logging
+    console.log('Formatting interactive message:', {
+        message: interactive,
+        type: interactive.type,
+        body: interactive.body,
+        action: interactive.action,
+        structure: JSON.stringify(interactive, null, 2)
+    });
+
+    const type = interactive.type;
+    let formattedHtml = '';
+
+    // Debug log message type
+    console.log('Processing message of type:', type);
+
+    if (type === 'button') {
+        const buttons = interactive.action?.buttons || [];
+        formattedHtml = `
+            <div class="interactive-buttons">
+                <div class="interactive-body">${formatWhatsAppText(interactive.body?.text || '')}</div>
+                ${buttons.map(button => `
+                    <button class="whatsapp-button" data-id="${button.reply.id}">
+                        ${button.reply.title}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+    } else if (type === 'button_reply') {
+        formattedHtml = `
+            <div class="interactive-buttons">
+                <div class="interactive-body">Selected: ${interactive.button_reply?.title || ''}</div>
+            </div>
+        `;
+    } else if (type === 'list_reply') {
+        formattedHtml = `
+            <div class="interactive-list">
+                <div class="interactive-body">Selected: ${interactive.list_reply?.title || ''}</div>
+                ${interactive.list_reply?.description ? `<div class="item-description">${interactive.list_reply.description}</div>` : ''}
+            </div>
+        `;
+    } else if (type === 'list') {
+        const sections = interactive.action?.sections || [];
+        const buttonText = interactive.action?.button || 'Select Option';
+        formattedHtml = `
+            <div class="interactive-list">
+                <div class="interactive-body">${formatWhatsAppText(interactive.body?.text || '')}</div>
+                <button class="whatsapp-button list-select-button">${buttonText}</button>
+                <div class="list-sections">
+                    ${sections.map(section => `
+                        <div class="list-section">
+                            ${section.title ? `<div class="section-title">${section.title}</div>` : ''}
+                            ${section.rows.map(row => `
+                                <div class="list-item" data-id="${row.id}">
+                                    <div class="item-description">${row.description || row.title}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // Debug log
+    console.log('Formatted interactive result:', formattedHtml);
+
+    // Debug log final HTML
+    console.log('Generated HTML:', formattedHtml);
+
+    return formattedHtml;
+}
+
 export function formatWhatsAppText(text) {
     if (!text) return '';
 
@@ -77,13 +152,24 @@ export function createMessagePayload(messageType, messageText, phoneNumber, cont
         };
     } else if (messageType === 'interactive') {
         message.type = 'interactive';
-        if (messageText.startsWith('handle_action_')) {
-            // Handle menu/button selections
+        if (messageText.startsWith('button:')) {
+            // Handle button selections
+            const buttonId = messageText.split(':')[1];
             message.interactive = {
                 type: 'button_reply',
                 button_reply: {
-                    id: messageText,
-                    title: messageText
+                    id: buttonId,
+                    title: buttonId
+                }
+            };
+        } else if (messageText.startsWith('list:')) {
+            // Handle list selections
+            const listId = messageText.split(':')[1];
+            message.interactive = {
+                type: 'list_reply',
+                list_reply: {
+                    id: listId,
+                    title: listId
                 }
             };
         } else if (typeof messageText === 'object') {

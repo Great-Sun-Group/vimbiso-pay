@@ -370,6 +370,112 @@ button:active {
     font-style: italic;
 }
 
+/* WhatsApp Interactive Message Styles */
+.whatsapp-interactive {
+    background: var(--dark-blue-lighter);
+    padding: 15px;
+    border-radius: 10px;
+    margin: 10px;
+    max-width: 70%;
+    border: 1px solid var(--bright-blue);
+}
+
+.interactive-buttons, .interactive-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.interactive-body {
+    color: var(--white);
+    margin-bottom: 15px;
+    line-height: 1.4;
+}
+
+.whatsapp-button {
+    background: var(--bright-blue);
+    color: var(--white);
+    padding: 10px 15px;
+    border-radius: 5px;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    text-align: center;
+    width: 100%;
+    font-size: 16px;
+}
+
+.whatsapp-button:hover {
+    background: var(--gold);
+    transform: translateY(-1px);
+}
+
+.list-sections {
+    display: none;
+    margin-top: 10px;
+}
+
+.list-select-button {
+    width: 100%;
+    margin: 10px 0;
+    text-align: center;
+    padding: 12px;
+}
+
+.list-section {
+    margin-top: 10px;
+}
+
+.interactive-list.active .list-sections {
+    display: block;
+}
+
+.interactive-list.active .list-select-button {
+    display: none;
+}
+
+.section-title {
+    color: var(--gold);
+    font-weight: bold;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.list-item {
+    background: var(--bright-blue);
+    color: var(--white);
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-bottom: 5px;
+}
+
+.list-item:hover {
+    background: var(--gold);
+    transform: translateY(-1px);
+}
+
+.item-title {
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.item-description {
+    font-size: 16px;
+    opacity: 1;
+}
+
+.error {
+    color: var(--danger);
+    padding: 10px;
+    border: 1px solid var(--danger);
+    border-radius: 5px;
+    margin: 5px 0;
+    font-size: 14px;
+}
+
 /* Message history styles */
 .message-history {
     padding: 15px;

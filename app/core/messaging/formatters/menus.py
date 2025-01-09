@@ -85,7 +85,7 @@ class WhatsAppMenus:
 
         return {
             "type": "list",
-            "body": {"text": "*Account Dashboard Actions*\nChoose an option from the menu below:"},
+            "body": {"text": ""},
             "action": {
                 "button": "🕹️ Select Action",
                 "sections": sections
