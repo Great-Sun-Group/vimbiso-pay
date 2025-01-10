@@ -1,12 +1,13 @@
 """Confirm upgrade component
 
 This component handles confirming member tier upgrade action.
-Dashboard data is the source of truth for member state.
+Dashboard data is schema-validated at the state manager level.
+Components can store their own data in component_data.data.
 """
 
 from typing import Any, Dict
 
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 
 from ..confirm import ConfirmBase
 
@@ -33,7 +34,7 @@ class ConfirmUpgrade(ConfirmBase):
             )
 
         # Get dashboard data from state
-        dashboard = self.state_manager.get("dashboard")
+        dashboard = self.state_manager.get_state_value("dashboard")
         if not dashboard:
             return ValidationResult.failure(
                 message="No dashboard data found",
@@ -51,7 +52,7 @@ class ConfirmUpgrade(ConfirmBase):
             )
 
         # Get active account ID from state
-        active_account_id = self.state_manager.get("active_account_id")
+        active_account_id = self.state_manager.get_state_value("active_account_id")
         if not active_account_id:
             return ValidationResult.failure(
                 message="No active account selected",

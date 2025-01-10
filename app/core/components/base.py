@@ -2,15 +2,19 @@
 
 This module defines the core Component interfaces that all components extend.
 Each interface handles a specific type of component with clear validation patterns.
+
+Components have freedom to store their own data in component_data.data which is
+not validated by the schema. All other state fields are protected by schema
+validation at the state manager level.
 """
 
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional, Type, Union
 
-from core.config.interface import StateManagerInterface
-from core.utils.error_types import ValidationResult
-from core.utils.exceptions import ComponentException
+from core.error.exceptions import ComponentException
+from core.error.types import ValidationResult
+from core.state.interface import StateManagerInterface
 
 
 class Component:
@@ -32,7 +36,12 @@ class Component:
         }
 
     def set_state_manager(self, state_manager: StateManagerInterface) -> None:
-        """Set state manager for accessing state data
+        """Set state manager and initialize component state
+
+        When a component is initialized, it starts with clean state:
+        - Empty data dict for component-specific data
+        - No component_result since previous result was used for branching
+        - Inherits current path/component and awaiting_input
 
         Args:
             state_manager: State manager instance
@@ -57,6 +66,12 @@ class Component:
             )
 
         self.state_manager = state_manager
+
+        # Initialize clean component state
+        self.update_component_data(
+            data={},  # Start with empty data
+            component_result=None  # Clear any previous result
+        )
 
     def validate(self, value: Any) -> ValidationResult:
         """Validate component input with standardized tracking
@@ -90,7 +105,7 @@ class Component:
 
             # Update state based on result with validation tracking
             if result.valid:
-                self.update_state(result.value, result)
+                self.update_validation_state(result.value, result)
             else:
                 error_details = {}
                 if result.error:
@@ -176,16 +191,58 @@ class Component:
     def set_awaiting_input(self, awaiting: bool) -> None:
         """Update component's awaiting input state
 
+        Components can store their own data in component_data.data which is not
+        validated by the schema. The awaiting_input field and other component_data
+        fields are schema-validated.
+
         Args:
             awaiting: Whether component is awaiting input
         """
-        if self.state_manager:
-            self.state_manager.update_flow_data({
-                "awaiting_input": awaiting
-            })
+        self.update_component_data(awaiting_input=awaiting)
 
-    def update_state(self, value: Any, validation_result: ValidationResult) -> None:
-        """Update component state with standardized validation tracking
+    def update_component_data(
+        self,
+        component_result: Optional[str] = None,
+        awaiting_input: Optional[bool] = None,
+        data: Optional[Dict] = None
+    ) -> None:
+        """Update component's data fields
+
+        Components can update any combination of:
+        - component_result: For flow branching through headquarters
+        - awaiting_input: Whether component is waiting for input
+        - data: Component-specific data (unvalidated)
+
+        This updates the component_data section of state, which is separate from
+        other state sections like channel, auth, dashboard, etc. Path and component
+        fields are managed by the flow processor through StateManager.update_flow_state().
+
+        Args:
+            component_result: Optional result for flow branching
+            awaiting_input: Optional input waiting state
+            data: Optional component-specific data
+        """
+        if self.state_manager:
+            current = self.state_manager.get_state_value("component_data", {})
+            path = current.get("path", "")
+            component = current.get("component", "")
+
+            # Use flow state update but preserve flow control fields
+            self.state_manager.update_flow_state(
+                path=path,
+                component=component,
+                data=data if data is not None else current.get("data", {}),
+                component_result=component_result if component_result is not None else current.get("component_result"),
+                awaiting_input=awaiting_input if awaiting_input is not None else current.get("awaiting_input", False)
+            )
+
+    def update_validation_state(self, value: Any, validation_result: ValidationResult) -> None:
+        """Update component's internal validation tracking state
+
+        This updates the component's validation tracking state, which is separate
+        from the component data managed through update_component_data(). While
+        update_component_data() handles component-specific state, this method tracks
+        the validation lifecycle for debugging and error handling.
 
         Args:
             value: New value

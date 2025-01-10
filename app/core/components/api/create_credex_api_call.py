@@ -1,14 +1,15 @@
 """Create Credex API call component
 
 This component handles creating a new Credex offer through the API.
-Dashboard data is the source of truth for member state.
+Dashboard data is schema-validated at the state manager level.
+Components can store their own data in component_data.data.
 """
 
 from typing import Any, Dict
 
 from decouple import config
 
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 from core.api.base import make_api_request, handle_api_response
 
 from ..base import ApiComponent
@@ -28,7 +29,7 @@ class CreateCredexApiCall(ApiComponent):
     def validate_api_call(self, value: Any) -> ValidationResult:
         """Call createCredex endpoint and validate response"""
         # Get member data from dashboard
-        dashboard = self.state_manager.get("dashboard")
+        dashboard = self.state_manager.get_state_value("dashboard")
         if not dashboard:
             return ValidationResult.failure(
                 message="No dashboard data found",
@@ -45,7 +46,7 @@ class CreateCredexApiCall(ApiComponent):
             )
 
         # Get active account ID from state
-        active_account_id = self.state_manager.get("active_account_id")
+        active_account_id = self.state_manager.get_state_value("active_account_id")
         if not active_account_id:
             return ValidationResult.failure(
                 message="No active account selected",
@@ -53,17 +54,14 @@ class CreateCredexApiCall(ApiComponent):
                 details={"component": "create_credex"}
             )
 
-        # Get offer details from flow data
-        flow_data = self.state_manager.get_flow_state()
-        if not flow_data or "data" not in flow_data:
+        # Get offer details from component data (components can store their own data in component_data.data)
+        offer_data = self.state_manager.get_state_value("component_data", {})
+        if not offer_data:
             return ValidationResult.failure(
                 message="No offer data found",
-                field="flow_data",
+                field="component_data",
                 details={"component": "create_credex"}
             )
-
-        # Get offer details
-        offer_data = flow_data["data"]
         amount = offer_data.get("amount")
         handle = offer_data.get("handle")
 
@@ -104,9 +102,9 @@ class CreateCredexApiCall(ApiComponent):
                 details={"error": error}
             )
 
-        # Get action data for flow
-        flow_data = self.state_manager.get_flow_state()
-        action_data = flow_data.get("action", {})
+        # Get action data from component data (schema-validated except for data dict)
+        component_data = self.state_manager.get_state_value("component_data", {})
+        action_data = component_data.get("action", {})
 
         return ValidationResult.success({
             "action": action_data,

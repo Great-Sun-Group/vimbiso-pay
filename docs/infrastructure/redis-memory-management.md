@@ -59,29 +59,49 @@ High-level state management:
 
 ```python
 {
-    "channel": {
+    "channel": {              # Channel info
+        "type": str,         # Channel type (e.g., "whatsapp")
+        "identifier": str    # Channel ID
+    },
+    "mock_testing": bool,     # Flag for mock testing mode
+    "auth": {                # Auth state
+        "token": str         # JWT token
+    },
+    "dashboard": {           # Dashboard state (API-sourced)
+        "member": {          # Member info
+            "memberID": str,
+            "memberTier": int,
+            "firstname": str,
+            "lastname": str,
+            "memberHandle": str,
+            "defaultDenom": str,
+            "remainingAvailableUSD": float
+        },
+        "accounts": [        # Account list
+            {
+                "accountID": str,
+                "accountName": str,
+                "accountHandle": str,
+                "accountType": str,
+                "defaultDenom": str,
+                "isOwnedAccount": bool
+            }
+        ]
+    },
+    "action": {              # Action state (API-sourced)
+        "id": str,
         "type": str,
-        "identifier": str
+        "timestamp": str,
+        "actor": str,
+        "details": dict
     },
-    "flow_data": {
-        "context": str,
-        "component": str,
-        "data": dict,
-        "validation": {
-            "in_progress": bool,
-            "attempts": int,
-            "last_attempt": dict
-        }
-    },
-    "_metadata": {
-        "initialized_at": datetime,
-        "updated_at": datetime
-    },
-    "_validation": {
-        "in_progress": bool,
-        "attempts": dict,
-        "last_attempt": dict,
-        "error": Optional[str]
+    "active_account_id": str, # Currently selected account
+    "component_data": {      # Flow state
+        "path": str,         # Current flow path
+        "component": str,    # Current component
+        "component_result": str,  # Optional flow branching
+        "awaiting_input": bool,   # Optional input state
+        "data": dict,        # Component-specific data
     }
 }
 ```
@@ -194,15 +214,12 @@ member_id = state_manager.get("member_id")  # Don't access directly!
 ```python
 # CORRECT - Update with validation tracking
 state_manager.update_state({
-    "flow_data": {
-        "context": context,
+    "component_data": {
+        "path": path,
         "component": component,
         "data": data,
-        "validation": {
-            "in_progress": True,
-            "attempts": current + 1,
-            "last_attempt": datetime.utcnow()
-        }
+        "component_result": component_result,
+        "awaiting_input": awaiting_input
     }
 })
 

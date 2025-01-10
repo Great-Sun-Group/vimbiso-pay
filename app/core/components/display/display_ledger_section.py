@@ -5,7 +5,7 @@ This component handles displaying a section of ledger entries.
 
 from typing import Any, Dict
 
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 
 from core.components.base import Component
 
@@ -31,16 +31,14 @@ class DisplayLedgerSection(Component):
                 details={"component": "display_ledger"}
             )
 
-        # Get ledger data from state
-        flow_data = self.state_manager.get_flow_state()
-        if not flow_data or "data" not in flow_data:
+        # Get ledger data from state (components can store their own data in component_data.data)
+        ledger_data = self.state_manager.get_state_value("component_data", {})
+        if not ledger_data:
             return ValidationResult.failure(
                 message="No ledger data found",
-                field="flow_data",
+                field="component_data",
                 details={"component": "display_ledger"}
             )
-
-        ledger_data = flow_data["data"]
         entries = ledger_data.get("entries", [])
         if not entries:
             return ValidationResult.failure(

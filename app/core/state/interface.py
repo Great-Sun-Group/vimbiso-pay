@@ -7,6 +7,7 @@ while avoiding circular dependencies.
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
+from core.messaging.types import ChannelType
 
 from core.messaging.interface import MessagingServiceInterface
 
@@ -35,14 +36,19 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def get(self, key: str) -> Any:
-        """Get state value
+    def get_state_value(self, key: str, default: Any = None) -> Any:
+        """Get any state value with default handling
+
+        All state fields except component_data.data are protected by schema validation
+        during updates, not by access control. Components have freedom to store any
+        data in their component_data.data dict.
 
         Args:
-            key: State key
+            key: State key to get
+            default: Default value if not found
 
         Returns:
-            Value for key or None
+            Value or default
         """
         pass
 
@@ -50,19 +56,17 @@ class StateManagerInterface(ABC):
     def update_state(self, updates: Dict[str, Any]) -> None:
         """Update state with validation
 
+        All updates are validated against the schema except for component_data.data
+        which allows components to store arbitrary data.
+
         Args:
             updates: State updates to apply
         """
         pass
 
     @abstractmethod
-    def get_flow_state(self) -> Optional[Dict[str, Any]]:
-        """Get current flow state"""
-        pass
-
-    @abstractmethod
-    def get_context(self) -> Optional[str]:
-        """Get current context"""
+    def get_path(self) -> Optional[str]:
+        """Get current flow path"""
         pass
 
     @abstractmethod
@@ -71,43 +75,47 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_flow_data(self) -> Dict[str, Any]:
-        """Get current flow data"""
+    def get_component_result(self) -> Optional[str]:
+        """Get component result for flow branching"""
+        pass
+
+    @abstractmethod
+    def is_awaiting_input(self) -> bool:
+        """Check if component is waiting for input"""
         pass
 
     @abstractmethod
     def update_flow_state(
         self,
-        context: str,
+        path: str,
         component: str,
-        data: Optional[Dict] = None
+        data: Optional[Dict] = None,
+        component_result: Optional[str] = None,
+        awaiting_input: bool = False
     ) -> None:
-        """Update flow state with validation
+        """Update flow state including path and component
+
+        This is the low-level interface used by the flow processor to manage transitions.
+        It requires all schema fields including path and component. Components should
+        never use this directly - they should use Component.update_state() instead.
 
         Args:
-            context: Current context
-            component: Current component
-            data: Optional flow data
+            path: Current flow path (required)
+            component: Current component (required)
+            data: Optional component data
+            component_result: Optional result for flow branching
+            awaiting_input: Whether component is waiting for input
         """
         pass
 
     @abstractmethod
-    def update_flow_data(self, data: Dict[str, Any]) -> None:
-        """Update flow data
-
-        Args:
-            data: Flow data updates
-        """
-        pass
-
-    @abstractmethod
-    def clear_flow_state(self) -> None:
-        """Clear flow state"""
+    def clear_component_data(self) -> None:
+        """Clear flow/component state"""
         pass
 
     @abstractmethod
     def clear_all_state(self) -> None:
-        """Clear all state data except channel info"""
+        """Clear all state data"""
         pass
 
     @abstractmethod
@@ -120,11 +128,11 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_channel_type(self) -> str:
+    def get_channel_type(self) -> ChannelType:
         """Get channel type
 
         Returns:
-            Channel type string
+            Channel type enum
         """
         pass
 
@@ -143,5 +151,28 @@ class StateManagerInterface(ABC):
 
         Returns:
             Member ID string if authenticated with valid token
+        """
+        pass
+
+    @abstractmethod
+    def is_mock_testing(self) -> bool:
+        """Check if mock testing mode is enabled for this request
+
+        Returns:
+            bool: True if mock testing mode is enabled
+        """
+        pass
+
+    @abstractmethod
+    def initialize_channel(self, channel_type: ChannelType, channel_id: str, mock_testing: bool = False) -> None:
+        """Initialize or update channel info - the only way to modify channel data
+
+        Args:
+            channel_type: Channel type enum
+            channel_id: Channel identifier string
+            mock_testing: Whether to enable mock testing mode
+
+        Raises:
+            ComponentException: If validation fails
         """
         pass

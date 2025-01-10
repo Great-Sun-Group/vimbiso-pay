@@ -61,6 +61,17 @@ class ErrorHandler:
             }
         )
 
+        # Log detailed error information
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Error message: {message}")
+            logger.debug(f"Error details: {details}")
+            if context:
+                logger.debug(f"Error context: {context}")
+            if "exception" in context and context["exception"]:
+                logger.debug(f"Exception: {context['exception']}")
+            if "traceback" in context and context["traceback"]:
+                logger.debug(f"Traceback: {context['traceback']}")
+
         return {"error": error}
 
     @classmethod

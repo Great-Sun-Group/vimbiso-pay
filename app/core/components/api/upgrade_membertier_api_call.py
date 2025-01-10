@@ -1,14 +1,15 @@
 """Upgrade member tier API call component
 
 This component handles the upgrade member tier API call with proper validation.
-Dashboard data is the source of truth for member state.
+Dashboard data is schema-validated at the state manager level.
+Components can store their own data in component_data.data.
 """
 
 from typing import Any, Dict
 
 from decouple import config
 
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 from core.api.base import make_api_request, handle_api_response
 
 from ..base import ApiComponent
@@ -28,7 +29,7 @@ class UpgradeMembertierApiCall(ApiComponent):
     def validate_api_call(self, value: Any) -> ValidationResult:
         """Call upgradeMemberTier endpoint and validate response"""
         # Get dashboard data from state
-        dashboard = self.state_manager.get("dashboard")
+        dashboard = self.state_manager.get_state_value("dashboard")
         if not dashboard:
             return ValidationResult.failure(
                 message="No dashboard data found",
@@ -66,9 +67,9 @@ class UpgradeMembertierApiCall(ApiComponent):
                 details={"error": error}
             )
 
-        # Get action data for flow
-        flow_data = self.state_manager.get_flow_state()
-        action_data = flow_data.get("action", {})
+        # Get action data from component data (schema-validated except for data dict)
+        component_data = self.state_manager.get_state_value("component_data", {})
+        action_data = component_data.get("action", {})
 
         return ValidationResult.success({
             "action": action_data,

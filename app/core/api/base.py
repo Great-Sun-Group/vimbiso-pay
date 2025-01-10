@@ -7,10 +7,10 @@ from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
-from core.config.interface import StateManagerInterface
-from core.utils.error_handler import ErrorHandler
-from core.utils.exceptions import SystemException
-from core.utils.state_validator import StateValidator
+from core.state.interface import StateManagerInterface
+from core.error.handler import ErrorHandler
+from core.error.exceptions import SystemException
+from core.state.validator import StateValidator
 from decouple import config
 from requests.exceptions import RequestException
 
@@ -86,7 +86,7 @@ def get_headers(state_manager: StateManagerInterface, url: str) -> Dict[str, str
         # Get required state fields with validation at boundary
         required_fields = {"channel"}
         current_state = {
-            field: state_manager.get(field)
+            field: state_manager.get_state_value(field)
             for field in required_fields
         }
 
@@ -101,9 +101,9 @@ def get_headers(state_manager: StateManagerInterface, url: str) -> Dict[str, str
             logger.error("Invalid channel structure")
             return headers
 
-        # Get auth token from action details
-        flow_data = state_manager.get_flow_state() or {}
-        action_data = flow_data.get("data", {}).get("action", {})
+        # Get auth token from component data (components can store their own data in component_data.data)
+        component_data = state_manager.get_state_value("component_data", {})
+        action_data = component_data.get("action", {})
         jwt_token = action_data.get("details", {}).get("token")
 
         if jwt_token:

@@ -5,7 +5,7 @@ This component handles confirming secured offer creation.
 
 from typing import Any, Dict
 
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 
 from . import ConfirmBase
 
@@ -31,16 +31,14 @@ class ConfirmOfferSecured(ConfirmBase):
                 details={"component": "confirm_offer_secured"}
             )
 
-        # Get offer data from state
-        flow_data = self.state_manager.get_flow_state()
-        if not flow_data or "data" not in flow_data:
+        # Get offer data from component data (components can store their own data in component_data.data)
+        offer_data = self.state_manager.get_state_value("component_data", {})
+        if not offer_data:
             return ValidationResult.failure(
                 message="No offer data found",
-                field="flow_data",
+                field="component_data",
                 details={"component": "confirm_offer_secured"}
             )
-
-        offer_data = flow_data["data"]
         amount = offer_data.get("amount")
         handle = offer_data.get("handle")
 

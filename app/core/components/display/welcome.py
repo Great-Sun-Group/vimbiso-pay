@@ -5,9 +5,15 @@ This component handles the registration welcome screen with proper validation.
 
 from typing import Any
 
-from core.messaging.formatters.greetings import get_random_greeting
+from core.error.types import ValidationResult
 from core.messaging.utils import get_recipient
-from core.utils.error_types import ValidationResult
+from core.messaging.types import (
+    Button,
+    InteractiveContent,
+    InteractiveType,
+    Message,
+    MessageType,
+)
 
 from ..base import DisplayComponent
 
@@ -19,21 +25,41 @@ class Welcome(DisplayComponent):
         super().__init__("welcome")
 
     def validate_display(self, value: Any) -> ValidationResult:
-        """Display welcome message with greeting"""
+        """Display welcome message with greeting or handle button response"""
         try:
-            # Get greeting and format welcome message
-            from core.messaging.templates.messages import REGISTER
-            greeting = get_random_greeting()
+            # Get component data
+            component_data = self.state_manager.get_state_value("component_data", {})
+            message = component_data.get("data", {}).get("message", {})
 
-            # Send welcome message
+            # Handle button response
+            if message.get("type") == MessageType.INTERACTIVE.value:
+                button = message.get("button", {})
+                if button.get("id") == "become_member":
+                    # Release flow to move to next component
+                    self.set_awaiting_input(False)
+                    return ValidationResult.success()
+                return ValidationResult.failure(
+                    message="Invalid button selection",
+                    field="button",
+                    details={"error": "invalid_selection"}
+                )
+
+            # Send welcome message with button
+            from core.messaging.messages import REGISTER
+
             recipient = get_recipient(self.state_manager)
-            send_result = self.state_manager.messaging.send_text(
-                recipient=recipient,
-                text=REGISTER.format(greeting=greeting)
+            content = InteractiveContent(
+                interactive_type=InteractiveType.BUTTON,
+                body=REGISTER,
+                buttons=[Button(id="become_member", title="Become a Member")]
             )
+            # Set awaiting_input before sending message
+            self.set_awaiting_input(True)
+
+            message = Message(recipient=recipient, content=content)
+            send_result = self.state_manager.messaging.send_message(message)
 
             if send_result:
-                # Just return success to progress flow
                 return ValidationResult.success()
 
             # Message wasn't sent successfully - track error in state

@@ -1,6 +1,6 @@
 """Core messaging utilities"""
 
-from core.config.interface import StateManagerInterface
+from core.state.interface import StateManagerInterface
 from core.messaging.types import ChannelIdentifier, ChannelType, MessageRecipient
 
 
@@ -16,9 +16,9 @@ def get_recipient(state_manager: StateManagerInterface) -> MessageRecipient:
     Raises:
         ComponentException: If channel identifier is missing
     """
-    from core.utils.exceptions import ComponentException
+    from core.error.exceptions import ComponentException
 
-    channel_data = state_manager.get("channel") or {}
+    channel_data = state_manager.get_state_value("channel", {})
     channel_id = channel_data.get("identifier")
 
     if not channel_id:

@@ -1,4 +1,12 @@
-"""Pure Redis atomic operations"""
+"""Redis persistence layer for schema-validated state
+
+This module provides atomic Redis operations for storing and retrieving state.
+All state is schema-validated at a higher level - this layer only handles
+persistence of the validated state.
+
+Note: The _validation field is stripped before storage since validation state
+is not persisted (components can store their own data in component_data.data).
+"""
 import json
 import logging
 from typing import Any, Dict, Optional, Tuple
@@ -9,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class RedisAtomic:
-    """Pure atomic Redis operations"""
+    """Atomic Redis operations for schema-validated state persistence"""
 
     def __init__(self, redis_client: Redis):
         self.redis = redis_client
@@ -48,12 +56,20 @@ class RedisAtomic:
                         result = pipe.execute()
                         if not result or not result[0]:
                             return True, None, None
-                        return True, json.loads(result[0]), None
+                        data = json.loads(result[0])
+                        # Strip validation state since it's not persisted
+                        if "_validation" in data:
+                            del data["_validation"]
+                        return True, data, None
 
                     elif operation == 'set':
                         if value is None or ttl is None:
                             return False, None, "Missing value or TTL for set operation"
-                        pipe.setex(key, ttl, json.dumps(value))
+                        # Strip validation state before storage
+                        store_value = value.copy()
+                        if "_validation" in store_value:
+                            del store_value["_validation"]
+                        pipe.setex(key, ttl, json.dumps(store_value))
                         pipe.execute()
                         return True, None, None
 
@@ -63,21 +79,27 @@ class RedisAtomic:
                         return True, None, None
 
                     else:
-                        return False, None, f"Unknown operation: {operation}"
+                        error_msg = f"Unknown operation: {operation}"
+                        logger.error(error_msg)
+                        return False, None, error_msg
 
                 except WatchError:
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(f"Retry {retry_count + 1}/{max_retries}")
                     retry_count += 1
+                    if retry_count == max_retries:
+                        logger.error(f"Max retries ({max_retries}) exceeded for {operation} on key: {key}")
                     continue
 
-                except json.JSONDecodeError:
-                    return False, None, "Invalid JSON data"
+                except json.JSONDecodeError as e:
+                    error_msg = f"Invalid JSON data for key {key}: {str(e)}"
+                    logger.error(error_msg)
+                    return False, None, error_msg
 
                 finally:
                     pipe.reset()
 
             except Exception as e:
-                return False, None, str(e)
+                error_msg = f"Redis operation failed: {str(e)}"
+                logger.error(error_msg)
+                return False, None, error_msg
 
         return False, None, "Max retries exceeded"

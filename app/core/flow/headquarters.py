@@ -7,53 +7,90 @@ Data management is delegated to the state manager, and action management is dele
 Components are self-contained with responsibility for their own:
 - Business logic and validation
 - Activation of shared utilities/helpers/services
-- State access to communicate with any other part of the system and utilize standard validation
-- State access for in-component loop management (awaiting_input and any other data)
-- State writing to leave flow headquarters with component_result when necessary for branch logic
+- State access through get_state_value() for schema-validated fields
+- Freedom to store any data in component_data.data dict
+- State updates that must pass schema validation except for component_data.data
 - Error handling
 
-The state manager and its utilities are responsible for:
-- Data structure
-- Data validation
-- Data storage
-- Data retrieval
+The state manager provides:
+- Schema validation for all state updates except component_data.data
+- Single source of truth for all state
+- Clear boundaries through schema validation
+- Component freedom through unvalidated data dict
+- Atomic updates through Redis persistence
 """
 
 import logging
-from typing import Tuple
+from typing import Tuple, Optional
 
 from core import components
+from core.error.types import ValidationResult
 from core.state.interface import StateManagerInterface
+from core.error.exceptions import ComponentException
 
 logger = logging.getLogger(__name__)
 
 
-def activate_component(component_type: str, state_manager: StateManagerInterface) -> None:
+def activate_component(component_type: str, state_manager: StateManagerInterface) -> ValidationResult:
     """Create and activate a component for the current path step.
 
     Handles component processing:
     1. Creates component instance
     2. Configures state management
-    3. Activates component logic
-    4. Validates component state
+    3. Returns component result
 
     Args:
         component_type: Component for this step (e.g. "Greeting", "LoginApiCall")
         state_manager: State manager for component configuration and validation
 
+    Returns:
+        ValidationResult: Component activation result
+
     Raises:
-        ComponentException: If component creation, activation, or validation fails
+        ComponentException: If component creation or activation fails
     """
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug(f"Creating component for step: {component_type}")
 
-    # Create component for this step
-    component_class = getattr(components, component_type)
-    component = component_class()
-    component.set_state_manager(state_manager)
+    try:
+        # Create component for this step
+        component_class = getattr(components, component_type)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Found component class: {component_class.__name__}")
 
-    # Activate component (it will get data from state_manager)
-    component.validate(None)
+        component = component_class()
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Created component instance: {component.type}")
+
+        component.set_state_manager(state_manager)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Set state manager on component")
+
+        # Validate all components
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Validating component")
+        result = component.validate(None)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Validation result: {result}")
+        return result
+
+    except AttributeError as e:
+        logger.error(f"Component not found: {component_type}")
+        logger.error(f"Available components: {dir(components)}")
+        raise ComponentException(
+            message=f"Component not found: {component_type}",
+            component=component_type,
+            field="type",
+            value=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Failed to activate component: {str(e)}")
+        raise ComponentException(
+            message=f"Component activation failed: {str(e)}",
+            component=component_type,
+            field="activation",
+            value=str(e)
+        )
 
 
 def get_next_component(
@@ -73,9 +110,11 @@ def get_next_component(
         Tuple[str, str]: Next path/Component
     """
     # Check if component is awaiting input
-    flow_state = state_manager.get_flow_state()
-    if flow_state.get("awaiting_input"):
+    if state_manager.is_awaiting_input():
         return path, component  # Stay at current step until input received
+
+    # Get component result for branching (using new state manager API)
+    component_result = state_manager.get_state_value("component_data", {}).get("component_result")
 
     # Branch based on current path
     match (path, component):
@@ -84,9 +123,9 @@ def get_next_component(
         case ("login", "Greeting"):
             return "login", "LoginApiCall"  # Check if user exists
         case ("login", "LoginApiCall"):
-            if flow_state.get("component_result") == "send_dashboard":
+            if component_result == "send_dashboard":
                 return "account", "AccountDashboard"  # Send account dashboard
-            if flow_state.get("component_result") == "start_onboarding":
+            if component_result == "start_onboarding":
                 return "onboard", "Welcome"  # Send first message in onboarding path
 
         # Onboard path
@@ -103,17 +142,17 @@ def get_next_component(
 
         # Account dashboard path
         case ("account", "AccountDashboard"):
-            if flow_state.get("component_result") == "offer_secured":
+            if component_result == "offer_secured":
                 return "offer_secured", "AmountInput"  # Start collecting offer details with amount/denom
-            if flow_state.get("component_result") == "accept_offer":
+            if component_result == "accept_offer":
                 return "accept_offer", "OfferListDisplay"  # List pending incoming offers to accept
-            if flow_state.get("component_result") == "decline_offer":
+            if component_result == "decline_offer":
                 return "decline_offer", "OfferListDisplay"  # List pending incoming offers to decline
-            if flow_state.get("component_result") == "cancel_offer":
+            if component_result == "cancel_offer":
                 return "cancel_offer", "OfferListDisplay"  # List pending outgoing offers to cancel
-            if flow_state.get("component_result") == "view_ledger":
+            if component_result == "view_ledger":
                 return "view_ledger", "Greeting"  # Send random greeting while api call processes
-            if flow_state.get("component_result") == "upgrade_membertier":
+            if component_result == "upgrade_membertier":
                 return "upgrade_membertier", "ConfirmUpgrade"  # Send upgrade confirmation message
 
         # Offer secured credex path
@@ -160,18 +199,18 @@ def get_next_component(
         case ("view_ledger", "Greeting"):
             return "view_ledger", "LedgerManagement"  # Manages fetching and displaying ledger and selecting a credex
         case ("view_ledger", "LedgerManagement"):
-            if flow_state.get("component_result") == "view_credex":
+            if component_result == "view_credex":
                 return "view_credex", "Greeting"  # Send random greeting while api call processes
-            if flow_state.get("component_result") == "send_account_dashboard":
+            if component_result == "send_account_dashboard":
                 return "account", "AccountDashboard"  # Return to account dashboard
 
         # View credex path
         case ("view_credex", "Greeting"):
             return "view_credex", "GetAndDisplayCredex"  # Fetches and displays a credex
         case ("view_credex", "GetAndDisplayCredex"):
-            if flow_state.get("component_result") == "account_dashboard":
+            if component_result == "account_dashboard":
                 return "account", "AccountDashboard"  # Return to account dashboard
-            if flow_state.get("component_result") == "view_counterparty":  # Placeholder for future implementation
+            if component_result == "view_counterparty":  # Placeholder for future implementation
                 return "account", "AccountDashboard"  # Return to account dashboard for now since this won't actually happen
 
         # Ugrade member tier path
@@ -183,7 +222,7 @@ def get_next_component(
             return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
 
 
-def process_component(path: str, component: str, state_manager: StateManagerInterface) -> Tuple[str, str]:
+def process_component(path: str, component: str, state_manager: StateManagerInterface, depth: int = 0) -> Optional[Tuple[str, str]]:
     """Process current step and determine next step in application paths.
 
     Handles the complete step processing:
@@ -197,10 +236,29 @@ def process_component(path: str, component: str, state_manager: StateManagerInte
         state_manager: State manager for component activation and path control
 
     Returns:
-        Tuple[str, str]: Next step (path, component) in the current path
+        Optional[Tuple[str, str]]: Next step (path, component) in the current path, or None if activation failed
     """
-    # Activate component for current step (errors will bubble up)
-    activate_component(component, state_manager)
+    logger.info(f"Processing component: {path}.{component} (depth: {depth})")
+    if depth > 10:  # Arbitrary limit to catch potential issues
+        logger.error(f"Maximum component processing depth exceeded: {path}.{component}")
+        return None
+    logger.info(f"Current awaiting_input: {state_manager.is_awaiting_input()}")
+
+    # Activate component for current step
+    logger.info("Activating component...")
+    result = activate_component(component, state_manager)
+    logger.info(f"Activation result: {result}")
+    logger.info(f"Awaiting input after activation: {state_manager.is_awaiting_input()}")
+
+    # Only proceed if activation was successful
+    if not result.valid:
+        logger.error(f"Component activation failed: {result.error}")
+        return None
 
     # Determine next step in path
-    return get_next_component(path, component, state_manager)
+    logger.info("Getting next component...")
+    next_step = get_next_component(path, component, state_manager)
+    logger.info(f"Next step: {next_step}")
+    logger.info(f"Final awaiting_input: {state_manager.is_awaiting_input()}")
+
+    return next_step

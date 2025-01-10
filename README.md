@@ -1,37 +1,29 @@
 # Vimbiso ChatServer
 
 Facilitates transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in secure WhatsApp and SMS chats:
-- Multi-denominational balance display
-- Offer secured credex with settlement on demand
-- Offer unsecured credex with configurable due date
+- Login and member onboarding
+- Account dashboard with multi-denominational balance display
+- Offer secured credex
 - Accept/decline/cancel credex offers
 - Account ledgers with pagination
-- Multiple account management
+- View credex
+- Upgrade member tier
 
 ## Core Architecture
 
-The system is built around a central flow management system (`app/core/flow/headquarters.py`) that coordinates all operations through five core pillars:
+See [Core Architecture](docs/architecture.md) for detailed architectural principles and patterns. The system is built around a central flow headquarters that coordinates operations as one of five core pillars:
 
-```
-core/flow/headquarters.py  <-- Central Flow Management
-├── state/manager.py      (State Management)
-├── components/           (Component System)
-├── api/                  (API Integration)
-└── messaging/            (Messaging System)
-```
+- [Flow Headquarters:](docs/flow-headquarters.md) Coordinates operations
+- [State Manager:](docs/state-manager.md) Source of truth for data
+- [Components:](docs/components.md) Self-contained operational units for display, input, API, and confirm component types
+- [API Services:](docs/api-services.md) Service communication with credex-core API
+- [Messaging System:](docs/messaging.md) Channel-agnostic user interaction handling with WhatsApp and SMS (coming) implementations
 
-See [Core Architecture](docs/architecture.md) for detailed architectural principles and patterns.
-
-### Core Pillars
-- **Flow Management** ([Flow Framework](docs/flow-framework.md)) - Coordinates all operations through flow/headquarters.py
-- **State Management** ([State Management](docs/state-manager.md)) - Single source of truth for all data
-- **Component System** ([Components](docs/components.md)) - Self-contained operational units:
-  * Display components for UI/messaging
-  * Input components for validation
-  * API components for external calls
-  * Confirm components for user interaction
-- **API Integration** ([Service & API](docs/api-services.md)) - External service communication
-- **Messaging System** ([Messaging](docs/messaging.md)) - Channel-agnostic user interaction handling
+## Infrastructure
+- [Security](docs/infrastructure/security.md) - Security measures and best practices
+- [Docker](docs/infrastructure/docker.md) - Container configuration and services
+- [Deployment](docs/infrastructure/deployment.md) - Deployment process and infrastructure
+- [Redis](docs/infrastructure/redis-memory-management.md) - Redis configuration and management
 
 ## Quick Start
 
@@ -85,52 +77,6 @@ fetchlogs
 # Fetch historical logs in seconds
 fetchlogs 60
 ```
-
-## Core Features
-
-### Flow Management
-- Component activation and coordination
-- State-based flow control
-- Clear operational boundaries
-- Standardized error handling
-- Comprehensive validation
-
-### Component System
-- Self-contained operational units
-- Clear responsibilities:
-  * Display components for UI/messaging
-  * Input components for validation
-  * API components for external calls
-  * Confirm components for user interaction
-- Standard validation patterns
-- Consistent error handling
-
-### State Management
-- Single source of truth
-- Clear data boundaries
-- Atomic operations
-- Comprehensive validation
-- Progress tracking
-
-### API Integration
-- State-based integration
-- Secure credential management
-- Comprehensive validation
-- Type-safe handling
-- Clear error patterns
-
-### Messaging
-- Channel-agnostic design
-- Rich formatting
-- Interactive elements
-- Template system
-- State-based flow
-
-## Infrastructure
-- [Security](docs/infrastructure/security.md) - Security measures and best practices
-- [Docker](docs/infrastructure/docker.md) - Container configuration and services
-- [Deployment](docs/infrastructure/deployment.md) - Deployment process and infrastructure
-- [Redis](docs/infrastructure/redis-memory-management.md) - Redis configuration and management
 
 ## Development Tools
 

@@ -2,26 +2,30 @@
 
 This module handles the complete flow processing lifecycle:
 1. Takes channel input and prepares for flow
-2. Manages flow state
-3. Processes through components
+2. Manages state through schema validation
+3. Processes through components (which can store unvalidated data)
 4. Converts results to messages
 
 The flow processor is channel-agnostic and works with any messaging service
-that implements the MessagingServiceInterface.
+that implements the MessagingServiceInterface. All state updates are protected
+by schema validation except for component_data.data which gives components
+freedom to store their own data.
 """
 
 import logging
 from typing import Any, Dict
 
-from core.state.interface import StateManagerInterface
-from core.messaging.types import Message, TextContent
-from core.messaging.utils import get_recipient
+from core.error.exceptions import ComponentException
 from core.error.handler import ErrorHandler
 from core.error.types import ValidationResult
-from core.error.exceptions import ComponentException
-from services.messaging.service import MessagingService
+from core.messaging.messages import INVALID_ACTION
+from core.messaging.service import MessagingService
+from core.messaging.types import Message, MessageType, TextContent
+from core.messaging.utils import get_recipient
+from core.state.interface import StateManagerInterface
 
 from .constants import GREETING_COMMANDS
+from .headquarters import activate_component, process_component
 
 logger = logging.getLogger(__name__)
 
@@ -55,91 +59,149 @@ class FlowProcessor:
             # Extract message data
             message_data = self._extract_message_data(payload)
 
+            # Skip processing if no valid message data
+            if not message_data:
+                logger.debug("No valid message data to process")
+                return None
+
             # Create message recipient for error handling
             recipient = get_recipient(self.state_manager)
 
-            # Get message type and text
+            # Get message type
             message_type = message_data.get("type", "")
-            message_text = message_data.get("text", {}).get("body", "").lower().strip()
 
-            # Check if message is a greeting
-            current_component = self.state_manager.get_component()
-            if (message_type == "text" and
-                message_text in GREETING_COMMANDS and
-                    (not current_component or not current_component.lower().endswith('input'))):
-                # Start login flow
-                self.state_manager.clear_all_state()
-                self.state_manager.update_flow_state(
-                    context="login",
-                    component="Greeting"
+            # Process based on message type
+            if message_type == MessageType.TEXT.value:
+                message_text = message_data.get("text", {}).get("body", "").lower().strip()
+                if not message_text:
+                    logger.debug("No valid message text to process")
+                    return None
+            elif message_type == MessageType.INTERACTIVE.value:
+                # Interactive messages (like button clicks) are always valid
+                message_text = "interactive"  # Placeholder for flow control
+            else:
+                logger.debug(f"Unsupported message type: {message_type}")
+                return None
+
+            # Get current flow state (component_data is schema validated except for data dict)
+            current_state = self.state_manager.get_state_value("component_data")
+
+            # Store message data for component access
+            self.state_manager.update_flow_state(
+                path=current_state.get("path") if current_state else "",
+                component=current_state.get("component") if current_state else "",
+                data={"message": message_data},
+                component_result=current_state.get("component_result") if current_state else None,
+                awaiting_input=current_state.get("awaiting_input", False) if current_state else False
+            )
+
+            # For greetings, always start fresh
+            if message_type == MessageType.TEXT.value and message_text in GREETING_COMMANDS:
+                try:
+                    # First clear all state
+                    self.state_manager.clear_all_state()
+
+                    # Then initialize fresh channel data
+                    self.state_manager.initialize_channel(
+                        channel_type=message_data["channel_type"],
+                        channel_id=message_data["channel_id"],
+                        mock_testing=message_data["mock_testing"]
+                    )
+
+                    # Start login flow through headquarters
+                    # Initialize component data with empty values
+                    self.state_manager.update_flow_state(
+                        path="login",
+                        component="Greeting",
+                        component_result="",  # Empty string instead of None
+                        awaiting_input=False,
+                        data={}
+                    )
+
+                    # Get updated state after initialization
+                    current_state = self.state_manager.get_state_value("component_data")
+                    if not current_state:
+                        logger.error("Failed to initialize component state")
+                        return None
+
+                except Exception as e:
+                    logger.error(f"Failed to initialize state: {str(e)}")
+                    return None
+            # If no state and not a greeting, send invalid action message
+            elif not current_state:
+                logger.debug("No state found - sending invalid action message")
+                self.messaging.send_text(
+                    recipient=recipient,
+                    text=INVALID_ACTION
                 )
+                return None
 
-            # Get current flow state
-            flow_state = self.state_manager.get("flow_data") or {
-                "context": "login",
-                "component": "Greeting"
-            }
-            context = flow_state.get("context")
-            component = flow_state.get("component")
+            context = current_state.get("path")
+            component = current_state.get("component")
 
-            # Process through flow framework
-            from .headquarters import (activate_component,
-                                       handle_component_result)
-
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Processing message in flow: {context}.{component}")
-                logger.debug(f"Flow state: {flow_state}")
-
-            # Pass message data to component for processing
-            result = activate_component(component, self.state_manager)
-
+            # Process components until awaiting input or failure
             while True:
-                next_step = handle_component_result(
-                    context=context,
-                    component=component,
-                    result=result,
-                    state_manager=self.state_manager
-                )
+                logger.info(f"Processing component: {context}.{component}")
+                logger.info(f"Current state: {current_state}")
+                logger.info(f"Awaiting input: {self.state_manager.is_awaiting_input()}")
 
+                # Process current component
+                next_step = process_component(context, component, self.state_manager, depth=0)
+                result = self.state_manager.get_component_result()
+
+                logger.info(f"Component processing complete. Next step: {next_step}")
+                logger.info(f"Component result: {result}")
+                logger.info(f"Awaiting input: {self.state_manager.is_awaiting_input()}")
+
+                # Handle component failure
                 if next_step is None:
                     logger.error(f"Component failed: {context}.{component}")
-                    break
+                    return None
 
-                next_context, next_component = next_step
-                if next_context == context and next_component == component:
-                    break  # Component wants to stay active
-
-                # Log only state transitions
-                logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
-
-                # Update flow state
-                current_flow_data = self.state_manager.get_flow_data()
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Updating flow state: {current_flow_data}")
-
-                self.state_manager.update_flow_state(
-                    context=next_context,
-                    component=next_component,
-                    data=current_flow_data
-                )
-
-                # Activate next component
-                result = activate_component(next_component, self.state_manager)
-
-                # Update for next iteration
-                context = next_context
-                component = next_component
-
-            # Only return messages for errors, components handle their own messaging
-            if isinstance(result, ValidationResult):
-                if not result.valid:
-                    # Component returned an error
+                # Handle validation error
+                if isinstance(result, ValidationResult) and not result.valid:
                     content = TextContent(body=result.error.get("message", "Validation failed"))
                     return Message(recipient=recipient, content=content)
-                # Component succeeded
-                return None
-            # Non-ValidationResult returns also succeed silently
-            return None
+
+                # Get next step
+                next_context, next_component = next_step
+                if next_context != context or next_component != component:
+                    # Log state transition
+                    logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
+
+                    # Update flow state
+                    current_data = self.state_manager.get_state_value("component_data")
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f"Updating flow state: {current_data}")
+
+                    # Update flow state and activate next component through headquarters
+                    # Preserve existing data when transitioning
+                    current_data = self.state_manager.get_state_value("component_data", {})
+                    self.state_manager.update_flow_state(
+                        path=next_context,
+                        component=next_component,
+                        data=current_data.get("data", {}),  # Preserve data
+                        component_result=None,  # Reset result for new component
+                        awaiting_input=False  # Let component set this
+                    )
+
+                    result = activate_component(next_component, self.state_manager)
+                    if not result.valid:
+                        logger.error(f"Failed to activate {next_component} component: {result.error}")
+                        return None
+
+                    # Return if awaiting input
+                    if self.state_manager.is_awaiting_input():
+                        logger.info("Awaiting input - returning from process_message")
+                        return None
+
+                    # Update for next iteration
+                    context = next_context
+                    component = next_component
+                    current_state = self.state_manager.get_state_value("component_data")
+                else:
+                    # No state change - return
+                    return None
 
         except ComponentException as e:
             # Handle component errors with validation state
@@ -177,7 +239,11 @@ class FlowProcessor:
             payload: Raw message payload
 
         Returns:
-            Dict[str, Any]: Extracted message data
+            Dict[str, Any]: Extracted message data including:
+                - type: Message type
+                - text: Message text data
+                - channel_type: Channel type (ChannelType enum)
+                - channel_id: Channel identifier string
 
         Raises:
             ComponentException: If payload is invalid

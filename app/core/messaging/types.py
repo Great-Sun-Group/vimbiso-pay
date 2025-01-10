@@ -3,8 +3,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from core.utils.exceptions import ComponentException
-
+from core.error.exceptions import ComponentException
 from core.messaging.exceptions import MessageValidationError
 
 
@@ -122,6 +121,20 @@ class TextContent(MessageContent):
 
 
 @dataclass
+class Section:
+    """Interactive message section"""
+    title: str
+    rows: List[Dict[str, Any]]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for JSON serialization"""
+        return {
+            "title": self.title,
+            "rows": self.rows
+        }
+
+
+@dataclass
 class Button:
     """Interactive button"""
     id: str
@@ -147,7 +160,7 @@ class InteractiveContent(MessageContent):
     header: Optional[str] = None
     footer: Optional[str] = None
     buttons: List[Button] = field(default_factory=list)
-    sections: List[Dict[str, Any]] = field(default_factory=list)
+    sections: List[Section] = field(default_factory=list)
     button_text: Optional[str] = None
     preview_url: bool = False
     type: MessageType = field(init=False, default=MessageType.INTERACTIVE)
@@ -223,21 +236,8 @@ class InteractiveContent(MessageContent):
             )
 
         for section in self.sections:
-            if "rows" in section and len(section["rows"]) > 10:
-                raise MessageValidationError(
-                    message=f"Too many rows in section '{section.get('title', 'Untitled')}' (max 10)",
-                    service="whatsapp",
-                    action="create_message",
-                    validation_details={
-                        "error": "too_many_rows",
-                        "section": section.get("title", "Untitled"),
-                        "count": len(section["rows"]),
-                        "max_count": 10
-                    }
-                )
-
             # Validate section title length
-            if "title" in section and len(section["title"]) > 24:
+            if len(section.title) > 24:
                 raise MessageValidationError(
                     message="Section title exceeds 24 characters",
                     service="whatsapp",
@@ -245,75 +245,87 @@ class InteractiveContent(MessageContent):
                     validation_details={
                         "error": "text_too_long",
                         "field": "section_title",
-                        "section": section.get("title", "Untitled"),
-                        "length": len(section["title"]),
+                        "section": section.title,
+                        "length": len(section.title),
                         "max_length": 24
                     }
                 )
 
             # Validate rows
-            if "rows" in section:
-                for row in section["rows"]:
-                    # Validate required fields
-                    if "id" not in row or "title" not in row:
-                        raise MessageValidationError(
-                            message="Row missing required fields (id and title)",
-                            service="whatsapp",
-                            action="create_message",
-                            validation_details={
-                                "error": "missing_required_fields",
-                                "section": section.get("title", "Untitled"),
-                                "row": row
-                            }
-                        )
+            if len(section.rows) > 10:
+                raise MessageValidationError(
+                    message=f"Too many rows in section '{section.title}' (max 10)",
+                    service="whatsapp",
+                    action="create_message",
+                    validation_details={
+                        "error": "too_many_rows",
+                        "section": section.title,
+                        "count": len(section.rows),
+                        "max_count": 10
+                    }
+                )
 
-                    # Validate row ID length
-                    if len(row["id"]) > 200:
-                        raise MessageValidationError(
-                            message="Row ID exceeds 200 characters",
-                            service="whatsapp",
-                            action="create_message",
-                            validation_details={
-                                "error": "text_too_long",
-                                "field": "row_id",
-                                "section": section.get("title", "Untitled"),
-                                "row_id": row["id"],
-                                "length": len(row["id"]),
-                                "max_length": 200
-                            }
-                        )
+            for row in section.rows:
+                # Validate required fields
+                if "id" not in row or "title" not in row:
+                    raise MessageValidationError(
+                        message="Row missing required fields (id and title)",
+                        service="whatsapp",
+                        action="create_message",
+                        validation_details={
+                            "error": "missing_required_fields",
+                            "section": section.title,
+                            "row": row
+                        }
+                    )
 
-                    # Validate row title length
-                    if len(row["title"]) > 24:
-                        raise MessageValidationError(
-                            message="Row title exceeds 24 characters",
-                            service="whatsapp",
-                            action="create_message",
-                            validation_details={
-                                "error": "text_too_long",
-                                "field": "row_title",
-                                "section": section.get("title", "Untitled"),
-                                "row_title": row["title"],
-                                "length": len(row["title"]),
-                                "max_length": 24
-                            }
-                        )
+                # Validate row ID length
+                if len(row["id"]) > 200:
+                    raise MessageValidationError(
+                        message="Row ID exceeds 200 characters",
+                        service="whatsapp",
+                        action="create_message",
+                        validation_details={
+                            "error": "text_too_long",
+                            "field": "row_id",
+                            "section": section.title,
+                            "row_id": row["id"],
+                            "length": len(row["id"]),
+                            "max_length": 200
+                        }
+                    )
 
-                    # Validate row description length if present
-                    if "description" in row and len(row["description"]) > 72:
-                        raise MessageValidationError(
-                            message="Row description exceeds 72 characters",
-                            service="whatsapp",
-                            action="create_message",
-                            validation_details={
-                                "error": "text_too_long",
-                                "field": "row_description",
-                                "section": section.get("title", "Untitled"),
-                                "row_title": row["title"],
-                                "length": len(row["description"]),
-                                "max_length": 72
-                            }
-                        )
+                # Validate row title length
+                if len(row["title"]) > 24:
+                    raise MessageValidationError(
+                        message="Row title exceeds 24 characters",
+                        service="whatsapp",
+                        action="create_message",
+                        validation_details={
+                            "error": "text_too_long",
+                            "field": "row_title",
+                            "section": section.title,
+                            "row_title": row["title"],
+                            "length": len(row["title"]),
+                            "max_length": 24
+                        }
+                    )
+
+                # Validate row description length if present
+                if "description" in row and len(row["description"]) > 72:
+                    raise MessageValidationError(
+                        message="Row description exceeds 72 characters",
+                        service="whatsapp",
+                        action="create_message",
+                        validation_details={
+                            "error": "text_too_long",
+                            "field": "row_description",
+                            "section": section.title,
+                            "row_title": row["title"],
+                            "length": len(row["description"]),
+                            "max_length": 72
+                        }
+                    )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization"""
@@ -359,7 +371,7 @@ class InteractiveContent(MessageContent):
         elif self.interactive_type == InteractiveType.LIST:
             interactive["action"] = {
                 "button": self.button_text or "Select",
-                "sections": self.sections
+                "sections": [section.to_dict() for section in self.sections]
             }
 
         return result

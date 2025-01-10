@@ -1,9 +1,7 @@
-"""State validation with clear boundaries
+"""State validation
 
-This module provides simple state validation focused on:
-- Core state structure
-- Flow state validation
-- Channel validation
+This module provides schema validation for state data structure.
+Components handle their own data validation.
 """
 
 from dataclasses import dataclass
@@ -18,212 +16,294 @@ class ValidationResult:
 
 
 class StateValidator:
-    """Validates state structure with clear boundaries"""
+    """Validates state structure against schema"""
 
-    # Core state fields that can't be modified once set
-    CORE_FIELDS = {"member_id", "channel", "jwt_token"}
-
-    # Flow validation rules
-    FLOW_RULES = {
-        # Required fields in flow_data
-        "required_fields": {
-            "flow_type": str,
-            "handler_type": str,
-            "step": str,
-            "step_index": int,
-            "total_steps": int
+    # State schema defining field types when present
+    STATE_SCHEMA = {
+        # Required initially
+        "channel": {
+            "type": dict,
+            "fields": {
+                "type": {"type": str},  # Channel type as string (e.g. "whatsapp", "sms")
+                "identifier": {"type": str}
+            },
+            "required": ["type", "identifier"]  # Both fields are required
         },
+        # Required flag that controls validation and service behavior
+        # Set to true for mock testing mode, false for normal requests
+        "mock_testing": {"type": bool},  # Already in correct format
 
-        # Required fields in active_component
-        "component_fields": {
-            "type": str,
-            "validation": {
-                "in_progress": bool,
-                "error": (type(None), dict),
-                "attempts": int,
-                "last_attempt": (type(None), str, int, float, bool, dict, list)
+        # Added during login
+        "auth": {
+            "type": dict,
+            "fields": {
+                "token": {"type": str}
             }
         },
 
-        # Valid handler types
-        "handler_types": {"member", "account", "credex"},
+        # Added during login/onboarding and update with (almost) every API call
+        "dashboard": {
+            "type": dict,
+            "fields": {
+                "member": {
+                    "type": dict,
+                    "fields": {
+                        "memberID": {"type": str},
+                        "memberTier": {"type": int},
+                        "firstname": {"type": str},
+                        "lastname": {"type": str},
+                        "memberHandle": {"type": str},
+                        "defaultDenom": {"type": str},
+                        "remainingAvailableUSD": {"type": float}
+                    }
+                },
+                "accounts": {
+                    "type": list,
+                    "item_fields": {
+                        "type": dict,
+                        "fields": {
+                            "accountID": {"type": str},
+                            "accountName": {"type": str},
+                            "accountHandle": {"type": str},
+                            "accountType": {"type": str},
+                            "defaultDenom": {"type": str},
+                            "isOwnedAccount": {"type": bool}
+                        }
+                    }
+                }
+            }
+        },
 
-        # Flow type validation is now handled by FlowRegistry
+        # Added/updated on every API call
+        "action": {
+            "type": dict,
+            "fields": {
+                "id": {"type": str},
+                "type": {"type": str},
+                "timestamp": {"type": str},
+                "actor": {"type": str},
+                "details": {"type": dict}
+            }
+        },
+
+        # Added during account selection or by default
+        "active_account_id": {"type": str},  # Already in correct format
+
+        # Used internally by components
+        # Used for component-to-flow communication
+        # Wiped on component initialization for clean slate
+        "component_data": {
+            "type": dict,
+            "fields": {
+                "path": {"type": str},
+                "component": {"type": str},
+                "component_result": {"type": (str, type(None))},  # Allow str or None
+                "awaiting_input": {"type": bool},
+                "data": {"type": dict}
+            }
+        }
     }
 
     @classmethod
-    def validate_state(cls, state: Dict[str, Any]) -> ValidationResult:
-        """Validate complete state structure"""
-        # Validate state is dictionary
+    def _validate_field(cls, field_name: str, field_value: Any, field_schema: dict) -> ValidationResult:
+        """Validate a field against its schema"""
+        # Handle both simple type and schema dict formats
+        field_type = field_schema["type"] if isinstance(field_schema, dict) and "type" in field_schema else field_schema
+
+        # Validate type - handle both single type and tuple of allowed types
+        if isinstance(field_type, tuple):
+            if not any(isinstance(field_value, t) for t in field_type):
+                allowed_types = " or ".join(t.__name__ for t in field_type)
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"{field_name} must be a {allowed_types}"
+                )
+        else:
+            if not isinstance(field_value, field_type):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"{field_name} must be a {field_type.__name__}"
+                )
+
+        # For dictionaries, validate field types
+        if isinstance(field_value, dict) and "fields" in field_schema:
+            # Check required fields first
+            if "required" in field_schema:
+                for required_field in field_schema["required"]:
+                    if required_field not in field_value:
+                        return ValidationResult(
+                            is_valid=False,
+                            error_message=f"Required field missing: {field_name}.{required_field}"
+                        )
+
+            # Then validate each field
+            for sub_field, sub_value in field_value.items():
+                if sub_field in field_schema["fields"]:
+                    sub_schema = field_schema["fields"][sub_field]
+                    result = cls._validate_field(f"{field_name}.{sub_field}", sub_value, sub_schema)
+                    if not result.is_valid:
+                        return result
+
+        # For lists, validate item fields if specified
+        if isinstance(field_value, list) and "item_fields" in field_schema:
+            for i, item in enumerate(field_value):
+                result = cls._validate_field(f"{field_name}[{i}]", item, field_schema["item_fields"])
+                if not result.is_valid:
+                    return result
+
+        return ValidationResult(is_valid=True)
+
+    @classmethod
+    def _validate_jwt(cls, jwt_token: str) -> bool:
+        """Validate JWT token is not expired"""
+        from decouple import config
+        from jwt import InvalidTokenError, decode
+        try:
+            decode(jwt_token, config("JWT_SECRET"), algorithms=["HS256"])
+            return True
+        except InvalidTokenError:
+            return False
+
+    @classmethod
+    def _validate_dependencies(cls, state: Dict[str, Any]) -> ValidationResult:
+        """Validate state field dependencies and completeness"""
+        # Channel is required for JWT
+        auth = state.get("auth", {})
+        if auth and "token" in auth:
+            channel = state.get("channel")
+            if not channel or not isinstance(channel, dict):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Channel is required for authentication"
+                )
+
+        # Valid JWT is required for other fields
+        jwt_token = auth.get("token")
+        if not jwt_token:
+            # Only allow channel and mock_testing without JWT
+            for field in state:
+                if field not in ["channel", "mock_testing", "auth"]:
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message=f"Authentication required for {field}"
+                    )
+        elif not cls._validate_jwt(jwt_token):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Invalid or expired authentication token"
+            )
+
+        # Dashboard requires complete member data and personal account
+        dashboard = state.get("dashboard")
+        if dashboard:
+            member = dashboard.get("member", {})
+            if not all(field in member for field in [
+                "memberID", "memberTier", "firstname", "lastname",
+                "memberHandle", "defaultDenom", "remainingAvailableUSD"
+            ]):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Incomplete member data in dashboard"
+                )
+
+            accounts = dashboard.get("accounts", [])
+            has_personal = any(
+                account.get("accountType") == "personal" and
+                all(field in account for field in [
+                    "accountID", "accountName", "accountHandle",
+                    "accountType", "defaultDenom", "isOwnedAccount"
+                ])
+                for account in accounts
+            )
+            if not has_personal:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Dashboard requires a complete personal account"
+                )
+
+        # Action requires all fields
+        action = state.get("action")
+        if action and not all(field in action for field in ["id", "type", "timestamp", "actor", "details"]):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Incomplete action data"
+            )
+
+        return ValidationResult(is_valid=True)
+
+    @classmethod
+    def validate_state(cls, state: Dict[str, Any], full_validation: bool = False) -> ValidationResult:
+        """Validate state against schema and dependencies
+
+        Args:
+            state: State dictionary to validate
+            full_validation: If True, validates all schema fields exist and match types
+                           If False, only validates fields present in state
+
+        Returns:
+            ValidationResult indicating if state is valid
+        """
         if not isinstance(state, dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="State must be a dictionary"
             )
 
-        # Validate channel exists and structure
-        if "channel" not in state:
-            return ValidationResult(
-                is_valid=False,
-                error_message="Missing required field: channel"
-            )
+        # Get fields to validate
+        fields_to_validate = cls.STATE_SCHEMA.keys() if full_validation else state.keys()
 
-        channel = state["channel"]
-        if not isinstance(channel, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Channel must be a dictionary"
-            )
-
-        if "type" not in channel or "identifier" not in channel:
-            return ValidationResult(
-                is_valid=False,
-                error_message="Channel missing required fields"
-            )
-
-        # Validate flow state if present
-        if "flow_data" in state and state["flow_data"] is not None:
-            flow_data = state["flow_data"]
-            if not isinstance(flow_data, dict):
+        # Validate each field against schema
+        for field_name in fields_to_validate:
+            # Check field exists in schema
+            if field_name not in cls.STATE_SCHEMA:
                 return ValidationResult(
                     is_valid=False,
-                    error_message="Flow data must be a dictionary"
+                    error_message=f"Unknown field: {field_name}"
                 )
 
-            # Validate required fields
-            for field, field_type in cls.FLOW_RULES["required_fields"].items():
-                if field not in flow_data:
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"Missing required field: {field}"
-                    )
-                if not isinstance(flow_data[field], field_type):
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"Invalid type for {field}"
-                    )
+            # Get field value
+            field_value = state.get(field_name)
 
-            # Validate handler type
-            if flow_data["handler_type"] not in cls.FLOW_RULES["handler_types"]:
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Invalid handler type: {flow_data['handler_type']}"
-                )
+            # Skip validation if field is None (allows clearing fields)
+            if field_value is None:
+                continue
 
-            # Validate step index
-            if not (0 <= flow_data["step_index"] < flow_data["total_steps"]):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Invalid step index"
-                )
+            # Validate field type and structure
+            result = cls._validate_field(field_name, field_value, cls.STATE_SCHEMA[field_name])
+            if not result.is_valid:
+                return result
 
-            # Validate component state
-            component = flow_data.get("active_component")
-            if not component or not isinstance(component, dict):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Invalid component state"
-                )
-
-            for field, field_type in cls.FLOW_RULES["component_fields"].items():
-                if field not in component:
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"Missing component field: {field}"
-                    )
-
-                if field == "validation":
-                    validation = component[field]
-                    if not isinstance(validation, dict):
-                        return ValidationResult(
-                            is_valid=False,
-                            error_message="Invalid validation state"
-                        )
-
-                    for val_field, val_type in field_type.items():
-                        if val_field not in validation:
-                            return ValidationResult(
-                                is_valid=False,
-                                error_message=f"Missing validation field: {val_field}"
-                            )
-                        if not isinstance(validation[val_field], val_type):
-                            if isinstance(val_type, tuple):
-                                if not any(isinstance(validation[val_field], t) for t in val_type):
-                                    return ValidationResult(
-                                        is_valid=False,
-                                        error_message=f"Invalid type for {val_field}"
-                                    )
-                            else:
-                                return ValidationResult(
-                                    is_valid=False,
-                                    error_message=f"Invalid type for {val_field}"
-                                )
-                else:
-                    if not isinstance(component[field], field_type):
-                        return ValidationResult(
-                            is_valid=False,
-                            error_message=f"Invalid type for component {field}"
-                        )
-
-            # Validate data structure
-            if "data" in flow_data and not isinstance(flow_data["data"], dict):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Flow data must be a dictionary"
-                )
+        # For full validation, also validate dependencies
+        if full_validation:
+            result = cls._validate_dependencies(state)
+            if not result.is_valid:
+                return result
 
         return ValidationResult(is_valid=True)
 
     @classmethod
-    def validate_core_fields(cls, current: Dict[str, Any], updates: Dict[str, Any]) -> ValidationResult:
-        """Validate core field updates"""
-        for field in cls.CORE_FIELDS:
-            if (
-                field in updates and
-                field in current and
-                updates[field] != current[field]
-            ):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Cannot modify core field: {field}"
-                )
+    def prepare_state_update(cls, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate state updates
 
-        return ValidationResult(is_valid=True)
+        Args:
+            updates: State updates to apply
 
-    @classmethod
-    def validate_flow_state(cls, flow_data: Dict[str, Any]) -> ValidationResult:
-        """Validate flow state structure"""
-        if not isinstance(flow_data, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Flow data must be a dictionary"
+        Returns:
+            Validated state updates
+
+        Raises:
+            ComponentException: If updates are invalid
+        """
+        from core.error.exceptions import ComponentException
+
+        # Validate updates
+        result = cls.validate_state(updates, full_validation=False)
+        if not result.is_valid:
+            raise ComponentException(
+                message=result.error_message,
+                component="state_validator",
+                field="state_schema",
+                value=str(updates)
             )
 
-        # Validate required fields
-        for field, field_type in cls.FLOW_RULES["required_fields"].items():
-            if field not in flow_data:
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Missing required field: {field}"
-                )
-            if not isinstance(flow_data[field], field_type):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Invalid type for {field}"
-                )
-
-        # Validate handler type
-        if flow_data["handler_type"] not in cls.FLOW_RULES["handler_types"]:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Invalid handler type: {flow_data['handler_type']}"
-            )
-
-        # Validate step index
-        if not (0 <= flow_data["step_index"] < flow_data["total_steps"]):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Invalid step index"
-            )
-
-        return ValidationResult(is_valid=True)
+        return updates

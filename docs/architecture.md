@@ -1,7 +1,5 @@
 # Core Architecture
 
-## System Overview
-
 The Vimbiso ChatServer is built around a central flow management system that coordinates all user interactions and system operations.
 
 ### Core Components
@@ -91,16 +89,3 @@ Manages all user communication:
 - Template management
 - Interactive elements
 - State-based messaging
-
-## Detailed Documentation
-
-- [State Management](state-management.md) - Detailed state management patterns
-- [Flow Framework](flow-framework.md) - Component activation and flow control
-- [Service Architecture](service-architecture.md) - Service integration patterns
-
-## Infrastructure
-
-- [Security](infrastructure/security.md) - Security measures and best practices
-- [Docker](infrastructure/docker.md) - Container configuration and services
-- [Deployment](infrastructure/deployment.md) - Deployment process and infrastructure
-- [Redis](infrastructure/redis-memory-management.md) - Redis configuration and management

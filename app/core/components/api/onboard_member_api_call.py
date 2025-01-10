@@ -1,16 +1,16 @@
 """Onboard member API call component
 
 Handles member registration:
-- Gets registration data from flow state
-- Creates new member account
-- Updates state with dashboard data
+- Gets registration data from component_data.data (unvalidated)
+- Creates new member account via API
+- Updates state with schema-validated dashboard data
 """
 
 from typing import Any, Dict
 
 from decouple import config
 
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 from core.api.base import make_api_request, handle_api_response
 
 from ..base import ApiComponent
@@ -35,22 +35,19 @@ class OnBoardMemberApiCall(ApiComponent):
         - Updates state with dashboard data via handle_api_response
         - Returns success status
         """
-        # Get registration data from state
-        flow_data = self.state_manager.get_flow_state()
-        if not flow_data or "data" not in flow_data:
+        # Get registration data from component data (components can store their own data in component_data.data)
+        registration_data = self.state_manager.get_state_value("component_data", {})
+        if not registration_data:
             return ValidationResult.failure(
                 message="No registration data found",
-                field="flow_data",
+                field="component_data",
                 details={"component": self.type}
             )
-
-        # Get registration data
-        registration_data = flow_data["data"]
         firstname = registration_data.get("firstname")
         lastname = registration_data.get("lastname")
 
         # Get channel info from state manager
-        channel = self.state_manager.get("channel")
+        channel = self.state_manager.get_state_value("channel")
         if not channel or not channel.get("identifier"):
             return ValidationResult.failure(
                 message="No channel identifier found",

@@ -1,17 +1,19 @@
-"""Core Flow Framework
+"""Core Messaging System
 
-This package provides the core flow framework for managing component activation
-and branching logic. Components handle their own validation and processing,
-this just handles "what's next". Context is maintained to support reusable
-components.
+This package provides a channel-agnostic messaging system for handling all user
+communication through a layered architecture. It includes message formatting,
+template management, and interactive elements.
 
-For messaging implementations, see services/messaging/
+For specific messaging implementations, see services/messaging/
 """
 
-from .flow import activate_component, handle_component_result, process_component
+from .service import MessagingService
+from .types import Message, TextContent
+from .utils import get_recipient
 
 __all__ = [
-    'activate_component',
-    'handle_component_result',
-    'process_component'
+    'MessagingService',
+    'Message',
+    'TextContent',
+    'get_recipient'
 ]
