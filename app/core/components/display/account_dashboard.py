@@ -9,7 +9,7 @@ from typing import Any, Dict
 from core.messaging.types import Message
 from core.messaging.utils import get_recipient
 from core.utils.error_types import ValidationResult
-from core.utils.exceptions import ComponentException
+from core.error.exceptions import ComponentException
 
 from ..base import DisplayComponent
 

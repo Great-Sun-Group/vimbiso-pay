@@ -3,7 +3,7 @@ import logging
 import sys
 from datetime import datetime
 
-from core.config.state_manager import StateManager
+from core.state.manager import StateManager
 from core.messaging.types import ChannelIdentifier, ChannelType
 from core.messaging.types import Message as DomainMessage
 from core.messaging.types import MessageRecipient, TemplateContent
@@ -13,7 +13,7 @@ from django.http import HttpResponse, JsonResponse
 from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
-from services.messaging.service import MessagingService
+from core.messaging.service import MessagingService
 from services.whatsapp.flow_processor import WhatsAppFlowProcessor
 from services.whatsapp.service import WhatsAppMessagingService
 

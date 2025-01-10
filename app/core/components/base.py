@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Type, Union
 
 from core.state.interface import StateManagerInterface
 from core.utils.error_types import ValidationResult
-from core.utils.exceptions import ComponentException
+from core.error.exceptions import ComponentException
 
 
 class Component:

@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 
-from core.utils.exceptions import BaseException
+from core.error.exceptions import BaseException
 
 
 class MessagingError(BaseException):

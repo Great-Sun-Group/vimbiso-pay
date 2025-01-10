@@ -2,8 +2,8 @@
 
 from typing import Any, Dict
 
-from core.messaging.flow_processor import FlowProcessor
-from core.utils.exceptions import ComponentException
+from core.flow.processor import FlowProcessor
+from core.error.exceptions import ComponentException
 
 
 class WhatsAppFlowProcessor(FlowProcessor):

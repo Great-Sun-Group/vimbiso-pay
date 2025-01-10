@@ -2,8 +2,8 @@
 import logging
 from typing import Any, Dict, Tuple
 
-from core.config.state_manager import StateManager as CoreStateManager
-from core.utils.exceptions import SystemException
+from core.state.manager import StateManager as CoreStateManager
+from core.error.exceptions import SystemException
 
 logger = logging.getLogger(__name__)
 

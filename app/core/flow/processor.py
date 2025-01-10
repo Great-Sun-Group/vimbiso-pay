@@ -19,7 +19,7 @@ from core.messaging.utils import get_recipient
 from core.error.handler import ErrorHandler
 from core.error.types import ValidationResult
 from core.error.exceptions import ComponentException
-from services.messaging.service import MessagingService
+from core.messaging.service import MessagingService
 
 from .constants import GREETING_COMMANDS
 

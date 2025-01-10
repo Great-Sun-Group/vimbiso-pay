@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from core.utils.exceptions import SystemException
+from core.error.exceptions import SystemException
 from core.state.persistence.redis_operations import RedisAtomic
 
 logger = logging.getLogger(__name__)

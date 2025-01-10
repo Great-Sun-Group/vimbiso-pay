@@ -2,7 +2,7 @@
 import logging
 from typing import Any
 
-from core.utils.exceptions import ComponentException, SystemException
+from core.error.exceptions import ComponentException, SystemException
 from core.utils.utils import wrap_text
 
 from core.messaging.templates.messages import INVALID_ACTION

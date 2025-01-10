@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from core.utils.exceptions import ComponentException
+from core.error.exceptions import ComponentException
 
 from core.messaging.exceptions import MessageValidationError
 

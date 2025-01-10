@@ -7,10 +7,10 @@ All API responses contain both dashboard and action sections that flow through h
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from core.config.interface import StateManagerInterface
+from core.state.interface import StateManagerInterface
 from core.utils.error_handler import ErrorHandler
 from core.utils.error_types import ErrorContext
-from core.utils.exceptions import FlowException
+from core.error.exceptions import FlowException
 
 logger = logging.getLogger(__name__)
 
