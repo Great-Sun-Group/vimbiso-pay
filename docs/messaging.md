@@ -1,7 +1,5 @@
 # Messaging System
 
-## Overview
-
 The messaging system provides a channel-agnostic way to handle all user communication through a layered architecture:
 
 ```
@@ -15,110 +13,95 @@ core/messaging/           <-- Core Messaging System
 ## Core Architecture
 
 ### 1. Service Orchestration (service.py)
-Coordinates channel-specific implementations:
-- Maintains layered architecture
-- Routes messages to channels
-- Handles service lifecycle
-- Manages state integration
+Coordinates channel-specific implementations and maintains the layered architecture by:
+- Routing messages to appropriate channels
+- Managing service lifecycle and state integration
+- Providing consistent error handling patterns
 
 ### 2. Base Implementation (base.py)
-Provides common functionality:
-- Standard message handling
-- Validation patterns
-- Error handling
-- State management
+Provides common functionality and standard patterns for:
+- Message handling and validation
+- Error management
+- State integration
 
 ### 3. Core Interface (interface.py)
-Defines messaging contract:
+Defines the messaging contract and boundaries for:
 - Message operations
-- Validation patterns
-- Error handling
-- Clear boundaries
+- Validation requirements
+- Error handling patterns
 
 ### 4. Message Types (types.py)
-Defines core message structures:
-- Complete messages
-- Recipients
-- Content types
-- Metadata
+Defines core message structures including:
+- Complete message formats
+- Recipient specifications
+- Content type definitions
+- Required metadata
 
 ## Message Types
 
 ### 1. Text Messages
-Simple text content with:
-- Body text
-- URL preview options
-- Format validation
-- Clear boundaries
+Simple text content with URL preview options and format validation
 
 ### 2. Interactive Messages
-Messages with interactive elements:
+Messages with interactive elements like:
 - Button actions
 - List selections
-- Header/footer
-- Clear validation
+- Header/footer components
 
 ### 3. Template Messages
-Pre-defined message templates with:
-- Named templates
-- Language support
-- Dynamic components
+Pre-defined message templates supporting:
+- Named template definitions
+- Multi-language support
+- Dynamic content insertion
 - Parameter validation
+
+## Channel Implementations
+
+The system supports multiple messaging channels through dedicated service implementations:
+
+```
+app/services/
+├── sms/                 <-- SMS Channel Implementation
+└── whatsapp/           <-- WhatsApp Channel Implementation
+```
+
+Each channel implementation:
+- Extends the base messaging service
+- Implements channel-specific formatting
+- Handles platform-specific requirements
+- Maintains consistent validation patterns
+
+### WhatsApp Service
+Located in `app/services/whatsapp/`, provides:
+- Rich message formatting
+- Interactive components
+- Template message support
+- Media handling
+
+### SMS Service
+Located in `app/services/sms/`, not yet implemented, will handle formatting of higher-complexity messages into SMS structures, and message delivery.
 
 ## Core Principles
 
-### 1. Channel Agnostic
-- Abstract message types
-- Channel-specific implementations
-- Standard validation
-- Clear boundaries
+### 1. Channel Agnostic Design
+- Abstract message types for consistency
+- Channel-specific implementations for platform requirements
+- Standardized validation across channels
 
-### 2. State Integration
-- Access through state_manager
-- Standard validation
-- Clear boundaries
-- No direct state
+### 2. State Management
+- Centralized state access through state_manager
+- Consistent validation patterns
+- Clear state boundaries
 
 ### 3. Error Handling
-- Standard patterns
-- Clear context
-- Proper tracking
-- Complete validation
+- Standard error patterns with clear context
+- Proper error tracking
+- Complete validation coverage
 
-### 4. Message Validation
-- Format validation
-- Content validation
-- Channel validation
-- Clear patterns
+## Implementation Guidelines
 
-## Best Practices
-
-### 1. Message Design
-- Use proper types
-- Validate content
-- Clear boundaries
-- Standard patterns
-
-### 2. Service Implementation
-- Extend base service
-- Implement all methods
-- Proper validation
-- Error handling
-
-### 3. State Integration
-- Use proper utils
-- Validate state
-- Clear boundaries
-- Standard patterns
-
-### 4. Error Handling
-- Use proper exceptions
-- Clear context
-- Proper tracking
-- Standard patterns
-
-## Related Documentation
-
-- [Flow Framework](flow-framework.md) - Component activation and messaging
-- [State Management](state-manager.md) - State validation and boundaries
-- [Service Architecture](api-services.md) - Service integration patterns
+1. Use appropriate message types and validate content
+2. Extend base service for new channels
+3. Maintain state integration through proper utils
+4. Follow standard error handling patterns
+5. Implement complete validation coverage
