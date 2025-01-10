@@ -8,20 +8,30 @@ Facilitates transactions through the [credex-core](https://github.com/Great-Sun-
 - Account ledgers with pagination
 - Multiple account management
 
-## Architecture
+## Core Architecture
 
-See [Core Architecture](docs/architecture.md) for detailed architectural principles, patterns, and implementation guidelines.
+The system is built around a central flow management system (`app/core/flow/headquarters.py`) that coordinates all operations through five core pillars:
 
-## Core Implementation
-- [Service & API](docs/service-architecture.md) - Service and API integration patterns
-- [State Management](docs/state-management.md) - State validation and flow control
-- [Flow Framework](docs/flow-framework.md) - Progressive interaction framework
+```
+core/flow/headquarters.py  <-- Central Flow Management
+├── state/manager.py      (State Management)
+├── components/           (Component System)
+├── api/                  (API Integration)
+└── messaging/            (Messaging System)
+```
 
-## Infrastructure
-- [Security](docs/infrastructure/security.md) - Security measures and best practices
-- [Docker](docs/infrastructure/docker.md) - Container configuration and services
-- [Deployment](docs/infrastructure/deployment.md) - Deployment process and infrastructure
-- [Redis](docs/infrastructure/redis-memory-management.md) - Redis configuration and management
+See [Core Architecture](docs/architecture.md) for detailed architectural principles and patterns.
+
+### Core Pillars
+- **Flow Management** ([Flow Framework](docs/flow-framework.md)) - Coordinates all operations through flow/headquarters.py
+- **State Management** ([State Management](docs/state-manager.md)) - Single source of truth for all data
+- **Component System** ([Components](docs/components.md)) - Self-contained operational units:
+  * Display components for UI/messaging
+  * Input components for validation
+  * API components for external calls
+  * Confirm components for user interaction
+- **API Integration** ([Service & API](docs/api-services.md)) - External service communication
+- **Messaging System** ([Messaging](docs/messaging.md)) - Channel-agnostic user interaction handling
 
 ## Quick Start
 
@@ -78,52 +88,62 @@ fetchlogs 60
 
 ## Core Features
 
-### Service Layer
-- Component-based architecture with clear responsibilities
-- Messaging service integration through state manager
-- Single source of truth enforcement
-- Standardized error handling through ErrorHandler
-- Clear component and service boundaries
+### Flow Management
+- Component activation and coordination
+- State-based flow control
+- Clear operational boundaries
+- Standardized error handling
+- Comprehensive validation
 
-### WhatsApp Interface
-- Interactive menus and buttons
-- Rich message formatting
-- State-based conversation flow
-- Navigation commands
-- Custom message templates
-
-### API & Integration
-- State-based API integration
-- Credential extraction only when needed
-- Flow state management
+### Component System
+- Self-contained operational units
+- Clear responsibilities:
+  * Display components for UI/messaging
+  * Input components for validation
+  * API components for external calls
+  * Confirm components for user interaction
+- Standard validation patterns
 - Consistent error handling
-- Direct integration with credex-core API
-- Comprehensive validation and error handling
-- Type-safe request/response handling
 
-### Security
-- State-based credential management
-- Secure messaging service integration
-- Flow state validation
-- Error handling with proper context
-- JWT authentication
-- Rate limiting
-- Input validation
-- Secure state management
-- Webhook signature validation
-- Request payload validation
+### State Management
+- Single source of truth
+- Clear data boundaries
+- Atomic operations
+- Comprehensive validation
+- Progress tracking
+
+### API Integration
+- State-based integration
+- Secure credential management
+- Comprehensive validation
+- Type-safe handling
+- Clear error patterns
+
+### Messaging
+- Channel-agnostic design
+- Rich formatting
+- Interactive elements
+- Template system
+- State-based flow
+
+## Infrastructure
+- [Security](docs/infrastructure/security.md) - Security measures and best practices
+- [Docker](docs/infrastructure/docker.md) - Container configuration and services
+- [Deployment](docs/infrastructure/deployment.md) - Deployment process and infrastructure
+- [Redis](docs/infrastructure/redis-memory-management.md) - Redis configuration and management
 
 ## Development Tools
 
 ### Mock WhatsApp Interface
-Test the WhatsApp chatserver without hitting WhastApp:
+Test the WhatsApp chatserver without hitting WhatsApp:
 
 ```bash
 # Start all services including mock server
 make dev
+```
 
 ### API Testing
-Test API endpoints and webhooks:
+Test API endpoints and webhooks using the mock server.
 
 ### AI-Assisted Merge Summaries
 Generate diffs for AI-assisted summarization in merge requests:
