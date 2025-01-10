@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 from core.messaging.service import MessagingService
 from services.whatsapp.flow_processor import WhatsAppFlowProcessor
 from services.whatsapp.service import WhatsAppMessagingService
+from services.whatsapp.state_manager import StateManager as WhatsAppStateManager
 
 # Configure logging with a standardized format
 logging.basicConfig(
@@ -135,8 +136,14 @@ class CredexCloudApiWebhook(APIView):
             if not all([channel_type, channel_id]):
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Initialize state manager
-            state_manager = StateManager(f"channel:{channel_id}")
+            # Initialize core state manager
+            core_state_manager = StateManager(f"channel:{channel_id}")
+
+            # Initialize channel-specific state manager
+            if channel_type == ChannelType.WHATSAPP:
+                state_manager = WhatsAppStateManager(core_state_manager)
+            else:
+                state_manager = core_state_manager
 
             # Store state
             state_manager.update_state({
@@ -263,8 +270,14 @@ class CredexSendMessageWebhook(APIView):
                 )
             )
 
-            # Initialize state manager for channel
-            state_manager = StateManager(f"channel:{request.data['phoneNumber']}")
+            # Initialize core state manager
+            core_state_manager = StateManager(f"channel:{request.data['phoneNumber']}")
+
+            # Initialize channel-specific state manager
+            if channel_type == ChannelType.WHATSAPP:
+                state_manager = WhatsAppStateManager(core_state_manager)
+            else:
+                state_manager = core_state_manager
 
             # Get messaging service for channel
             service = get_messaging_service(state_manager, channel_type)

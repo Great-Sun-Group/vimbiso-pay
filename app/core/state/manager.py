@@ -82,12 +82,13 @@ class StateManager(StateManagerInterface):
         # Get channel ID from prefix
         channel_id = self.key_prefix.split(":", 1)[1]
 
-        # Create initial state
+        # Create initial state with channel info and mock testing
         initial_state = {
             "channel": {
                 "type": "whatsapp",
                 "identifier": channel_id
-            }
+            },
+            "mock_testing": False  # Default to non-mock mode
         }
 
         # Get existing state
@@ -192,7 +193,24 @@ class StateManager(StateManagerInterface):
         Returns:
             Value or default
         """
-        return self._get(key) or default
+        try:
+            value = self._get(key)
+            return value if value is not None else default
+        except Exception as e:
+            # Handle error through ErrorHandler
+            error_context = ErrorContext(
+                error_type="system",
+                message=str(e),
+                details={
+                    "code": "STATE_GET_ERROR",
+                    "service": "state_manager",
+                    "action": "get_value",
+                    "key": key,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+            ErrorHandler.handle_error(e, self, error_context)
+            return default
 
     # Convenience methods for common state access
     def get_path(self) -> Optional[str]:
@@ -274,15 +292,12 @@ class StateManager(StateManagerInterface):
         self.update_state({"component_data": None})
 
     def clear_all_state(self) -> None:
-        """Clear all state except schema-validated core fields"""
+        """Clear all state except channel info and mock testing flag"""
         try:
-            # Reset to initial state preserving core fields
-            # These are protected by schema validation during updates
+            # Reset to initial state preserving only channel info and mock testing
             self._state = {
                 "channel": self.get_state_value("channel", {}),
-                "dashboard": self.get_state_value("dashboard", {}),
-                "action": self.get_state_value("action", {}),
-                "auth": self.get_state_value("auth", {})
+                "mock_testing": self.get_state_value("mock_testing", False)
             }
 
             # Persist to Redis

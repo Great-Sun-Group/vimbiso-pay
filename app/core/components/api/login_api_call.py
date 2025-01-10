@@ -26,7 +26,7 @@ class LoginApiCall(ApiComponent):
         """Process login API call and set component_result for flow control"""
         try:
             # Get channel info
-            channel = self.state_manager.get("channel")
+            channel = self.state_manager.get_state_value("channel")
             if not channel or not channel.get("identifier"):
                 return ValidationResult.failure(
                     message="No channel identifier found",

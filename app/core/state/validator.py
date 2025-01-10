@@ -158,6 +158,11 @@ class StateValidator:
                 "awaiting_input": bool,  # Optional input state
                 "data": dict         # Component-specific data
             }
+        },
+
+        # Mock testing flag
+        "mock_testing": {
+            "type": bool
         }
     }
 

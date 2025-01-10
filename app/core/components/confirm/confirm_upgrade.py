@@ -34,7 +34,7 @@ class ConfirmUpgrade(ConfirmBase):
             )
 
         # Get dashboard data from state
-        dashboard = self.state_manager.get("dashboard")
+        dashboard = self.state_manager.get_state_value("dashboard")
         if not dashboard:
             return ValidationResult.failure(
                 message="No dashboard data found",
@@ -52,7 +52,7 @@ class ConfirmUpgrade(ConfirmBase):
             )
 
         # Get active account ID from state
-        active_account_id = self.state_manager.get("active_account_id")
+        active_account_id = self.state_manager.get_state_value("active_account_id")
         if not active_account_id:
             return ValidationResult.failure(
                 message="No active account selected",

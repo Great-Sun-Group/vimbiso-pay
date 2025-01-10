@@ -35,7 +35,7 @@ class OfferListDisplay(DisplayComponent):
         # If this is an offer selection, validate it
         if isinstance(value, dict) and value.get("type") == "text":
             # Get available offer IDs from state
-            dashboard = self.state_manager.get("dashboard")
+            dashboard = self.state_manager.get_state_value("dashboard")
             if not dashboard:
                 return ValidationResult.failure(
                     message="No dashboard data found",
@@ -44,7 +44,7 @@ class OfferListDisplay(DisplayComponent):
                 )
 
             # Get context to determine which offers to check
-            context = self.state_manager.get_path()
+            context = self.state_manager.get_path()  # This is correct, it's using the proper method
             if not context:
                 return ValidationResult.failure(
                     message="No context found",
@@ -87,7 +87,7 @@ class OfferListDisplay(DisplayComponent):
             )
 
         # Otherwise get and validate dashboard data for display
-        dashboard = self.state_manager.get("dashboard")
+        dashboard = self.state_manager.get_state_value("dashboard")
         if not dashboard:
             return ValidationResult.failure(
                 message="No dashboard data found",
@@ -96,7 +96,7 @@ class OfferListDisplay(DisplayComponent):
             )
 
         # Get context for determining which offers to show
-        context = self.state_manager.get_path()
+        context = self.state_manager.get_path()  # This is correct, it's using the proper method
         if not context:
             return ValidationResult.failure(
                 message="No context found",

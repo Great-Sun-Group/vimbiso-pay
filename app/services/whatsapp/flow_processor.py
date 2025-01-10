@@ -63,7 +63,7 @@ class WhatsAppFlowProcessor(FlowProcessor):
                 return {}
 
             # Only process user-initiated messages
-            if message.get("type") == "text" and "from" in message:
+            if message.get("type") == "text" and message.get("from"):
                 return message
 
             logger.debug(f"Skipping non-user message: {message.get('type')}")

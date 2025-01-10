@@ -18,7 +18,7 @@ def get_recipient(state_manager: StateManagerInterface) -> MessageRecipient:
     """
     from core.error.exceptions import ComponentException
 
-    channel_data = state_manager.get("channel") or {}
+    channel_data = state_manager.get_state_value("channel", {})
     channel_id = channel_data.get("identifier")
 
     if not channel_id:

@@ -86,7 +86,7 @@ def get_headers(state_manager: StateManagerInterface, url: str) -> Dict[str, str
         # Get required state fields with validation at boundary
         required_fields = {"channel"}
         current_state = {
-            field: state_manager.get(field)
+            field: state_manager.get_state_value(field)
             for field in required_fields
         }
 

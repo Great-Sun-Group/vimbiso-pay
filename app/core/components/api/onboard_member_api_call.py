@@ -47,7 +47,7 @@ class OnBoardMemberApiCall(ApiComponent):
         lastname = registration_data.get("lastname")
 
         # Get channel info from state manager
-        channel = self.state_manager.get("channel")
+        channel = self.state_manager.get_state_value("channel")
         if not channel or not channel.get("identifier"):
             return ValidationResult.failure(
                 message="No channel identifier found",

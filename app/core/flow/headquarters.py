@@ -80,8 +80,8 @@ def get_next_component(
     if state_manager.is_awaiting_input():
         return path, component  # Stay at current step until input received
 
-    # Get component result for branching
-    component_result = state_manager.get_component_result()
+    # Get component result for branching (using new state manager API)
+    component_result = state_manager.get_state_value("component_data", {}).get("component_result")
 
     # Branch based on current path
     match (path, component):

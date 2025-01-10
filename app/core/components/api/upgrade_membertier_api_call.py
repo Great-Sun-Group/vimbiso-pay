@@ -29,7 +29,7 @@ class UpgradeMembertierApiCall(ApiComponent):
     def validate_api_call(self, value: Any) -> ValidationResult:
         """Call upgradeMemberTier endpoint and validate response"""
         # Get dashboard data from state
-        dashboard = self.state_manager.get("dashboard")
+        dashboard = self.state_manager.get_state_value("dashboard")
         if not dashboard:
             return ValidationResult.failure(
                 message="No dashboard data found",

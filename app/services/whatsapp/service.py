@@ -9,6 +9,7 @@ from core.messaging.exceptions import MessageValidationError
 from core.messaging.types import (Button, InteractiveContent, InteractiveType,
                                   Message, MessageRecipient, TemplateContent,
                                   TextContent)
+from core.state.interface import StateManagerInterface
 from decouple import config
 
 from .types import WhatsAppMessage
@@ -22,7 +23,7 @@ class WhatsAppMessagingService(BaseMessagingService):
     def __init__(self):
         """Initialize WhatsApp messaging service"""
         super().__init__()
-        self.state_manager = None  # Will be set by MessagingService
+        self.state_manager: Optional[StateManagerInterface] = None  # Will be set by MessagingService
 
     @classmethod
     def wrap_text(
