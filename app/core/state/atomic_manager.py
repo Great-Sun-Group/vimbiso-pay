@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from core.utils.exceptions import SystemException
-from core.utils.redis_atomic import RedisAtomic
+from core.state.persistence.redis_operations import RedisAtomic
 
 logger = logging.getLogger(__name__)
 

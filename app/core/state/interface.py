@@ -56,13 +56,13 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_flow_state(self) -> Optional[Dict[str, Any]]:
-        """Get current flow state"""
+    def get_current_state(self) -> Dict[str, Any]:
+        """Get current flow/component state"""
         pass
 
     @abstractmethod
-    def get_context(self) -> Optional[str]:
-        """Get current context"""
+    def get_path(self) -> Optional[str]:
+        """Get current flow path"""
         pass
 
     @abstractmethod
@@ -71,38 +71,60 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_flow_data(self) -> Dict[str, Any]:
-        """Get current flow data"""
+    def get_component_data(self) -> Dict[str, Any]:
+        """Get component-specific data"""
         pass
 
     @abstractmethod
-    def update_flow_state(
+    def get_component_result(self) -> Optional[str]:
+        """Get component result for flow branching"""
+        pass
+
+    @abstractmethod
+    def is_awaiting_input(self) -> bool:
+        """Check if component is waiting for input"""
+        pass
+
+    @abstractmethod
+    def update_current_state(
         self,
-        context: str,
+        path: str,
         component: str,
-        data: Optional[Dict] = None
+        data: Optional[Dict] = None,
+        component_result: Optional[str] = None,
+        awaiting_input: bool = False
     ) -> None:
-        """Update flow state with validation
+        """Update current flow/component state
 
         Args:
-            context: Current context
+            path: Current flow path
             component: Current component
-            data: Optional flow data
+            data: Optional component data
+            component_result: Optional result for flow branching
+            awaiting_input: Whether component is waiting for input
         """
         pass
 
     @abstractmethod
-    def update_flow_data(self, data: Dict[str, Any]) -> None:
-        """Update flow data
+    def clear_current_state(self) -> None:
+        """Clear current flow/component state"""
+        pass
+
+    @abstractmethod
+    def get_validation_history(self) -> list:
+        """Get validation history"""
+        pass
+
+    @abstractmethod
+    def get_validation_status(self, operation: str) -> Dict[str, Any]:
+        """Get validation status for operation
 
         Args:
-            data: Flow data updates
-        """
-        pass
+            operation: Operation to get status for
 
-    @abstractmethod
-    def clear_flow_state(self) -> None:
-        """Clear flow state"""
+        Returns:
+            Dict with attempts count and latest history entry
+        """
         pass
 
     @abstractmethod

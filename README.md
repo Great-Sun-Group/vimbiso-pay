@@ -1,23 +1,24 @@
 # Vimbiso ChatServer
 
 Facilitates transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in secure WhatsApp and SMS chats:
-- Multi-denominational balance display
-- Offer secured credex with settlement on demand
-- Offer unsecured credex with configurable due date
+- Login and member onboarding
+- Account dashboard with multi-denominational balance display
+- Offer secured credex
 - Accept/decline/cancel credex offers
 - Account ledgers with pagination
-- Multiple account management
+- View credex
+- Upgrade member tier
 
 ## Core Architecture
 
-The system is built around a central flow management system (`app/core/flow/headquarters.py`) that coordinates all operations through five core pillars:
+The system is built around a central flow headquarters that coordinates operations as one of five core pillars:
 
 ```
 core/flow/headquarters.py  <-- Central Flow Management
-├── state/manager.py      (State Management)
-├── components/           (Component System)
-├── api/                  (API Integration)
-└── messaging/            (Messaging System)
+├── state/manager.py       <-- State Management
+├── components/            <-- Component System
+├── api/                   <-- API Integration
+└── messaging/             <-- Channel-Agnostic Messaging
 ```
 
 See [Core Architecture](docs/architecture.md) for detailed architectural principles and patterns.
