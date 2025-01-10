@@ -7,6 +7,7 @@ while avoiding circular dependencies.
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
+from core.messaging.types import ChannelType
 
 from core.messaging.interface import MessagingServiceInterface
 
@@ -84,7 +85,7 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def update_component_data(
+    def update_flow_state(
         self,
         path: str,
         component: str,
@@ -92,11 +93,15 @@ class StateManagerInterface(ABC):
         component_result: Optional[str] = None,
         awaiting_input: bool = False
     ) -> None:
-        """Update current flow/component state
+        """Update flow state including path and component
+
+        This is the low-level interface used by the flow processor to manage transitions.
+        It requires all schema fields including path and component. Components should
+        never use this directly - they should use Component.update_state() instead.
 
         Args:
-            path: Current flow path
-            component: Current component
+            path: Current flow path (required)
+            component: Current component (required)
             data: Optional component data
             component_result: Optional result for flow branching
             awaiting_input: Whether component is waiting for input
@@ -110,7 +115,7 @@ class StateManagerInterface(ABC):
 
     @abstractmethod
     def clear_all_state(self) -> None:
-        """Clear all state data except channel info"""
+        """Clear all state data"""
         pass
 
     @abstractmethod
@@ -123,11 +128,11 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_channel_type(self) -> str:
+    def get_channel_type(self) -> ChannelType:
         """Get channel type
 
         Returns:
-            Channel type string
+            Channel type enum
         """
         pass
 
@@ -155,5 +160,19 @@ class StateManagerInterface(ABC):
 
         Returns:
             bool: True if mock testing mode is enabled
+        """
+        pass
+
+    @abstractmethod
+    def initialize_channel(self, channel_type: ChannelType, channel_id: str, mock_testing: bool = False) -> None:
+        """Initialize or update channel info - the only way to modify channel data
+
+        Args:
+            channel_type: Channel type enum
+            channel_id: Channel identifier string
+            mock_testing: Whether to enable mock testing mode
+
+        Raises:
+            ComponentException: If validation fails
         """
         pass

@@ -58,7 +58,6 @@ class RedisAtomic:
                             return True, None, None
                         data = json.loads(result[0])
                         # Strip validation state since it's not persisted
-                        # (Schema validation happens at state manager level)
                         if "_validation" in data:
                             del data["_validation"]
                         return True, data, None
@@ -67,7 +66,6 @@ class RedisAtomic:
                         if value is None or ttl is None:
                             return False, None, "Missing value or TTL for set operation"
                         # Strip validation state before storage
-                        # (Components can store their own data in component_data.data)
                         store_value = value.copy()
                         if "_validation" in store_value:
                             del store_value["_validation"]
@@ -81,21 +79,27 @@ class RedisAtomic:
                         return True, None, None
 
                     else:
-                        return False, None, f"Unknown operation: {operation}"
+                        error_msg = f"Unknown operation: {operation}"
+                        logger.error(error_msg)
+                        return False, None, error_msg
 
                 except WatchError:
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(f"Retry {retry_count + 1}/{max_retries}")
                     retry_count += 1
+                    if retry_count == max_retries:
+                        logger.error(f"Max retries ({max_retries}) exceeded for {operation} on key: {key}")
                     continue
 
-                except json.JSONDecodeError:
-                    return False, None, "Invalid JSON data"
+                except json.JSONDecodeError as e:
+                    error_msg = f"Invalid JSON data for key {key}: {str(e)}"
+                    logger.error(error_msg)
+                    return False, None, error_msg
 
                 finally:
                     pipe.reset()
 
             except Exception as e:
-                return False, None, str(e)
+                error_msg = f"Redis operation failed: {str(e)}"
+                logger.error(error_msg)
+                return False, None, error_msg
 
         return False, None, "Max retries exceeded"

@@ -19,11 +19,6 @@ class AccountDashboard(DisplayComponent):
 
     def __init__(self):
         super().__init__("account_dashboard")
-        self.state_manager = None
-
-    def set_state_manager(self, state_manager: Any) -> None:
-        """Set state manager for accessing dashboard data"""
-        self.state_manager = state_manager
 
     def validate_display(self, value: Any) -> ValidationResult:
         """Validate display and handle menu selection"""
@@ -178,12 +173,8 @@ class AccountDashboard(DisplayComponent):
                         ]
 
                         if selection in valid_paths:
-                            # Set component_result to selected path and release flow
-                            current = self.state_manager.get_state_value("component_data", {})
-                            self.state_manager.update_component_data(
-                                path=current.get("path", ""),
-                                component=current.get("component", ""),
-                                data=current.get("data", {}),
+                            # Set result and release flow
+                            self.update_component_state(
                                 component_result=selection,
                                 awaiting_input=False
                             )

@@ -77,6 +77,7 @@ core
         "type": str,         # Channel type (e.g., "whatsapp")
         "identifier": str    # Channel ID
     },
+    "mock_testing": bool,     # Flag for mock testing mode
     "auth": {                # Auth state
         "token": str         # JWT token
     },

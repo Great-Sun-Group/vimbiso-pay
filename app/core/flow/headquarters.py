@@ -26,6 +26,7 @@ from typing import Tuple, Optional
 from core import components
 from core.error.types import ValidationResult
 from core.state.interface import StateManagerInterface
+from core.error.exceptions import ComponentException
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +52,45 @@ def activate_component(component_type: str, state_manager: StateManagerInterface
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug(f"Creating component for step: {component_type}")
 
-    # Create component for this step
-    component_class = getattr(components, component_type)
-    component = component_class()
-    component.set_state_manager(state_manager)
+    try:
+        # Create component for this step
+        component_class = getattr(components, component_type)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Found component class: {component_class.__name__}")
 
-    # Validate all components
-    return component.validate(None)
+        component = component_class()
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Created component instance: {component.type}")
+
+        component.set_state_manager(state_manager)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Set state manager on component")
+
+        # Validate all components
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Validating component")
+        result = component.validate(None)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Validation result: {result}")
+        return result
+
+    except AttributeError as e:
+        logger.error(f"Component not found: {component_type}")
+        logger.error(f"Available components: {dir(components)}")
+        raise ComponentException(
+            message=f"Component not found: {component_type}",
+            component=component_type,
+            field="type",
+            value=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Failed to activate component: {str(e)}")
+        raise ComponentException(
+            message=f"Component activation failed: {str(e)}",
+            component=component_type,
+            field="activation",
+            value=str(e)
+        )
 
 
 def get_next_component(

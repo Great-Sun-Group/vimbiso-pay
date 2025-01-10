@@ -1,19 +1,18 @@
 """Cloud API webhook views"""
 import logging
 import sys
-from datetime import datetime
 
-from core.state.manager import StateManager
+from core.messaging.service import MessagingService
 from core.messaging.types import ChannelIdentifier, ChannelType
 from core.messaging.types import Message as DomainMessage
 from core.messaging.types import MessageRecipient, TemplateContent
+from core.state.manager import StateManager
 from decouple import config
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
 from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
-from core.messaging.service import MessagingService
 from services.whatsapp.flow_processor import WhatsAppFlowProcessor
 from services.whatsapp.service import WhatsAppMessagingService
 from services.whatsapp.state_manager import StateManager as WhatsAppStateManager
@@ -65,6 +64,41 @@ class CredexCloudApiWebhook(APIView):
     throttle_classes = []  # Disable throttling for webhook endpoint
 
     @staticmethod
+    def _extract_whatsapp_info(value: dict, is_mock_testing: bool) -> tuple[ChannelType, str] | None:
+        """Extract WhatsApp channel info from payload"""
+        # Validate WhatsApp value
+        if not is_mock_testing:
+            metadata = value.get("metadata", {})
+            if not metadata or metadata.get("phone_number_id") != config("WHATSAPP_PHONE_NUMBER_ID"):
+                return None
+
+        # Skip status updates
+        if value.get("statuses"):
+            return None
+
+        # Get contact info
+        contacts = value.get("contacts", [])
+        if not contacts:
+            return None
+
+        contact = contacts[0]
+        if not isinstance(contact, dict):
+            return None
+
+        channel_id = contact.get("wa_id")
+        if not channel_id:
+            return None
+
+        return ChannelType.WHATSAPP, channel_id
+
+    @staticmethod
+    def _extract_channel_info(value: dict, is_mock_testing: bool) -> tuple[ChannelType, str] | None:
+        """Extract channel info from payload"""
+        if "messaging_product" in value and value["messaging_product"] == "whatsapp":
+            return CredexCloudApiWebhook._extract_whatsapp_info(value, is_mock_testing)
+        return None
+
+    @staticmethod
     def post(request):
         try:
             if logger.isEnabledFor(logging.DEBUG):
@@ -82,80 +116,50 @@ class CredexCloudApiWebhook(APIView):
             if not changes or not isinstance(changes, list):
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Check for mock testing mode
+            # Get mock testing flag from header
             is_mock_testing = request.headers.get('X-Mock-Testing') == 'true'
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Mock testing: {is_mock_testing}")
 
-            # Get the raw payload and value
+            # Get and validate the raw payload value
             value = changes[0].get("value", {})
             if not value or not isinstance(value, dict):
+                logger.debug("Invalid or empty value object")
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Identify channel type from value/headers and validate
-            channel_type = None
-            channel_id = None
+            # Add mock testing flag to value metadata if header present
+            if is_mock_testing:
+                value.setdefault("metadata", {})["mock_testing"] = True
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Updated value metadata: {value.get('metadata')}")
 
-            # Check for WhatsApp value
-            if "messaging_product" in value and value["messaging_product"] == "whatsapp":
-                channel_type = ChannelType.WHATSAPP
-
-                # Validate WhatsApp value
-                if not is_mock_testing:
-                    metadata = value.get("metadata", {})
-                    if not metadata or metadata.get("phone_number_id") != config("WHATSAPP_PHONE_NUMBER_ID"):
-                        return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-                # Handle WhatsApp status updates
-                if value.get("statuses"):
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug("Received status update")
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-                # Get WhatsApp contact info
-                contacts = value.get("contacts", [])
-                if not contacts or not isinstance(contacts, list):
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-                contact = contacts[0]
-                if not contact or not isinstance(contact, dict):
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-                channel_id = contact.get("wa_id")
-                if not channel_id:
-                    return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-            # Check for SMS payload (stub for future implementation)
-            elif "sms_provider" in value:
-                channel_type = ChannelType.SMS
+            # Extract channel info from payload
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Extracting channel info from value: {value}")
+            channel_info = CredexCloudApiWebhook._extract_channel_info(value, is_mock_testing)
+            if not channel_info:
                 return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
 
-            # Unknown channel type
-            else:
-                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
+            channel_type, channel_id = channel_info
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Extracted channel info - type: {channel_type}, id: {channel_id}")
 
-            # Validate we got the required information
-            if not all([channel_type, channel_id]):
-                return JsonResponse({"message": "received"}, status=status.HTTP_200_OK)
-
-            # Initialize core state manager
+            # Initialize state managers
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Initializing state managers")
             core_state_manager = StateManager(f"channel:{channel_id}")
+            state_manager = (
+                WhatsAppStateManager(core_state_manager)
+                if channel_type == ChannelType.WHATSAPP
+                else core_state_manager
+            )
 
-            # Initialize channel-specific state manager
-            if channel_type == ChannelType.WHATSAPP:
-                state_manager = WhatsAppStateManager(core_state_manager)
-            else:
-                state_manager = core_state_manager
-
-            # Store state
-            state_manager.update_state({
-                "channel": {
-                    "type": channel_type.value,
-                    "identifier": channel_id
-                },
-                "mock_testing": is_mock_testing,
-                "_metadata": {
-                    "updated_at": datetime.utcnow().isoformat()
-                }
-            })
+            # Initialize channel state with proper enum type
+            state_manager.initialize_channel(
+                channel_type=channel_type,
+                channel_id=channel_id,
+                mock_testing=is_mock_testing
+            )
 
             try:
                 # Get messaging service for channel
@@ -230,13 +234,12 @@ class CredexSendMessageWebhook(APIView):
             )
 
         try:
-            # Get channel type
-            channel = request.data["channel"].upper()
+            # Get channel type from request
             try:
-                channel_type = ChannelType[channel]
-            except KeyError:
+                channel_type = ChannelType[request.data["channel"].upper()]
+            except (KeyError, ValueError):
                 return JsonResponse(
-                    {"status": "error", "message": f"Unsupported channel: {channel}"},
+                    {"status": "error", "message": f"Unsupported channel: {request.data['channel']}"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -270,14 +273,20 @@ class CredexSendMessageWebhook(APIView):
                 )
             )
 
-            # Initialize core state manager
+            # Initialize state managers
             core_state_manager = StateManager(f"channel:{request.data['phoneNumber']}")
+            state_manager = (
+                WhatsAppStateManager(core_state_manager)
+                if channel_type == ChannelType.WHATSAPP
+                else core_state_manager
+            )
 
-            # Initialize channel-specific state manager
-            if channel_type == ChannelType.WHATSAPP:
-                state_manager = WhatsAppStateManager(core_state_manager)
-            else:
-                state_manager = core_state_manager
+            # Initialize channel state
+            state_manager.initialize_channel(
+                channel_type=channel_type,
+                channel_id=request.data["phoneNumber"],
+                mock_testing=False
+            )
 
             # Get messaging service for channel
             service = get_messaging_service(state_manager, channel_type)

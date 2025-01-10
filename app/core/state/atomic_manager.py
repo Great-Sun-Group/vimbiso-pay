@@ -108,6 +108,11 @@ class AtomicStateManager:
         # Track attempt in memory only
         self._track_attempt(key, "update")
 
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Executing atomic update for key: {key}")
+            logger.debug(f"Value to store: {value}")
+            logger.debug(f"TTL: {ttl}")
+
         success, _, error = self.storage.execute_atomic(
             key=key,
             operation='set',
@@ -116,6 +121,7 @@ class AtomicStateManager:
         )
 
         if not success:
+            logger.error(f"Atomic update failed: {error}")
             self._track_attempt(key, "update", error)
             raise SystemException(
                 message=f"Failed to update state: {error}",
@@ -123,6 +129,9 @@ class AtomicStateManager:
                 service="atomic_state",
                 action="update"
             )
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Atomic update successful")
 
     def atomic_delete(self, key: str) -> None:
         """Delete schema-validated state with operation tracking"""

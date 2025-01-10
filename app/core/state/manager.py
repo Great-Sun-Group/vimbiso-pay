@@ -15,6 +15,7 @@ from core.error.exceptions import ComponentException
 from core.error.handler import ErrorHandler
 from core.error.types import ErrorContext
 from core.messaging.interface import MessagingServiceInterface
+from core.messaging.types import ChannelType
 from core.state.persistence.client import get_redis_client
 
 from .atomic_manager import AtomicStateManager
@@ -79,17 +80,8 @@ class StateManager(StateManagerInterface):
 
     def _initialize_state(self) -> Dict[str, Any]:
         """Initialize state structure"""
-        # Get channel ID from prefix
-        channel_id = self.key_prefix.split(":", 1)[1]
-
-        # Create initial state with channel info and mock testing
-        initial_state = {
-            "channel": {
-                "type": "whatsapp",
-                "identifier": channel_id
-            },
-            "mock_testing": False  # Default to non-mock mode
-        }
+        # Start with empty initial state
+        initial_state = {}
 
         # Get existing state
         state_data = None
@@ -107,10 +99,66 @@ class StateManager(StateManagerInterface):
                     "timestamp": datetime.utcnow().isoformat()
                 }
             )
-            ErrorHandler.handle_error(e, self, error_context)
+            ErrorHandler.handle_system_error(
+                code=error_context.details["code"],
+                service=error_context.details["service"],
+                action=error_context.details["action"],
+                message=error_context.message,
+                error=e
+            )
 
         # Always return valid state
         return state_data if state_data is not None else initial_state
+
+    def initialize_channel(self, channel_type: ChannelType, channel_id: str, mock_testing: bool = False) -> None:
+        """Initialize or update channel info - the only way to modify channel data
+
+        Args:
+            channel_type: Channel type enum
+            channel_id: Channel identifier string
+            mock_testing: Whether to enable mock testing mode
+
+        Raises:
+            ComponentException: If validation fails
+        """
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Initializing channel - type: {channel_type} ({type(channel_type)}), id: {channel_id}, mock: {mock_testing}")
+
+        # Convert enum to string for persistence
+        channel_type_str = channel_type.value if isinstance(channel_type, ChannelType) else str(channel_type)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Channel type string: {channel_type_str} ({type(channel_type_str)})")
+
+        # Construct updates with string channel type
+        updates = {
+            "channel": {
+                "type": channel_type_str,
+                "identifier": channel_id
+            },
+            "mock_testing": mock_testing
+        }
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Channel updates: {updates}")
+
+        # Validate updates
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Preparing state update for validation")
+        prepared_state = StateValidator.prepare_state_update(updates)
+
+        # Update state atomically
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Merging with existing state")
+            logger.debug(f"Current state: {self._state}")
+            logger.debug(f"Updates to apply: {prepared_state}")
+
+        new_state = {**self._state, **prepared_state}
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"New merged state: {new_state}")
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Performing atomic update")
+        self.atomic_state.atomic_update(self.key_prefix, new_state)
+        self._state = new_state
 
     def update_state(self, updates: Dict[str, Any]) -> None:
         """Update state with validation
@@ -119,7 +167,7 @@ class StateManager(StateManagerInterface):
             updates: State updates to apply
 
         Raises:
-            ComponentException: If updates format is invalid
+            ComponentException: If updates format is invalid or attempts to modify channel
         """
         if not isinstance(updates, dict):
             raise ComponentException(
@@ -129,9 +177,18 @@ class StateManager(StateManagerInterface):
                 value=str(type(updates))
             )
 
+        # Prevent channel modifications through normal updates
+        if "channel" in updates:
+            raise ComponentException(
+                message="Channel can only be modified through initialize_channel",
+                component="state_manager",
+                field="channel",
+                value=str(updates)
+            )
+
         try:
-            # Prepare and validate state update
-            prepared_state = StateValidator.prepare_state_update(self, updates)
+            # Validate state update
+            prepared_state = StateValidator.prepare_state_update(updates)
 
             # Merge updates with current state
             new_state = {**self._state, **prepared_state}
@@ -154,7 +211,13 @@ class StateManager(StateManagerInterface):
                     "timestamp": datetime.utcnow().isoformat()
                 }
             )
-            ErrorHandler.handle_error(e, self, error_context)
+            ErrorHandler.handle_system_error(
+                code=error_context.details["code"],
+                service=error_context.details["service"],
+                action=error_context.details["action"],
+                message=error_context.message,
+                error=e
+            )
 
     def _get(self, key: str) -> Any:
         """Internal method to get raw state value
@@ -209,7 +272,13 @@ class StateManager(StateManagerInterface):
                     "timestamp": datetime.utcnow().isoformat()
                 }
             )
-            ErrorHandler.handle_error(e, self, error_context)
+            ErrorHandler.handle_system_error(
+                code=error_context.details["code"],
+                service=error_context.details["service"],
+                action=error_context.details["action"],
+                message=error_context.message,
+                error=e
+            )
             return default
 
     # Convenience methods for common state access
@@ -234,7 +303,7 @@ class StateManager(StateManagerInterface):
         return component_data.get("awaiting_input", False)
 
     # Component state updates
-    def update_component_data(
+    def update_flow_state(
         self,
         path: str,
         component: str,
@@ -242,7 +311,11 @@ class StateManager(StateManagerInterface):
         component_result: Optional[str] = None,
         awaiting_input: bool = False
     ) -> None:
-        """Update current flow/component state with validation tracking
+        """Update flow state including path and component
+
+        This is the low-level interface used by the flow processor to manage transitions.
+        It requires all schema fields including path and component. Components should
+        never use this directly - they should use Component.update_component_data() instead.
 
         The component_data.data field is the only part of state not protected by
         schema validation, giving components freedom to store their own data.
@@ -285,23 +358,26 @@ class StateManager(StateManagerInterface):
                     "timestamp": datetime.utcnow().isoformat()
                 }
             )
-            ErrorHandler.handle_error(e, self, error_context)
+            ErrorHandler.handle_flow_error(
+                step=error_context.details["path"],
+                action=error_context.details["action"],
+                data={"component": error_context.details["component"]},
+                message=error_context.message
+            )
 
     def clear_component_data(self) -> None:
         """Clear component state including unvalidated data"""
         self.update_state({"component_data": None})
 
     def clear_all_state(self) -> None:
-        """Clear all state except channel info and mock testing flag"""
+        """Clear all state data"""
         try:
-            # Reset to initial state preserving only channel info and mock testing
-            self._state = {
-                "channel": self.get_state_value("channel", {}),
-                "mock_testing": self.get_state_value("mock_testing", False)
-            }
+            # Complete wipe of all state
+            complete_state = {}
 
-            # Persist to Redis
-            self.atomic_state.atomic_update(self.key_prefix, self._state)
+            # Update state and persist
+            self._state = complete_state
+            self.atomic_state.atomic_update(self.key_prefix, complete_state)
 
         except Exception as e:
             # Handle error through ErrorHandler
@@ -315,7 +391,13 @@ class StateManager(StateManagerInterface):
                     "timestamp": datetime.utcnow().isoformat()
                 }
             )
-            ErrorHandler.handle_error(e, self, error_context)
+            ErrorHandler.handle_system_error(
+                code=error_context.details["code"],
+                service=error_context.details["service"],
+                action=error_context.details["action"],
+                message=error_context.message,
+                error=e
+            )
 
     # Channel methods with required field validation
 
@@ -338,24 +420,23 @@ class StateManager(StateManagerInterface):
             )
         return channel["identifier"]
 
-    def get_channel_type(self) -> str:
+    def get_channel_type(self) -> ChannelType:
         """Get channel type
 
         Returns:
-            Channel type string
+            Channel type enum
 
         Raises:
             ComponentException: If type not found in channel data
         """
-        channel = self.get_state_value("channel", {})
-        if not channel.get("type"):
+        channel_type = self.get_state_value("channel", {}).get("type")
+        if not channel_type:
             raise ComponentException(
                 message="Channel type not found",
                 component="state_manager",
-                field="channel.type",
-                value=str(channel)
+                field="channel.type"
             )
-        return channel["type"]
+        return ChannelType(channel_type)
 
     def is_authenticated(self) -> bool:
         """Check if user is authenticated with valid token"""

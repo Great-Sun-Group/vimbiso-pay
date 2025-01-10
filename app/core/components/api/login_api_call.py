@@ -46,7 +46,14 @@ class LoginApiCall(ApiComponent):
             )
             logger.info(f"API response received: {response}")
 
-            # Let handlers update state
+            # Check for 404 status which indicates new member
+            if response.status_code == 404:
+                logger.info("New member detected - starting onboarding flow")
+                # Set result for onboarding flow
+                self.update_component_data(component_result="start_onboarding")
+                return ValidationResult.success(None)  # Success but no result data needed
+
+            # For existing members, let handlers update state
             result, error = handle_api_response(
                 response=response,
                 state_manager=self.state_manager
@@ -70,15 +77,8 @@ class LoginApiCall(ApiComponent):
                 "active_account_id": personal_account["accountID"]
             })
 
-            # Update flow state
-            # Update flow state (components can store their own data in component_data.data)
-            current = self.state_manager.get_state_value("component_data", {})
-            self.state_manager.update_component_data(
-                path=current.get("path", ""),
-                component=current.get("component", ""),
-                data=current.get("data", {}),
-                component_result="send_dashboard"
-            )
+            # Set result for dashboard flow
+            self.update_component_data(component_result="send_dashboard")
 
             return ValidationResult.success(result)
 

@@ -15,18 +15,14 @@ The central flow management module that:
 ### Example login
 
 ```python
-
-    # Greeting like "hi" intercepted in earlier layer
-    # and login/Greeting component was activated and greeting sent
-
     # Branch based on current path/component and results
     match (path, component):
         case ("login", "Greeting"):
             return "login", "LoginApiCall"  # Basic automatic flow advancement
         case ("login", "LoginApiCall"):
-            if flow_state.get("component_result") == "send_dashboard":
+            if state_manager.get_state_value("component_data", {}).get("component_result") == "send_dashboard":
                 return "account", "AccountDashboard"  # Single-nested conditional flow advancement
-            if flow_state.get("component_result") == "start_onboarding":
+            if state_manager.get_state_value("component_data", {}).get("component_result") == "start_onboarding":
                 return "onboard", "Welcome"  # Single-nested conditional flow advancement
 ```
 

@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from core.messaging.base import BaseMessagingService
-from core.messaging.types import Message, MessageRecipient
+from core.messaging.types import ChannelType, Message, MessageRecipient
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,6 @@ class SMSMessagingService(BaseMessagingService):
         """Send template message through SMS (not implemented)"""
         raise NotImplementedError("SMS channel not yet implemented")
 
-    def authenticate_user(self, channel_type: str, channel_id: str) -> Dict[str, Any]:
+    def authenticate_user(self, channel_type: ChannelType, channel_id: str) -> Dict[str, Any]:
         """Authenticate user with phone number (not implemented)"""
         raise NotImplementedError("SMS channel not yet implemented")
