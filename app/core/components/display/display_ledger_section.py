@@ -5,7 +5,7 @@ This component handles displaying a section of ledger entries.
 
 from typing import Any, Dict
 
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 
 from core.components.base import Component
 

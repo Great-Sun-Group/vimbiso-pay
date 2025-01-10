@@ -8,9 +8,9 @@ from urllib.parse import urljoin
 
 import requests
 from core.state.interface import StateManagerInterface
-from core.utils.error_handler import ErrorHandler
+from core.error.handler import ErrorHandler
 from core.error.exceptions import SystemException
-from core.utils.state_validator import StateValidator
+from core.state.validator import StateValidator
 from decouple import config
 from requests.exceptions import RequestException
 

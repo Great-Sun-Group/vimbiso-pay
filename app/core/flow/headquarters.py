@@ -20,29 +20,32 @@ The state manager and its utilities are responsible for:
 """
 
 import logging
-from typing import Tuple
+from typing import Tuple, Optional
 
 from core import components
+from core.error.types import ValidationResult
 from core.state.interface import StateManagerInterface
 
 logger = logging.getLogger(__name__)
 
 
-def activate_component(component_type: str, state_manager: StateManagerInterface) -> None:
+def activate_component(component_type: str, state_manager: StateManagerInterface) -> ValidationResult:
     """Create and activate a component for the current path step.
 
     Handles component processing:
     1. Creates component instance
     2. Configures state management
-    3. Activates component logic
-    4. Validates component state
+    3. Returns component result
 
     Args:
         component_type: Component for this step (e.g. "Greeting", "LoginApiCall")
         state_manager: State manager for component configuration and validation
 
+    Returns:
+        ValidationResult: Component activation result
+
     Raises:
-        ComponentException: If component creation, activation, or validation fails
+        ComponentException: If component creation or activation fails
     """
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug(f"Creating component for step: {component_type}")
@@ -52,8 +55,12 @@ def activate_component(component_type: str, state_manager: StateManagerInterface
     component = component_class()
     component.set_state_manager(state_manager)
 
-    # Activate component (it will get data from state_manager)
-    component.validate(None)
+    # For display components, validate immediately
+    if isinstance(component, components.DisplayComponent):
+        return component.validate(None)
+
+    # For other components, just return success
+    return ValidationResult.success()
 
 
 def get_next_component(
@@ -185,7 +192,7 @@ def get_next_component(
             return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
 
 
-def process_component(path: str, component: str, state_manager: StateManagerInterface) -> Tuple[str, str]:
+def process_component(path: str, component: str, state_manager: StateManagerInterface) -> Optional[Tuple[str, str]]:
     """Process current step and determine next step in application paths.
 
     Handles the complete step processing:
@@ -199,10 +206,15 @@ def process_component(path: str, component: str, state_manager: StateManagerInte
         state_manager: State manager for component activation and path control
 
     Returns:
-        Tuple[str, str]: Next step (path, component) in the current path
+        Optional[Tuple[str, str]]: Next step (path, component) in the current path, or None if activation failed
     """
-    # Activate component for current step (errors will bubble up)
-    activate_component(component, state_manager)
+    # Activate component for current step
+    result = activate_component(component, state_manager)
+
+    # Only proceed if activation was successful
+    if not result.valid:
+        logger.error(f"Component activation failed: {result.error}")
+        return None
 
     # Determine next step in path
     return get_next_component(path, component, state_manager)

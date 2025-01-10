@@ -3,9 +3,7 @@ import logging
 from typing import Any
 
 from core.error.exceptions import ComponentException, SystemException
-from core.utils.utils import wrap_text
-
-from core.messaging.templates.messages import INVALID_ACTION
+from core.messaging.messages import INVALID_ACTION
 from .types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -36,7 +34,7 @@ def handle_default_action(state_manager: Any) -> WhatsAppMessage:
         # Create error response
         return WhatsAppMessage.create_text(
             channel_id,
-            wrap_text(INVALID_ACTION, channel_id)
+            INVALID_ACTION
         )
 
     except ComponentException as e:

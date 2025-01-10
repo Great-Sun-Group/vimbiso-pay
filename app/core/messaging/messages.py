@@ -11,10 +11,7 @@ ACCOUNT_DASHBOARD = """💳 *{account}* 💳
 {net_assets}{tier_limit_display}"""
 
 # Registration templates
-REGISTER = """
-{greeting}
-
-Welcome to VimbisoPay 💰
+REGISTER = """Welcome to VimbisoPay 💰
 
 We're your portal 🚪to the credex ecosystem 🌱
 

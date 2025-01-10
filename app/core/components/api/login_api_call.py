@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 from core.api.base import handle_api_response, make_api_request
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 
 from ..base import ApiComponent
 

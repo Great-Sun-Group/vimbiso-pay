@@ -2,9 +2,26 @@
 
 # Commands that trigger flow resets/greetings
 GREETING_COMMANDS = {
-    "menu", "memu", "hi", "hie", "cancel", "home", "hy",
-    "reset", "hello", "x", "c", "no", "No", "n", "N",
-    "hey", "y", "yes", "retry"
+    # English greetings
+    "hi", "hie", "hy", "hey", "hello",
+
+    # Navigation/menu
+    "menu", "home",
+
+    # Shona greetings
+    "mhoro", "makadii",
+
+    # Ndebele greetings
+    "sawubona",
+
+    # Swahili greetings
+    "jambo", "habari",
+
+    # French greetings
+    "bonjour", "salut",
+
+    # Spanish greetings
+    "hola", "buenos dias"
 }
 
 __all__ = [

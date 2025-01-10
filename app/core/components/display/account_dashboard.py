@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 from core.messaging.types import Message
 from core.messaging.utils import get_recipient
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 from core.error.exceptions import ComponentException
 
 from ..base import DisplayComponent
@@ -155,7 +155,7 @@ class AccountDashboard(DisplayComponent):
                     )
 
             # Input Phase - When we get a response
-            from core.messaging.formatters.menus import WhatsAppMenus
+            from core.messaging.menus import WhatsAppMenus
             component_data = self.state_manager.get_component_data()
             message = component_data.get("message", {})
 
@@ -207,5 +207,5 @@ class AccountDashboard(DisplayComponent):
 
     def to_message_content(self, value: Dict) -> str:
         """Format dashboard data using template"""
-        from core.messaging.templates.messages import ACCOUNT_DASHBOARD
+        from core.messaging.messages import ACCOUNT_DASHBOARD
         return ACCOUNT_DASHBOARD.format(**value)

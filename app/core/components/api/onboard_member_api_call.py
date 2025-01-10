@@ -10,7 +10,7 @@ from typing import Any, Dict
 
 from decouple import config
 
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 from core.api.base import make_api_request, handle_api_response
 
 from ..base import ApiComponent

@@ -6,7 +6,7 @@ Dashboard data is the source of truth for member state.
 
 from typing import Any, Dict
 
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 
 from ..confirm import ConfirmBase
 

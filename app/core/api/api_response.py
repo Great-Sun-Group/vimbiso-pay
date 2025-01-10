@@ -8,8 +8,8 @@ import logging
 from typing import Any, Dict, Optional, Tuple
 
 from core.state.interface import StateManagerInterface
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
+from core.error.handler import ErrorHandler
+from core.error.types import ErrorContext
 from core.error.exceptions import FlowException
 
 logger = logging.getLogger(__name__)

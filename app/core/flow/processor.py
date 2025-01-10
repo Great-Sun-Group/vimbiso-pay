@@ -13,15 +13,17 @@ that implements the MessagingServiceInterface.
 import logging
 from typing import Any, Dict
 
-from core.state.interface import StateManagerInterface
-from core.messaging.types import Message, TextContent
-from core.messaging.utils import get_recipient
+from core.error.exceptions import ComponentException
 from core.error.handler import ErrorHandler
 from core.error.types import ValidationResult
-from core.error.exceptions import ComponentException
 from core.messaging.service import MessagingService
+from core.messaging.messages import INVALID_ACTION
+from core.messaging.types import Message, TextContent
+from core.messaging.utils import get_recipient
+from core.state.interface import StateManagerInterface
 
 from .constants import GREETING_COMMANDS
+from .headquarters import process_component
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,11 @@ class FlowProcessor:
             # Extract message data
             message_data = self._extract_message_data(payload)
 
+            # Skip processing if no valid message data
+            if not message_data:
+                logger.debug("No valid message data to process")
+                return None
+
             # Create message recipient for error handling
             recipient = get_recipient(self.state_manager)
 
@@ -62,74 +69,67 @@ class FlowProcessor:
             message_type = message_data.get("type", "")
             message_text = message_data.get("text", {}).get("body", "").lower().strip()
 
-            # Check if message is a greeting
-            current_component = self.state_manager.get_component()
-            if (message_type == "text" and
-                message_text in GREETING_COMMANDS and
-                    (not current_component or not current_component.lower().endswith('input'))):
-                # Start login flow
-                self.state_manager.clear_all_state()
-                self.state_manager.update_current_state(
-                    path="login",
-                    component="Greeting"
-                )
+            # Only process if we have valid text
+            if not message_text:
+                logger.debug("No valid message text to process")
+                return None
 
             # Get current flow state
-            current_state = self.state_manager.get_current_state() or {
-                "path": "login",
-                "component": "Greeting",
-                "data": {}
-            }
+            current_state = self.state_manager.get_current_state()
+
+            # If no state, only accept greetings
+            if not current_state:
+                if message_type == "text" and message_text in GREETING_COMMANDS:
+                    # Start login flow
+                    self.state_manager.clear_all_state()
+                    self.state_manager.update_current_state(
+                        path="login",
+                        component="Greeting"
+                    )
+                    current_state = self.state_manager.get_current_state()
+                else:
+                    # No state and not a greeting - send invalid action message
+                    logger.debug("No state found - sending invalid action message")
+                    self.messaging.send_text(
+                        recipient=recipient,
+                        text=INVALID_ACTION
+                    )
+                    return None
+
             context = current_state.get("path")
             component = current_state.get("component")
 
             # Process through flow framework
-            from .headquarters import (activate_component,
-                                       handle_component_result)
-
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Processing message in flow: {context}.{component}")
                 logger.debug(f"Flow state: {current_state}")
 
-            # Pass message data to component for processing
-            result = activate_component(component, self.state_manager)
+            # Process current component and get result
+            result = None
+            next_step = process_component(context, component, self.state_manager)
 
-            while True:
-                next_step = handle_component_result(
-                    context=context,
-                    component=component,
-                    result=result,
-                    state_manager=self.state_manager
-                )
+            # Get result from state manager for validation
+            result = self.state_manager.get_component_result()
 
-                if next_step is None:
-                    logger.error(f"Component failed: {context}.{component}")
-                    break
-
+            # Only update state if we have a valid next step
+            if next_step is not None:
                 next_context, next_component = next_step
-                if next_context == context and next_component == component:
-                    break  # Component wants to stay active
+                if next_context != context or next_component != component:
+                    # Log state transition
+                    logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
 
-                # Log only state transitions
-                logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
+                    # Update flow state
+                    current_data = self.state_manager.get_component_data()
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f"Updating flow state: {current_data}")
 
-                # Update flow state
-                current_data = self.state_manager.get_component_data()
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Updating flow state: {current_data}")
-
-                self.state_manager.update_current_state(
-                    path=next_context,
-                    component=next_component,
-                    data=current_data
-                )
-
-                # Activate next component
-                result = activate_component(next_component, self.state_manager)
-
-                # Update for next iteration
-                context = next_context
-                component = next_component
+                    self.state_manager.update_current_state(
+                        path=next_context,
+                        component=next_component,
+                        data=current_data
+                    )
+            else:
+                logger.error(f"Component failed: {context}.{component}")
 
             # Only return messages for errors, components handle their own messaging
             if isinstance(result, ValidationResult):

@@ -5,9 +5,8 @@ This component handles the registration welcome screen with proper validation.
 
 from typing import Any
 
-from core.messaging.formatters.greetings import get_random_greeting
 from core.messaging.utils import get_recipient
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 
 from ..base import DisplayComponent
 
@@ -21,15 +20,12 @@ class Welcome(DisplayComponent):
     def validate_display(self, value: Any) -> ValidationResult:
         """Display welcome message with greeting"""
         try:
-            # Get greeting and format welcome message
-            from core.messaging.templates.messages import REGISTER
-            greeting = get_random_greeting()
-
             # Send welcome message
+            from core.messaging.messages import REGISTER
             recipient = get_recipient(self.state_manager)
             send_result = self.state_manager.messaging.send_text(
                 recipient=recipient,
-                text=REGISTER.format(greeting=greeting)
+                text=REGISTER
             )
 
             if send_result:

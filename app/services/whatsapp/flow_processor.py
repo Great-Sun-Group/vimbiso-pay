@@ -1,9 +1,12 @@
 """WhatsApp-specific flow processor implementation"""
 
+import logging
 from typing import Any, Dict
 
-from core.flow.processor import FlowProcessor
 from core.error.exceptions import ComponentException
+from core.flow.processor import FlowProcessor
+
+logger = logging.getLogger(__name__)
 
 
 class WhatsAppFlowProcessor(FlowProcessor):
@@ -43,15 +46,28 @@ class WhatsAppFlowProcessor(FlowProcessor):
             if not value:
                 raise ValueError("Missing value object")
 
+            # Check if this is a status update
+            if "statuses" in value:
+                logger.debug("Received status update - skipping processing")
+                return {}
+
+            # Check for messages
             messages = value.get("messages", [])
             if not messages:
-                raise ValueError("Missing messages array")
+                logger.debug("No messages to process")
+                return {}
 
             message = messages[0]
             if not message:
-                raise ValueError("Empty message object")
+                logger.debug("Empty message object")
+                return {}
 
-            return message
+            # Only process user-initiated messages
+            if message.get("type") == "text" and "from" in message:
+                return message
+
+            logger.debug(f"Skipping non-user message: {message.get('type')}")
+            return {}
 
         except (IndexError, KeyError, ValueError) as e:
             # Get as much info as possible for error context

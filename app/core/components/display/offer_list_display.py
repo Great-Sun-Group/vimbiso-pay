@@ -5,9 +5,8 @@ This component handles displaying a list of Credex offers.
 
 from typing import Any, Dict
 
-from core.messaging.templates.messages import (ACTION_PROMPT, OFFER_ITEM,
-                                               OFFER_LIST)
-from core.utils.error_types import ValidationResult
+from core.messaging.messages import (ACTION_PROMPT, OFFER_ITEM, OFFER_LIST)
+from core.error.types import ValidationResult
 
 from ..base import DisplayComponent
 

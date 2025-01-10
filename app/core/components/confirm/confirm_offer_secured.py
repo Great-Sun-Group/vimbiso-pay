@@ -5,7 +5,7 @@ This component handles confirming secured offer creation.
 
 from typing import Any, Dict
 
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 
 from . import ConfirmBase
 

@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Type, Union
 
 from core.state.interface import StateManagerInterface
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 from core.error.exceptions import ComponentException
 
 

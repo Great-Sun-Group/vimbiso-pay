@@ -6,7 +6,7 @@ This component handles first name input with proper validation.
 from typing import Any, Dict
 
 from core.components.base import InputComponent
-from core.utils.error_types import ValidationResult
+from core.error.types import ValidationResult
 
 
 class FirstNameInput(InputComponent):
