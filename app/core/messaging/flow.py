@@ -1,26 +1,22 @@
-"""State machine for application flow paths.
+"""Flow Headquarters
 
-This module defines a simple state machine that manages user flows through:
-1. Authentication and registration paths
-2. Main menu navigation
-3. Feature-specific paths (offers, ledger, upgrades)
+This module defines the core logic that manages member flows through the vimbiso-chatserver application.
+It activates a component at each step, and determines the next step through branching logic.
+Data management is delegated to the state manager, and action management is delegated to the components.
 
-The state machine:
-- Activates components at each step
-- Determines next step through branching logic
-- Returns to main menu after completing operations
-
-Components are responsible for their own:
-- Validation and processing
-- State management
+Components are self-contained with responsibility for their own:
+- Business logic and validation
+- Activation of shared utilities/helpers/services
+- State access to communicate with any other part of the system and utilize standard validation
+- State access for in-component loop management (awaiting_input and others)
+- State writing to leave flow headquarters with component_result when necessary for branch logic
 - Error handling
 
-The branching logic (embedded in match statements) organizes paths into:
-- Authentication paths (login, verification)
-- Registration paths (user details, account creation)
-- Main menu path (dashboard navigation)
-- Offer paths (creation, acceptance, decline, cancellation)
-- Account management paths (ledger, tier upgrades)
+The state manager and its utilities are responsible for:
+- Data structure
+- Data validation
+- Data storage
+- Data retrieval
 """
 
 import logging
@@ -61,128 +57,150 @@ def activate_component(component_type: str, state_manager: StateManagerInterface
 
 
 def get_next_component(
-    context: str,
+    path: str,
     component: str,
     state_manager: StateManagerInterface
 ) -> Tuple[str, str]:
-    """Determine next step based on current path and state.
-
-    Handles progression through:
-    - Authentication and registration flows
-    - Main menu navigation
-    - Feature-specific operations
-    - Return to main menu after completion
+    """Determine next path/Component based on current path/Component completion and optional component_result.
+    Handle progression through and between flows.
 
     Args:
-        context: Path category (e.g. "login", "offer_secured", "account")
-        component: Current step's component in the path
-        state_manager: State manager for checking awaiting_input and path state
+        path: (e.g. "login", "offer_secured", "account")
+        component: Current step's component (e.g. "AmountInput", "HandleInput", "ConfirmOffer", "CreateCredexApiCall")
+        state_manager: State manager for checking awaiting_input and component_result
 
     Returns:
-        Tuple[str, str]: Next step (context, component) in the current path
+        Tuple[str, str]: Next path/Component
     """
     # Check if component is awaiting input
     flow_state = state_manager.get_flow_state()
     if flow_state.get("awaiting_input"):
-        return context, component  # Stay at current step until input received
+        return path, component  # Stay at current step until input received
 
     # Branch based on current path
-    match (context, component):
-        # Authentication paths
-        case ("login", "Greeting"):
-            return "login", "LoginApiCall"  # Check if user exists in system
-        case ("login", "LoginApiCall"):
-            return "onboard", "Welcome"  # Component updates state for new/existing user
+    match (path, component):
 
-        # Registration paths
+        # Login path
+        case ("login", "Greeting"):
+            return "login", "LoginApiCall"  # Check if user exists
+        case ("login", "LoginApiCall"):
+            if flow_state.get("component_result") == "send_dashboard":
+                return "account", "AccountDashboard"  # Send account dashboard
+            if flow_state.get("component_result") == "start_onboarding":
+                return "onboard", "Welcome"  # Send first message in onboarding path
+
+        # Onboard path
         case ("onboard", "Welcome"):
             return "onboard", "FirstNameInput"  # Start collecting user details
         case ("onboard", "FirstNameInput"):
             return "onboard", "LastNameInput"  # Continue with user details
         case ("onboard", "LastNameInput"):
-            return "onboard", "Greeting"  # Show welcome after details collected
+            return "onboard", "Greeting"  # Send random greeting while API call processes
         case ("onboard", "Greeting"):
-            return "onboard", "OnBoardMemberApiCall"  # Create account with collected details
+            return "onboard", "OnBoardMemberApiCall"  # Create member and account with collected details
         case ("onboard", "OnBoardMemberApiCall"):
-            return "account", "AccountDashboard"  # Return to main menu after completing onboarding
+            return "account", "AccountDashboard"  # Send account dashboard
 
-        # Main menu path
+        # Account dashboard path
         case ("account", "AccountDashboard"):
-            return "account", "AccountDashboard"  # Component updates state based on user selection
+            if flow_state.get("component_result") == "offer_secured":
+                return "offer_secured", "AmountInput"  # Start collecting offer details with amount/denom
+            if flow_state.get("component_result") == "accept_offer":
+                return "accept_offer", "OfferListDisplay"  # List pending incoming offers to accept
+            if flow_state.get("component_result") == "decline_offer":
+                return "decline_offer", "OfferListDisplay"  # List pending incoming offers to decline
+            if flow_state.get("component_result") == "cancel_offer":
+                return "cancel_offer", "OfferListDisplay"  # List pending outgoing offers to cancel
+            if flow_state.get("component_result") == "view_ledger":
+                return "view_ledger", "Greeting"  # Send random greeting while api call processes
+            if flow_state.get("component_result") == "upgrade_membertier":
+                return "upgrade_membertier", "ConfirmUpgrade"  # Send upgrade confirmation message
 
-        # Offer creation paths
+        # Offer secured credex path
         case ("offer_secured", "AmountInput"):
-            return "offer_secured", "HandleInput"  # Start collecting offer details
+            return "offer_secured", "HandleInput"  # Get recipient handle from member and account details from credex-core
         case ("offer_secured", "HandleInput"):
-            return "offer_secured", "ConfirmInput"  # Get recipient handle
+            return "offer_secured", "ConfirmInput"  # Confirm amount, denom, issuer and recipient accounts
         case ("offer_secured", "ConfirmInput"):
-            return "offer_secured", "CreateCredexApiCall"  # Verify offer details
+            return "offer_secured", "Greeting"  # Send random greeting while api call processes
         case ("offer_secured", "Greeting"):
-            return "offer_secured", "CreateCredexApiCall"  # Create offer with verified details
+            return "offer_secured", "CreateCredexApiCall"  # Create offer
         case ("offer_secured", "CreateCredexApiCall"):
-            return "account", "AccountDashboard"  # Return to main menu after offer creation
+            return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
 
-        # Offer management paths
+        # Accept offer path
         case ("accept_offer", "OfferListDisplay"):
-            return "accept_offer", "Greeting"  # Show available offers
+            return "accept_offer", "Greeting"  # Send random greeting while api call processes
         case ("accept_offer", "Greeting"):
-            return "accept_offer", "AcceptOfferApiCall"  # Process selected offer
+            return "accept_offer", "AcceptOfferApiCall"  # Process selected offer acceptance
         case ("accept_offer", "AcceptOfferApiCall"):
-            return "account", "AccountDashboard"  # Return to main menu after accepting offer
+            return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
 
+        # Decline offer path
         case ("decline_offer", "OfferListDisplay"):
-            return "decline_offer", "ConfirmAction"  # Show offers and request confirmation
-        case ("decline_offer", "ConfirmAction"):
-            return "decline_offer", "Greeting"  # Confirm decline action
+            return "decline_offer", "ConfirmDeclineOffer"  # Show offer details and request confirmation
+        case ("decline_offer", "ConfirmDeclineOffer"):
+            return "decline_offer", "Greeting"  # Send random greeting while api call processes
         case ("decline_offer", "Greeting"):
-            return "decline_offer", "DeclineOfferApiCall"  # Process decline after confirmation
+            return "decline_offer", "DeclineOfferApiCall"  # Process selected offer decline
         case ("decline_offer", "DeclineOfferApiCall"):
-            return "account", "AccountDashboard"  # Return to main menu after declining offer
+            return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
 
+        # Cancel offer path
         case ("cancel_offer", "OfferListDisplay"):
-            return "cancel_offer", "ConfirmAction"  # Show offers and request confirmation
-        case ("cancel_offer", "ConfirmAction"):
-            return "cancel_offer", "Greeting"  # Confirm cancel action
+            return "cancel_offer", "ConfirmCancelOffer"  # Show offer details and request confirmation
+        case ("cancel_offer", "ConfirmCancelOffer"):
+            return "cancel_offer", "Greeting"  # Send random greeting while api call processes
         case ("cancel_offer", "Greeting"):
-            return "cancel_offer", "CancelOfferApiCall"  # Process cancel after confirmation
+            return "cancel_offer", "CancelOfferApiCall"  # Process selected offer cancel
         case ("cancel_offer", "CancelOfferApiCall"):
-            return "account", "AccountDashboard"  # Return to main menu after canceling offer
+            return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
 
-        # Account management paths
-        case ("view_ledger", "ViewLedger"):
-            return "view_ledger", "Greeting"  # Show ledger view options
+        # View ledger path
         case ("view_ledger", "Greeting"):
-            return "view_ledger", "GetLedgerApiCall"  # Fetch ledger data
-        case ("view_ledger", "GetLedgerApiCall"):
-            return "view_ledger", "DisplayLedgerSection"  # Show fetched ledger data
+            return "view_ledger", "LedgerManagement"  # Manages fetching and displaying ledger and selecting a credex
+        case ("view_ledger", "LedgerManagement"):
+            if flow_state.get("component_result") == "view_credex":
+                return "view_credex", "Greeting"  # Send random greeting while api call processes
+            if flow_state.get("component_result") == "send_account_dashboard":
+                return "account", "AccountDashboard"  # Return to account dashboard
 
+        # View credex path
+        case ("view_credex", "Greeting"):
+            return "view_credex", "GetAndDisplayCredex"  # Fetches and displays a credex
+        case ("view_credex", "GetAndDisplayCredex"):
+            if flow_state.get("component_result") == "account_dashboard":
+                return "account", "AccountDashboard"  # Return to account dashboard
+            if flow_state.get("component_result") == "view_counterparty":  # Placeholder for future implementation
+                return "account", "AccountDashboard"  # Return to account dashboard for now since this won't actually happen
+
+        # Ugrade member tier path
         case ("upgrade_membertier", "ConfirmUpgrade"):
-            return "upgrade_membertier", "Greeting"  # Request upgrade confirmation
+            return "upgrade_membertier", "Greeting"  # Send random greeting while api call processes
         case ("upgrade_membertier", "Greeting"):
             return "upgrade_membertier", "UpgradeMembertierApiCall"  # Process tier upgrade
         case ("upgrade_membertier", "UpgradeMembertierApiCall"):
-            return "account", "AccountDashboard"  # Return to main menu after upgrading tier
+            return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
 
 
-def process_component(context: str, component: str, state_manager: StateManagerInterface) -> Tuple[str, str]:
+def process_component(path: str, component: str, state_manager: StateManagerInterface) -> Tuple[str, str]:
     """Process current step and determine next step in application paths.
 
     Handles the complete step processing:
     1. Activates component for current step
     2. Lets component process its logic
     3. Determines next step in path
-    4. Returns to main menu when complete
 
     Args:
-        context: Path category (e.g. "login", "offer_secured", "account")
+        path: Path category (e.g. "login", "offer_secured", "account")
         component: Current step's component in the path
         state_manager: State manager for component activation and path control
 
     Returns:
-        Tuple[str, str]: Next step (context, component) in the current path
+        Tuple[str, str]: Next step (path, component) in the current path
     """
     # Activate component for current step (errors will bubble up)
     activate_component(component, state_manager)
 
     # Determine next step in path
-    return get_next_component(context, component, state_manager)
+    return get_next_component(path, component, state_manager)
