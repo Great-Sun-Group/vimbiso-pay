@@ -35,17 +35,14 @@ class OnBoardMemberApiCall(ApiComponent):
         - Updates state with dashboard data via handle_api_response
         - Returns success status
         """
-        # Get registration data from state
-        flow_data = self.state_manager.get_flow_state()
-        if not flow_data or "data" not in flow_data:
+        # Get registration data from component data
+        registration_data = self.state_manager.get_component_data()
+        if not registration_data:
             return ValidationResult.failure(
                 message="No registration data found",
-                field="flow_data",
+                field="component_data",
                 details={"component": self.type}
             )
-
-        # Get registration data
-        registration_data = flow_data["data"]
         firstname = registration_data.get("firstname")
         lastname = registration_data.get("lastname")
 

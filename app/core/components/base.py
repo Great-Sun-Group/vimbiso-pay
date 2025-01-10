@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional, Type, Union
 
-from core.config.interface import StateManagerInterface
+from core.state.interface import StateManagerInterface
 from core.utils.error_types import ValidationResult
 from core.utils.exceptions import ComponentException
 
@@ -180,9 +180,14 @@ class Component:
             awaiting: Whether component is awaiting input
         """
         if self.state_manager:
-            self.state_manager.update_flow_data({
-                "awaiting_input": awaiting
-            })
+            current = self.state_manager.get_current_state()
+            self.state_manager.update_current_state(
+                path=current.get("path", ""),
+                component=current.get("component", ""),
+                data=current.get("data", {}),
+                component_result=current.get("component_result"),
+                awaiting_input=awaiting
+            )
 
     def update_state(self, value: Any, validation_result: ValidationResult) -> None:
         """Update component state with standardized validation tracking

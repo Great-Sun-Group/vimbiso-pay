@@ -66,9 +66,9 @@ class UpgradeMembertierApiCall(ApiComponent):
                 details={"error": error}
             )
 
-        # Get action data for flow
-        flow_data = self.state_manager.get_flow_state()
-        action_data = flow_data.get("action", {})
+        # Get action data from component data
+        component_data = self.state_manager.get_component_data()
+        action_data = component_data.get("action", {})
 
         return ValidationResult.success({
             "action": action_data,

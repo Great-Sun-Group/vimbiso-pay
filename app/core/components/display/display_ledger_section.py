@@ -32,15 +32,13 @@ class DisplayLedgerSection(Component):
             )
 
         # Get ledger data from state
-        flow_data = self.state_manager.get_flow_state()
-        if not flow_data or "data" not in flow_data:
+        ledger_data = self.state_manager.get_component_data()
+        if not ledger_data:
             return ValidationResult.failure(
                 message="No ledger data found",
-                field="flow_data",
+                field="component_data",
                 details={"component": "display_ledger"}
             )
-
-        ledger_data = flow_data["data"]
         entries = ledger_data.get("entries", [])
         if not entries:
             return ValidationResult.failure(

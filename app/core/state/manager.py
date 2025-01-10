@@ -455,3 +455,7 @@ class StateManager(StateManagerInterface):
 
         dashboard = self.get_dashboard_data()
         return dashboard.get("member_id")
+
+    def is_mock_testing(self) -> bool:
+        """Check if mock testing mode is enabled for this request"""
+        return bool(self.get("mock_testing"))

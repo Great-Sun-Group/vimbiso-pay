@@ -53,17 +53,14 @@ class CreateCredexApiCall(ApiComponent):
                 details={"component": "create_credex"}
             )
 
-        # Get offer details from flow data
-        flow_data = self.state_manager.get_flow_state()
-        if not flow_data or "data" not in flow_data:
+        # Get offer details from component data
+        offer_data = self.state_manager.get_component_data()
+        if not offer_data:
             return ValidationResult.failure(
                 message="No offer data found",
-                field="flow_data",
+                field="component_data",
                 details={"component": "create_credex"}
             )
-
-        # Get offer details
-        offer_data = flow_data["data"]
         amount = offer_data.get("amount")
         handle = offer_data.get("handle")
 
@@ -104,9 +101,9 @@ class CreateCredexApiCall(ApiComponent):
                 details={"error": error}
             )
 
-        # Get action data for flow
-        flow_data = self.state_manager.get_flow_state()
-        action_data = flow_data.get("action", {})
+        # Get action data from component data
+        component_data = self.state_manager.get_component_data()
+        action_data = component_data.get("action", {})
 
         return ValidationResult.success({
             "action": action_data,

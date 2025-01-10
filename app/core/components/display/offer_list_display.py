@@ -45,8 +45,7 @@ class OfferListDisplay(DisplayComponent):
                 )
 
             # Get context to determine which offers to check
-            flow_data = self.state_manager.get_flow_state()
-            context = flow_data.get("context") if flow_data else None
+            context = self.state_manager.get_path()
             if not context:
                 return ValidationResult.failure(
                     message="No context found",
@@ -70,12 +69,13 @@ class OfferListDisplay(DisplayComponent):
             selection = value.get("text", "").strip()
 
             if selection in valid_ids:
-                # Update state with selection using standard API key
-                self.state_manager.update_state({
-                    "flow_data": {
-                        "data": {"credex_id": selection}
-                    }
-                })
+                # Update state with selection
+                current = self.state_manager.get_current_state()
+                self.state_manager.update_current_state(
+                    path=current.get("path", ""),
+                    component=current.get("component", ""),
+                    data={"credex_id": selection}
+                )
                 # Release our hold since we got valid selection
                 self.set_awaiting_input(False)  # Release our own hold
                 return ValidationResult.success({"selection": selection})
@@ -95,16 +95,8 @@ class OfferListDisplay(DisplayComponent):
                 details={"component": "offer_list"}
             )
 
-        # Get offers based on context
-        flow_data = self.state_manager.get_flow_state()
-        if not flow_data:
-            return ValidationResult.failure(
-                message="No flow data found",
-                field="flow_data",
-                details={"component": "offer_list"}
-            )
-
-        context = flow_data.get("context")
+        # Get context for determining which offers to show
+        context = self.state_manager.get_path()
         if not context:
             return ValidationResult.failure(
                 message="No context found",

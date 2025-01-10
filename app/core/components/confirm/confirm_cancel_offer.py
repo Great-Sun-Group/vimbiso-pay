@@ -31,16 +31,14 @@ class ConfirmCancelOffer(ConfirmBase):
                 details={"component": "confirm_cancel_offer"}
             )
 
-        # Get offer data from state
-        flow_data = self.state_manager.get_flow_state()
-        if not flow_data or "data" not in flow_data:
+        # Get offer data from component data
+        offer_data = self.state_manager.get_component_data()
+        if not offer_data:
             return ValidationResult.failure(
                 message="No offer data found",
-                field="flow_data",
+                field="component_data",
                 details={"component": "confirm_cancel_offer"}
             )
-
-        offer_data = flow_data["data"]
         credex_id = offer_data.get("credex_id")
         amount = offer_data.get("amount")
         counterparty = offer_data.get("counterparty")

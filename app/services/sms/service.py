@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from core.messaging.base import BaseMessagingService
 from core.messaging.types import Message, MessageRecipient
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +23,8 @@ class SMSMessagingService(BaseMessagingService):
 
     def _is_mock_mode(self) -> bool:
         """Check if service is in mock testing mode"""
-        return hasattr(self, 'state_manager') and self.state_manager.get('mock_testing')
+        from django.conf import settings
+        return settings.MOCK_TESTING
 
     def _send_message(self, message: Message) -> Message:
         """Send message through SMS API or mock

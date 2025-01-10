@@ -178,7 +178,7 @@ class WhatsAppMessagingService(BaseMessagingService):
 
     def _is_mock_mode(self) -> bool:
         """Check if service is in mock testing mode"""
-        return hasattr(self, 'state_manager') and self.state_manager.get('mock_testing')
+        return hasattr(self, 'state_manager') and self.state_manager.is_mock_testing()
 
     def send_message(self, message: Message) -> Message:
         """Send a message through WhatsApp Cloud API or mock.

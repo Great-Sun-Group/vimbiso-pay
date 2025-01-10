@@ -73,9 +73,11 @@ def get_next_component(
         Tuple[str, str]: Next path/Component
     """
     # Check if component is awaiting input
-    flow_state = state_manager.get_flow_state()
-    if flow_state.get("awaiting_input"):
+    if state_manager.is_awaiting_input():
         return path, component  # Stay at current step until input received
+
+    # Get component result for branching
+    component_result = state_manager.get_component_result()
 
     # Branch based on current path
     match (path, component):
@@ -84,9 +86,9 @@ def get_next_component(
         case ("login", "Greeting"):
             return "login", "LoginApiCall"  # Check if user exists
         case ("login", "LoginApiCall"):
-            if flow_state.get("component_result") == "send_dashboard":
+            if component_result == "send_dashboard":
                 return "account", "AccountDashboard"  # Send account dashboard
-            if flow_state.get("component_result") == "start_onboarding":
+            if component_result == "start_onboarding":
                 return "onboard", "Welcome"  # Send first message in onboarding path
 
         # Onboard path
@@ -103,17 +105,17 @@ def get_next_component(
 
         # Account dashboard path
         case ("account", "AccountDashboard"):
-            if flow_state.get("component_result") == "offer_secured":
+            if component_result == "offer_secured":
                 return "offer_secured", "AmountInput"  # Start collecting offer details with amount/denom
-            if flow_state.get("component_result") == "accept_offer":
+            if component_result == "accept_offer":
                 return "accept_offer", "OfferListDisplay"  # List pending incoming offers to accept
-            if flow_state.get("component_result") == "decline_offer":
+            if component_result == "decline_offer":
                 return "decline_offer", "OfferListDisplay"  # List pending incoming offers to decline
-            if flow_state.get("component_result") == "cancel_offer":
+            if component_result == "cancel_offer":
                 return "cancel_offer", "OfferListDisplay"  # List pending outgoing offers to cancel
-            if flow_state.get("component_result") == "view_ledger":
+            if component_result == "view_ledger":
                 return "view_ledger", "Greeting"  # Send random greeting while api call processes
-            if flow_state.get("component_result") == "upgrade_membertier":
+            if component_result == "upgrade_membertier":
                 return "upgrade_membertier", "ConfirmUpgrade"  # Send upgrade confirmation message
 
         # Offer secured credex path
@@ -160,18 +162,18 @@ def get_next_component(
         case ("view_ledger", "Greeting"):
             return "view_ledger", "LedgerManagement"  # Manages fetching and displaying ledger and selecting a credex
         case ("view_ledger", "LedgerManagement"):
-            if flow_state.get("component_result") == "view_credex":
+            if component_result == "view_credex":
                 return "view_credex", "Greeting"  # Send random greeting while api call processes
-            if flow_state.get("component_result") == "send_account_dashboard":
+            if component_result == "send_account_dashboard":
                 return "account", "AccountDashboard"  # Return to account dashboard
 
         # View credex path
         case ("view_credex", "Greeting"):
             return "view_credex", "GetAndDisplayCredex"  # Fetches and displays a credex
         case ("view_credex", "GetAndDisplayCredex"):
-            if flow_state.get("component_result") == "account_dashboard":
+            if component_result == "account_dashboard":
                 return "account", "AccountDashboard"  # Return to account dashboard
-            if flow_state.get("component_result") == "view_counterparty":  # Placeholder for future implementation
+            if component_result == "view_counterparty":  # Placeholder for future implementation
                 return "account", "AccountDashboard"  # Return to account dashboard for now since this won't actually happen
 
         # Ugrade member tier path

@@ -167,3 +167,12 @@ class StateManagerInterface(ABC):
             Member ID string if authenticated with valid token
         """
         pass
+
+    @abstractmethod
+    def is_mock_testing(self) -> bool:
+        """Check if mock testing mode is enabled for this request
+
+        Returns:
+            bool: True if mock testing mode is enabled
+        """
+        pass

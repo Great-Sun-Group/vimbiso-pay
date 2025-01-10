@@ -110,18 +110,32 @@ class AccountDashboard(DisplayComponent):
                 # Get account info text
                 account_info = self.to_message_content(formatted_data)
 
-                # Get interactive menu with active account data for pending counts
-                from core.messaging.formatters.menus import WhatsAppMenus
-                menu = WhatsAppMenus.get_interactive_menu(active_account)
-
-                # Combine account info with menu in a single interactive message
+                # Create menu options aligned with flow paths
                 from core.messaging.types import (InteractiveContent,
-                                                  InteractiveType)
+                                                  InteractiveType,
+                                                  Section)
+
+                # Define menu options matching headquarters.py flow paths
+                menu_options = [
+                    {"id": "offer_secured", "title": "Create Offer"},
+                    {"id": "accept_offer", "title": "Accept Offer"},
+                    {"id": "decline_offer", "title": "Decline Offer"},
+                    {"id": "cancel_offer", "title": "Cancel Offer"},
+                    {"id": "view_ledger", "title": "View Ledger"},
+                    {"id": "upgrade_membertier", "title": "Upgrade Tier"}
+                ]
+
+                # Create menu content
                 menu_content = InteractiveContent(
                     interactive_type=InteractiveType.LIST,
-                    body=account_info,  # Just use account info as body
-                    sections=menu["action"]["sections"],
-                    button_text=menu["action"]["button"]
+                    body=account_info,
+                    sections=[
+                        Section(
+                            title="Account Actions",
+                            rows=menu_options
+                        )
+                    ],
+                    button_text="Select Action"
                 )
                 try:
                     self.state_manager.messaging.send_message(
@@ -142,25 +156,43 @@ class AccountDashboard(DisplayComponent):
 
             # Input Phase - When we get a response
             from core.messaging.formatters.menus import WhatsAppMenus
-            flow_data = self.state_manager.get_flow_data()
-            message = flow_data.get("message", {})
-            if WhatsAppMenus.is_valid_option(message):
-                # For interactive messages, extract selection ID
-                if message.get("type") == "interactive":
-                    interactive = message.get("interactive", {})
-                    if interactive.get("type") == "list_reply":
-                        selection = interactive.get("list_reply", {}).get("id")
-                        if selection:
-                            # Update selection in state and release our hold on the flow
-                            self.state_manager.update_flow_data({"selection": selection})
-                            self.set_awaiting_input(False)  # Release our own hold
+            component_data = self.state_manager.get_component_data()
+            message = component_data.get("message", {})
+
+            # For interactive messages, extract selection ID
+            if (message.get("type") == "interactive" and
+               WhatsAppMenus.is_valid_option(message)):
+                interactive = message.get("interactive", {})
+                if interactive.get("type") == "list_reply":
+                    selection = interactive.get("list_reply", {}).get("id")
+                    if selection:
+                        # Validate selection matches expected flow paths
+                        valid_paths = [
+                            "offer_secured",
+                            "accept_offer",
+                            "decline_offer",
+                            "cancel_offer",
+                            "view_ledger",
+                            "upgrade_membertier"
+                        ]
+
+                        if selection in valid_paths:
+                            # Set component_result to selected path and release flow
+                            current = self.state_manager.get_current_state()
+                            self.state_manager.update_current_state(
+                                path=current.get("path", ""),
+                                component=current.get("component", ""),
+                                data=current.get("data", {}),
+                                component_result=selection,
+                                awaiting_input=False
+                            )
                             return ValidationResult.success(True)
 
             # Invalid selection, return failure but stay on component
             return ValidationResult.failure(
                 message="Invalid selection. Please choose from the available options.",
                 field="selection",
-                details={"component": "account_dashboard"}
+                details={"component": self.type}
             )
 
         except Exception as e:

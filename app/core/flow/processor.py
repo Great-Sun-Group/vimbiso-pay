@@ -69,18 +69,19 @@ class FlowProcessor:
                     (not current_component or not current_component.lower().endswith('input'))):
                 # Start login flow
                 self.state_manager.clear_all_state()
-                self.state_manager.update_flow_state(
-                    context="login",
+                self.state_manager.update_current_state(
+                    path="login",
                     component="Greeting"
                 )
 
             # Get current flow state
-            flow_state = self.state_manager.get("flow_data") or {
-                "context": "login",
-                "component": "Greeting"
+            current_state = self.state_manager.get_current_state() or {
+                "path": "login",
+                "component": "Greeting",
+                "data": {}
             }
-            context = flow_state.get("context")
-            component = flow_state.get("component")
+            context = current_state.get("path")
+            component = current_state.get("component")
 
             # Process through flow framework
             from .headquarters import (activate_component,
@@ -88,7 +89,7 @@ class FlowProcessor:
 
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Processing message in flow: {context}.{component}")
-                logger.debug(f"Flow state: {flow_state}")
+                logger.debug(f"Flow state: {current_state}")
 
             # Pass message data to component for processing
             result = activate_component(component, self.state_manager)
@@ -113,14 +114,14 @@ class FlowProcessor:
                 logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
 
                 # Update flow state
-                current_flow_data = self.state_manager.get_flow_data()
+                current_data = self.state_manager.get_component_data()
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Updating flow state: {current_flow_data}")
+                    logger.debug(f"Updating flow state: {current_data}")
 
-                self.state_manager.update_flow_state(
-                    context=next_context,
+                self.state_manager.update_current_state(
+                    path=next_context,
                     component=next_component,
-                    data=current_flow_data
+                    data=current_data
                 )
 
                 # Activate next component
