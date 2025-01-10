@@ -31,8 +31,8 @@ class DisplayLedgerSection(Component):
                 details={"component": "display_ledger"}
             )
 
-        # Get ledger data from state
-        ledger_data = self.state_manager.get_component_data()
+        # Get ledger data from state (components can store their own data in component_data.data)
+        ledger_data = self.state_manager.get_state_value("component_data", {})
         if not ledger_data:
             return ValidationResult.failure(
                 message="No ledger data found",

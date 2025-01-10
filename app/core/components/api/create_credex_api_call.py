@@ -1,7 +1,8 @@
 """Create Credex API call component
 
 This component handles creating a new Credex offer through the API.
-Dashboard data is the source of truth for member state.
+Dashboard data is schema-validated at the state manager level.
+Components can store their own data in component_data.data.
 """
 
 from typing import Any, Dict
@@ -53,8 +54,8 @@ class CreateCredexApiCall(ApiComponent):
                 details={"component": "create_credex"}
             )
 
-        # Get offer details from component data
-        offer_data = self.state_manager.get_component_data()
+        # Get offer details from component data (components can store their own data in component_data.data)
+        offer_data = self.state_manager.get_state_value("component_data", {})
         if not offer_data:
             return ValidationResult.failure(
                 message="No offer data found",
@@ -101,8 +102,8 @@ class CreateCredexApiCall(ApiComponent):
                 details={"error": error}
             )
 
-        # Get action data from component data
-        component_data = self.state_manager.get_component_data()
+        # Get action data from component data (schema-validated except for data dict)
+        component_data = self.state_manager.get_state_value("component_data", {})
         action_data = component_data.get("action", {})
 
         return ValidationResult.success({

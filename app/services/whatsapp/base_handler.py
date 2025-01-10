@@ -1,15 +1,21 @@
-"""Base handler enforcing SINGLE SOURCE OF TRUTH"""
+"""WhatsApp message handler base implementation
+
+This module provides base handlers for WhatsApp message formatting and error handling.
+All state access is through the state manager which protects fields through schema
+validation. Only component_data.data is unvalidated to give components freedom.
+"""
+
 import logging
-from typing import Any
 
 from core.error.exceptions import ComponentException, SystemException
 from core.messaging.messages import INVALID_ACTION
+from core.state.interface import StateManagerInterface
 from .types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 
 
-def handle_default_action(state_manager: Any) -> WhatsAppMessage:
+def handle_default_action(state_manager: StateManagerInterface) -> WhatsAppMessage:
     """Handle default or unknown actions
 
     Args:
@@ -28,7 +34,7 @@ def handle_default_action(state_manager: Any) -> WhatsAppMessage:
                 value="None"
             )
 
-        # Get channel info through proper method
+        # Get channel info (schema validated)
         channel_id = state_manager.get_channel_id()
 
         # Create error response
@@ -96,7 +102,7 @@ def format_synopsis(synopsis: str, style: str = None) -> str:
     return formatted_synopsis.strip()
 
 
-def get_response_template(state_manager: Any, message_text: str) -> WhatsAppMessage:
+def get_response_template(state_manager: StateManagerInterface, message_text: str) -> WhatsAppMessage:
     """Get a basic WhatsApp message template
 
     Args:
@@ -124,7 +130,7 @@ def get_response_template(state_manager: Any, message_text: str) -> WhatsAppMess
                 value="None"
             )
 
-        # Get channel info through proper methods
+        # Get channel info (schema validated)
         channel_id = state_manager.get_channel_id()
 
         # Create template response
@@ -160,7 +166,7 @@ def get_response_template(state_manager: Any, message_text: str) -> WhatsAppMess
         )
 
 
-def format_error_response(state_manager: Any, error_message: str) -> WhatsAppMessage:
+def format_error_response(state_manager: StateManagerInterface, error_message: str) -> WhatsAppMessage:
     """Format an error response message
 
     Args:
@@ -183,7 +189,7 @@ def format_error_response(state_manager: Any, error_message: str) -> WhatsAppMes
         if not error_message:
             error_message = "An unknown error occurred"
 
-        # Get channel info through proper methods
+        # Get channel info (schema validated)
         channel_id = state_manager.get_channel_id()
 
         # Create error response

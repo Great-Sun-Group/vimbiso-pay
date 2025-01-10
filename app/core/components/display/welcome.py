@@ -20,16 +20,24 @@ class Welcome(DisplayComponent):
     def validate_display(self, value: Any) -> ValidationResult:
         """Display welcome message with greeting"""
         try:
-            # Send welcome message
+            # Send welcome message with button
             from core.messaging.messages import REGISTER
+            from core.messaging.types import ButtonContent, Button
+
             recipient = get_recipient(self.state_manager)
-            send_result = self.state_manager.messaging.send_text(
+            content = ButtonContent(
+                body=REGISTER,
+                buttons=[Button(id="become_member", title="Become a Member")]
+            )
+            # Set awaiting_input before sending message
+            self.set_awaiting_input(True)
+
+            send_result = self.state_manager.messaging.send_buttons(
                 recipient=recipient,
-                text=REGISTER
+                content=content
             )
 
             if send_result:
-                # Just return success to progress flow
                 return ValidationResult.success()
 
             # Message wasn't sent successfully - track error in state

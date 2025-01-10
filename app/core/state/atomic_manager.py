@@ -1,4 +1,12 @@
-"""Atomic state operations with validation tracking"""
+"""Atomic persistence operations with operation tracking
+
+This module provides atomic operations for persisting schema-validated state.
+It tracks operation attempts, timestamps, and errors in memory only - this is
+separate from the schema validation that happens at the state manager level.
+
+Note: The operation tracking here is for debugging/monitoring purposes and is
+not persisted. Components can store their own data in component_data.data.
+"""
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -10,7 +18,11 @@ logger = logging.getLogger(__name__)
 
 
 class AtomicStateManager:
-    """Atomic state operations with validation tracking"""
+    """Atomic persistence operations with in-memory operation tracking
+
+    Tracks operation attempts, timestamps, and errors in memory for debugging.
+    This is separate from schema validation which happens at state manager level.
+    """
 
     def __init__(self, redis_client):
         """Initialize with Redis client"""
@@ -22,7 +34,11 @@ class AtomicStateManager:
         }
 
     def _track_attempt(self, key: str, operation: str, error: Optional[str] = None) -> Dict[str, Any]:
-        """Track operation attempt with validation state"""
+        """Track operation attempt in memory
+
+        This tracking is for debugging/monitoring only and is separate from
+        the schema validation that happens at the state manager level.
+        """
         # Initialize tracking for key if needed
         if key not in self._validation_state["attempts"]:
             self._validation_state["attempts"][key] = {}
@@ -51,9 +67,10 @@ class AtomicStateManager:
         }
 
     def atomic_get(self, key: str) -> Optional[Dict[str, Any]]:
-        """Get state with validation tracking"""
+        """Get schema-validated state with operation tracking"""
         success, data, error = self.storage.execute_atomic(key, 'get')
-        validation = self._track_attempt(key, "get", error)
+        # Track attempt in memory only
+        self._track_attempt(key, "get", error)
 
         if not success:
             raise SystemException(
@@ -63,15 +80,12 @@ class AtomicStateManager:
                 action="get"
             )
 
-        if data:
-            data["_validation"] = validation
-
         return data
 
     def atomic_set(self, key: str, value: Dict[str, Any], ttl: int = 300) -> None:
-        """Set state with validation tracking"""
-        # Add validation state
-        value["_validation"] = self._track_attempt(key, "set")
+        """Set schema-validated state with operation tracking"""
+        # Track attempt in memory only
+        self._track_attempt(key, "set")
 
         success, _, error = self.storage.execute_atomic(
             key=key,
@@ -90,9 +104,9 @@ class AtomicStateManager:
             )
 
     def atomic_update(self, key: str, value: Dict[str, Any], ttl: int = 300) -> None:
-        """Update state with validation tracking"""
-        # Add validation state
-        value["_validation"] = self._track_attempt(key, "update")
+        """Update schema-validated state with operation tracking"""
+        # Track attempt in memory only
+        self._track_attempt(key, "update")
 
         success, _, error = self.storage.execute_atomic(
             key=key,
@@ -111,7 +125,7 @@ class AtomicStateManager:
             )
 
     def atomic_delete(self, key: str) -> None:
-        """Delete state with validation tracking"""
+        """Delete schema-validated state with operation tracking"""
         success, _, error = self.storage.execute_atomic(key, 'delete')
 
         if not success:

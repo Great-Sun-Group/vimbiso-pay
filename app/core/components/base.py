@@ -2,6 +2,10 @@
 
 This module defines the core Component interfaces that all components extend.
 Each interface handles a specific type of component with clear validation patterns.
+
+Components have freedom to store their own data in component_data.data which is
+not validated by the schema. All other state fields are protected by schema
+validation at the state manager level.
 """
 
 import logging
@@ -176,12 +180,16 @@ class Component:
     def set_awaiting_input(self, awaiting: bool) -> None:
         """Update component's awaiting input state
 
+        Components can store their own data in component_data.data which is not
+        validated by the schema. The awaiting_input field and other component_data
+        fields are schema-validated.
+
         Args:
             awaiting: Whether component is awaiting input
         """
         if self.state_manager:
-            current = self.state_manager.get_current_state()
-            self.state_manager.update_current_state(
+            current = self.state_manager.get_state_value("component_data", {})
+            self.state_manager.update_component_data(
                 path=current.get("path", ""),
                 component=current.get("component", ""),
                 data=current.get("data", {}),
@@ -191,6 +199,10 @@ class Component:
 
     def update_state(self, value: Any, validation_result: ValidationResult) -> None:
         """Update component state with standardized validation tracking
+
+        This updates the component's internal validation state, which is separate
+        from the schema validation that happens at the state manager level.
+        Components can store their own data in component_data.data.
 
         Args:
             value: New value

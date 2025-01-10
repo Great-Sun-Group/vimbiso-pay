@@ -101,8 +101,8 @@ def get_headers(state_manager: StateManagerInterface, url: str) -> Dict[str, str
             logger.error("Invalid channel structure")
             return headers
 
-        # Get auth token from component data
-        component_data = state_manager.get_component_data()
+        # Get auth token from component data (components can store their own data in component_data.data)
+        component_data = state_manager.get_state_value("component_data", {})
         action_data = component_data.get("action", {})
         jwt_token = action_data.get("details", {}).get("token")
 

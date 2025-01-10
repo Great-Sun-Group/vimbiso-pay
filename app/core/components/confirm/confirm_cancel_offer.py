@@ -31,8 +31,8 @@ class ConfirmCancelOffer(ConfirmBase):
                 details={"component": "confirm_cancel_offer"}
             )
 
-        # Get offer data from component data
-        offer_data = self.state_manager.get_component_data()
+        # Get offer data from component data (components can store their own data in component_data.data)
+        offer_data = self.state_manager.get_state_value("component_data", {})
         if not offer_data:
             return ValidationResult.failure(
                 message="No offer data found",

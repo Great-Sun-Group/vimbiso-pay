@@ -1,7 +1,14 @@
 """API response management
 
-This module handles validation and state injection of API responses.
-All API responses contain both dashboard and action sections that flow through here.
+This module handles state updates from API responses. All API responses contain both
+dashboard and action sections that flow through here.
+
+The state updates are protected by schema validation:
+- dashboard: Member state after operation (accounts, profile, etc.)
+- action: Operation results and details
+- auth: Authentication state when token present
+
+Components can still store their own unvalidated data in component_data.data.
 """
 
 import logging
@@ -19,63 +26,53 @@ def update_state_from_response(
     api_response: Dict[str, Any],
     state_manager: StateManagerInterface
 ) -> Tuple[bool, Optional[str]]:
-    """Update state from API response
+    """Update core state from API response
 
     This is the main entry point for handling API responses.
     All API responses should route through here to maintain consistent state.
 
+    The updates will be validated against the state schema:
+    - dashboard: Must match dashboard schema (member info, accounts, etc.)
+    - action: Must match action schema (id, type, timestamp, etc.)
+    - auth: Must match auth schema when token present
+
+    Components remain free to store their own data in component_data.data
+    which is not validated by the schema.
+
     Args:
         api_response: Full API response containing dashboard and action data
         state_manager: State manager instance
-        auth_token: Optional auth token from response
 
     Returns:
         Tuple[bool, Optional[str]]: Success flag and optional error message
     """
     try:
-        # Validate response format
-        if not isinstance(api_response, dict):
+        # Extract data section
+        data = api_response.get("data", {})
+        if not isinstance(data, dict):
             raise FlowException(
-                message="Invalid API response format",
+                message="Invalid API response format - data must be an object",
                 step="api_response",
                 action="validate_response",
                 data={"response": api_response}
             )
 
-        # Get and validate dashboard data
-        dashboard_data = api_response.get("data", {}).get("dashboard")
-        if not dashboard_data:
-            raise FlowException(
-                message="Missing dashboard data",
-                step="api_response",
-                action="validate_dashboard",
-                data={"response": api_response}
-            )
+        # Prepare state update (will be schema validated by state manager)
+        state_update = {}
 
-        # Validate member data exists
-        if not dashboard_data.get("member", {}).get("memberID"):
-            raise FlowException(
-                message="Missing member ID in dashboard",
-                step="api_response",
-                action="validate_member",
-                data={"dashboard": dashboard_data}
-            )
+        # Dashboard section (member state)
+        if "dashboard" in data:
+            state_update["dashboard"] = data["dashboard"]
 
-        # Get and validate action data
-        action_data = api_response.get("data", {}).get("action")
-        if not action_data:
-            raise FlowException(
-                message="Missing action data",
-                step="api_response",
-                action="validate_action",
-                data={"response": api_response}
-            )
+        # Action section (operation results)
+        if "action" in data:
+            state_update["action"] = data["action"]
 
-        # Update state with API response data
-        state_update = {
-            "dashboard": dashboard_data,  # Complete dashboard data from API
-            "action": action_data  # Complete action data from API
-        }
+            # Auth token if present in action details
+            if data["action"].get("details", {}).get("token"):
+                state_update["auth"] = {
+                    "token": data["action"]["details"]["token"]
+                }
 
         try:
             if logger.isEnabledFor(logging.DEBUG):

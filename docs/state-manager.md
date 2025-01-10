@@ -17,14 +17,14 @@ core
 
 ### Implementation Layers
 1. **StateManager** (manager.py)
-   - High-level interface and validation
-   - Protected state management
+   - High-level interface through get_state_value()
+   - Schema validation for all fields except component_data.data
    - Component state coordination
 
 2. **AtomicStateManager** (atomic_manager.py)
    - Transaction handling
-   - Validation tracking
    - Redis interface
+   - Operation tracking (in memory only)
 
 3. **Redis Layer** (persistence/)
    - Atomic operations (redis_operations.py)
@@ -33,109 +33,119 @@ core
 
 ## Core Principles
 
-1. **Flow State Management**
-- headquarters.py manages flow through state
-- Components update state with results
-- Flow decisions based on state
-- Clear state boundaries
-- Standard validation
+1. **Schema-Based Validation**
+- All state fields protected by schema validation
+- Only component_data.data is unvalidated
+- Components have freedom in their data dict
+- Protection through validation, not access control
 
-2. **Single Source of Truth**
-- Protected state accessed through dedicated methods:
-  * Channel info: `get_channel_id()`, `get_channel_type()`
-  * Dashboard data: `get_dashboard_data()`
-  * Action data: `get_action_data()`
-  * Auth state: Through validation utilities
-- Messaging service accessed through `state_manager.messaging`
-- NO direct state access or passing
+2. **State Access Pattern**
+- All state access through get_state_value():
+  * Channel info: get_state_value("channel")
+  * Dashboard data: get_state_value("dashboard")
+  * Action data: get_state_value("action")
+  * Component data: get_state_value("component_data")
+- Messaging service accessed through state_manager.messaging
+- NO direct state access or get_component_data()
 
 3. **State Persistence**
 - Redis as persistent storage
 - Atomic operations for consistency
-- AOF persistence for durability
 - Transaction handling for safety
 - NO direct Redis access
-- NO manual persistence
+- NO debug state persistence (validation, metadata)
 
-4. **Component State Integration**
-- Components handle their own state:
-  * API calls through `make_api_request`
-  * Message sending through `state_manager.messaging`
-  * Error handling through `ErrorHandler`
-  * State updates with validation tracking
-- Clear boundaries between components:
-  * Display components -> Read-only state access
-  * Input components -> Validated state updates
-  * API components -> State updates through handlers
-  * Confirm components -> Gate for user confirmation
+4. **Component Responsibilities**
+- Schema validation protects core state structure
+- Components validate their specific needs:
+  * Display components -> Validate display requirements
+  * Input components -> Validate user input
+  * API components -> Validate API operations
+  * Confirm components -> Validate user confirmations
+- Components handle their operations:
+  * API calls through make_api_request
+  * Message sending through state_manager.messaging
+  * Error handling through ErrorHandler
+  * Free to store any data in component_data.data
 
 ## State Structure
 
 ```python
+# Core State Structure (all fields schema-validated except component_data.data)
 {
-    # Protected Core State (only updated through utilities)
     "channel": {              # Channel info
         "type": str,         # Channel type (e.g., "whatsapp")
         "identifier": str    # Channel ID
     },
-    "dashboard": dict,        # Dashboard state (API-sourced)
-    "action": dict,          # Action state (API-sourced)
     "auth": {                # Auth state
-        "token": str        # JWT token
+        "token": str         # JWT token
     },
-
-    # Flow/Component State
-    "current": {
-        "path": str,         # Current flow path
-        "component": str,    # Active component
-        "awaiting_input": bool,  # True while waiting for input
-        "component_result": str,  # For flow branching
-        "data": dict         # Component-specific data
-    },
-
-    # Validation
-    "validation": {
-        "attempts": dict,    # Attempts per operation
-        "history": [         # Validation history
+    "dashboard": {           # Dashboard state (API-sourced)
+        "member": {          # Member info
+            "memberID": str,
+            "memberTier": int,
+            "firstname": str,
+            "lastname": str,
+            "memberHandle": str,
+            "defaultDenom": str,
+            # Optional fields
+            "remainingAvailableUSD": float
+        },
+        "accounts": [        # Account list
             {
-                "operation": str,
-                "component": str,
-                "timestamp": str,
-                "success": bool,
-                "error": Optional[str]
+                "accountID": str,
+                "accountName": str,
+                "accountHandle": str,
+                "accountType": str,
+                "defaultDenom": str,
+                "isOwnedAccount": bool,
+                # Additional account data...
             }
         ]
     },
+    "action": {              # Action state (API-sourced)
+        "id": str,
+        "type": str,
+        "timestamp": str,
+        "actor": str,
+        "details": dict
+    },
+    "active_account_id": str, # Currently selected account
+    "component_data": {      # Flow state
+        "path": str,         # Current flow path (schema-validated)
+        "component": str,    # Current component (schema-validated)
+        "component_result": str,  # Optional flow branching (schema-validated)
+        "awaiting_input": bool,   # Optional input state (schema-validated)
+        "data": dict,        # Component-specific data (unvalidated)
+    },
+}
 
-    "_metadata": {
-        "initialized_at": str,  # ISO format datetime
-        "updated_at": str      # ISO format datetime
-    }
+# Operation Tracking (in memory only)
+{
+    "attempts": {},      # Track attempts per key
+    "last_attempts": {}, # Track last attempt timestamps
+    "errors": {}        # Track errors per key
 }
 ```
 
 ### State Access and Updates
 
-1. **Protected State**
-   - Access through dedicated methods (get_dashboard_data, etc.)
-   - Updated only through specific utilities
-   - Set during initialization or by API calls
+1. **Schema Validation**
+   - All state fields protected by schema validation
+   - Only component_data.data is unvalidated
+   - Components validate their own data needs
+   - Schema defines required fields and types
 
 2. **Component State**
-   - Access: get_path(), get_component(), get_component_result()
-   - Data: Components manage through get_component_data()
+   - Access: get_state_value("component_data")
+   - Components free to store any data in data dict
    - Updates: Components update own data, headquarters manages flow
+   - Default empty dict prevents None access
 
-3. **Validation**
-   ```python
-   # Get validation status
-   status = state_manager.get_validation_status("operation_name")
-   print(f"Attempts: {status['attempts']}")
-   print(f"Latest: {status['latest']}")
-
-   # Get full history
-   history = state_manager.get_validation_history()
-   ```
+3. **Operation Tracking**
+   - Handled by AtomicStateManager
+   - Kept in memory only
+   - Used for debugging/monitoring
 
 ## Code Organization
 
@@ -147,9 +157,9 @@ The state management code is organized in layers:
    - Makes branching decisions
 
 2. **State Layer** (manager.py, atomic_manager.py)
-   - Manages protected and component state
-   - Handles validation and tracking
+   - Manages state structure
    - Coordinates with Redis layer
+   - Operation tracking in AtomicStateManager
 
 3. **Storage Layer** (persistence/)
    - Handles Redis operations
@@ -160,7 +170,9 @@ Each layer has clear responsibilities and boundaries. Start with flow/manager.py
 
 ## Mistakes to avoid:
 1. DON'T bypass headquarters.py for flow control
-2. DON'T access state directly
-3. DON'T update without validation
-4. DON'T break component boundaries
-5. DON'T mix state responsibilities
+2. DON'T access state directly - use get_state_value()
+3. DON'T break component boundaries
+4. DON'T mix state responsibilities
+5. DON'T persist debug state (validation, metadata)
+6. DON'T validate component_data.data in state validator
+7. DON'T use get_component_data() - removed in favor of get_state_value()

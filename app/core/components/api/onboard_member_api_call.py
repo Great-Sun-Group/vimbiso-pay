@@ -1,9 +1,9 @@
 """Onboard member API call component
 
 Handles member registration:
-- Gets registration data from flow state
-- Creates new member account
-- Updates state with dashboard data
+- Gets registration data from component_data.data (unvalidated)
+- Creates new member account via API
+- Updates state with schema-validated dashboard data
 """
 
 from typing import Any, Dict
@@ -35,8 +35,8 @@ class OnBoardMemberApiCall(ApiComponent):
         - Updates state with dashboard data via handle_api_response
         - Returns success status
         """
-        # Get registration data from component data
-        registration_data = self.state_manager.get_component_data()
+        # Get registration data from component data (components can store their own data in component_data.data)
+        registration_data = self.state_manager.get_state_value("component_data", {})
         if not registration_data:
             return ValidationResult.failure(
                 message="No registration data found",

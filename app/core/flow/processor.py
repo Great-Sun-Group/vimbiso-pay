@@ -2,12 +2,14 @@
 
 This module handles the complete flow processing lifecycle:
 1. Takes channel input and prepares for flow
-2. Manages flow state
-3. Processes through components
+2. Manages state through schema validation
+3. Processes through components (which can store unvalidated data)
 4. Converts results to messages
 
 The flow processor is channel-agnostic and works with any messaging service
-that implements the MessagingServiceInterface.
+that implements the MessagingServiceInterface. All state updates are protected
+by schema validation except for component_data.data which gives components
+freedom to store their own data.
 """
 
 import logging
@@ -16,8 +18,8 @@ from typing import Any, Dict
 from core.error.exceptions import ComponentException
 from core.error.handler import ErrorHandler
 from core.error.types import ValidationResult
-from core.messaging.service import MessagingService
 from core.messaging.messages import INVALID_ACTION
+from core.messaging.service import MessagingService
 from core.messaging.types import Message, TextContent
 from core.messaging.utils import get_recipient
 from core.state.interface import StateManagerInterface
@@ -74,19 +76,19 @@ class FlowProcessor:
                 logger.debug("No valid message text to process")
                 return None
 
-            # Get current flow state
-            current_state = self.state_manager.get_current_state()
+            # Get current flow state (component_data is schema validated except for data dict)
+            current_state = self.state_manager.get_state_value("component_data")
 
             # If no state, only accept greetings
             if not current_state:
                 if message_type == "text" and message_text in GREETING_COMMANDS:
                     # Start login flow
                     self.state_manager.clear_all_state()
-                    self.state_manager.update_current_state(
+                    self.state_manager.update_component_data(
                         path="login",
                         component="Greeting"
                     )
-                    current_state = self.state_manager.get_current_state()
+                    current_state = self.state_manager.get_state_value("component_data")
                 else:
                     # No state and not a greeting - send invalid action message
                     logger.debug("No state found - sending invalid action message")
@@ -99,48 +101,59 @@ class FlowProcessor:
             context = current_state.get("path")
             component = current_state.get("component")
 
-            # Process through flow framework
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Processing message in flow: {context}.{component}")
-                logger.debug(f"Flow state: {current_state}")
+            # Process components until awaiting input or failure
+            while True:
+                logger.info(f"Processing component: {context}.{component}")
+                logger.info(f"Current state: {current_state}")
+                logger.info(f"Awaiting input: {self.state_manager.is_awaiting_input()}")
 
-            # Process current component and get result
-            result = None
-            next_step = process_component(context, component, self.state_manager)
+                # Process current component
+                next_step = process_component(context, component, self.state_manager, depth=0)
+                result = self.state_manager.get_component_result()
 
-            # Get result from state manager for validation
-            result = self.state_manager.get_component_result()
+                logger.info(f"Component processing complete. Next step: {next_step}")
+                logger.info(f"Component result: {result}")
+                logger.info(f"Awaiting input: {self.state_manager.is_awaiting_input()}")
 
-            # Only update state if we have a valid next step
-            if next_step is not None:
+                # Handle component failure
+                if next_step is None:
+                    logger.error(f"Component failed: {context}.{component}")
+                    return None
+
+                # Handle validation error
+                if isinstance(result, ValidationResult) and not result.valid:
+                    content = TextContent(body=result.error.get("message", "Validation failed"))
+                    return Message(recipient=recipient, content=content)
+
+                # Get next step
                 next_context, next_component = next_step
                 if next_context != context or next_component != component:
                     # Log state transition
                     logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
 
                     # Update flow state
-                    current_data = self.state_manager.get_component_data()
+                    current_data = self.state_manager.get_state_value("component_data")
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(f"Updating flow state: {current_data}")
 
-                    self.state_manager.update_current_state(
+                    self.state_manager.update_component_data(
                         path=next_context,
                         component=next_component,
                         data=current_data
                     )
-            else:
-                logger.error(f"Component failed: {context}.{component}")
 
-            # Only return messages for errors, components handle their own messaging
-            if isinstance(result, ValidationResult):
-                if not result.valid:
-                    # Component returned an error
-                    content = TextContent(body=result.error.get("message", "Validation failed"))
-                    return Message(recipient=recipient, content=content)
-                # Component succeeded
-                return None
-            # Non-ValidationResult returns also succeed silently
-            return None
+                    # Return if awaiting input
+                    if self.state_manager.is_awaiting_input():
+                        logger.info("Awaiting input - returning from process_message")
+                        return None
+
+                    # Update for next iteration
+                    context = next_context
+                    component = next_component
+                    current_state = self.state_manager.get_state_value("component_data")
+                else:
+                    # No state change - return
+                    return None
 
         except ComponentException as e:
             # Handle component errors with validation state

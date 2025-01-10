@@ -35,14 +35,19 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def get(self, key: str) -> Any:
-        """Get state value
+    def get_state_value(self, key: str, default: Any = None) -> Any:
+        """Get any state value with default handling
+
+        All state fields except component_data.data are protected by schema validation
+        during updates, not by access control. Components have freedom to store any
+        data in their component_data.data dict.
 
         Args:
-            key: State key
+            key: State key to get
+            default: Default value if not found
 
         Returns:
-            Value for key or None
+            Value or default
         """
         pass
 
@@ -50,14 +55,12 @@ class StateManagerInterface(ABC):
     def update_state(self, updates: Dict[str, Any]) -> None:
         """Update state with validation
 
+        All updates are validated against the schema except for component_data.data
+        which allows components to store arbitrary data.
+
         Args:
             updates: State updates to apply
         """
-        pass
-
-    @abstractmethod
-    def get_current_state(self) -> Dict[str, Any]:
-        """Get current flow/component state"""
         pass
 
     @abstractmethod
@@ -71,11 +74,6 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_component_data(self) -> Dict[str, Any]:
-        """Get component-specific data"""
-        pass
-
-    @abstractmethod
     def get_component_result(self) -> Optional[str]:
         """Get component result for flow branching"""
         pass
@@ -86,7 +84,7 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def update_current_state(
+    def update_component_data(
         self,
         path: str,
         component: str,
@@ -106,25 +104,8 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def clear_current_state(self) -> None:
-        """Clear current flow/component state"""
-        pass
-
-    @abstractmethod
-    def get_validation_history(self) -> list:
-        """Get validation history"""
-        pass
-
-    @abstractmethod
-    def get_validation_status(self, operation: str) -> Dict[str, Any]:
-        """Get validation status for operation
-
-        Args:
-            operation: Operation to get status for
-
-        Returns:
-            Dict with attempts count and latest history entry
-        """
+    def clear_component_data(self) -> None:
+        """Clear flow/component state"""
         pass
 
     @abstractmethod

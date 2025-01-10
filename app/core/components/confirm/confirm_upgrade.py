@@ -1,7 +1,8 @@
 """Confirm upgrade component
 
 This component handles confirming member tier upgrade action.
-Dashboard data is the source of truth for member state.
+Dashboard data is schema-validated at the state manager level.
+Components can store their own data in component_data.data.
 """
 
 from typing import Any, Dict

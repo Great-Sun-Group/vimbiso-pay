@@ -69,8 +69,9 @@ class OfferListDisplay(DisplayComponent):
 
             if selection in valid_ids:
                 # Update state with selection
-                current = self.state_manager.get_current_state()
-                self.state_manager.update_current_state(
+                # Update state with selection (components can store their own data in component_data.data)
+                current = self.state_manager.get_state_value("component_data", {})
+                self.state_manager.update_component_data(
                     path=current.get("path", ""),
                     component=current.get("component", ""),
                     data={"credex_id": selection}

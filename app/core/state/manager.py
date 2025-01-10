@@ -82,15 +82,11 @@ class StateManager(StateManagerInterface):
         # Get channel ID from prefix
         channel_id = self.key_prefix.split(":", 1)[1]
 
-        # Create initial state with metadata
+        # Create initial state
         initial_state = {
             "channel": {
                 "type": "whatsapp",
                 "identifier": channel_id
-            },
-            "_metadata": {
-                "initialized_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat()
             }
         }
 
@@ -133,11 +129,6 @@ class StateManager(StateManagerInterface):
             )
 
         try:
-            # Add metadata to updates
-            updates["_metadata"] = {
-                "updated_at": datetime.utcnow().isoformat()
-            }
-
             # Prepare and validate state update
             prepared_state = StateValidator.prepare_state_update(self, updates)
 
@@ -164,8 +155,8 @@ class StateManager(StateManagerInterface):
             )
             ErrorHandler.handle_error(e, self, error_context)
 
-    def get(self, key: str) -> Any:
-        """Get state value with validation tracking
+    def _get(self, key: str) -> Any:
+        """Internal method to get raw state value
 
         Args:
             key: State key to get
@@ -181,86 +172,51 @@ class StateManager(StateManagerInterface):
                 message="Key must be a non-empty string",
                 component="state_manager",
                 field="key",
-                value=str(key),
-                validation=self.get_validation_status("get")
+                value=str(key)
             )
 
-        # Track validation
-        self._track_validation("get", "state_manager", None)
         return self._state.get(key)
 
-    def get_validation_history(self) -> list:
-        """Get validation history"""
-        validation = self.get("validation") or {}
-        return validation.get("history", [])
+    # State access - protection through schema validation, not access control
+    def get_state_value(self, key: str, default: Any = None) -> Any:
+        """Get any state value with default handling
 
-    def get_validation_status(self, operation: str) -> Dict[str, Any]:
-        """Get validation status for operation
+        All state fields except component_data.data are protected by schema validation
+        during updates, not by access control. Components have freedom to store any
+        data in their component_data.data dict.
 
         Args:
-            operation: Operation to get status for
+            key: State key to get
+            default: Default value if not found
 
         Returns:
-            Dict with attempts count and latest history entry
+            Value or default
         """
-        validation = self.get("validation") or {}
-        attempts = validation.get("attempts", {}).get(operation, 0)
+        return self._get(key) or default
 
-        # Get latest history entry for operation
-        history = validation.get("history", [])
-        latest = next(
-            (entry for entry in reversed(history) if entry["operation"] == operation),
-            None
-        )
-
-        return {
-            "attempts": attempts,
-            "latest": latest
-        }
-
-    # Flow state methods
-
-    # Protected state access
-    def get_dashboard_data(self) -> Dict[str, Any]:
-        """Get dashboard state (API-sourced)"""
-        return self.get("dashboard") or {}
-
-    def get_action_data(self) -> Dict[str, Any]:
-        """Get action state (API-sourced)"""
-        return self.get("action") or {}
-
-    # Flow/Component state access
-    def get_current_state(self) -> Dict[str, Any]:
-        """Get current flow/component state"""
-        return self.get("current") or {}
-
+    # Convenience methods for common state access
     def get_path(self) -> Optional[str]:
         """Get current flow path"""
-        current = self.get_current_state()
-        return current.get("path")
+        component_data = self.get_state_value("component_data", {})
+        return component_data.get("path")
 
     def get_component(self) -> Optional[str]:
         """Get current component"""
-        current = self.get_current_state()
-        return current.get("component")
+        component_data = self.get_state_value("component_data", {})
+        return component_data.get("component")
 
     def get_component_result(self) -> Optional[str]:
         """Get component result for flow branching"""
-        current = self.get_current_state()
-        return current.get("component_result")
-
-    def get_component_data(self) -> Dict[str, Any]:
-        """Get component-specific data"""
-        current = self.get_current_state()
-        return current.get("data", {})
+        component_data = self.get_state_value("component_data", {})
+        return component_data.get("component_result")
 
     def is_awaiting_input(self) -> bool:
         """Check if component is waiting for input"""
-        current = self.get_current_state()
-        return current.get("awaiting_input", False)
+        component_data = self.get_state_value("component_data", {})
+        return component_data.get("awaiting_input", False)
 
-    # State updates
-    def update_current_state(
+    # Component state updates
+    def update_component_data(
         self,
         path: str,
         component: str,
@@ -270,10 +226,13 @@ class StateManager(StateManagerInterface):
     ) -> None:
         """Update current flow/component state with validation tracking
 
+        The component_data.data field is the only part of state not protected by
+        schema validation, giving components freedom to store their own data.
+
         Args:
             path: Current flow path
             component: Current component
-            data: Optional component data
+            data: Optional component data (unvalidated)
             component_result: Optional result for flow branching
             awaiting_input: Whether component is waiting for input
 
@@ -283,15 +242,12 @@ class StateManager(StateManagerInterface):
         try:
             # Preserve existing component data if not provided
             if data is None:
-                current = self.get_current_state()
-                data = current.get("data", {})
-
-            # Track validation
-            self._track_validation("update_current", component)
+                component_data = self.get_state_value("component_data", {})
+                data = component_data.get("data", {})
 
             # Update state
             self.update_state({
-                "current": {
+                "component_data": {
                     "path": path,
                     "component": component,
                     "data": data,
@@ -313,32 +269,20 @@ class StateManager(StateManagerInterface):
             )
             ErrorHandler.handle_error(e, self, error_context)
 
-    def clear_current_state(self) -> None:
-        """Clear current flow/component state"""
-        self.update_state({"current": None})
+    def clear_component_data(self) -> None:
+        """Clear component state including unvalidated data"""
+        self.update_state({"component_data": None})
 
     def clear_all_state(self) -> None:
-        """Clear all state except protected core state"""
+        """Clear all state except schema-validated core fields"""
         try:
-            # Preserve protected state
-            channel = self.get("channel")
-            dashboard = self.get("dashboard")
-            action = self.get("action")
-            auth = self.get("auth")
-
-            # Reset to initial state
+            # Reset to initial state preserving core fields
+            # These are protected by schema validation during updates
             self._state = {
-                # Protected state
-                "channel": channel,
-                "dashboard": dashboard,
-                "action": action,
-                "auth": auth,
-
-                # Reset metadata
-                "_metadata": {
-                    "initialized_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat()
-                }
+                "channel": self.get_state_value("channel", {}),
+                "dashboard": self.get_state_value("dashboard", {}),
+                "action": self.get_state_value("action", {}),
+                "auth": self.get_state_value("auth", {})
             }
 
             # Persist to Redis
@@ -358,7 +302,7 @@ class StateManager(StateManagerInterface):
             )
             ErrorHandler.handle_error(e, self, error_context)
 
-    # Channel methods
+    # Channel methods with required field validation
 
     def get_channel_id(self) -> str:
         """Get channel identifier
@@ -367,10 +311,10 @@ class StateManager(StateManagerInterface):
             Channel ID string
 
         Raises:
-            ComponentException: If channel identifier not found
+            ComponentException: If identifier not found in channel data
         """
-        channel = self.get("channel")
-        if not channel or not channel.get("identifier"):
+        channel = self.get_state_value("channel", {})
+        if not channel.get("identifier"):
             raise ComponentException(
                 message="Channel identifier not found",
                 component="state_manager",
@@ -386,10 +330,10 @@ class StateManager(StateManagerInterface):
             Channel type string
 
         Raises:
-            ComponentException: If channel type not found
+            ComponentException: If type not found in channel data
         """
-        channel = self.get("channel")
-        if not channel or not channel.get("type"):
+        channel = self.get_state_value("channel", {})
+        if not channel.get("type"):
             raise ComponentException(
                 message="Channel type not found",
                 component="state_manager",
@@ -398,39 +342,12 @@ class StateManager(StateManagerInterface):
             )
         return channel["type"]
 
-    def _track_validation(self, operation: str, component: str, error: Optional[str] = None) -> None:
-        """Track validation attempt in history
-
-        Args:
-            operation: Operation being validated
-            component: Component performing validation
-            error: Optional error message
-        """
-        validation = self.get("validation") or {"attempts": {}, "history": []}
-
-        # Update attempts
-        if operation not in validation["attempts"]:
-            validation["attempts"][operation] = 0
-        validation["attempts"][operation] += 1
-
-        # Add to history
-        validation["history"].append({
-            "operation": operation,
-            "component": component,
-            "timestamp": datetime.utcnow().isoformat(),
-            "success": error is None,
-            "error": error
-        })
-
-        # Update state
-        self.update_state({"validation": validation})
-
     def is_authenticated(self) -> bool:
         """Check if user is authenticated with valid token"""
         try:
             # Get auth data
-            auth = self.get("auth") or {}
-            dashboard = self.get_dashboard_data()
+            auth = self.get_state_value("auth", {})
+            dashboard = self.get_state_value("dashboard", {})
             jwt_token = auth.get("token")
 
             if not dashboard.get("member_id") or not jwt_token:
@@ -453,9 +370,9 @@ class StateManager(StateManagerInterface):
         if not self.is_authenticated():
             return None
 
-        dashboard = self.get_dashboard_data()
+        dashboard = self.get_state_value("dashboard", {})
         return dashboard.get("member_id")
 
     def is_mock_testing(self) -> bool:
         """Check if mock testing mode is enabled for this request"""
-        return bool(self.get("mock_testing"))
+        return bool(self.get_state_value("mock_testing"))

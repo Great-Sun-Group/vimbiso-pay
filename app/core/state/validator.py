@@ -1,9 +1,7 @@
 """State validation
 
-This module provides validation for:
-- Protected core state
-- Current flow/component state
-- Validation tracking
+This module provides schema validation for state data structure.
+Components handle their own data validation.
 """
 
 from dataclasses import dataclass
@@ -18,211 +16,248 @@ class ValidationResult:
 
 
 class StateValidator:
-    """Validates state structure with clear boundaries"""
+    """Validates state structure against schema"""
 
-    # Protected state fields that can't be modified externally
-    PROTECTED_FIELDS = {
-        "channel",    # Channel info
-        "dashboard",  # Dashboard state
-        "action",   # Action state
-        "auth"      # Auth state
-    }
-
-    # Current state validation rules
-    CURRENT_RULES = {
-        # Required fields
-        "required_fields": {
-            "path": str,      # Flow path
-            "component": str,  # Component name
-            "data": dict     # Component data
+    # State schema defining expected structure
+    STATE_SCHEMA = {
+        # Channel info needed for messaging
+        "channel": {
+            "type": dict,
+            "required": ["type", "identifier"],
+            "fields": {
+                "type": str,
+                "identifier": str
+            }
         },
 
-        # Optional fields with types
-        "optional_fields": {
-            "component_result": (type(None), str),
-            "awaiting_input": bool
+        # Auth state
+        "auth": {
+            "type": dict,
+            "required": ["token"],
+            "fields": {
+                "token": str
+            }
+        },
+
+        # Dashboard data from API
+        "dashboard": {
+            "type": dict,
+            "required": ["member"],
+            "fields": {
+                "member": {
+                    "type": dict,
+                    "required": ["memberID", "memberTier", "firstname", "lastname", "memberHandle", "defaultDenom"],
+                    "fields": {
+                        "memberID": str,
+                        "memberTier": int,
+                        "firstname": str,
+                        "lastname": str,
+                        "memberHandle": str,
+                        "defaultDenom": str,
+                        "remainingAvailableUSD": (type(None), float)
+                    }
+                },
+                "accounts": {
+                    "type": list,
+                    "item_fields": {
+                        "type": dict,
+                        "required": ["accountID", "accountName", "accountHandle", "accountType", "defaultDenom", "isOwnedAccount"],
+                        "fields": {
+                            "accountID": str,
+                            "accountName": str,
+                            "accountHandle": str,
+                            "accountType": str,
+                            "defaultDenom": str,
+                            "isOwnedAccount": bool,
+                            "sendOffersTo": {
+                                "type": dict,
+                                "required": ["memberID", "firstname", "lastname"],
+                                "fields": {
+                                    "memberID": str,
+                                    "firstname": str,
+                                    "lastname": str
+                                }
+                            },
+                            "balanceData": {
+                                "type": dict,
+                                "required": ["securedNetBalancesByDenom", "unsecuredBalancesInDefaultDenom", "netCredexAssetsInDefaultDenom"],
+                                "fields": {
+                                    "securedNetBalancesByDenom": list,
+                                    "unsecuredBalancesInDefaultDenom": {
+                                        "type": dict,
+                                        "required": ["totalPayables", "totalReceivables", "netPayRec"],
+                                        "fields": {
+                                            "totalPayables": str,
+                                            "totalReceivables": str,
+                                            "netPayRec": str
+                                        }
+                                    },
+                                    "netCredexAssetsInDefaultDenom": str
+                                }
+                            },
+                            "pendingInData": {
+                                "type": list,
+                                "item_fields": {
+                                    "type": dict,
+                                    "required": ["credexID", "formattedInitialAmount", "counterpartyAccountName"],
+                                    "fields": {
+                                        "credexID": str,
+                                        "formattedInitialAmount": str,
+                                        "counterpartyAccountName": str,
+                                        "dueDate": (type(None), str),
+                                        "secured": (type(None), bool)
+                                    }
+                                }
+                            },
+                            "pendingOutData": {
+                                "type": list,
+                                "item_fields": {
+                                    "type": dict,
+                                    "required": ["credexID", "formattedInitialAmount", "counterpartyAccountName"],
+                                    "fields": {
+                                        "credexID": str,
+                                        "formattedInitialAmount": str,
+                                        "counterpartyAccountName": str,
+                                        "dueDate": (type(None), str),
+                                        "secured": (type(None), bool)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+
+        # Action data from API
+        "action": {
+            "type": dict,
+            "required": ["id", "type", "timestamp", "actor", "details"],
+            "fields": {
+                "id": str,
+                "type": str,
+                "timestamp": str,
+                "actor": str,
+                "details": dict
+            }
+        },
+
+        # Active account selection
+        "active_account_id": {
+            "type": str
+        },
+
+        # Flow state
+        "component_data": {
+            "type": dict,
+            "required": ["path", "component", "data"],
+            "fields": {
+                "path": str,          # Flow path
+                "component": str,     # Current component
+                "component_result": (type(None), str),  # Optional flow control
+                "awaiting_input": bool,  # Optional input state
+                "data": dict         # Component-specific data
+            }
         }
     }
 
-    # Validation tracking rules
-    VALIDATION_RULES = {
-        "attempts": dict,    # Attempts per operation
-        "history": list     # Validation history
-    }
+    @classmethod
+    def _validate_field(cls, field_name: str, field_value: Any, field_schema: dict) -> ValidationResult:
+        """Validate a field against its schema"""
+        # Check type
+        if isinstance(field_schema, dict):
+            if not isinstance(field_value, field_schema["type"]):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"{field_name} must be a {field_schema['type'].__name__}"
+                )
+
+            # For dictionaries, validate required fields and field types
+            if field_schema["type"] == dict:
+                # Check required fields
+                if "required" in field_schema:
+                    for required_field in field_schema["required"]:
+                        if required_field not in field_value:
+                            return ValidationResult(
+                                is_valid=False,
+                                error_message=f"Missing required field in {field_name}: {required_field}"
+                            )
+
+                # Validate field types
+                if "fields" in field_schema:
+                    for sub_field, sub_value in field_value.items():
+                        if sub_field in field_schema["fields"]:
+                            sub_schema = field_schema["fields"][sub_field]
+                            result = cls._validate_field(f"{field_name}.{sub_field}", sub_value, sub_schema)
+                            if not result.is_valid:
+                                return result
+
+            # For lists, validate item fields if specified
+            elif field_schema["type"] == list and "item_fields" in field_schema:
+                for i, item in enumerate(field_value):
+                    result = cls._validate_field(f"{field_name}[{i}]", item, field_schema["item_fields"])
+                    if not result.is_valid:
+                        return result
+
+        # For simple type checking
+        elif isinstance(field_schema, type) and not isinstance(field_value, field_schema):
+            return ValidationResult(
+                is_valid=False,
+                error_message=f"{field_name} must be a {field_schema.__name__}"
+            )
+
+        # For tuple of types (optional fields)
+        elif isinstance(field_schema, tuple):
+            if not any(isinstance(field_value, t) for t in field_schema):
+                type_names = " or ".join(t.__name__ for t in field_schema)
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"{field_name} must be {type_names}"
+                )
+
+        return ValidationResult(is_valid=True)
 
     @classmethod
     def validate_state(cls, state: Dict[str, Any]) -> ValidationResult:
-        """Validate complete state structure"""
-        # Validate state is dictionary
+        """Validate state against schema"""
         if not isinstance(state, dict):
             return ValidationResult(
                 is_valid=False,
                 error_message="State must be a dictionary"
             )
 
-        # Validate protected state
-        for field in cls.PROTECTED_FIELDS:
-            if field in state and not isinstance(state[field], dict):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"{field} must be a dictionary"
-                )
-
-        # Validate channel structure if present
-        channel = state.get("channel")
-        if channel:
-            if "type" not in channel or "identifier" not in channel:
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Channel missing required fields"
-                )
-
-        # Validate current state if present
-        current = state.get("current")
-        if current is not None:
-            if not isinstance(current, dict):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Current state must be a dictionary"
-                )
-
-            # Validate required fields
-            for field, field_type in cls.CURRENT_RULES["required_fields"].items():
-                if field not in current:
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"Missing required field: {field}"
-                    )
-                if not isinstance(current[field], field_type):
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"Invalid type for {field}"
-                    )
-
-            # Validate optional fields
-            for field, field_type in cls.CURRENT_RULES["optional_fields"].items():
-                if field in current:
-                    if isinstance(field_type, tuple):
-                        if not any(isinstance(current[field], t) for t in field_type):
-                            return ValidationResult(
-                                is_valid=False,
-                                error_message=f"Invalid type for {field}"
-                            )
-                    elif not isinstance(current[field], field_type):
-                        return ValidationResult(
-                            is_valid=False,
-                            error_message=f"Invalid type for {field}"
-                        )
-
-        # Validate validation tracking if present
-        validation = state.get("validation")
-        if validation is not None:
-            if not isinstance(validation, dict):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Validation must be a dictionary"
-                )
-
-            for field, field_type in cls.VALIDATION_RULES.items():
-                if field not in validation:
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"Missing validation field: {field}"
-                    )
-                if not isinstance(validation[field], field_type):
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"Invalid type for validation {field}"
-                    )
-
-        return ValidationResult(is_valid=True)
-
-    @classmethod
-    def validate_protected_update(cls, current: Dict[str, Any], updates: Dict[str, Any]) -> ValidationResult:
-        """Validate protected field updates"""
-        for field in cls.PROTECTED_FIELDS:
-            if (
-                field in updates and
-                field in current and
-                updates[field] != current[field]
-            ):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Cannot modify protected field: {field}"
-                )
-
-        return ValidationResult(is_valid=True)
-
-    @classmethod
-    def validate_current_state(cls, current: Dict[str, Any]) -> ValidationResult:
-        """Validate current state structure"""
-        if not isinstance(current, dict):
-            return ValidationResult(
-                is_valid=False,
-                error_message="Current state must be a dictionary"
-            )
-
-        # Validate required fields
-        for field, field_type in cls.CURRENT_RULES["required_fields"].items():
-            if field not in current:
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Missing required field: {field}"
-                )
-            if not isinstance(current[field], field_type):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Invalid type for {field}"
-                )
+        # Validate each field against schema
+        for field_name, field_schema in cls.STATE_SCHEMA.items():
+            if field_name in state:
+                result = cls._validate_field(field_name, state[field_name], field_schema)
+                if not result.is_valid:
+                    return result
 
         return ValidationResult(is_valid=True)
 
     @classmethod
     def prepare_state_update(cls, state_manager: Any, updates: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare and validate state updates
+        """Validate and prepare state updates
 
         Args:
             state_manager: StateManager instance
             updates: State updates to apply
 
         Returns:
-            Validated and prepared state updates
+            Validated state updates
 
         Raises:
             ComponentException: If updates are invalid
         """
         from core.error.exceptions import ComponentException
 
-        # Validate protected fields
-        result = cls.validate_protected_update(state_manager._state, updates)
-        if not result.is_valid:
-            raise ComponentException(
-                message=result.error_message,
-                component="state_validator",
-                field="protected_fields"
-            )
-
-        # Validate current state if present
-        if "current" in updates:
-            result = cls.validate_current_state(updates["current"])
-            if not result.is_valid:
-                raise ComponentException(
-                    message=result.error_message,
-                    component="state_validator",
-                    field="current_state"
-                )
-
-        # Validate complete state structure
+        # Validate against schema
         result = cls.validate_state(updates)
         if not result.is_valid:
             raise ComponentException(
                 message=result.error_message,
                 component="state_validator",
-                field="state_structure"
+                field="state_schema"
             )
 
         return updates
-
-
-# For backward compatibility
-prepare_state_update = StateValidator.prepare_state_update

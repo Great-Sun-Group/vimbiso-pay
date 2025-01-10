@@ -138,12 +138,13 @@ class AccountDashboard(DisplayComponent):
                     button_text="Select Action"
                 )
                 try:
+                    # Set component to await input before sending menu
+                    self.set_awaiting_input(True)
+
                     self.state_manager.messaging.send_message(
                         Message(recipient=recipient, content=menu_content)
                     )
 
-                    # Set component to await input and return formatted data
-                    self.set_awaiting_input(True)
                     return ValidationResult.success(formatted_data)
                 except Exception as e:
                     raise ComponentException(
@@ -156,7 +157,7 @@ class AccountDashboard(DisplayComponent):
 
             # Input Phase - When we get a response
             from core.messaging.menus import WhatsAppMenus
-            component_data = self.state_manager.get_component_data()
+            component_data = self.state_manager.get_state_value("component_data", {})
             message = component_data.get("message", {})
 
             # For interactive messages, extract selection ID
@@ -178,8 +179,8 @@ class AccountDashboard(DisplayComponent):
 
                         if selection in valid_paths:
                             # Set component_result to selected path and release flow
-                            current = self.state_manager.get_current_state()
-                            self.state_manager.update_current_state(
+                            current = self.state_manager.get_state_value("component_data", {})
+                            self.state_manager.update_component_data(
                                 path=current.get("path", ""),
                                 component=current.get("component", ""),
                                 data=current.get("data", {}),

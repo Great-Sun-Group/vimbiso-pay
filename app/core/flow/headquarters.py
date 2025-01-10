@@ -7,16 +7,17 @@ Data management is delegated to the state manager, and action management is dele
 Components are self-contained with responsibility for their own:
 - Business logic and validation
 - Activation of shared utilities/helpers/services
-- State access to communicate with any other part of the system and utilize standard validation
-- State access for in-component loop management (awaiting_input and any other data)
-- State writing to leave flow headquarters with component_result when necessary for branch logic
+- State access through get_state_value() for schema-validated fields
+- Freedom to store any data in component_data.data dict
+- State updates that must pass schema validation except for component_data.data
 - Error handling
 
-The state manager and its utilities are responsible for:
-- Data structure
-- Data validation
-- Data storage
-- Data retrieval
+The state manager provides:
+- Schema validation for all state updates except component_data.data
+- Single source of truth for all state
+- Clear boundaries through schema validation
+- Component freedom through unvalidated data dict
+- Atomic updates through Redis persistence
 """
 
 import logging
@@ -55,12 +56,8 @@ def activate_component(component_type: str, state_manager: StateManagerInterface
     component = component_class()
     component.set_state_manager(state_manager)
 
-    # For display components, validate immediately
-    if isinstance(component, components.DisplayComponent):
-        return component.validate(None)
-
-    # For other components, just return success
-    return ValidationResult.success()
+    # Validate all components
+    return component.validate(None)
 
 
 def get_next_component(
@@ -192,7 +189,7 @@ def get_next_component(
             return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
 
 
-def process_component(path: str, component: str, state_manager: StateManagerInterface) -> Optional[Tuple[str, str]]:
+def process_component(path: str, component: str, state_manager: StateManagerInterface, depth: int = 0) -> Optional[Tuple[str, str]]:
     """Process current step and determine next step in application paths.
 
     Handles the complete step processing:
@@ -208,8 +205,17 @@ def process_component(path: str, component: str, state_manager: StateManagerInte
     Returns:
         Optional[Tuple[str, str]]: Next step (path, component) in the current path, or None if activation failed
     """
+    logger.info(f"Processing component: {path}.{component} (depth: {depth})")
+    if depth > 10:  # Arbitrary limit to catch potential issues
+        logger.error(f"Maximum component processing depth exceeded: {path}.{component}")
+        return None
+    logger.info(f"Current awaiting_input: {state_manager.is_awaiting_input()}")
+
     # Activate component for current step
+    logger.info("Activating component...")
     result = activate_component(component, state_manager)
+    logger.info(f"Activation result: {result}")
+    logger.info(f"Awaiting input after activation: {state_manager.is_awaiting_input()}")
 
     # Only proceed if activation was successful
     if not result.valid:
@@ -217,4 +223,9 @@ def process_component(path: str, component: str, state_manager: StateManagerInte
         return None
 
     # Determine next step in path
-    return get_next_component(path, component, state_manager)
+    logger.info("Getting next component...")
+    next_step = get_next_component(path, component, state_manager)
+    logger.info(f"Next step: {next_step}")
+    logger.info(f"Final awaiting_input: {state_manager.is_awaiting_input()}")
+
+    return next_step

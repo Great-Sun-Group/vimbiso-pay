@@ -34,6 +34,8 @@ class LoginApiCall(ApiComponent):
                     details={"error": "missing_channel"}
                 )
 
+            logger.info(f"Making login API call for channel: {channel['identifier']}")
+
             # Make API call
             response = make_api_request(
                 url="login",
@@ -42,48 +44,41 @@ class LoginApiCall(ApiComponent):
                 retry_auth=False,
                 state_manager=self.state_manager
             )
+            logger.info(f"API response received: {response}")
 
             # Let handlers update state
             result, error = handle_api_response(
                 response=response,
                 state_manager=self.state_manager
             )
+            logger.info(f"API response handled - Result: {result}, Error: {error}")
 
             if error:
+                logger.error(f"Login API error: {error}")
                 return ValidationResult.failure(
                     message=f"Login failed: {error}",
                     field="api_call",
                     details={"error": error}
                 )
 
-            # Set component_result based on user existence
-            if result.get("exists"):
-                # User exists - verify dashboard data was updated
-                dashboard = self.state_manager.get_dashboard_data()
-                if not dashboard:
-                    return ValidationResult.failure(
-                        message="Missing dashboard data",
-                        field="dashboard",
-                        details={"error": "missing_data"}
-                    )
+            # Get personal account ID from dashboard (schema-validated)
+            dashboard = self.state_manager.get_state_value("dashboard", {})
+            personal_account = dashboard["accounts"][0]  # First account is always PERSONAL
 
-                # Set result to send to dashboard
-                current = self.state_manager.get_current_state()
-                self.state_manager.update_current_state(
-                    path=current.get("path", ""),
-                    component=current.get("component", ""),
-                    data=current.get("data", {}),
-                    component_result="send_dashboard"
-                )
-            else:
-                # User doesn't exist - start onboarding
-                current = self.state_manager.get_current_state()
-                self.state_manager.update_current_state(
-                    path=current.get("path", ""),
-                    component=current.get("component", ""),
-                    data=current.get("data", {}),
-                    component_result="start_onboarding"
-                )
+            # Set active account and transition to dashboard
+            self.state_manager.update_state({
+                "active_account_id": personal_account["accountID"]
+            })
+
+            # Update flow state
+            # Update flow state (components can store their own data in component_data.data)
+            current = self.state_manager.get_state_value("component_data", {})
+            self.state_manager.update_component_data(
+                path=current.get("path", ""),
+                component=current.get("component", ""),
+                data=current.get("data", {}),
+                component_result="send_dashboard"
+            )
 
             return ValidationResult.success(result)
 
