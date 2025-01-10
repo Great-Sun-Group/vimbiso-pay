@@ -8,7 +8,7 @@ Components are self-contained with responsibility for their own:
 - Business logic and validation
 - Activation of shared utilities/helpers/services
 - State access to communicate with any other part of the system and utilize standard validation
-- State access for in-component loop management (awaiting_input and others)
+- State access for in-component loop management (awaiting_input and any other data)
 - State writing to leave flow headquarters with component_result when necessary for branch logic
 - Error handling
 
@@ -23,7 +23,7 @@ import logging
 from typing import Tuple
 
 from core import components
-from core.config.interface import StateManagerInterface
+from core.state.interface import StateManagerInterface
 
 logger = logging.getLogger(__name__)
 

@@ -1,181 +1,70 @@
-"""Messaging service implementation
+"""Core messaging service that orchestrates channel-specific implementations
 
-This service handles message processing and delivery.
-- Flow routing is handled by core/messaging/flow.py
-- Component processing is handled by the components themselves
-- Message templates are in core/messaging/templates/
-- Message formatting is handled by display components
+This service maintains the layered architecture:
+1. Core messaging module defines interfaces
+2. Channel services implement specific channels
+3. MessagingService orchestrates which implementation to use
 """
-
 import logging
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from core.config.interface import StateManagerInterface
 from core.messaging.base import BaseMessagingService
-from core.messaging.flow import process_component
-from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import Message, TextContent
-from core.messaging.utils import get_recipient
-from core.utils.exceptions import SystemException
+from core.messaging.types import Button, Message, MessageRecipient
 
 logger = logging.getLogger(__name__)
 
 
-class MessagingService(MessagingServiceInterface):
-    """Main messaging service"""
+class MessagingService:
+    """Core messaging service that orchestrates channel implementations"""
 
-    def __init__(self, channel_service: BaseMessagingService, state_manager: StateManagerInterface):
-        """Initialize messaging service
+    def __init__(self, channel_service: BaseMessagingService, state_manager: Optional[any] = None):
+        """Initialize messaging service with channel implementation
 
         Args:
-            channel_service: Channel-specific messaging service (WhatsApp, SMS, etc)
-            state_manager: State manager implementation
+            channel_service: Channel-specific messaging service that implements BaseMessagingService
+            state_manager: Optional state manager instance
         """
+        # Validate channel service implements base interface
+        if not isinstance(channel_service, BaseMessagingService):
+            raise ValueError(
+                f"Channel service must implement BaseMessagingService, got {type(channel_service)}"
+            )
+
         self.channel_service = channel_service
         self.state_manager = state_manager
-
-        # Set state manager on channel service
-        if hasattr(self.channel_service, 'state_manager'):
+        if state_manager:
+            # Set up bidirectional relationship
             self.channel_service.state_manager = state_manager
-
-        # Set messaging service on state manager for component access
-        # This is safe because we implement MessagingServiceInterface
-        state_manager.messaging = self
-
-    def handle_message(self) -> Optional[Message]:
-        """Handle incoming message
-
-        The flow is:
-        1. Get message data from state
-        2. Get current context/component from state
-        3. Process component with input
-        4. Get next context/component
-        5. Format and send appropriate message
-
-        Returns:
-            Optional[Message]: Response message if any
-        """
-        try:
-            # Get message data from state
-            message_data = self.state_manager.get("message") or {}
-            if not message_data:
-                raise ValueError("No message data in state")
-
-            # Get current context and component
-            context = self.state_manager.get_context()
-            component = self.state_manager.get_component()
-
-            # Process component using state manager
-            result, next_context, next_component = process_component(
-                context or "login",  # Default to login context
-                component or "Greeting",  # Default to greeting component
-                self.state_manager
-            )
-
-            # Update state
-            self.state_manager.update_flow_state(
-                next_context,
-                next_component,
-                {"result": result}
-            )
-
-            # Get recipient for message
-            recipient = get_recipient(self.state_manager)
-
-            # Format appropriate message based on context/component
-            match (next_context, next_component):
-                case ("account", "AccountDashboard"):
-                    # Get message content from result
-                    message = result.get("message", "")
-
-                    # Send with appropriate format
-                    if "buttons" in result:
-                        return self.send_interactive(
-                            recipient=recipient,
-                            body=message,
-                            buttons=result["buttons"][:3]  # Limit to 3 buttons for WhatsApp
-                        )
-                    elif result.get("use_list"):
-                        return self.send_interactive(
-                            recipient=recipient,
-                            body=message,
-                            sections=result["sections"],
-                            button_text=result.get("button_text", "Select Option")
-                        )
-                    else:
-                        return Message(
-                            recipient=recipient,
-                            content=TextContent(body=message)
-                        )
-
-                case (_, "Greeting"):
-                    # Simple text message for greetings
-                    if isinstance(result, dict) and "message" in result:
-                        return Message(
-                            recipient=recipient,
-                            content=TextContent(body=result["message"])
-                        )
-                    # Fallback for backward compatibility
-                    return Message(
-                        recipient=recipient,
-                        content=TextContent(body=str(result))
-                    )
-
-                case _:
-                    # For other cases, check result type
-                    if isinstance(result, str):
-                        return Message(
-                            recipient=recipient,
-                            content=TextContent(body=result)
-                        )
-                    elif isinstance(result, dict) and "error" in result:
-                        return Message(
-                            recipient=recipient,
-                            content=TextContent(body=f"⚠️ {result['error']}")
-                        )
-                    else:
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(f"No message handler for {next_context}/{next_component}")
-                        return None
-
-        except SystemException as e:
-            if "rate limit" in str(e).lower():
-                return Message(
-                    recipient=get_recipient(self.state_manager),
-                    content=TextContent(
-                        body="⚠️ Too many messages sent. Please wait a moment before trying again."
-                    )
-                )
-            raise
+            state_manager.messaging = self
 
     def send_message(self, message: Message) -> Message:
-        """Send message through channel service"""
+        """Send message through appropriate channel service"""
         return self.channel_service.send_message(message)
 
     def send_text(
         self,
-        recipient,
+        recipient: MessageRecipient,
         text: str,
         preview_url: bool = False
     ) -> Message:
-        """Send text message through channel service"""
+        """Send text message through appropriate channel service"""
         return self.channel_service.send_text(recipient, text, preview_url)
 
     def send_interactive(
         self,
-        recipient,
+        recipient: MessageRecipient,
         body: str,
-        buttons=None,
-        header=None,
-        footer=None,
-        sections=None,
-        button_text=None
+        buttons: Optional[List[Button]] = None,
+        header: Optional[str] = None,
+        footer: Optional[str] = None,
+        sections: Optional[List[Dict[str, Any]]] = None,
+        button_text: Optional[str] = None,
     ) -> Message:
-        """Send interactive message through channel service"""
+        """Send interactive message through appropriate channel service"""
         return self.channel_service.send_interactive(
-            recipient=recipient,
-            body=body,
-            buttons=buttons,
+            recipient,
+            body,
+            buttons,
             header=header,
             footer=footer,
             sections=sections,
@@ -184,20 +73,15 @@ class MessagingService(MessagingServiceInterface):
 
     def send_template(
         self,
-        recipient,
+        recipient: MessageRecipient,
         template_name: str,
         language: Dict[str, str],
-        components=None
+        components: Optional[List[Dict[str, Any]]] = None,
     ) -> Message:
-        """Send template message through channel service"""
+        """Send template message through appropriate channel service"""
         return self.channel_service.send_template(
-            recipient=recipient,
-            template_name=template_name,
-            language=language,
-            components=components
+            recipient,
+            template_name,
+            language,
+            components
         )
-
-    def validate_message(self, message: Message) -> bool:
-        """Validate message format"""
-        # Implementation depends on channel type
-        raise NotImplementedError

@@ -12,14 +12,14 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from core.messaging.interface import MessagingServiceInterface
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ErrorContext
-from core.utils.exceptions import ComponentException
-from core.utils.redis_client import get_redis_client
+from core.error.handler import ErrorHandler
+from core.error.types import ErrorContext
+from core.error.exceptions import ComponentException
+from core.state.persistence.client import get_redis_client
 
-from .atomic_state import AtomicStateManager
+from .atomic import AtomicStateManager
 from .interface import StateManagerInterface
-from .state_utils import prepare_state_update
+from .validator import prepare_state_update
 
 logger = logging.getLogger(__name__)
 

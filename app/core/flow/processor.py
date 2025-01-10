@@ -13,12 +13,12 @@ that implements the MessagingServiceInterface.
 import logging
 from typing import Any, Dict
 
-from core.config.interface import StateManagerInterface
+from core.state.interface import StateManagerInterface
 from core.messaging.types import Message, TextContent
 from core.messaging.utils import get_recipient
-from core.utils.error_handler import ErrorHandler
-from core.utils.error_types import ValidationResult
-from core.utils.exceptions import ComponentException
+from core.error.handler import ErrorHandler
+from core.error.types import ValidationResult
+from core.error.exceptions import ComponentException
 from services.messaging.service import MessagingService
 
 from .constants import GREETING_COMMANDS
@@ -83,8 +83,8 @@ class FlowProcessor:
             component = flow_state.get("component")
 
             # Process through flow framework
-            from core.messaging.flow import (activate_component,
-                                             handle_component_result)
+            from .headquarters import (activate_component,
+                                       handle_component_result)
 
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Processing message in flow: {context}.{component}")
