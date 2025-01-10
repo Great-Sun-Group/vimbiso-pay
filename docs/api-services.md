@@ -2,7 +2,7 @@
 
 ## Overview
 
-The service and API architecture integrates with the central flow management system (headquarters.py) through API components that handle external service communication while maintaining clear boundaries and state management.
+The service and API architecture integrates with the central flow management system (flow/headquarters.py) through API components that handle external service communication while maintaining clear boundaries and state management.
 
 ## Core Integration
 
@@ -87,8 +87,8 @@ base.py         <-- API Handling
 4. base.handle_api_response routes to handlers:
    - dashboard.update_dashboard_from_response -> Updates member state
    - action.update_action_from_response -> Updates operation state
-5. Component returns result to headquarters.py for flow control
-6. headquarters.py determines next step based on result
+5. Component returns result to headquarters.py for flow control when necessary
+6. flow/headquarters.py determines next step based on result
 
 ### State Management
 1. Dashboard State (Source of Truth)
@@ -108,19 +108,8 @@ base.py         <-- API Handling
    - Reads from dashboard
    - Uses action data
    - Clear boundaries
-   - No state duplication
+   - No state duplication or passing
 
-### Common Patterns
-
-1. Direct API Calls with Error Handling
-- Make API call directly
-- Let handlers manage state and errors
-- Use ErrorHandler for all errors
-
-2. Message Sending with Error Handling
-- Send through messaging service
-- Return success
-- Use ErrorHandler for all errors
 
 ## Code Reading Guide
 

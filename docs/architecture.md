@@ -7,14 +7,14 @@ The Vimbiso ChatServer is built around a central flow management system that coo
 ### Core Components
 
 ```
-app/core/flow/headquarters.py  <-- Central Flow Management
-├── app/core/state/manager.py      (State Management)
-├── app/core/components/           (Component System)
-├── app/core/api/                  (API Integration)
-└── app/core/messaging/            (Messaging System)
+core/flow/headquarters.py  <-- Central Flow Management
+ ├── state/manager.py      (State Management)
+ ├── components/           (Component System)
+ ├── api/                  (API Integration)
+ └── messaging/            (Messaging System)
 ```
 
-## Central Flow Management (headquarters.py)
+## Central Flow Management (flow/headquarters.py)
 
 The core of the system is the flow management module that:
 1. Manages member flows through the application
