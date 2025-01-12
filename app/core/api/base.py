@@ -2,14 +2,13 @@
 import base64
 import logging
 import time
-from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 from urllib.parse import urljoin
 
 import requests
-from core.state.interface import StateManagerInterface
-from core.error.handler import ErrorHandler
 from core.error.exceptions import SystemException
+from core.error.handler import ErrorHandler
+from core.state.interface import StateManagerInterface
 from core.state.validator import StateValidator
 from decouple import config
 from requests.exceptions import RequestException
@@ -162,7 +161,7 @@ def is_auth_required(url: str) -> bool:
     """Check if URL requires authentication"""
     # Strip any leading/trailing slashes and base URL
     endpoint = url.rstrip('/').split('/')[-1]
-    return endpoint not in ['login', 'onboard']
+    return endpoint not in ['login', 'onboardMember']
 
 
 def make_api_request(
@@ -171,7 +170,7 @@ def make_api_request(
     method: str = "POST",
     retry_auth: bool = True,
     state_manager: Optional[StateManagerInterface] = None
-) -> Dict:
+) -> Union[requests.Response, Dict[str, Any]]:
     """Make API request with logging, validation and error handling"""
     try:
         # Ensure URL is absolute
@@ -234,6 +233,7 @@ def make_api_request(
 
                     logger.warning("Auth error, attempting login")
                     from services.whatsapp.bot_service import get_bot_service
+
                     from .login import login
                     bot_service = get_bot_service(state_manager)
                     success, _ = login(bot_service)
@@ -250,6 +250,14 @@ def make_api_request(
                     retries += 1
                     time.sleep(RETRY_DELAY)
                     continue
+
+                # Log non-200 responses (but don't treat as errors)
+                if response.status_code != 200:
+                    try:
+                        response_data = response.json()
+                        logger.info(f"Non-200 response: {response.status_code}, data: {response_data}")
+                    except Exception as e:
+                        logger.debug(f"Failed to parse response: {e}")
 
                 return response
 
@@ -283,95 +291,30 @@ def make_api_request(
 
 
 def process_api_response(
-    response: requests.Response,
-    expected_status_codes: Optional[list] = None
+    response: requests.Response
 ) -> Dict[str, Any]:
     """Process API response with validation"""
-    if expected_status_codes is None:
-        expected_status_codes = [200]
-
     try:
-        # Validate status code
-        if response.status_code not in expected_status_codes:
-            return ErrorHandler.handle_system_error(
-                code="INVALID_STATUS",
-                service="api_client",
-                action="process_response",
-                message=f"Unexpected status code: {response.status_code}. Expected one of: {expected_status_codes}"
-            )
-
-        # Validate content type
+        # Log content type for debugging
         content_type = response.headers.get("Content-Type", "")
         if "application/json" not in content_type:
-            return ErrorHandler.handle_system_error(
-                code="INVALID_CONTENT_TYPE",
-                service="api_client",
-                action="process_response",
-                message=f"Received unexpected Content-Type: {content_type}"
-            )
+            logger.warning(f"Unexpected Content-Type: {content_type}")
 
-        # Parse and validate response
+        # Parse response
         data = response.json()
         if not isinstance(data, dict):
-            return ErrorHandler.handle_system_error(
-                code="INVALID_RESPONSE",
-                service="api_client",
-                action="process_response",
-                message="Response data must be a dictionary"
-            )
+            logger.warning("Response data is not a dictionary")
+            data = {"data": data}  # Wrap non-dict responses
         return data
 
     except ValueError as e:
-        return ErrorHandler.handle_system_error(
+        logger.error(f"Failed to parse response JSON: {e}")
+        raise SystemException(
+            message="Invalid JSON response",
             code="PARSE_ERROR",
             service="api_client",
-            action="process_response",
-            message=f"Failed to parse response JSON: {str(e)}"
+            action="process_response"
         )
-
-
-def handle_error_response(
-    operation: str,
-    response: requests.Response,
-    custom_message: str = None
-) -> Dict:
-    """Handle error response with logging"""
-    # Handle 502 errors specifically
-    if response.status_code == 502:
-        error_msg = "❌ Sorry, the server is temporarily down (502). Please try again soon."
-        logger.error(f"{operation} failed: Server temporarily unavailable (502)")
-    else:
-        try:
-            error_data = response.json()
-            error_msg = custom_message or error_data.get(
-                "message",
-                error_data.get("error", f"{operation} failed")
-            )
-        except ValueError:
-            error_msg = custom_message or f"{operation} failed"
-
-    logger.error(
-        f"{operation} failed: {response.status_code}. Response: {response.text}"
-    )
-
-    # Log error summary
-    logger.error(f"{operation} failed: {response.status_code} - {error_msg}")
-
-    # Create validation state with response details
-    validation_state = {
-        "attempts": 1,
-        "last_attempt": datetime.utcnow().isoformat(),
-        "status_code": response.status_code,
-        "response": error_data if "error_data" in locals() else response.text
-    }
-
-    return ErrorHandler.handle_system_error(
-        code="API_ERROR",
-        service="api_client",
-        action=operation,
-        message=error_msg,
-        validation_state=validation_state
-    )
 
 
 def get_basic_auth_header(channel_identifier: str) -> str:
