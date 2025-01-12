@@ -8,7 +8,7 @@ from typing import Any
 
 from core.error.exceptions import ComponentException
 from core.error.types import ValidationResult
-from core.messaging.types import InteractiveType, MessageType
+from core.messaging.types import InteractiveType, MessageType, Section
 from ..base import DisplayComponent
 
 
@@ -111,18 +111,37 @@ class AccountDashboard(DisplayComponent):
                 # Get account info text
                 account_info = ACCOUNT_DASHBOARD.format(**formatted_data)
 
-                # Define menu options matching headquarters.py flow paths
-                menu_options = [
-                    {"id": "offer_secured", "title": "Create Offer"},
-                    {"id": "accept_offer", "title": "Accept Offer"},
-                    {"id": "decline_offer", "title": "Decline Offer"},
-                    {"id": "cancel_offer", "title": "Cancel Offer"},
-                    {"id": "view_ledger", "title": "View Ledger"},
-                    {"id": "upgrade_membertier", "title": "Upgrade Tier"}
-                ]
+                # Get pending counts from active account
+                pending_in = len([
+                    o for o in active_account.get("offers", [])
+                    if o.get("status") == "pending" and o.get("type") == "incoming"
+                ])
+                pending_out = len([
+                    o for o in active_account.get("offers", [])
+                    if o.get("status") == "pending" and o.get("type") == "outgoing"
+                ])
 
-                # Create proper Section instance
-                from core.messaging.types import Section
+                # Format pending counts
+                pending_in_formatted = f" ({pending_in})" if pending_in > 0 else ""
+                pending_out_formatted = f" ({pending_out})" if pending_out > 0 else ""
+
+                # Define menu options with emojis and counts
+                menu_options = []
+
+                # Credex Actions
+                menu_options.append({"id": "offer_secured", "title": "Offer secured credex", "description": "💸 Offer secured credex"})
+                if pending_in > 0:
+                    menu_options.append({"id": "accept_offers_bulk", "title": "Accept all pending offers", "description": f"✅ Accept all pending offers{pending_in_formatted}"})
+                    menu_options.append({"id": "accept_offer", "title": "Accept a pending offer", "description": f"✅ Accept a pending offer{pending_in_formatted}"})
+                    menu_options.append({"id": "decline_offer", "title": "Decline a pending offer", "description": f"❌ Decline a pending offer{pending_in_formatted}"})
+                if pending_out > 0:
+                    menu_options.append({"id": "cancel_offer", "title": "Cancel your offer", "description": f"🚫 Cancel your offer{pending_out_formatted}"})
+
+                # Account Actions
+                menu_options.append({"id": "view_ledger", "title": "View account ledger", "description": "📊 View account ledger"})
+
+                # Member Actions
+                menu_options.append({"id": "upgrade_membertier", "title": "Upgrade your member tier", "description": "⭐ Upgrade your member tier"})
 
                 try:
                     # Set component to await input before sending menu
@@ -135,7 +154,7 @@ class AccountDashboard(DisplayComponent):
                             title="Actions",
                             rows=menu_options
                         )],
-                        button_text="Select Action"
+                        button_text="🕹️ Select Action"
                     )
 
                     return ValidationResult.success(formatted_data)
@@ -161,13 +180,13 @@ class AccountDashboard(DisplayComponent):
                         # Validate selection matches expected flow paths
                         valid_paths = [
                             "offer_secured",
+                            "accept_offers_bulk",
                             "accept_offer",
                             "decline_offer",
                             "cancel_offer",
                             "view_ledger",
                             "upgrade_membertier"
                         ]
-
                         if selection in valid_paths:
                             # Set result and release flow
                             self.update_component_state(
