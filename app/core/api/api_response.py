@@ -44,7 +44,15 @@ def update_state_from_response(
         # Store sections that exist
         state_update = {}
         if "dashboard" in data:
-            state_update["dashboard"] = data["dashboard"]
+            dashboard = data["dashboard"]
+            # Convert remainingAvailableUSD to float if present
+            # This should probably be debugged API side but for now we do this transformation if needed
+            if "member" in dashboard and "remainingAvailableUSD" in dashboard["member"]:
+                try:
+                    dashboard["member"]["remainingAvailableUSD"] = float(dashboard["member"]["remainingAvailableUSD"])
+                except (TypeError, ValueError):
+                    dashboard["member"]["remainingAvailableUSD"] = None
+            state_update["dashboard"] = dashboard
         if "action" in data:
             state_update["action"] = data["action"]
             # Extract auth token if present

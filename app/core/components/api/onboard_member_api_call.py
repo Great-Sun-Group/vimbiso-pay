@@ -99,6 +99,16 @@ class OnBoardMemberApiCall(ApiComponent):
         # Clear firstname/lastname from earlier components in flow
         self.update_component_data(data={})
 
+        # Set active_account_id to the personal account
+        dashboard = response_data.get("data", {}).get("dashboard", {})
+        accounts = dashboard.get("accounts", [])
+        for account in accounts:
+            if account.get("accountType") == "PERSONAL":
+                self.state_manager.update_state({
+                    "active_account_id": account["accountID"]
+                })
+                break
+
         return ValidationResult.success({
             "status": "success",
         })
