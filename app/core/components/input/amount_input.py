@@ -6,8 +6,14 @@ This component handles amount input with proper validation.
 from typing import Any
 
 from core.error.types import ValidationResult
-
 from ..base import InputComponent
+
+
+# Amount prompt template
+AMOUNT_PROMPT = """💸 What offer amount and denomination?
+- Defaults to USD 💵 (1, 73932.64)
+- Valid denom placement ✨ (54 ZWG, ZWG 125.54)
+- Valid denoms ✨ (CXX, XAU, USD, CAD, ZWG)"""
 
 
 class AmountInput(InputComponent):

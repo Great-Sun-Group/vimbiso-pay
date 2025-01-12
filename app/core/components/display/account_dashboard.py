@@ -4,14 +4,23 @@ This component handles displaying the account dashboard with proper validation.
 Also handles initial state setup after login.
 """
 
-from typing import Any, Dict
+from typing import Any
 
-from core.messaging.types import Message
-from core.messaging.utils import get_recipient
-from core.error.types import ValidationResult
 from core.error.exceptions import ComponentException
-
+from core.error.types import ValidationResult
+from core.messaging.types import InteractiveType, MessageType
 from ..base import DisplayComponent
+
+
+# Account template
+ACCOUNT_DASHBOARD = """💳 *{account}* 💳
+*Account Handle:* {handle}
+
+*💰 SECURED BALANCES*
+{secured_balances}
+
+*📊 NET ASSETS*
+{net_assets}{tier_limit_display}"""
 
 
 class AccountDashboard(DisplayComponent):
@@ -99,16 +108,8 @@ class AccountDashboard(DisplayComponent):
                     "tier_limit_display": tier_limit_display
                 }
 
-                # Get recipient for messages
-                recipient = get_recipient(self.state_manager)
-
                 # Get account info text
-                account_info = self.to_message_content(formatted_data)
-
-                # Create menu options aligned with flow paths
-                from core.messaging.types import (InteractiveContent,
-                                                  InteractiveType,
-                                                  Section)
+                account_info = ACCOUNT_DASHBOARD.format(**formatted_data)
 
                 # Define menu options matching headquarters.py flow paths
                 menu_options = [
@@ -120,24 +121,21 @@ class AccountDashboard(DisplayComponent):
                     {"id": "upgrade_membertier", "title": "Upgrade Tier"}
                 ]
 
-                # Create menu content
-                menu_content = InteractiveContent(
-                    interactive_type=InteractiveType.LIST,
-                    body=account_info,
-                    sections=[
-                        Section(
-                            title="Account Actions",
-                            rows=menu_options
-                        )
-                    ],
-                    button_text="Select Action"
-                )
+                # Create proper Section instance
+                from core.messaging.types import Section
+
                 try:
                     # Set component to await input before sending menu
                     self.set_awaiting_input(True)
 
-                    self.state_manager.messaging.send_message(
-                        Message(recipient=recipient, content=menu_content)
+                    # Pass properly structured menu data to messaging service
+                    self.state_manager.messaging.send_interactive(
+                        body=account_info,
+                        sections=[Section(
+                            title="Actions",
+                            rows=menu_options
+                        )],
+                        button_text="Select Action"
                     )
 
                     return ValidationResult.success(formatted_data)
@@ -146,21 +144,19 @@ class AccountDashboard(DisplayComponent):
                         message=f"Failed to send menu message: {str(e)}",
                         component=self.type,
                         field="messaging",
-                        value=str(menu_content),
+                        value=str(account_info),
                         validation=self.validation_state
                     )
 
             # Input Phase - When we get a response
-            from core.messaging.menus import WhatsAppMenus
             component_data = self.state_manager.get_state_value("component_data", {})
-            message = component_data.get("message", {})
+            incoming_message = component_data.get("incoming_message", {})
 
             # For interactive messages, extract selection ID
-            if (message.get("type") == "interactive" and
-               WhatsAppMenus.is_valid_option(message)):
-                interactive = message.get("interactive", {})
-                if interactive.get("type") == "list_reply":
-                    selection = interactive.get("list_reply", {}).get("id")
+            if incoming_message.get("type") == MessageType.INTERACTIVE.value:
+                text = incoming_message.get("text", {})
+                if text.get("interactive_type") == InteractiveType.LIST.value:
+                    selection = text.get("list_reply", {}).get("id")
                     if selection:
                         # Validate selection matches expected flow paths
                         valid_paths = [
@@ -196,8 +192,3 @@ class AccountDashboard(DisplayComponent):
                     "error": str(e)
                 }
             )
-
-    def to_message_content(self, value: Dict) -> str:
-        """Format dashboard data using template"""
-        from core.messaging.messages import ACCOUNT_DASHBOARD
-        return ACCOUNT_DASHBOARD.format(**value)

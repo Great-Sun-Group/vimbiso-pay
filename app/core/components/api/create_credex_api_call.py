@@ -7,10 +7,9 @@ Components can store their own data in component_data.data.
 
 from typing import Any, Dict
 
-from decouple import config
-
+from core.api.base import handle_api_response, make_api_request
 from core.error.types import ValidationResult
-from core.api.base import make_api_request, handle_api_response
+from decouple import config
 
 from ..base import ApiComponent
 

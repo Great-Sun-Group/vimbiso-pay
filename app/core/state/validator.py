@@ -20,18 +20,18 @@ class StateValidator:
 
     # State schema defining field types when present
     STATE_SCHEMA = {
-        # Required initially
+        # Required initially - channel info for messaging
         "channel": {
             "type": dict,
             "fields": {
-                "type": {"type": str},  # Channel type as string (e.g. "whatsapp", "sms")
-                "identifier": {"type": str}
+                "type": {"type": str},      # Channel type (e.g. "whatsapp", "sms")
+                "identifier": {"type": str}  # Channel ID (e.g. phone number)
             },
-            "required": ["type", "identifier"]  # Both fields are required
+            "required": ["type", "identifier"]
         },
-        # Required flag that controls validation and service behavior
-        # Set to true for mock testing mode, false for normal requests
-        "mock_testing": {"type": bool},  # Already in correct format
+
+        # Required flag for mock testing mode
+        "mock_testing": {"type": bool},
 
         # Added during login
         "auth": {
@@ -87,19 +87,29 @@ class StateValidator:
         },
 
         # Added during account selection or by default
-        "active_account_id": {"type": str},  # Already in correct format
+        "active_account_id": {"type": str},
 
         # Used internally by components
         # Used for component-to-flow communication
+        # Used to pass Message data to component for member control of component operations
         # Wiped on component initialization for clean slate
         "component_data": {
             "type": dict,
             "fields": {
+                # Optional fields - validated only if present
                 "path": {"type": str},
                 "component": {"type": str},
-                "component_result": {"type": (str, type(None))},  # Allow str or None
+                "component_result": {"type": (str, type(None))},
                 "awaiting_input": {"type": bool},
-                "data": {"type": dict}
+                "data": {"type": dict},
+                # Message structure - validated only if present
+                "incoming_message": {
+                    "type": dict,
+                    "fields": {
+                        "type": {"type": str},
+                        "text": {"type": dict}  # Structure varies by type
+                    }
+                }
             }
         }
     }
@@ -174,7 +184,12 @@ class StateValidator:
             if not channel or not isinstance(channel, dict):
                 return ValidationResult(
                     is_valid=False,
-                    error_message="Channel is required for authentication"
+                    error_message="Channel info is required for authentication"
+                )
+            if not channel.get("type") or not channel.get("identifier"):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Channel type and identifier are required for authentication"
                 )
 
         # Valid JWT is required for other fields

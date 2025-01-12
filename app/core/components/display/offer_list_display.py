@@ -5,10 +5,21 @@ This component handles displaying a list of Credex offers.
 
 from typing import Any, Dict
 
-from core.messaging.messages import (ACTION_PROMPT, OFFER_ITEM, OFFER_LIST)
 from core.error.types import ValidationResult
-
 from ..base import DisplayComponent
+
+
+# Offer list templates
+OFFER_LIST = """📋 {title}
+
+{offers}"""
+
+OFFER_ITEM = """💰 Amount: {amount}
+👤 From: {counterparty}
+📊 Status: {status}
+"""
+
+ACTION_PROMPT = "Select a credex offer to {action_type}:"
 
 
 class OfferListDisplay(DisplayComponent):

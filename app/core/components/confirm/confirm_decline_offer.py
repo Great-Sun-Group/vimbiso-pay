@@ -6,8 +6,13 @@ This component handles confirming offer decline action.
 from typing import Any, Dict
 
 from core.error.types import ValidationResult
-
 from . import ConfirmBase
+
+
+# Decline confirmation template
+DECLINE_CONFIRMATION = """📝 Review offer to decline:
+💸 Amount: {amount}
+💳 From: {counterparty}"""
 
 
 class ConfirmDeclineOffer(ConfirmBase):

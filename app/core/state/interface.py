@@ -7,7 +7,6 @@ while avoiding circular dependencies.
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
-from core.messaging.types import ChannelType
 
 from core.messaging.interface import MessagingServiceInterface
 
@@ -128,11 +127,11 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_channel_type(self) -> ChannelType:
+    def get_channel_type(self) -> str:
         """Get channel type
 
         Returns:
-            Channel type enum
+            Channel type string ("whatsapp" or "sms")
         """
         pass
 
@@ -164,11 +163,29 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
-    def initialize_channel(self, channel_type: ChannelType, channel_id: str, mock_testing: bool = False) -> None:
+    def get_incoming_message(self) -> Optional[Dict[str, Any]]:
+        """Get current incoming message if it exists
+
+        Returns:
+            Optional[Dict[str, Any]]: Message dict if exists, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    def set_incoming_message(self, message: Dict[str, Any]) -> None:
+        """Set the incoming message
+
+        Args:
+            message: Message dict conforming to incoming_message schema in component_data
+        """
+        pass
+
+    @abstractmethod
+    def initialize_channel(self, channel_type: str, channel_id: str, mock_testing: bool = False) -> None:
         """Initialize or update channel info - the only way to modify channel data
 
         Args:
-            channel_type: Channel type enum
+            channel_type: Channel type string ("whatsapp" or "sms")
             channel_id: Channel identifier string
             mock_testing: Whether to enable mock testing mode
 

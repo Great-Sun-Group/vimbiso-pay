@@ -6,8 +6,11 @@ This component handles Credex handle input with proper validation.
 from typing import Any
 
 from core.error.types import ValidationResult
+from ..base import InputComponent
 
-from core.components.base import InputComponent
+
+# Handle prompt template
+HANDLE_PROMPT = "Enter account 💳 handle:"
 
 
 class HandleInput(InputComponent):

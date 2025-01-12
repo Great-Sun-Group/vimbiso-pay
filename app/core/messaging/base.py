@@ -8,7 +8,7 @@ from abc import abstractmethod
 from typing import Any, Dict, List, Optional
 
 from .interface import MessagingServiceInterface
-from .types import Button, Message, MessageRecipient
+from .types import Button, Message
 
 
 class BaseMessagingService(MessagingServiceInterface):
@@ -39,14 +39,12 @@ class BaseMessagingService(MessagingServiceInterface):
     @abstractmethod
     def send_text(
         self,
-        recipient: MessageRecipient,
         text: str,
         preview_url: bool = False
     ) -> Message:
         """Send a text message
 
         Args:
-            recipient: Message recipient
             text: Text content
             preview_url: Whether to show URL previews
 
@@ -58,18 +56,16 @@ class BaseMessagingService(MessagingServiceInterface):
     @abstractmethod
     def send_interactive(
         self,
-        recipient: MessageRecipient,
         body: str,
         buttons: Optional[List[Button]] = None,
         header: Optional[str] = None,
         footer: Optional[str] = None,
         sections: Optional[List[Dict[str, Any]]] = None,
-        button_text: Optional[str] = None,
+        button_text: Optional[str] = None
     ) -> Message:
         """Send an interactive message
 
         Args:
-            recipient: Message recipient
             body: Message body text
             buttons: Optional interactive buttons
             header: Optional header text
@@ -85,15 +81,13 @@ class BaseMessagingService(MessagingServiceInterface):
     @abstractmethod
     def send_template(
         self,
-        recipient: MessageRecipient,
         template_name: str,
         language: Dict[str, str],
-        components: Optional[List[Dict[str, Any]]] = None,
+        components: Optional[List[Dict[str, Any]]] = None
     ) -> Message:
         """Send a template message
 
         Args:
-            recipient: Message recipient
             template_name: Name of template to use
             language: Language parameters
             components: Optional template components
@@ -113,8 +107,49 @@ class BaseMessagingService(MessagingServiceInterface):
             True if valid, False otherwise
         """
         # Basic validation - subclasses can override for channel-specific validation
-        if not message.recipient:
-            return False
         if not message.content:
             return False
         return True
+
+    def handle_incoming_message(self, payload: Dict[str, Any]) -> None:
+        """Handle incoming message from channel
+
+        This method:
+        1. Calls extract_message_data() which channel services must implement
+        2. Validates the extracted message
+        3. Stores in state_manager.incoming_message
+
+        Args:
+            payload: Raw message payload from channel
+
+        Raises:
+            MessageValidationError: If message validation fails
+            MessageHandlerError: If message handling fails
+        """
+        from .exceptions import MessageHandlerError
+
+        if not self.state_manager:
+            raise MessageHandlerError("State manager not initialized")
+
+        # Extract message data using channel-specific implementation
+        message_data = self.extract_message_data(payload)
+
+        # Store in state manager
+        self.state_manager.set_incoming_message(message_data)
+
+    @abstractmethod
+    def extract_message_data(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract message data from channel-specific payload
+
+        Channel services must implement this to handle their specific formats.
+
+        Args:
+            payload: Raw message payload from channel
+
+        Returns:
+            Dict[str, Any]: Extracted message data in standard format
+
+        Raises:
+            MessageValidationError: If payload format is invalid
+        """
+        pass

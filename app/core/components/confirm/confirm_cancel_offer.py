@@ -6,8 +6,13 @@ This component handles confirming offer cancellation action.
 from typing import Any, Dict
 
 from core.error.types import ValidationResult
-
 from . import ConfirmBase
+
+
+# Cancel confirmation template
+CANCEL_CONFIRMATION = """📝 Review offer to cancel:
+💸 Amount: {amount}
+💳 To: {counterparty}"""
 
 
 class ConfirmCancelOffer(ConfirmBase):

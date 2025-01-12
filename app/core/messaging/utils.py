@@ -1,7 +1,7 @@
 """Core messaging utilities"""
 
 from core.state.interface import StateManagerInterface
-from core.messaging.types import ChannelIdentifier, ChannelType, MessageRecipient
+from core.messaging.types import MessageRecipient
 
 
 def get_recipient(state_manager: StateManagerInterface) -> MessageRecipient:
@@ -14,14 +14,15 @@ def get_recipient(state_manager: StateManagerInterface) -> MessageRecipient:
         MessageRecipient: Message recipient with channel info
 
     Raises:
-        ComponentException: If channel identifier is missing
+        ComponentException: If identifier is missing
     """
     from core.error.exceptions import ComponentException
 
+    # Get channel info from state
     channel_data = state_manager.get_state_value("channel", {})
-    channel_id = channel_data.get("identifier")
+    identifier = channel_data.get("identifier")  # e.g. phone number for WhatsApp
 
-    if not channel_id:
+    if not identifier:
         raise ComponentException(
             message="Channel identifier is required",
             component="messaging",
@@ -30,8 +31,6 @@ def get_recipient(state_manager: StateManagerInterface) -> MessageRecipient:
         )
 
     return MessageRecipient(
-        channel_id=ChannelIdentifier(
-            channel=ChannelType(channel_data.get("type", "whatsapp")),
-            value=channel_id
-        )
+        type=channel_data.get("type", "whatsapp"),  # Channel type string
+        identifier=identifier  # Use channel identifier (e.g. phone number)
     )

@@ -46,9 +46,14 @@ class LastNameInput(InputComponent):
                 }
             )
 
-        # Update state and release our hold on the flow
-        self.update_state(lastname, ValidationResult.success(lastname))
-        self.set_awaiting_input(False)  # Release our own hold
+        # Get existing data (should have firstname from previous component)
+        current_data = self.state_manager.get_state_value("component_data", {}).get("data", {})
+
+        # Add lastname while preserving firstname
+        self.update_component_data(
+            data={**current_data, "lastname": lastname},
+            awaiting_input=False
+        )
         return ValidationResult.success(lastname)
 
     def to_verified_data(self, value: Any) -> Dict:

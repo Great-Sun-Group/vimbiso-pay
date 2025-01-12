@@ -1,21 +1,22 @@
 """Welcome component for registration flow
 
-This component handles the registration welcome screen with proper validation.
+This component handles the registration welcome screen.
 """
 
 from typing import Any
 
 from core.error.types import ValidationResult
-from core.messaging.utils import get_recipient
-from core.messaging.types import (
-    Button,
-    InteractiveContent,
-    InteractiveType,
-    Message,
-    MessageType,
-)
-
+from core.messaging.types import (Button, InteractiveContent, InteractiveType,
+                                  Message, MessageType)
 from ..base import DisplayComponent
+
+
+# Registration template
+REGISTER = """Welcome to VimbisoPay 💰
+
+We're your portal 🚪to the credex ecosystem 🌱
+
+Become a member 🌐 and open a free account 💳 to get started 📈"""
 
 
 class Welcome(DisplayComponent):
@@ -27,27 +28,36 @@ class Welcome(DisplayComponent):
     def validate_display(self, value: Any) -> ValidationResult:
         """Display welcome message with greeting or handle button response"""
         try:
-            # Get component data
-            component_data = self.state_manager.get_state_value("component_data", {})
-            message = component_data.get("data", {}).get("message", {})
+            # Handle button response if awaiting input
+            if self.state_manager.is_awaiting_input():
+                incoming_message = self.state_manager.get_incoming_message()
+                if not incoming_message:
+                    return ValidationResult.failure(
+                        message="No incoming message found",
+                        field="message",
+                        details={"error": "missing_message"}
+                    )
 
-            # Handle button response
-            if message.get("type") == MessageType.INTERACTIVE.value:
-                button = message.get("button", {})
-                if button.get("id") == "become_member":
-                    # Release flow to move to next component
-                    self.set_awaiting_input(False)
-                    return ValidationResult.success()
+                if incoming_message.get("type") == MessageType.INTERACTIVE.value:
+                    text = incoming_message.get("text", {})
+                    if text.get("interactive_type") == InteractiveType.BUTTON.value:
+                        button = text.get("button", {})
+                        if button.get("id") == "become_member":
+                            # Release flow to move to next component
+                            self.set_awaiting_input(False)
+                            return ValidationResult.success()
+                    return ValidationResult.failure(
+                        message="Invalid button selection",
+                        field="button",
+                        details={"error": "invalid_selection"}
+                    )
                 return ValidationResult.failure(
-                    message="Invalid button selection",
-                    field="button",
-                    details={"error": "invalid_selection"}
+                    message="Invalid message type",
+                    field="type",
+                    details={"error": "not_interactive"}
                 )
 
             # Send welcome message with button
-            from core.messaging.messages import REGISTER
-
-            recipient = get_recipient(self.state_manager)
             content = InteractiveContent(
                 interactive_type=InteractiveType.BUTTON,
                 body=REGISTER,
@@ -56,7 +66,7 @@ class Welcome(DisplayComponent):
             # Set awaiting_input before sending message
             self.set_awaiting_input(True)
 
-            message = Message(recipient=recipient, content=content)
+            message = Message(content=content)
             send_result = self.state_manager.messaging.send_message(message)
 
             if send_result:

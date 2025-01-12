@@ -45,9 +45,11 @@ class FirstNameInput(InputComponent):
                 }
             )
 
-        # Update state and mark as not awaiting input
-        self.update_state(firstname, ValidationResult.success(firstname))
-        self.set_awaiting_input(False)
+        # Store validated firstname in component_data.data for subsequent components
+        self.update_component_data(
+            data={"firstname": firstname},
+            awaiting_input=False
+        )
         return ValidationResult.success(firstname)
 
     def to_verified_data(self, value: Any) -> Dict:

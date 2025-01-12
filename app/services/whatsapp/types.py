@@ -1,9 +1,10 @@
 """WhatsApp message types"""
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from core.messaging.exceptions import MessageValidationError
 from core.messaging.types import Message as CoreMessage
+from core.state.interface import StateManagerInterface
 
 logger = logging.getLogger(__name__)
 
@@ -11,8 +12,9 @@ logger = logging.getLogger(__name__)
 class WhatsAppMessage(Dict[str, Any]):
     """WhatsApp message format"""
 
+    # WhatsApp API requires these exact string values
     WHATSAPP_BASE = {
-        "messaging_product": "whatsapp",
+        "messaging_product": "whatsapp",  # API string
         "recipient_type": "individual"
     }
 
@@ -82,8 +84,16 @@ class WhatsAppMessage(Dict[str, Any]):
         return cls.create_message(to, "text", text=text)
 
     @classmethod
-    def from_core_message(cls, message: CoreMessage) -> Dict[str, Any]:
-        """Convert core Message to WhatsApp format"""
+    def from_core_message(cls, message: CoreMessage, state_manager: Optional[StateManagerInterface] = None) -> Dict[str, Any]:
+        """Convert core Message to WhatsApp format
+
+        Args:
+            message: Core message to convert
+            state_manager: Optional state manager for stateful operation
+
+        Returns:
+            Dict[str, Any]: WhatsApp formatted message
+        """
         try:
             if not message or not message.content:
                 raise MessageValidationError(
@@ -93,6 +103,36 @@ class WhatsAppMessage(Dict[str, Any]):
                     validation_details={
                         "error": "missing_content",
                         "message": str(message)
+                    }
+                )
+
+            # Get recipient info from message or state
+            if message.recipient:
+                channel_type = message.recipient.type
+                channel_id = message.recipient.identifier
+            elif state_manager:
+                channel_type = state_manager.get_channel_type()
+                channel_id = state_manager.get_channel_id()
+            else:
+                raise MessageValidationError(
+                    message="No recipient found in message or state",
+                    service="whatsapp",
+                    action="from_core_message",
+                    validation_details={
+                        "error": "missing_recipient"
+                    }
+                )
+
+            # Validate channel type
+            if channel_type != "whatsapp":
+                raise MessageValidationError(
+                    message="Invalid channel type for WhatsApp message",
+                    service="whatsapp",
+                    action="from_core_message",
+                    validation_details={
+                        "error": "invalid_channel",
+                        "expected": "whatsapp",
+                        "received": channel_type
                     }
                 )
 
@@ -111,25 +151,25 @@ class WhatsAppMessage(Dict[str, Any]):
                         }
                     )
                 return cls.create_message(
-                    to=message.recipient.channel_value,
+                    to=channel_id,
                     message_type="text",
                     text=content.body
                 )
             elif content_type == "interactive":
                 return cls.create_message(
-                    to=message.recipient.channel_value,
+                    to=channel_id,
                     message_type="interactive",
                     interactive=content.to_dict()["interactive"]
                 )
             elif content_type == "template":
                 return cls.create_message(
-                    to=message.recipient.channel_value,
+                    to=channel_id,
                     message_type="template",
                     template=content.to_dict()["template"]
                 )
             elif content_type in ["image", "document", "audio", "video"]:
                 return cls.create_message(
-                    to=message.recipient.channel_value,
+                    to=channel_id,
                     message_type=content_type,
                     url=content.url,
                     caption=getattr(content, "caption", None),
@@ -137,7 +177,7 @@ class WhatsAppMessage(Dict[str, Any]):
                 )
             elif content_type == "location":
                 return cls.create_message(
-                    to=message.recipient.channel_value,
+                    to=channel_id,
                     message_type="location",
                     latitude=content.latitude,
                     longitude=content.longitude,
@@ -158,7 +198,17 @@ class WhatsAppMessage(Dict[str, Any]):
 
         except Exception as e:
             logger.error(f"Message conversion error: {str(e)}")
+            # Get channel ID from message recipient or state
+            channel_id = "unknown"
+            try:
+                if message and message.recipient:
+                    channel_id = message.recipient.identifier
+                elif state_manager:
+                    channel_id = state_manager.get_state_value("channel", {}).get("identifier", "unknown")
+            except Exception:
+                pass  # Keep default "unknown" if both lookups fail
+
             return cls.create_text(
-                message.recipient.channel_value,
+                channel_id,
                 f"Error converting message: {str(e)}"
             )

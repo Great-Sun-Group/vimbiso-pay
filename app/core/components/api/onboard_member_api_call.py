@@ -82,6 +82,9 @@ class OnBoardMemberApiCall(ApiComponent):
                 details={"error": error}
             )
 
+        # Clear component_data.data since we've successfully consumed it
+        self.update_component_data(data={})
+
         return ValidationResult.success({
             "status": "success",
         })

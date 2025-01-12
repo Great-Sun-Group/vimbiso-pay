@@ -15,7 +15,6 @@ from core.error.exceptions import ComponentException
 from core.error.handler import ErrorHandler
 from core.error.types import ErrorContext
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import ChannelType
 from core.state.persistence.client import get_redis_client
 
 from .atomic_manager import AtomicStateManager
@@ -29,14 +28,7 @@ class StateManager(StateManagerInterface):
     """Manages state with clear boundaries"""
 
     def __init__(self, key_prefix: str):
-        """Initialize state manager
-
-        Args:
-            key_prefix: Redis key prefix (must start with 'channel:')
-
-        Raises:
-            ComponentException: If key prefix format is invalid
-        """
+        """Initialize state manager"""
         if not key_prefix or not key_prefix.startswith("channel:"):
             raise ComponentException(
                 message="Invalid key prefix format",
@@ -53,14 +45,7 @@ class StateManager(StateManagerInterface):
 
     @property
     def messaging(self) -> MessagingServiceInterface:
-        """Get messaging service with validation
-
-        Returns:
-            MessagingServiceInterface: Messaging service implementation
-
-        Raises:
-            ComponentException: If messaging service not initialized
-        """
+        """Get messaging service with validation"""
         if self._messaging is None:
             raise ComponentException(
                 message="Messaging service not initialized",
@@ -71,11 +56,7 @@ class StateManager(StateManagerInterface):
 
     @messaging.setter
     def messaging(self, service: MessagingServiceInterface) -> None:
-        """Set messaging service
-
-        Args:
-            service: Messaging service implementation
-        """
+        """Set messaging service"""
         self._messaging = service
 
     def _initialize_state(self) -> Dict[str, Any]:
@@ -88,7 +69,6 @@ class StateManager(StateManagerInterface):
         try:
             state_data = self.atomic_state.atomic_get(self.key_prefix)
         except Exception as e:
-            # Handle error through ErrorHandler
             error_context = ErrorContext(
                 error_type="system",
                 message=str(e),
@@ -107,68 +87,26 @@ class StateManager(StateManagerInterface):
                 error=e
             )
 
-        # Always return valid state
         return state_data if state_data is not None else initial_state
 
-    def initialize_channel(self, channel_type: ChannelType, channel_id: str, mock_testing: bool = False) -> None:
-        """Initialize or update channel info - the only way to modify channel data
-
-        Args:
-            channel_type: Channel type enum
-            channel_id: Channel identifier string
-            mock_testing: Whether to enable mock testing mode
-
-        Raises:
-            ComponentException: If validation fails
-        """
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Initializing channel - type: {channel_type} ({type(channel_type)}), id: {channel_id}, mock: {mock_testing}")
-
-        # Convert enum to string for persistence
-        channel_type_str = channel_type.value if isinstance(channel_type, ChannelType) else str(channel_type)
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Channel type string: {channel_type_str} ({type(channel_type_str)})")
-
-        # Construct updates with string channel type
+    def initialize_channel(self, channel_type: str, channel_id: str, mock_testing: bool = False) -> None:
+        """Initialize or update channel info"""
         updates = {
             "channel": {
-                "type": channel_type_str,
+                "type": channel_type,
                 "identifier": channel_id
             },
             "mock_testing": mock_testing
         }
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Channel updates: {updates}")
 
-        # Validate updates
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Preparing state update for validation")
+        # Validate and apply updates
         prepared_state = StateValidator.prepare_state_update(updates)
-
-        # Update state atomically
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Merging with existing state")
-            logger.debug(f"Current state: {self._state}")
-            logger.debug(f"Updates to apply: {prepared_state}")
-
         new_state = {**self._state, **prepared_state}
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"New merged state: {new_state}")
-
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Performing atomic update")
         self.atomic_state.atomic_update(self.key_prefix, new_state)
         self._state = new_state
 
     def update_state(self, updates: Dict[str, Any]) -> None:
-        """Update state with validation
-
-        Args:
-            updates: State updates to apply
-
-        Raises:
-            ComponentException: If updates format is invalid or attempts to modify channel
-        """
+        """Update state with validation"""
         if not isinstance(updates, dict):
             raise ComponentException(
                 message="Updates must be a dictionary",
@@ -187,19 +125,13 @@ class StateManager(StateManagerInterface):
             )
 
         try:
-            # Validate state update
+            # Validate and apply updates
             prepared_state = StateValidator.prepare_state_update(updates)
-
-            # Merge updates with current state
             new_state = {**self._state, **prepared_state}
-
-            # Persist to Redis first to ensure atomic update
             self.atomic_state.atomic_update(self.key_prefix, new_state)
-
-            # Update local state only after successful Redis update
             self._state = new_state
+
         except Exception as e:
-            # Handle error through ErrorHandler
             error_context = ErrorContext(
                 error_type="system",
                 message=str(e),
@@ -220,17 +152,7 @@ class StateManager(StateManagerInterface):
             )
 
     def _get(self, key: str) -> Any:
-        """Internal method to get raw state value
-
-        Args:
-            key: State key to get
-
-        Returns:
-            Value for key or None
-
-        Raises:
-            ComponentException: If key format is invalid
-        """
+        """Internal method to get raw state value"""
         if not key or not isinstance(key, str):
             raise ComponentException(
                 message="Key must be a non-empty string",
@@ -241,26 +163,12 @@ class StateManager(StateManagerInterface):
 
         return self._state.get(key)
 
-    # State access - protection through schema validation, not access control
     def get_state_value(self, key: str, default: Any = None) -> Any:
-        """Get any state value with default handling
-
-        All state fields except component_data.data are protected by schema validation
-        during updates, not by access control. Components have freedom to store any
-        data in their component_data.data dict.
-
-        Args:
-            key: State key to get
-            default: Default value if not found
-
-        Returns:
-            Value or default
-        """
+        """Get any state value with default handling"""
         try:
             value = self._get(key)
             return value if value is not None else default
         except Exception as e:
-            # Handle error through ErrorHandler
             error_context = ErrorContext(
                 error_type="system",
                 message=str(e),
@@ -281,7 +189,6 @@ class StateManager(StateManagerInterface):
             )
             return default
 
-    # Convenience methods for common state access
     def get_path(self) -> Optional[str]:
         """Get current flow path"""
         component_data = self.get_state_value("component_data", {})
@@ -302,7 +209,55 @@ class StateManager(StateManagerInterface):
         component_data = self.get_state_value("component_data", {})
         return component_data.get("awaiting_input", False)
 
-    # Component state updates
+    def get_incoming_message(self) -> Optional[Dict[str, Any]]:
+        """Get current incoming message if it exists"""
+        try:
+            component_data = self.get_state_value("component_data", {})
+            message = component_data.get("incoming_message")
+
+            # Validate message structure if present
+            if message:
+                test_update = {
+                    "component_data": {
+                        "incoming_message": message
+                    }
+                }
+                StateValidator.prepare_state_update(test_update)
+
+            return message
+
+        except Exception as e:
+            logger.error(f"Error getting incoming message: {str(e)}")
+            return None
+
+    def set_incoming_message(self, message: Dict[str, Any]) -> None:
+        """Set the incoming message with validation"""
+        if not isinstance(message, dict):
+            raise ComponentException(
+                message="Message must be a dictionary",
+                component="state_manager",
+                field="incoming_message",
+                value=str(type(message))
+            )
+
+        try:
+            current_data = self.get_state_value("component_data", {})
+            updates = {
+                "component_data": {
+                    **current_data,
+                    "incoming_message": message
+                }
+            }
+            self.update_state(updates)
+
+        except Exception as e:
+            raise ComponentException(
+                message=f"Failed to set incoming message: {str(e)}",
+                component="state_manager",
+                field="incoming_message",
+                value=str(message)
+            ) from e
+
     def update_flow_state(
         self,
         path: str,
@@ -311,25 +266,7 @@ class StateManager(StateManagerInterface):
         component_result: Optional[str] = None,
         awaiting_input: bool = False
     ) -> None:
-        """Update flow state including path and component
-
-        This is the low-level interface used by the flow processor to manage transitions.
-        It requires all schema fields including path and component. Components should
-        never use this directly - they should use Component.update_component_data() instead.
-
-        The component_data.data field is the only part of state not protected by
-        schema validation, giving components freedom to store their own data.
-
-        Args:
-            path: Current flow path
-            component: Current component
-            data: Optional component data (unvalidated)
-            component_result: Optional result for flow branching
-            awaiting_input: Whether component is waiting for input
-
-        Raises:
-            Exception: If update fails (handled by ErrorHandler)
-        """
+        """Update flow state including path and component"""
         try:
             # Preserve existing component data if not provided
             if data is None:
@@ -370,17 +307,14 @@ class StateManager(StateManagerInterface):
         self.update_state({"component_data": None})
 
     def clear_all_state(self) -> None:
-        """Clear all state data"""
+        """Clear all state data while preserving mock testing flag"""
         try:
-            # Complete wipe of all state
-            complete_state = {}
-
-            # Update state and persist
+            mock_testing = self.get_state_value("mock_testing", False)
+            complete_state = {"mock_testing": mock_testing} if mock_testing else {}
             self._state = complete_state
             self.atomic_state.atomic_update(self.key_prefix, complete_state)
 
         except Exception as e:
-            # Handle error through ErrorHandler
             error_context = ErrorContext(
                 error_type="system",
                 message=str(e),
@@ -399,17 +333,8 @@ class StateManager(StateManagerInterface):
                 error=e
             )
 
-    # Channel methods with required field validation
-
     def get_channel_id(self) -> str:
-        """Get channel identifier
-
-        Returns:
-            Channel ID string
-
-        Raises:
-            ComponentException: If identifier not found in channel data
-        """
+        """Get channel identifier"""
         channel = self.get_state_value("channel", {})
         if not channel.get("identifier"):
             raise ComponentException(
@@ -420,15 +345,8 @@ class StateManager(StateManagerInterface):
             )
         return channel["identifier"]
 
-    def get_channel_type(self) -> ChannelType:
-        """Get channel type
-
-        Returns:
-            Channel type enum
-
-        Raises:
-            ComponentException: If type not found in channel data
-        """
+    def get_channel_type(self) -> str:
+        """Get channel type"""
         channel_type = self.get_state_value("channel", {}).get("type")
         if not channel_type:
             raise ComponentException(
@@ -436,12 +354,11 @@ class StateManager(StateManagerInterface):
                 component="state_manager",
                 field="channel.type"
             )
-        return ChannelType(channel_type)
+        return channel_type
 
     def is_authenticated(self) -> bool:
         """Check if user is authenticated with valid token"""
         try:
-            # Get auth data
             auth = self.get_state_value("auth", {})
             dashboard = self.get_state_value("dashboard", {})
             jwt_token = auth.get("token")
@@ -449,7 +366,6 @@ class StateManager(StateManagerInterface):
             if not dashboard.get("member_id") or not jwt_token:
                 return False
 
-            # Validate token expiry locally
             from decouple import config
             from jwt import InvalidTokenError, decode
             try:
