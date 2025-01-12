@@ -4,16 +4,19 @@ resource "aws_ecs_service" "app" {
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = var.min_capacity
-  deployment_minimum_healthy_percent = 0  # Allow all tasks to be replaced
-  deployment_maximum_percent        = 200 # Allow new tasks to start before old ones stop
+  deployment_minimum_healthy_percent = 50  # Keep at least half running during deployment
+  deployment_maximum_percent        = 200  # Allow new tasks to start before old ones stop
   scheduling_strategy               = "REPLICA"
   force_new_deployment             = true
   health_check_grace_period_seconds = 900  # 15 minutes for complete startup
 
+  # Circuit breaker configuration
+  # NOTE: During normal operation, rollback should be enabled (rollback = true).
+  # However, when debugging deployment issues, setting rollback = false helps preserve
+  # the failed state for investigation. Remember to re-enable rollback after debugging.
   deployment_circuit_breaker {
     enable   = true
-    //rollback = false  # Use `false` to preserve logs and debug info (NOT FOR PROD)
-    rollback = true  # Use `true` to enable automatic rollback for failed deployments
+    rollback = false  # Temporarily disabled for debugging. Set to true in production.
   }
 
   deployment_controller {

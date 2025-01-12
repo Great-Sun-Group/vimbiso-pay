@@ -132,10 +132,10 @@ resource "aws_ecs_task_definition" "app" {
         EOT
       ]
       healthCheck = {
-        command     = ["CMD-SHELL", "redis-cli -p ${var.redis_state_port} ping"]
+        command     = ["CMD-SHELL", "redis-cli -p ${var.redis_state_port} ping || exit 1"]
         interval    = 30
-        timeout     = 15
-        retries     = 3
+        timeout     = 10
+        retries     = 5  # More retries before failing
         startPeriod = 300
       }
     },
@@ -191,10 +191,10 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f --max-time 15 --retry 5 --retry-delay 10 --retry-max-time 90 http://127.0.0.1:8000/health/ || exit 1"]
+        command     = ["CMD-SHELL", "curl -f --max-time 10 --retry 3 --retry-delay 5 --retry-max-time 45 http://127.0.0.1:8000/health/ || exit 1"]
         interval    = 30
-        timeout     = 15
-        retries     = 3
+        timeout     = 10
+        retries     = 5  # More retries before failing
         startPeriod = 300
       }
       mountPoints = [

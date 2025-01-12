@@ -84,8 +84,37 @@ SECURE_HSTS_PRELOAD = True
 - Recovery procedures
 
 ### Troubleshooting
+
+#### General Steps
 1. Check service health
 2. Review application logs
 3. Monitor Redis metrics
 4. Verify configurations
 5. Test connectivity
+
+#### Deployment Issues
+When tasks are failing during deployment:
+
+1. **Circuit Breaker Settings**
+   - By default, ECS deployment circuit breaker is enabled with automatic rollback
+   - For debugging deployment issues, disable rollback in `service.tf`:
+     ```hcl
+     deployment_circuit_breaker {
+       enable   = true
+       rollback = false  # Temporarily disable for debugging
+     }
+     ```
+   - This preserves the failed state for investigation
+   - **Important**: Re-enable rollback after debugging is complete
+
+2. **Health Check Investigation**
+   - Check container health status in ECS console
+   - Review CloudWatch logs for both containers
+   - Verify EFS mount points and permissions
+   - Check Redis connectivity and state
+
+3. **Common Issues**
+   - Task termination due to failed health checks
+   - EFS mount issues
+   - Redis state persistence problems
+   - Network connectivity failures
