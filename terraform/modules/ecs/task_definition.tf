@@ -10,11 +10,11 @@ resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([
     {
       name         = "redis-state"
-      image        = "public.ecr.aws/docker/library/redis:7.0.15-alpine3.19"  # Specific Alpine version
+      image        = "public.ecr.aws/docker/library/redis:7.0.15-alpine3.19"
       essential    = true
-      memory       = floor(var.task_memory * 0.3)  # Increased from 0.2
-      cpu          = floor(var.task_cpu * 0.3)     # Increased from 0.2
-      user         = "root"  # Need root for initial setup
+      memory       = floor(var.task_memory * 0.3)
+      cpu          = floor(var.task_cpu * 0.3)
+      user         = "root"
       portMappings = [
         {
           containerPort = var.redis_state_port
@@ -51,14 +51,22 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        # Install gosu for proper user switching
-        apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/v3.19/community gosu
+        set -x  # Enable debug logging
 
-        # Initialize Redis data directory with proper ownership
+        echo "Initializing Redis data directory..."
         mkdir -p /redis/state/appendonlydir
-        addgroup -S redis || true
-        adduser -S -G redis redis || true
-        chown -R redis:redis /redis/state
+
+        echo "Current permissions:"
+        ls -la /redis/state
+        ls -la /redis/state/appendonlydir
+
+        echo "Setting permissions..."
+        chmod 777 /redis/state
+        chmod 777 /redis/state/appendonlydir
+
+        echo "Updated permissions:"
+        ls -la /redis/state
+        ls -la /redis/state/appendonlydir
 
         # Check and repair AOF files if needed
         if [ -f /redis/state/appendonlydir/appendonly.aof.1.incr.aof ]; then
@@ -79,7 +87,8 @@ resource "aws_ecs_task_definition" "app" {
         fi
 
         # Start Redis with proper user and optimized settings
-        exec gosu redis redis-server \
+        echo "Starting Redis server..."
+        exec su-exec redis redis-server \
           --appendonly yes \
           --appendfsync everysec \
           --no-appendfsync-on-rewrite yes \
@@ -95,7 +104,7 @@ resource "aws_ecs_task_definition" "app" {
           --timeout 30 \
           --tcp-keepalive 60 \
           --maxmemory-policy allkeys-lru \
-          --maxmemory "${floor(var.task_memory * 0.3 * 0.90)}mb" \  # Fixed quotes
+          --maxmemory ${floor(var.task_memory * 0.3 * 0.90)}mb \
           --save "" \
           --stop-writes-on-bgsave-error no \
           --ignore-warnings ARM64-COW-BUG \
@@ -116,9 +125,9 @@ resource "aws_ecs_task_definition" "app" {
       name         = "vimbiso-pay-${var.environment}"
       image        = var.docker_image
       essential    = true
-      memory       = floor(var.task_memory * 0.7)  # Increased from 0.6
-      cpu          = floor(var.task_cpu * 0.7)     # Increased from 0.6
-      user         = "root"  # Need root for initial setup
+      memory       = floor(var.task_memory * 0.7)
+      cpu          = floor(var.task_cpu * 0.7)
+      user         = "root"
       environment  = [
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_env.django_secret },
