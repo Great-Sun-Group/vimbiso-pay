@@ -10,7 +10,7 @@ resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([
     {
       name         = "redis-state"
-      image        = "public.ecr.aws/docker/library/redis:7.0-alpine"
+      image        = "public.ecr.aws/docker/library/redis:7.0.15-alpine3.19"  # Specific Alpine version
       essential    = true
       memory       = floor(var.task_memory * 0.3)  # Increased from 0.2
       cpu          = floor(var.task_cpu * 0.3)     # Increased from 0.2
@@ -52,10 +52,12 @@ resource "aws_ecs_task_definition" "app" {
         "-c",
         <<-EOT
         # Install gosu for proper user switching
-        apk add --no-cache gosu
+        apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/v3.19/community gosu
 
-        # Initialize Redis data directory
+        # Initialize Redis data directory with proper ownership
         mkdir -p /redis/state/appendonlydir
+        addgroup -S redis || true
+        adduser -S -G redis redis || true
         chown -R redis:redis /redis/state
 
         # Check and repair AOF files if needed
@@ -93,7 +95,7 @@ resource "aws_ecs_task_definition" "app" {
           --timeout 30 \
           --tcp-keepalive 60 \
           --maxmemory-policy allkeys-lru \
-          --maxmemory ${floor(var.task_memory * 0.3 * 0.90)}mb \  # Increased from 0.2
+          --maxmemory "${floor(var.task_memory * 0.3 * 0.90)}mb" \  # Fixed quotes
           --save "" \
           --stop-writes-on-bgsave-error no \
           --ignore-warnings ARM64-COW-BUG \
