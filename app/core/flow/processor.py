@@ -177,17 +177,17 @@ class FlowProcessor:
                     # Log state transition
                     logger.info(f"Flow transition: {context}.{component} -> {next_context}.{next_component}")
 
-                    # Update flow state
-                    current_data = self.state_manager.get_state_value("component_data")
+                    # Get current component data
+                    component_data = self.state_manager.get_state_value("component_data", {})
                     if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(f"Updating flow state: {current_data}")
+                        logger.debug(f"Current flow state: {component_data}")
 
-                    # Update flow state for next iteration
-                    current_data = self.state_manager.get_state_value("component_data", {})
+                    # Extract shared data and update flow state
+                    shared_data = component_data.get("data", {})  # Get just the shared data dict
                     self.state_manager.update_flow_state(
                         path=next_context,
                         component=next_component,
-                        data=current_data.get("data", {}),
+                        data=shared_data,  # Pass only the shared data dict
                         component_result=None,  # Clear for next component
                         awaiting_input=False  # Let component set this
                     )

@@ -10,7 +10,9 @@ from core.error.types import ValidationResult
 from ..base import InputComponent
 
 # Handle prompt template
-HANDLE_PROMPT = "Enter account 💳 handle:"
+HANDLE_PROMPT = """💳 *Account handle:*
+Which account are you offering too?
+"""
 
 
 class HandleInput(InputComponent):
@@ -77,6 +79,8 @@ class HandleInput(InputComponent):
             )
 
         # Store validated handle and prepare for next component
-        self.state_manager.update_component_data(data={"handle": handle})
-        self.set_awaiting_input(False)
-        return ValidationResult.success("create_credex")  # Signal to move to CreateCredexApiCall
+        self.update_component_data(
+            data={"handle": handle},
+            awaiting_input=False
+        )
+        return ValidationResult.success(None)  # Signal to move to ConfirmOfferSecured

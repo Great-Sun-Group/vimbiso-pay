@@ -35,6 +35,7 @@ from .api.get_ledger_api_call import GetLedgerApiCall
 from .api.login_api_call import LoginApiCall
 from .api.onboard_member_api_call import OnBoardMemberApiCall
 from .api.upgrade_membertier_api_call import UpgradeMembertierApiCall
+from .api.validate_account_api_call import ValidateAccountApiCall
 
 # Confirm components
 from .confirm.confirm_cancel_offer import ConfirmCancelOffer
@@ -73,6 +74,7 @@ __all__ = [
     "LoginApiCall",
     "OnBoardMemberApiCall",
     "UpgradeMembertierApiCall",
+    "ValidateAccountApiCall",
 
     # Confirm components
     "ConfirmCancelOffer",

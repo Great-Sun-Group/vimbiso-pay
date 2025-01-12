@@ -159,8 +159,10 @@ def get_next_component(
         case ("offer_secured", "AmountInput"):
             return "offer_secured", "HandleInput"  # Get recipient handle from member and account details from credex-core
         case ("offer_secured", "HandleInput"):
-            return "offer_secured", "ConfirmInput"  # Confirm amount, denom, issuer and recipient accounts
-        case ("offer_secured", "ConfirmInput"):
+            return "offer_secured", "ValidateAccountApiCall"  # Validate account exists and get details
+        case ("offer_secured", "ValidateAccountApiCall"):
+            return "offer_secured", "ConfirmOfferSecured"  # Confirm amount, denom, issuer and recipient accounts
+        case ("offer_secured", "ConfirmOfferSecured"):
             return "offer_secured", "Greeting"  # Send random greeting while api call processes
         case ("offer_secured", "Greeting"):
             return "offer_secured", "CreateCredexApiCall"  # Create offer
