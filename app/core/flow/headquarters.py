@@ -132,10 +132,6 @@ def get_next_component(
     Returns:
         Tuple[str, str]: Next path/Component
     """
-    # Check if component is awaiting input
-    if state_manager.is_awaiting_input():
-        return path, component  # Stay at current step until input received
-
     # Get component result for branching
     component_result = state_manager.get_component_result()
 
@@ -279,6 +275,11 @@ def process_component(path: str, component: str, state_manager: StateManagerInte
     if not result.valid:
         logger.error(f"Component activation failed: {result.error}")
         return None
+
+    # Check if still awaiting input after activation
+    if state_manager.is_awaiting_input():
+        logger.info("Still awaiting input after activation")
+        return path, component
 
     # Determine next step in path
     logger.info("Getting next component...")

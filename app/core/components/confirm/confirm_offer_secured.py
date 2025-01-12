@@ -19,9 +19,16 @@ from . import ConfirmBase
 
 # Offer confirmation template
 OFFER_CONFIRMATION = """📝 *Digitally sign your secured credex*
-- 💸💸 *{amount}* 💸💸
-- Issuer 💳 *{active_account_name}* {active_account_handle}
-- Recipient 💳 *{input_account_name}* {input_account_handle}"""
+
+💸💸 *{amount}* 💸💸
+
+*Payer*
+{active_account_name}
+💳{active_account_handle}
+
+*Payee*
+{input_account_name}
+💳{input_account_handle}"""
 
 
 class ConfirmOfferSecured(ConfirmBase):
@@ -35,18 +42,23 @@ class ConfirmOfferSecured(ConfirmBase):
         """Set state manager for accessing offer data"""
         self.state_manager = state_manager
 
-    def _validate(self, value: Any) -> ValidationResult:
-        """Validate confirmation input or handle initial activation"""
+    def validate(self, value: Any) -> ValidationResult:
+        """Override parent validate to handle confirmation flow"""
         # Get current state
         current_data = self.state_manager.get_state_value("component_data", {})
+        awaiting_input = current_data.get("awaiting_input", False)
 
-        # Initial activation - send confirmation message
-        if not current_data.get("awaiting_input"):
-            self.send()
-            return ValidationResult.success(None)
+        # Initial activation - let parent handle it only if not already awaiting input
+        if value is None and not awaiting_input:
+            return super().validate(value)
 
-        # Process confirmation response
-        return self.handle_confirmation(value)
+        # Process confirmation if we have an incoming message
+        if current_data.get("incoming_message"):
+            # Process the confirmation
+            return self.handle_confirmation(value)
+
+        # Already awaiting input but no message to process
+        return ValidationResult.success(None)
 
     def _send(self) -> None:
         """Send confirmation message with buttons"""
