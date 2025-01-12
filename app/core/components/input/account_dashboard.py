@@ -12,13 +12,13 @@ from core.error.types import ValidationResult
 from core.messaging.types import InteractiveType, MessageType, Section
 
 # Account template
-ACCOUNT_DASHBOARD = """💳 *{account}* 💳
-*Account Handle:* {handle}
+ACCOUNT_DASHBOARD = """💳 *{account}*
+{handle}
 
-*💰 SECURED BALANCES*
+*💰 Secured Balances*
 {secured_balances}
 
-*📊 NET ASSETS*
+*📊 Net Assets*
 {net_assets}{tier_limit_display}"""
 
 

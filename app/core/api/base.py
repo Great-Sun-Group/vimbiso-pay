@@ -100,10 +100,9 @@ def get_headers(state_manager: StateManagerInterface, url: str) -> Dict[str, str
             logger.error("Invalid channel structure")
             return headers
 
-        # Get auth token from component data (components can store their own data in component_data.data)
-        component_data = state_manager.get_state_value("component_data", {})
-        action_data = component_data.get("action", {})
-        jwt_token = action_data.get("details", {}).get("token")
+        # Get auth token from state (proper location for auth data)
+        auth = state_manager.get_state_value("auth", {})
+        jwt_token = auth.get("token")
 
         if jwt_token:
             headers["Authorization"] = f"Bearer {jwt_token}"
@@ -231,25 +230,32 @@ def make_api_request(
                             message="State manager required for authenticated request"
                         )
 
-                    logger.warning("Auth error, attempting login")
-                    from services.whatsapp.bot_service import get_bot_service
+                    logger.warning("Auth error, initializing login flow")
 
-                    from .login import login
-                    bot_service = get_bot_service(state_manager)
-                    success, _ = login(bot_service)
-                    if not success:
-                        return ErrorHandler.handle_system_error(
-                            code="AUTH_ERROR",
-                            service="api_client",
-                            action="refresh_token",
-                            message="Failed to refresh auth token"
-                        )
+                    # Store return URL in state for after login
+                    state_manager.update_state({
+                        "auth": {
+                            "return_url": url
+                        }
+                    })
 
-                    # Retry with new token
-                    headers = get_headers(state_manager, url)
-                    retries += 1
-                    time.sleep(RETRY_DELAY)
-                    continue
+                    # Initialize proper login flow starting with Greeting
+                    state_manager.update_flow_state(
+                        path="login",
+                        component="Greeting",
+                        component_result="",
+                        awaiting_input=False,
+                        data={}
+                    )
+
+                    # Let flow processor handle the rest
+                    # API layer's job is done - return error to trigger retry after flow completes
+                    return ErrorHandler.handle_system_error(
+                        code="AUTH_REQUIRED",
+                        service="api_client",
+                        action="make_request",
+                        message="Authentication required - login flow initiated"
+                    )
 
                 # Log non-200 responses (but don't treat as errors)
                 if response.status_code != 200:

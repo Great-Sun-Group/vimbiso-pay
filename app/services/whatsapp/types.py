@@ -156,10 +156,15 @@ class WhatsAppMessage(Dict[str, Any]):
                     text=content.body
                 )
             elif content_type == "interactive":
+                # Handle both dict and object content
+                if hasattr(content, 'to_dict'):
+                    interactive_content = content.to_dict()["interactive"]
+                else:
+                    interactive_content = content.get("interactive", {})
                 return cls.create_message(
                     to=channel_id,
                     message_type="interactive",
-                    interactive=content.to_dict()["interactive"]
+                    interactive=interactive_content
                 )
             elif content_type == "template":
                 return cls.create_message(

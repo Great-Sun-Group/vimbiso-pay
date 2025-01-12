@@ -242,11 +242,15 @@ class Component:
             path = current.get("path", "")
             component = current.get("component", "")
 
+            # Merge new data with existing data
+            existing_data = current.get("data", {})
+            merged_data = {**existing_data, **(data or {})}
+
             # Use flow state update but preserve flow control fields
             self.state_manager.update_flow_state(
                 path=path,
                 component=component,
-                data=data if data is not None else current.get("data", {}),
+                data=merged_data,
                 component_result=component_result if component_result is not None else current.get("component_result"),
                 awaiting_input=awaiting_input if awaiting_input is not None else current.get("awaiting_input", False)
             )

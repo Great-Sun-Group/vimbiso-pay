@@ -88,9 +88,13 @@ class ValidateAccountApiCall(ApiComponent):
             )
 
         # Get action from response and verify account found
-        action = response_data.get("data", {}).get("action", {})
+        data = response_data.get("data", {})
+        action = data.get("action", {})
         action_type = action.get("type")
         logger.debug(f"Checking action type: {action_type}")
+        logger.debug(f"Response data: {response_data}")
+        logger.debug(f"Action data: {action}")
+        logger.debug(f"Account data: {data.get('account')}")
 
         # Check for validation error
         if action_type == "ERROR_VALIDATION":

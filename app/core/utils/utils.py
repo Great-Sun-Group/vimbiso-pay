@@ -4,7 +4,7 @@ from datetime import datetime
 
 import requests
 
-from .exceptions import ComponentException, SystemException
+from core.error.exceptions import ComponentException, SystemException
 
 logger = logging.getLogger(__name__)
 

@@ -12,14 +12,16 @@ from typing import Any, Dict
 
 from core.error.exceptions import ComponentException
 from core.error.types import ValidationResult
+from core.messaging.types import Button
+from core.utils.utils import format_denomination
 
 from . import ConfirmBase
 
 # Offer confirmation template
-OFFER_CONFIRMATION = """📝 *Digitally sign your offer:*
-💸 Amount: *{amount}*
-💳 From: *{active_account_name}* {active_account_handle}
-💳 To: *{input_account_name}* {input_account_handle}"""
+OFFER_CONFIRMATION = """📝 *Digitally sign your secured credex*
+- 💸💸 *{amount}* 💸💸
+- Issuer 💳 *{active_account_name}* {active_account_handle}
+- Recipient 💳 *{input_account_name}* {input_account_handle}"""
 
 
 class ConfirmOfferSecured(ConfirmBase):
@@ -51,9 +53,9 @@ class ConfirmOfferSecured(ConfirmBase):
         logger = logging.getLogger(__name__)
         logger.info("Preparing confirmation message")
 
-        # Get offer data
+        # Get offer data from component_data.data
         logger.debug("Getting offer details from component data")
-        offer_data = self.state_manager.get_state_value("component_data", {})
+        offer_data = self.state_manager.get_state_value("component_data", {}).get("data", {})
         amount = offer_data.get("amount")
         handle = offer_data.get("handle")
 
@@ -65,28 +67,58 @@ class ConfirmOfferSecured(ConfirmBase):
                 value=str(offer_data)
             )
 
-        # Get target account details from action state
+        # Get and validate target account details from action state
         logger.debug("Getting target account from action state")
         action = self.state_manager.get_state_value("action", {})
+        logger.debug(f"Action state: {action}")
         target_account = action.get("details", {})
+        logger.debug(f"Target account details: {target_account}")
+        if not target_account or not target_account.get("accountName"):
+            raise ComponentException(
+                message="Missing target account details",
+                component=self.type,
+                field="target_account",
+                value=str(action)
+            )
 
-        # Get active account details from dashboard state
+        # Get and validate active account details from dashboard state
         logger.debug("Getting active account from dashboard state")
         dashboard = self.state_manager.get_state_value("dashboard", {})
+        logger.debug(f"Dashboard state: {dashboard}")
         active_account_id = self.state_manager.get_state_value("active_account_id")
+        logger.debug(f"Active account ID: {active_account_id}")
+        if not active_account_id:
+            raise ComponentException(
+                message="No active account selected",
+                component=self.type,
+                field="active_account_id",
+                value=str(dashboard)
+            )
+
         active_account = next(
             (acc for acc in dashboard.get("accounts", [])
              if acc.get("accountID") == active_account_id),
-            {}
+            None
         )
+        if not active_account or not active_account.get("accountName"):
+            raise ComponentException(
+                message="Missing active account details",
+                component=self.type,
+                field="active_account",
+                value=str(dashboard)
+            )
+
+        # Format amount with denomination from component data
+        denom = offer_data.get("denom", "USD")
+        formatted_amount = format_denomination(float(amount), denom)
 
         # Format and send confirmation message
         logger.debug(
-            f"Sending confirmation for amount {amount} from "
+            f"Sending confirmation for amount {formatted_amount} from "
             f"{active_account.get('accountName')} to {target_account.get('accountName')}"
         )
         confirmation_message = OFFER_CONFIRMATION.format(
-            amount=amount,
+            amount=formatted_amount,
             active_account_name=active_account.get("accountName", ""),
             active_account_handle=active_account.get("accountHandle", ""),
             input_account_name=target_account.get("accountName", ""),
@@ -96,8 +128,8 @@ class ConfirmOfferSecured(ConfirmBase):
         self.state_manager.messaging.send_interactive(
             body=confirmation_message,
             buttons=[
-                {"id": "confirm", "title": "✅ Confirm"},
-                {"id": "cancel", "title": "❌ Cancel"}
+                Button(id="confirm", title="✅ Confirm"),
+                Button(id="cancel", title="❌ Cancel")
             ]
         )
         self.set_awaiting_input(True)
@@ -118,7 +150,7 @@ class ConfirmOfferSecured(ConfirmBase):
 
         # Get offer data from component data
         logger.debug("Getting offer data from component data")
-        offer_data = self.state_manager.get_state_value("component_data", {})
+        offer_data = self.state_manager.get_state_value("component_data", {}).get("data", {})
         if not offer_data:
             return ValidationResult.failure(
                 message="No offer data found",

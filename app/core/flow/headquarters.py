@@ -31,11 +31,15 @@ from core.state.interface import StateManagerInterface
 logger = logging.getLogger(__name__)
 
 
+# Cache for active component instances
+_active_components = {}
+
+
 def activate_component(component_type: str, state_manager: StateManagerInterface) -> ValidationResult:
-    """Create and activate a component for the current path step.
+    """Create or retrieve and activate a component for the current path step.
 
     Handles component processing:
-    1. Creates component instance
+    1. Creates new component instance or retrieves existing one if awaiting input
     2. Configures state management
     3. Returns component result
 
@@ -49,29 +53,48 @@ def activate_component(component_type: str, state_manager: StateManagerInterface
     Raises:
         ComponentException: If component creation or activation fails
     """
-    if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"Creating component for step: {component_type}")
+    # Get channel identifier for component cache key
+    channel_id = state_manager.get_channel_id()
+    cache_key = f"{channel_id}:{component_type}"
 
     try:
-        # Create component instance
-        component_class = getattr(components, component_type)
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Found component class: {component_class.__name__}")
+        # Check if we have an active instance awaiting input
+        if state_manager.is_awaiting_input() and cache_key in _active_components:
+            component = _active_components[cache_key]
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Retrieved active component instance: {component.type}")
+        else:
+            # Create new component instance
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Creating component for step: {component_type}")
 
-        component = component_class()
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Created component instance: {component.type}")
+            component_class = getattr(components, component_type)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Found component class: {component_class.__name__}")
 
+            component = component_class()
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Created component instance: {component.type}")
+
+            # Cache the new instance
+            _active_components[cache_key] = component
+
+        # Ensure state manager is set
         component.set_state_manager(state_manager)
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Set state manager on component")
 
-        # Activate new component
+        # Activate component
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Activating component")
         result = component.validate(None)
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Activation result: {result}")
+
+        # Clear from cache if no longer awaiting input
+        if not state_manager.is_awaiting_input():
+            _active_components.pop(cache_key, None)
+
         return result
 
     except AttributeError as e:

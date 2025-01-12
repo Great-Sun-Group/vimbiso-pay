@@ -182,12 +182,11 @@ class FlowProcessor:
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(f"Current flow state: {component_data}")
 
-                    # Extract shared data and update flow state
-                    shared_data = component_data.get("data", {})  # Get just the shared data dict
+                    # Update flow state while preserving shared data
                     self.state_manager.update_flow_state(
                         path=next_context,
                         component=next_component,
-                        data=shared_data,  # Pass only the shared data dict
+                        data=None,  # Let state manager preserve existing data
                         component_result=None,  # Clear for next component
                         awaiting_input=False  # Let component set this
                     )

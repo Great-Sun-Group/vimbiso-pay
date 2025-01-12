@@ -3,17 +3,20 @@
 This component handles amount input with proper validation.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Set
 
 from core.error.types import ValidationResult
 
 from ..base import InputComponent
 
+# Valid denominations
+VALID_DENOMS: Set[str] = {"CXX", "XAU", "USD", "CAD", "ZWG"}
+
 # Amount prompt template
 AMOUNT_PROMPT = """💸 *What offer amount and denomination?*
-✨ Defaults to USD: *9 || 99 || 9999.99 || 0.99*
-✨ Denom placement: *99 ZWG || ZWG 99*
-✨ Denoms: *CXX || XAU || USD || CAD || ZWG*"""
+- Defaults to USD ✨ *9 || 99 || 9999.99 || 0.99*
+- Denom placement ✨ *99 ZWG || ZWG 99*
+- Denoms ✨ *CXX || XAU || USD || CAD || ZWG*"""
 
 
 class AmountInput(InputComponent):
@@ -65,8 +68,38 @@ class AmountInput(InputComponent):
             )
 
         try:
-            # Convert to float
-            amount = float(text.strip())
+            # Split input into parts
+            parts = text.strip().split()
+
+            # Handle different input formats
+            if len(parts) == 1:
+                # Just amount - default to USD
+                amount = float(parts[0])
+                denom = "USD"
+            elif len(parts) == 2:
+                # Amount and denom in either order
+                if parts[0].replace('.', '', 1).isdigit():
+                    # Format: "99 ZWG"
+                    amount = float(parts[0])
+                    denom = parts[1].upper()
+                else:
+                    # Format: "ZWG 99"
+                    amount = float(parts[1])
+                    denom = parts[0].upper()
+
+                # Validate denomination
+                if denom not in VALID_DENOMS:
+                    return ValidationResult.failure(
+                        message=f"Invalid denomination. Valid options are: {', '.join(sorted(VALID_DENOMS))}",
+                        field="denomination",
+                        details={"denom": denom}
+                    )
+            else:
+                return ValidationResult.failure(
+                    message="Invalid format. Use: amount or 'amount DENOM' or 'DENOM amount'",
+                    field="format",
+                    details={"text": text}
+                )
 
             # Basic format validation
             if amount <= 0:
@@ -76,12 +109,15 @@ class AmountInput(InputComponent):
                     details={"amount": amount}
                 )
 
-            # Store validated amount in component_data.data for subsequent components
+            # Store validated amount and denom in component_data.data
             self.update_component_data(
-                data={"amount": str(amount)},
+                data={
+                    "amount": str(amount),
+                    "denom": denom
+                },
                 awaiting_input=False
             )
-            return ValidationResult.success(amount)
+            return ValidationResult.success({"amount": amount, "denom": denom})
 
         except ValueError:
             return ValidationResult.failure(
@@ -91,7 +127,14 @@ class AmountInput(InputComponent):
             )
 
     def to_verified_data(self, value: Any) -> Dict:
-        """Convert to verified amount"""
+        """Convert to verified amount and denomination"""
+        if isinstance(value, dict):
+            return {
+                "amount": str(float(value["amount"])),
+                "denom": value["denom"]
+            }
+        # Handle legacy format where value was just the amount
         return {
-            "amount": str(float(value))
+            "amount": str(float(value)),
+            "denom": "USD"
         }
