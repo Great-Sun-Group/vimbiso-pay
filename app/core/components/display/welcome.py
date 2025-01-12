@@ -24,52 +24,19 @@ class Welcome(DisplayComponent):
     def __init__(self):
         super().__init__("welcome")
 
-    def validate_display(self, response: Any) -> ValidationResult:
-        """Validate become_member button press or send initial welcome message
+    def validate_display(self, value: Any) -> ValidationResult:
+        """Validate become_member button press
 
         Args:
-            response: Ignored since headquarters always calls validate(None)
+            value: None for initial activation, or incoming message for button validation
         """
         try:
             # Get current state
             current_data = self.state_manager.get_state_value("component_data", {})
-            awaiting = current_data.get("awaiting_input", False)
             incoming_message = current_data.get("incoming_message")
 
-            # If we have an incoming message and we're awaiting input, validate button press
-            if incoming_message and awaiting:
-                # Validate it's an interactive button message
-                if incoming_message.get("type") != "interactive":
-                    return ValidationResult.failure(
-                        message="Expected interactive message",
-                        field="type",
-                        details={"message": incoming_message}
-                    )
-
-                # Get button info
-                text = incoming_message.get("text", {})
-                if text.get("interactive_type") != "button":
-                    return ValidationResult.failure(
-                        message="Expected button response",
-                        field="interactive_type",
-                        details={"text": text}
-                    )
-
-                # Check button ID
-                button = text.get("button", {})
-                if button.get("id") != "become_member":
-                    return ValidationResult.failure(
-                        message="Invalid response - please click the Become a Member button",
-                        field="button",
-                        details={"button": button}
-                    )
-
-                # Valid button press - allow flow to progress
-                self.set_awaiting_input(False)
-                return ValidationResult.success()
-
-            # No incoming message or not awaiting input - send welcome message
-            if not awaiting:
+            # Initial activation - send welcome message
+            if not current_data.get("awaiting_input"):
                 self.state_manager.messaging.send_interactive(
                     body=REGISTER,
                     buttons=[Button(
@@ -78,7 +45,41 @@ class Welcome(DisplayComponent):
                     )]
                 )
                 self.set_awaiting_input(True)
-            return ValidationResult.success()
+                return ValidationResult.success(None)
+
+            # Process button press
+            if not incoming_message:
+                return ValidationResult.success(None)
+
+            # Validate it's an interactive button message
+            if incoming_message.get("type") != "interactive":
+                return ValidationResult.failure(
+                    message="Expected interactive message",
+                    field="type",
+                    details={"message": incoming_message}
+                )
+
+            # Get button info
+            text = incoming_message.get("text", {})
+            if text.get("interactive_type") != "button":
+                return ValidationResult.failure(
+                    message="Expected button response",
+                    field="interactive_type",
+                    details={"text": text}
+                )
+
+            # Check button ID
+            button = text.get("button", {})
+            if button.get("id") != "become_member":
+                return ValidationResult.failure(
+                    message="Invalid response - please click the Become a Member button",
+                    field="button",
+                    details={"button": button}
+                )
+
+            # Valid button press - allow flow to progress
+            self.set_awaiting_input(False)
+            return ValidationResult.success(None)
 
         except Exception as e:
             return ValidationResult.failure(

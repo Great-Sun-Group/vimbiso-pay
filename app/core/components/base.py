@@ -66,6 +66,28 @@ class Component:
 
         self.state_manager = state_manager
 
+    def send(self) -> None:
+        """Send component's initial message/prompt
+        
+        Components implement _send() to define their specific messaging logic.
+        This is called on initial activation to display prompts or messages.
+        """
+        if not self.state_manager:
+            raise ComponentException(
+                message="State manager not set",
+                component=self.type,
+                field="state_manager",
+                value="None"
+            )
+        self._send()
+
+    def _send(self) -> None:
+        """Component-specific send logic
+        
+        Override this to implement component-specific messaging.
+        """
+        pass
+
     def validate(self, value: Any) -> ValidationResult:
         """Validate component input with standardized tracking
 

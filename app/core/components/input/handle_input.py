@@ -19,7 +19,7 @@ class HandleInput(InputComponent):
     def __init__(self):
         super().__init__("handle_input")
 
-    def validate(self, value: Any) -> ValidationResult:
+    def _validate(self, value: Any) -> ValidationResult:
         """Validate handle format only
 
         Only checks basic format requirements:
@@ -54,6 +54,8 @@ class HandleInput(InputComponent):
             )
 
         # Update state and release our hold on the flow
-        self.update_state(handle, ValidationResult.success(handle))
-        self.set_awaiting_input(False)  # Release our own hold
+        self.update_component_data(
+            data={"handle": handle},
+            awaiting_input=False
+        )
         return ValidationResult.success(handle)

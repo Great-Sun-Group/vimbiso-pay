@@ -16,25 +16,42 @@ class LastNameInput(InputComponent):
     def __init__(self):
         super().__init__("lastname_input")
 
-    def validate(self, value: Any) -> ValidationResult:
+    def _validate(self, value: Any) -> ValidationResult:
         """Validate last name with proper tracking"""
-        # If no value provided, we're being activated - await input
-        if value is None:
+        # Get current state
+        current_data = self.state_manager.get_state_value("component_data", {})
+        incoming_message = current_data.get("incoming_message")
+
+        # Initial activation - send prompt
+        if not current_data.get("awaiting_input"):
+            self.state_manager.messaging.send_text(
+                text="Please enter your last name:"
+            )
             self.set_awaiting_input(True)
             return ValidationResult.success(None)
 
-        # Validate type
-        type_result = self._validate_type(value, str, "text")
-        if not type_result.valid:
-            return type_result
+        # Process input
+        if not incoming_message:
+            return ValidationResult.success(None)
 
-        # Validate required
-        required_result = self._validate_required(value)
-        if not required_result.valid:
-            return required_result
+        # Get text from message
+        if not isinstance(incoming_message, dict):
+            return ValidationResult.failure(
+                message="Expected text message",
+                field="type",
+                details={"message": incoming_message}
+            )
+
+        text = incoming_message.get("text", {}).get("body", "")
+        if not text:
+            return ValidationResult.failure(
+                message="No text provided",
+                field="text",
+                details={"message": incoming_message}
+            )
 
         # Validate length
-        lastname = value.strip()
+        lastname = text.strip()
         if len(lastname) < 3 or len(lastname) > 50:
             return ValidationResult.failure(
                 message="Last name must be between 3 and 50 characters",

@@ -22,7 +22,7 @@ class AmountInput(InputComponent):
     def __init__(self):
         super().__init__("amount_input")
 
-    def validate(self, value: Any) -> ValidationResult:
+    def _validate(self, value: Any) -> ValidationResult:
         """Validate amount format only
 
         Only checks basic format requirements:
@@ -54,8 +54,10 @@ class AmountInput(InputComponent):
                 )
 
             # Update state and release our hold on the flow
-            self.update_state(str(amount), ValidationResult.success(amount))
-            self.set_awaiting_input(False)  # Release our own hold
+            self.update_component_data(
+                data={"amount": str(amount)},
+                awaiting_input=False
+            )
             return ValidationResult.success(amount)
 
         except ValueError:

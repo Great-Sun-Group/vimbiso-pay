@@ -21,12 +21,12 @@ The state manager provides:
 """
 
 import logging
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 from core import components
+from core.error.exceptions import ComponentException
 from core.error.types import ValidationResult
 from core.state.interface import StateManagerInterface
-from core.error.exceptions import ComponentException
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def activate_component(component_type: str, state_manager: StateManagerInterface
         logger.debug(f"Creating component for step: {component_type}")
 
     try:
-        # Create component for this step
+        # Create component instance
         component_class = getattr(components, component_type)
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Found component class: {component_class.__name__}")
@@ -66,12 +66,12 @@ def activate_component(component_type: str, state_manager: StateManagerInterface
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Set state manager on component")
 
-        # Validate all components
+        # Activate new component
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Validating component")
+            logger.debug("Activating component")
         result = component.validate(None)
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Validation result: {result}")
+            logger.debug(f"Activation result: {result}")
         return result
 
     except AttributeError as e:

@@ -7,21 +7,16 @@ from typing import Any, Dict
 
 from core.error.types import ValidationResult
 
-from core.components.base import Component
+from core.components.base import DisplayComponent
 
 
-class DisplayLedgerSection(Component):
+class DisplayLedgerSection(DisplayComponent):
     """Handles displaying a section of ledger entries"""
 
     def __init__(self):
         super().__init__("display_ledger_section")
-        self.state_manager = None
 
-    def set_state_manager(self, state_manager: Any) -> None:
-        """Set state manager for accessing ledger data"""
-        self.state_manager = state_manager
-
-    def validate(self, value: Any) -> ValidationResult:
+    def validate_display(self, value: Any) -> ValidationResult:
         """Validate and format ledger entries for display"""
         # Validate state manager is set
         if not self.state_manager:
