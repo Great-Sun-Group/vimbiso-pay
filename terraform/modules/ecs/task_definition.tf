@@ -52,32 +52,58 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        # Install gosu for proper user switching
+        echo "[Redis] Starting initialization..."
+
+        # Basic setup
+        echo "[Redis] Installing gosu..."
         apk add --no-cache gosu
 
-        # Initialize Redis data directory
-        mkdir -p /redis/state/appendonlydir
-        chown -R redis:redis /redis/state
+        echo "[Redis] Setting up Redis user..."
+        addgroup -S -g 999 redis
+        adduser -S -u 999 -G redis redis
 
-        # Check and repair AOF files if needed
-        if [ -f /redis/state/appendonlydir/appendonly.aof.1.incr.aof ]; then
-          echo "Checking AOF file integrity..."
-          # Backup AOF files before repair attempt
-          echo "Creating backup of AOF files..."
-          cp -f /redis/state/appendonlydir/appendonly.aof.1.incr.aof /redis/state/appendonlydir/appendonly.aof.1.incr.aof.bak
-          cp -f /redis/state/appendonlydir/appendonly.aof.manifest /redis/state/appendonlydir/appendonly.aof.manifest.bak
+        echo "[Redis] Setting up data directory..."
+        # The EFS access point creates /redis/state for us
+        chown redis:redis /redis/state
 
-          if ! redis-check-aof --fix /redis/state/appendonlydir/appendonly.aof.1.incr.aof; then
-            echo "AOF file corrupted, removing and starting fresh..."
-            rm -f /redis/state/appendonlydir/appendonly.aof.1.incr.aof
-            rm -f /redis/state/appendonlydir/appendonly.aof.manifest
-          else
-            echo "AOF file repaired successfully"
-            rm -f /redis/state/appendonlydir/*.bak
+        # Check for data in various possible locations and migrate if needed
+        for old_path in "/redis/state/redis/state/appendonlydir" "/redis/state/appendonlydir"; do
+          if [ -d "$old_path" ]; then
+            echo "[Redis] Found data in $old_path, migrating..."
+            mv "$old_path"/* /redis/state/ 2>/dev/null || true
+            rm -rf "$(dirname "$old_path")"
           fi
-        fi
+        done
 
-        # Start Redis with proper user and optimized settings
+        # Check AOF files in both old and new locations
+        for aof_path in "/redis/state/appendonlydir/appendonly.aof.1.incr.aof" "/redis/state/appendonly.aof.1.incr.aof"; do
+          if [ -f "$aof_path" ]; then
+            echo "[Redis] Found AOF file at $aof_path"
+            if ! redis-check-aof --fix "$aof_path"; then
+              echo "[Redis] AOF file corrupted, removing..."
+              rm -f "$aof_path"
+              rm -f "$(dirname "$aof_path")/appendonly.aof.manifest"
+            else
+              echo "[Redis] AOF file verified"
+              # If file was in old location, move it
+              if [ "$aof_path" != "/redis/state/appendonly.aof.1.incr.aof" ]; then
+                echo "[Redis] Moving AOF file to new location"
+                mv "$aof_path" "/redis/state/appendonly.aof.1.incr.aof"
+                mv "$(dirname "$aof_path")/appendonly.aof.manifest" "/redis/state/appendonly.aof.manifest"
+              fi
+            fi
+          fi
+        done
+
+        # Log Redis environment
+        echo "[Redis] Environment:"
+        echo "  User: $(id redis)"
+        echo "  Mount status: $(mountpoint -v /redis/state)"
+        echo "  Mount details: $(df -h /redis/state)"
+        echo "  Directory contents: $(ls -la /redis/state)"
+        echo "  Port: ${var.redis_state_port}"
+
+        echo "[Redis] Starting Redis server with optimized settings..."
         exec gosu redis redis-server \
           --appendonly yes \
           --appendfsync everysec \
@@ -100,7 +126,9 @@ resource "aws_ecs_task_definition" "app" {
           --ignore-warnings ARM64-COW-BUG \
           --activedefrag yes \
           --active-defrag-threshold-lower 10 \
-          --active-defrag-threshold-upper 30
+          --active-defrag-threshold-upper 30 \
+          --logfile "" \
+          --daemonize no
         EOT
       ]
       healthCheck = {
@@ -182,31 +210,42 @@ resource "aws_ecs_task_definition" "app" {
         <<-EOT
         set -ex
 
-        echo "[App] Starting initialization..."
+        # Small delay to ensure log infrastructure is ready
+        sleep 2
 
-        # Install required packages
-        apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        echo "[App] Starting initialization..."
+        echo "[App] Container environment: ${var.environment}"
+
+        echo "[App] Installing required packages..."
+        apt-get update 2>&1
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends 2>&1 \
           curl \
           iproute2 \
           netcat-traditional \
           dnsutils \
           gosu \
           redis-tools
-        rm -rf /var/lib/apt/lists/*
+        rm -rf /var/lib/apt/lists/* 2>&1
+        echo "[App] Package installation complete"
 
-        # Wait for network readiness
-        echo "[App] Waiting for network readiness..."
+        echo "[App] Checking network readiness..."
         until getent hosts localhost >/dev/null 2>&1; do
           echo "[App] Network not ready - sleeping 2s"
           sleep 2
         done
 
-        # Set up directories with proper permissions
-        echo "[App] Setting up directories..."
-        mkdir -p /efs-vols/app-data/data/{db,static,media,logs}
-        chown -R 10001:10001 /efs-vols/app-data
-        chmod 777 /efs-vols/app-data/data/db
+        echo "[App] Checking EFS mount point..."
+        if ! mountpoint -q /efs-vols/app-data; then
+          echo "[App] Error: /efs-vols/app-data is not a mount point"
+          exit 1
+        fi
+        echo "[App] EFS mount point verified"
+
+        echo "[App] Creating and configuring data directories..."
+        mkdir -p /efs-vols/app-data/data/{db,static,media,logs} 2>&1 || { echo "[App] Failed to create data directories"; exit 1; }
+        chown -R 10001:10001 /efs-vols/app-data 2>&1 || { echo "[App] Failed to set directory ownership"; exit 1; }
+        chmod 777 /efs-vols/app-data/data/db 2>&1 || { echo "[App] Failed to set directory permissions"; exit 1; }
+        echo "[App] Data directories configured successfully"
 
         echo "[App] Waiting for Redis State..."
         until nc -z localhost ${var.redis_state_port}; do
@@ -236,6 +275,12 @@ resource "aws_ecs_task_definition" "app" {
           sleep 5
         done
 
+        # Verify Redis is accepting connections before proceeding
+        if ! redis-cli -p ${var.redis_state_port} ping > /dev/null 2>&1; then
+          echo "[App] Final Redis connectivity check failed"
+          exit 1
+        fi
+
         # Test Django Redis connections
         echo "[App] Testing Django Redis connections..."
         cd /app
@@ -257,11 +302,11 @@ EOF
         echo "[App] Creating data symlink..."
         ln -sfn /efs-vols/app-data/data /app/data
 
-        echo "[App] Running migrations..."
-        python manage.py migrate --noinput
+        echo "[App] Running database migrations..."
+        python manage.py migrate --noinput 2>&1
 
         echo "[App] Collecting static files..."
-        python manage.py collectstatic --noinput
+        python manage.py collectstatic --noinput 2>&1
 
         echo "[App] Starting Gunicorn..."
         exec gunicorn config.wsgi:application \
