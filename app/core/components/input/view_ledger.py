@@ -70,10 +70,13 @@ class ViewLedger(InputComponent):
             "denom": active_account.get("denom", "USD")
         }
 
-        return ValidationResult.success({
+        # Store account data and signal next component
+        self.state_manager.update_component_data(data={
             "title": "Account Ledger",
             "account": account_data
         })
+        self.set_awaiting_input(False)
+        return ValidationResult.success("display_section")
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified display data"""

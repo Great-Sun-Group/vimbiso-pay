@@ -79,17 +79,10 @@ class OfferListDisplay(InputComponent):
             selection = value.get("text", "").strip()
 
             if selection in valid_ids:
-                # Update state with selection
-                # Update state with selection (components can store their own data in component_data.data)
-                current = self.state_manager.get_state_value("component_data", {})
-                self.state_manager.update_component_data(
-                    path=current.get("path", ""),
-                    component=current.get("component", ""),
-                    data={"credex_id": selection}
-                )
-                # Release our hold since we got valid selection
-                self.set_awaiting_input(False)  # Release our own hold
-                return ValidationResult.success({"selection": selection})
+                # Store selection and signal next component
+                self.state_manager.update_component_data(data={"credex_id": selection})
+                self.set_awaiting_input(False)
+                return ValidationResult.success("handle_offer")
 
             return ValidationResult.failure(
                 message="Invalid offer selection. Please choose from the available offers.",

@@ -57,11 +57,14 @@ class DisplayLedgerSection(InputComponent):
         total_pages = ledger_data.get("total_pages", 1)
         current_page = ledger_data.get("current_page", 1)
 
-        return ValidationResult.success({
+        # Store display data and signal next component
+        self.state_manager.update_component_data(data={
             "entries": formatted_entries,
             "total_pages": total_pages,
             "current_page": current_page
         })
+        self.set_awaiting_input(False)
+        return ValidationResult.success("view_ledger")
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert to verified display data"""

@@ -6,8 +6,8 @@ This component handles Credex handle input with proper validation.
 from typing import Any
 
 from core.error.types import ValidationResult
-from ..base import InputComponent
 
+from ..base import InputComponent
 
 # Handle prompt template
 HANDLE_PROMPT = "Enter account 💳 handle:"
@@ -29,18 +29,40 @@ class HandleInput(InputComponent):
 
         Business validation (availability etc) happens in service layer
         """
-        # If no value provided, we're being activated - await input
-        if value is None:
+        # Get current state
+        current_data = self.state_manager.get_state_value("component_data", {})
+        incoming_message = current_data.get("incoming_message")
+
+        # Initial activation - send prompt
+        if not current_data.get("awaiting_input"):
+            self.state_manager.messaging.send_text(
+                text=HANDLE_PROMPT
+            )
             self.set_awaiting_input(True)
             return ValidationResult.success(None)
 
-        # Validate type
-        type_result = self._validate_type(value, str, "text")
-        if not type_result.valid:
-            return type_result
+        # Process input
+        if not incoming_message:
+            return ValidationResult.success(None)
+
+        # Get text from message
+        if not isinstance(incoming_message, dict):
+            return ValidationResult.failure(
+                message="Expected text message",
+                field="type",
+                details={"message": incoming_message}
+            )
+
+        text = incoming_message.get("text", {}).get("body", "")
+        if not text:
+            return ValidationResult.failure(
+                message="No text provided",
+                field="text",
+                details={"message": incoming_message}
+            )
 
         # Validate basic format
-        handle = value.strip()
+        handle = text.strip()
         if not handle:
             return ValidationResult.failure(
                 message="Handle required",
@@ -50,12 +72,11 @@ class HandleInput(InputComponent):
         if len(handle) > 30:
             return ValidationResult.failure(
                 message="Handle too long (max 30 chars)",
-                field="handle"
+                field="handle",
+                details={"length": len(handle)}
             )
 
-        # Update state and release our hold on the flow
-        self.update_component_data(
-            data={"handle": handle},
-            awaiting_input=False
-        )
-        return ValidationResult.success(handle)
+        # Store validated handle and prepare for next component
+        self.state_manager.update_component_data(data={"handle": handle})
+        self.set_awaiting_input(False)
+        return ValidationResult.success("create_credex")  # Signal to move to CreateCredexApiCall
