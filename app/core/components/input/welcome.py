@@ -8,7 +8,7 @@ from typing import Any
 from core.error.types import ValidationResult
 from core.messaging.types import Button
 
-from ..base import DisplayComponent
+from core.components.base import InputComponent
 
 # Registration template
 REGISTER = """Welcome to VimbisoPay 💰
@@ -18,7 +18,7 @@ We're your portal 🚪to the credex ecosystem 🌱
 Become a member 🌐 and open a free account 💳 to get started 📈"""
 
 
-class Welcome(DisplayComponent):
+class Welcome(InputComponent):
     """Handles registration welcome screen"""
 
     def __init__(self):

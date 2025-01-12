@@ -9,7 +9,7 @@ from typing import Any
 from core.error.exceptions import ComponentException
 from core.error.types import ValidationResult
 from core.messaging.types import InteractiveType, MessageType, Section
-from ..base import DisplayComponent
+from core.components.base import InputComponent
 
 
 # Account template
@@ -23,7 +23,7 @@ ACCOUNT_DASHBOARD = """💳 *{account}* 💳
 {net_assets}{tier_limit_display}"""
 
 
-class AccountDashboard(DisplayComponent):
+class AccountDashboard(InputComponent):
     """Handles account dashboard display and initial state"""
 
     def __init__(self):

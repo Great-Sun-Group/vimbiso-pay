@@ -6,7 +6,7 @@ This component handles displaying a list of Credex offers.
 from typing import Any, Dict
 
 from core.error.types import ValidationResult
-from ..base import DisplayComponent
+from core.components.base import InputComponent
 
 
 # Offer list templates
@@ -22,7 +22,7 @@ OFFER_ITEM = """💰 Amount: {amount}
 ACTION_PROMPT = "Select a credex offer to {action_type}:"
 
 
-class OfferListDisplay(DisplayComponent):
+class OfferListDisplay(InputComponent):
     """Handles displaying a list of Credex offers"""
 
     def __init__(self):

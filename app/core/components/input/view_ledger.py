@@ -7,10 +7,10 @@ from typing import Any, Dict
 
 from core.error.types import ValidationResult
 
-from ..base import DisplayComponent
+from core.components.base import InputComponent
 
 
-class ViewLedger(DisplayComponent):
+class ViewLedger(InputComponent):
     """Handles ledger view display"""
 
     def __init__(self):
