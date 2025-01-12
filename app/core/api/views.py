@@ -1,6 +1,8 @@
 """Cloud API webhook views"""
 import logging
 import sys
+import redis
+from django.conf import settings
 
 from core.messaging.service import MessagingService
 from core.messaging.types import Message as DomainMessage
@@ -26,6 +28,30 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+
+class HealthCheck(APIView):
+    """Health check endpoint for container health monitoring"""
+    permission_classes = []
+    throttle_classes = []
+
+    @staticmethod
+    def get(request):
+        try:
+            # Check Redis connectivity
+            redis_client = redis.from_url(settings.REDIS_STATE_URL)
+            redis_client.ping()
+
+            return JsonResponse({
+                "status": "healthy",
+                "redis": "connected"
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Health check failed: {str(e)}")
+            return JsonResponse({
+                "status": "unhealthy",
+                "error": str(e)
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 def get_messaging_service(state_manager, channel_type: str):
