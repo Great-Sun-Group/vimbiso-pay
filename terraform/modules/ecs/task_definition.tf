@@ -14,7 +14,7 @@ resource "aws_ecs_task_definition" "app" {
       essential    = true
       memory       = floor(var.task_memory * 0.3)
       cpu          = floor(var.task_cpu * 0.3)
-      user         = "root"
+      user         = "redis:redis"  # Run directly as redis user
       portMappings = [
         {
           containerPort = var.redis_state_port
@@ -86,9 +86,9 @@ resource "aws_ecs_task_definition" "app" {
           fi
         fi
 
-        # Start Redis with proper user and optimized settings
+        # Start Redis directly (already running as redis user)
         echo "Starting Redis server..."
-        exec su-exec redis redis-server \
+        exec redis-server \
           --appendonly yes \
           --appendfsync everysec \
           --no-appendfsync-on-rewrite yes \

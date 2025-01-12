@@ -140,8 +140,9 @@ class AccountDashboard(DisplayComponent):
                 # Account Actions
                 menu_options.append({"id": "view_ledger", "title": "View account ledger", "description": "📊 View account ledger"})
 
-                # Member Actions
-                menu_options.append({"id": "upgrade_membertier", "title": "Upgrade your member tier", "description": "⭐ Upgrade your member tier"})
+                # Member Actions - only show upgrade option for tier 1
+                if member.get("memberTier") == 1:
+                    menu_options.append({"id": "upgrade_membertier", "title": "Upgrade your member tier", "description": "⭐ Upgrade your member tier"})
 
                 try:
                     # Set component to await input before sending menu
