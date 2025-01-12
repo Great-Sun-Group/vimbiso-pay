@@ -13,14 +13,14 @@ from .base import Component, InputComponent, DisplayComponent, ApiComponent
 from .confirm import ConfirmBase
 
 # Display components
-from .display.account_dashboard import AccountDashboard
-from .display.display_ledger_section import DisplayLedgerSection
 from .display.greeting import Greeting
-from .display.offer_list_display import OfferListDisplay
-from .display.view_ledger import ViewLedger
-from .display.welcome import Welcome
 
 # Input components
+from .input.welcome import Welcome
+from .input.account_dashboard import AccountDashboard
+from .input.display_ledger_section import DisplayLedgerSection
+from .input.offer_list_display import OfferListDisplay
+from .input.view_ledger import ViewLedger
 from .input.amount_input import AmountInput
 from .input.first_name_input import FirstNameInput
 from .input.handle_input import HandleInput
@@ -51,14 +51,14 @@ __all__ = [
     "ConfirmBase",
 
     # Display components
+    "Greeting",
+
+    # Input components
     "AccountDashboard",
     "DisplayLedgerSection",
-    "Greeting",
     "OfferListDisplay",
     "ViewLedger",
     "Welcome",
-
-    # Input components
     "AmountInput",
     "FirstNameInput",
     "HandleInput",

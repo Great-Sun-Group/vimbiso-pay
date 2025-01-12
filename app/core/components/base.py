@@ -68,7 +68,7 @@ class Component:
 
     def send(self) -> None:
         """Send component's initial message/prompt
-        
+
         Components implement _send() to define their specific messaging logic.
         This is called on initial activation to display prompts or messages.
         """
@@ -83,7 +83,7 @@ class Component:
 
     def _send(self) -> None:
         """Component-specific send logic
-        
+
         Override this to implement component-specific messaging.
         """
         pass
@@ -281,31 +281,26 @@ class Component:
 
 
 class DisplayComponent(Component):
-    """Base class for display components"""
+    """Base class for display-only components that don't handle input"""
 
     def __init__(self, component_type: str):
         super().__init__(component_type)
 
     def _validate(self, value: Any) -> ValidationResult:
-        """Validate display data with proper tracking"""
-        logger = logging.getLogger(__name__)
+        """Display components just format and show data, no validation needed"""
         try:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Validating display component {self.type}")
-
-            # Subclasses implement specific validation
-            result = self.validate_display(value)
-
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Display validation result: {result}")
-            return result
-
+            # Format and display the data
+            self.display(value)
+            return ValidationResult.success(value)
         except Exception as e:
-            logger.error(f"Display validation error in {self.type}: {str(e)}")
-            raise
+            return ValidationResult.failure(
+                message=f"Failed to display: {str(e)}",
+                field="display",
+                details={"error": str(e)}
+            )
 
-    def validate_display(self, value: Any) -> ValidationResult:
-        """Component-specific display validation logic"""
+    def display(self, value: Any) -> None:
+        """Component-specific display logic"""
         raise NotImplementedError
 
 
@@ -314,6 +309,28 @@ class InputComponent(Component):
 
     def __init__(self, component_type: str):
         super().__init__(component_type)
+
+    def _validate(self, value: Any) -> ValidationResult:
+        """Validate input with proper tracking"""
+        logger = logging.getLogger(__name__)
+        try:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Validating input component {self.type}")
+
+            # Subclasses implement specific validation
+            result = self.validate_display(value)
+
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Input validation result: {result}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Input validation error in {self.type}: {str(e)}")
+            raise
+
+    def validate_display(self, value: Any) -> ValidationResult:
+        """Component-specific display validation logic"""
+        raise NotImplementedError
 
     def _validate_type(self, value: Any, expected_type: Union[Type, tuple], type_name: str) -> ValidationResult:
         """Validate value type with proper error context

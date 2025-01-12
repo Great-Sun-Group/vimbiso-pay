@@ -161,15 +161,6 @@ class FlowProcessor:
                 logger.info(f"Component result: {result}")
                 logger.info(f"Awaiting input: {self.state_manager.is_awaiting_input()}")
 
-                # Clear component result after it's been used for flow control
-                if result:
-                    self.state_manager.update_flow_state(
-                        path=context,
-                        component=component,
-                        component_result=None,
-                        awaiting_input=False
-                    )
-
                 # Handle component failure
                 if next_step is None:
                     logger.error(f"Component failed: {context}.{component}")
@@ -196,8 +187,8 @@ class FlowProcessor:
                     self.state_manager.update_flow_state(
                         path=next_context,
                         component=next_component,
-                        data=current_data.get("data", {}),  # Preserve data
-                        component_result=current_data.get("component_result"),  # Preserve result for flow control
+                        data=current_data.get("data", {}),
+                        component_result=None,  # Clear for next component
                         awaiting_input=False  # Let component set this
                     )
 

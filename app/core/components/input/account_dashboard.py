@@ -6,11 +6,10 @@ Also handles initial state setup after login.
 
 from typing import Any
 
+from core.components.base import InputComponent
 from core.error.exceptions import ComponentException
 from core.error.types import ValidationResult
 from core.messaging.types import InteractiveType, MessageType, Section
-from core.components.base import InputComponent
-
 
 # Account template
 ACCOUNT_DASHBOARD = """💳 *{account}* 💳
@@ -40,8 +39,8 @@ class AccountDashboard(InputComponent):
             )
 
         try:
-            # Display Phase - First time through
-            if not isinstance(value, dict) or "type" not in value:
+            # Display Phase - When not awaiting input
+            if not self.state_manager.is_awaiting_input():
                 # Get and validate dashboard data
                 dashboard = self.state_manager.get_state_value("dashboard")
                 if not dashboard:

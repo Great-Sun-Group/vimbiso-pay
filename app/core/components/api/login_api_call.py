@@ -67,7 +67,18 @@ class LoginApiCall(ApiComponent):
             # For existing members, set active account
             try:
                 dashboard = self.state_manager.get_state_value("dashboard", {})
-                personal_account = dashboard["accounts"][0]  # First account is always PERSONAL
+                accounts = dashboard.get("accounts", [])
+                personal_account = next(
+                    (acc for acc in accounts if acc.get("accountType") == "PERSONAL"),
+                    None
+                )
+                if not personal_account:
+                    return ValidationResult.failure(
+                        message="Login failed: No personal account found",
+                        field="accounts",
+                        details={"error": "missing_personal_account"}
+                    )
+
                 self.state_manager.update_state({
                     "active_account_id": personal_account["accountID"]
                 })
