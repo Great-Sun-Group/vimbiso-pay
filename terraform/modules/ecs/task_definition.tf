@@ -135,8 +135,8 @@ resource "aws_ecs_task_definition" "app" {
         command     = ["CMD-SHELL", "redis-cli -p ${var.redis_state_port} ping || exit 1"]
         interval    = 30
         timeout     = 10
-        retries     = 5  # More retries before failing
-        startPeriod = 300
+        retries     = 5      # More retries for reliability
+        startPeriod = 300    # 5 minutes to handle AOF loading
       }
     },
     {
