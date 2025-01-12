@@ -36,7 +36,7 @@ else:
     os.makedirs(BASE_PATH, exist_ok=True)
 
 # Redis configuration
-REDIS_URL = env("REDIS_STATE_URL", default="redis://redis-state:6379/0")
+REDIS_URL = env("REDIS_URL", default="redis://redis-state:6379/0")
 
 # Security settings
 CORS_ALLOW_HEADERS = ["apiKey"]  # For WhatsApp webhook

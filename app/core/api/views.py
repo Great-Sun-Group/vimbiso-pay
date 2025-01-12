@@ -39,7 +39,7 @@ class HealthCheck(APIView):
     def get(request):
         try:
             # Check Redis connectivity
-            redis_client = redis.from_url(settings.REDIS_STATE_URL)
+            redis_client = redis.from_url(settings.REDIS_URL)
             redis_client.ping()
 
             return JsonResponse({

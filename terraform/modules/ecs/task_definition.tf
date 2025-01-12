@@ -163,7 +163,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },
         { name = "APP_LOG_LEVEL", value = "DEBUG" },
-        { name = "REDIS_STATE_URL", value = "redis://localhost:${var.redis_state_port}/0" },
+        { name = "REDIS_URL", value = "redis://localhost:${var.redis_state_port}/0" },
         { name = "LANG", value = "en_US.UTF-8" },
         { name = "LANGUAGE", value = "en_US:en" },
         { name = "LC_ALL", value = "en_US.UTF-8" },
@@ -289,9 +289,9 @@ import redis
 from django.conf import settings
 import sys
 
-print("[App] Attempting to connect to Redis State using settings.REDIS_STATE_URL:", settings.REDIS_STATE_URL)
+print("[App] Attempting to connect to Redis State using settings.REDIS_URL:", settings.REDIS_URL)
 try:
-    rs = redis.from_url(settings.REDIS_STATE_URL)
+    rs = redis.from_url(settings.REDIS_URL)
     rs.ping()
     print("[App] Django Redis connection successful")
 except Exception as e:
