@@ -17,8 +17,7 @@ from typing import Any, Dict
 
 from core.error.exceptions import ComponentException
 from core.error.handler import ErrorHandler
-from core.error.types import ValidationResult
-from core.error.types import INVALID_ACTION_MESSAGE
+from core.error.types import INVALID_ACTION_MESSAGE, ValidationResult
 from core.messaging.service import MessagingService
 from core.messaging.types import Message, MessageType, TextContent
 from core.messaging.utils import get_recipient

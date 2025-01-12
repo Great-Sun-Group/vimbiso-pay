@@ -36,12 +36,11 @@ class Component:
         }
 
     def set_state_manager(self, state_manager: StateManagerInterface) -> None:
-        """Set state manager and initialize component state
+        """Set state manager for component
 
-        When a component is initialized, it starts with clean state:
-        - Empty data dict for component-specific data
-        - No component_result since previous result was used for branching
-        - Inherits current path/component and awaiting_input
+        Components use the state manager to access and update state, but the
+        flow processor manages the actual flow state (path, component, etc).
+        Components should only initialize their internal validation state.
 
         Args:
             state_manager: State manager instance
@@ -66,12 +65,6 @@ class Component:
             )
 
         self.state_manager = state_manager
-
-        # Initialize clean component state
-        self.update_component_data(
-            data={},  # Start with empty data
-            component_result=None  # Clear any previous result
-        )
 
     def validate(self, value: Any) -> ValidationResult:
         """Validate component input with standardized tracking

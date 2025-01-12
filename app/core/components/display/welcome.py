@@ -6,10 +6,9 @@ This component handles the registration welcome screen.
 from typing import Any
 
 from core.error.types import ValidationResult
-from core.messaging.types import (Button, InteractiveContent, InteractiveType,
-                                  Message, MessageType)
-from ..base import DisplayComponent
+from core.messaging.types import Button
 
+from ..base import DisplayComponent
 
 # Registration template
 REGISTER = """Welcome to VimbisoPay 💰
@@ -25,59 +24,61 @@ class Welcome(DisplayComponent):
     def __init__(self):
         super().__init__("welcome")
 
-    def validate_display(self, value: Any) -> ValidationResult:
-        """Display welcome message with greeting or handle button response"""
+    def validate_display(self, response: Any) -> ValidationResult:
+        """Validate become_member button press or send initial welcome message
+
+        Args:
+            response: Ignored since headquarters always calls validate(None)
+        """
         try:
-            # Handle button response if awaiting input
-            if self.state_manager.is_awaiting_input():
-                incoming_message = self.state_manager.get_incoming_message()
-                if not incoming_message:
+            # Get current state
+            current_data = self.state_manager.get_state_value("component_data", {})
+            awaiting = current_data.get("awaiting_input", False)
+            incoming_message = current_data.get("incoming_message")
+
+            # If we have an incoming message and we're awaiting input, validate button press
+            if incoming_message and awaiting:
+                # Validate it's an interactive button message
+                if incoming_message.get("type") != "interactive":
                     return ValidationResult.failure(
-                        message="No incoming message found",
-                        field="message",
-                        details={"error": "missing_message"}
+                        message="Expected interactive message",
+                        field="type",
+                        details={"message": incoming_message}
                     )
 
-                if incoming_message.get("type") == MessageType.INTERACTIVE.value:
-                    text = incoming_message.get("text", {})
-                    if text.get("interactive_type") == InteractiveType.BUTTON.value:
-                        button = text.get("button", {})
-                        if button.get("id") == "become_member":
-                            # Release flow to move to next component
-                            self.set_awaiting_input(False)
-                            return ValidationResult.success()
+                # Get button info
+                text = incoming_message.get("text", {})
+                if text.get("interactive_type") != "button":
                     return ValidationResult.failure(
-                        message="Invalid button selection",
+                        message="Expected button response",
+                        field="interactive_type",
+                        details={"text": text}
+                    )
+
+                # Check button ID
+                button = text.get("button", {})
+                if button.get("id") != "become_member":
+                    return ValidationResult.failure(
+                        message="Invalid response - please click the Become a Member button",
                         field="button",
-                        details={"error": "invalid_selection"}
+                        details={"button": button}
                     )
-                return ValidationResult.failure(
-                    message="Invalid message type",
-                    field="type",
-                    details={"error": "not_interactive"}
-                )
 
-            # Send welcome message with button
-            content = InteractiveContent(
-                interactive_type=InteractiveType.BUTTON,
-                body=REGISTER,
-                buttons=[Button(id="become_member", title="Become a Member")]
-            )
-            # Set awaiting_input before sending message
-            self.set_awaiting_input(True)
-
-            message = Message(content=content)
-            send_result = self.state_manager.messaging.send_message(message)
-
-            if send_result:
+                # Valid button press - allow flow to progress
+                self.set_awaiting_input(False)
                 return ValidationResult.success()
 
-            # Message wasn't sent successfully - track error in state
-            return ValidationResult.failure(
-                message="Failed to send welcome message",
-                field="messaging",
-                details={"error": "send_failed"}
-            )
+            # No incoming message or not awaiting input - send welcome message
+            if not awaiting:
+                self.state_manager.messaging.send_interactive(
+                    body=REGISTER,
+                    buttons=[Button(
+                        id="become_member",
+                        title="Become a Member"
+                    )]
+                )
+                self.set_awaiting_input(True)
+            return ValidationResult.success()
 
         except Exception as e:
             return ValidationResult.failure(
@@ -85,6 +86,7 @@ class Welcome(DisplayComponent):
                 field="welcome",
                 details={
                     "component": self.type,
-                    "error": str(e)
+                    "error": str(e),
+                    "state": self.state_manager.get_state_value("component_data", {})
                 }
             )

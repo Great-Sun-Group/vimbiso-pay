@@ -17,8 +17,11 @@ class FirstNameInput(InputComponent):
 
     def validate(self, value: Any) -> ValidationResult:
         """Validate first name with proper tracking"""
-        # If no value provided, we're being activated - await input
+        # If no value provided, we're being activated - send prompt and await input
         if value is None:
+            self.state_manager.messaging.send_text(
+                body="Please enter your first name:"
+            )
             self.set_awaiting_input(True)
             return ValidationResult.success(None)
 
