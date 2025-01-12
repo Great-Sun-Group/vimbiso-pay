@@ -120,10 +120,10 @@ variable "efs_mount_targets" {
 variable "min_capacity" {
   description = "Minimum number of tasks"
   type        = number
-  default     = 2
+  default     = 1
   validation {
-    condition     = var.min_capacity >= 2
-    error_message = "Minimum capacity must be at least 2 for high availability"
+    condition     = var.min_capacity >= 1
+    error_message = "Minimum capacity must be at least 1"
   }
 }
 
