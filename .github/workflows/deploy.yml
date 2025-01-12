@@ -250,10 +250,6 @@ jobs:
                 if [ ! -z "$TASK_ARN" ]; then
                   TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
 
-                  # Check Redis Cache health
-                  REDIS_CACHE_HEALTH=$(check_container_health "$TASK_ARN" "redis-cache")
-                  echo "Redis Cache Health Status: $REDIS_CACHE_HEALTH"
-
                   # Check Redis State health
                   REDIS_STATE_HEALTH=$(check_container_health "$TASK_ARN" "redis-state")
                   echo "Redis State Health Status: $REDIS_STATE_HEALTH"
@@ -268,7 +264,6 @@ jobs:
                     if [ $ELAPSED_TIME -gt $GRACE_PERIOD ]; then
                       echo "Unhealthy containers detected after grace period. Fetching logs..."
                       START_TIME=$(($(date +%s) - 300))
-                      get_container_logs "$TASK_ID" "redis-cache" "$START_TIME" 200
                       get_container_logs "$TASK_ID" "redis-state" "$START_TIME" 200
                       get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
                       exit 1
@@ -293,7 +288,6 @@ jobs:
                   if [ ! -z "$TASK_ARN" ]; then
                     TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
                     START_TIME=$(($(date +%s) - 300))
-                    get_container_logs "$TASK_ID" "redis-cache" "$START_TIME" 200
                     get_container_logs "$TASK_ID" "redis-state" "$START_TIME" 200
                     get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
                   fi
@@ -324,7 +318,6 @@ jobs:
                   echo "$RUNNING_TASKS" | xargs -n1 | while read -r TASK_ARN; do
                     TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
                     START_TIME=$(($(date +%s) - 300))
-                    get_container_logs "$TASK_ID" "redis-cache" "$START_TIME" 200
                     get_container_logs "$TASK_ID" "redis-state" "$START_TIME" 200
                     get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
                   done

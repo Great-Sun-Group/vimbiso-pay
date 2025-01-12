@@ -8,13 +8,14 @@ resource "aws_ecs_task_definition" "app" {
   task_role_arn           = var.task_role_arn
 
   container_definitions = jsonencode([
+
     {
       name         = "redis-state"
-      image        = "public.ecr.aws/docker/library/redis:7.0.15-alpine3.19"
+      image        = "public.ecr.aws/docker/library/redis:7.0-alpine"
       essential    = true
-      memory       = floor(var.task_memory * 0.3)
-      cpu          = floor(var.task_cpu * 0.3)
-      user         = "redis:redis"  # Run directly as redis user
+      memory       = floor(var.task_memory * 0.2)
+      cpu          = floor(var.task_cpu * 0.2)
+      user         = "root"  # Need root for initial setup
       portMappings = [
         {
           containerPort = var.redis_state_port
@@ -51,22 +52,12 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        set -x  # Enable debug logging
+        # Install gosu for proper user switching
+        apk add --no-cache gosu
 
-        echo "Initializing Redis data directory..."
+        # Initialize Redis data directory
         mkdir -p /redis/state/appendonlydir
-
-        echo "Current permissions:"
-        ls -la /redis/state
-        ls -la /redis/state/appendonlydir
-
-        echo "Setting permissions..."
-        chmod 777 /redis/state
-        chmod 777 /redis/state/appendonlydir
-
-        echo "Updated permissions:"
-        ls -la /redis/state
-        ls -la /redis/state/appendonlydir
+        chown -R redis:redis /redis/state
 
         # Check and repair AOF files if needed
         if [ -f /redis/state/appendonlydir/appendonly.aof.1.incr.aof ]; then
@@ -86,9 +77,8 @@ resource "aws_ecs_task_definition" "app" {
           fi
         fi
 
-        # Start Redis directly (already running as redis user)
-        echo "Starting Redis server..."
-        exec redis-server \
+        # Start Redis with proper user and optimized settings
+        exec gosu redis redis-server \
           --appendonly yes \
           --appendfsync everysec \
           --no-appendfsync-on-rewrite yes \
@@ -104,7 +94,7 @@ resource "aws_ecs_task_definition" "app" {
           --timeout 30 \
           --tcp-keepalive 60 \
           --maxmemory-policy allkeys-lru \
-          --maxmemory ${floor(var.task_memory * 0.3 * 0.90)}mb \
+          --maxmemory ${floor(var.task_memory * 0.2 * 0.90)}mb \
           --save "" \
           --stop-writes-on-bgsave-error no \
           --ignore-warnings ARM64-COW-BUG \
@@ -125,9 +115,9 @@ resource "aws_ecs_task_definition" "app" {
       name         = "vimbiso-pay-${var.environment}"
       image        = var.docker_image
       essential    = true
-      memory       = floor(var.task_memory * 0.7)
-      cpu          = floor(var.task_cpu * 0.7)
-      user         = "root"
+      memory       = floor(var.task_memory * 0.6)
+      cpu          = floor(var.task_cpu * 0.6)
+      user         = "root"  # Need root for initial setup
       environment  = [
         { name = "DJANGO_ENV", value = var.environment },
         { name = "DJANGO_SECRET", value = var.django_env.django_secret },
@@ -214,8 +204,9 @@ resource "aws_ecs_task_definition" "app" {
 
         # Set up directories with proper permissions
         echo "[App] Setting up directories..."
-        mkdir -p /efs-vols/app-data/data/{static,media,logs}
+        mkdir -p /efs-vols/app-data/data/{db,static,media,logs}
         chown -R 10001:10001 /efs-vols/app-data
+        chmod 777 /efs-vols/app-data/data/db
 
         echo "[App] Waiting for Redis State..."
         until nc -z localhost ${var.redis_state_port}; do
@@ -229,9 +220,7 @@ resource "aws_ecs_task_definition" "app" {
         attempt=1
         while [ $attempt -le $max_attempts ]; do
           echo "[App] Redis connection attempt $attempt/$max_attempts"
-
-          if redis-cli -p ${var.redis_state_port} ping; then
-            echo "[App] Redis PING successful"
+          if redis-cli -p ${var.redis_state_port} ping > /dev/null 2>&1; then
             echo "[App] Redis State INFO:"
             redis-cli -p ${var.redis_state_port} info | grep -E "^(# Server|redis_version|connected_clients|used_memory|used_memory_human|used_memory_peak|used_memory_peak_human|role)"
             break
@@ -247,8 +236,8 @@ resource "aws_ecs_task_definition" "app" {
           sleep 5
         done
 
-        # Test Django Redis connection
-        echo "[App] Testing Django Redis connection..."
+        # Test Django Redis connections
+        echo "[App] Testing Django Redis connections..."
         cd /app
         python << EOF
 import redis
@@ -261,12 +250,15 @@ try:
     rs.ping()
     print("[App] Django Redis connection successful")
 except Exception as e:
-    print("[App] Django Redis connection failed:", str(e))
+    print("[App] Django Redis connections failed:", str(e))
     sys.exit(1)
 EOF
 
         echo "[App] Creating data symlink..."
         ln -sfn /efs-vols/app-data/data /app/data
+
+        echo "[App] Running migrations..."
+        python manage.py migrate --noinput
 
         echo "[App] Collecting static files..."
         python manage.py collectstatic --noinput
