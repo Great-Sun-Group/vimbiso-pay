@@ -14,7 +14,7 @@ def get_redis_client() -> redis.Redis:
     - health_check_interval=30 to detect connection issues
     - retry_on_timeout=True to handle temporary connection issues
     """
-    url = config("REDIS_STATE_URL", default="redis://redis-state:6379/0")
+    url = config("REDIS_URL", default="redis://redis-state:6379/0")
     return redis.from_url(
         url,
         decode_responses=True,

@@ -190,7 +190,7 @@ class AccountDashboard(DisplayComponent):
                         ]
                         if selection in valid_paths:
                             # Set result and release flow
-                            self.update_component_state(
+                            self.update_component_data(
                                 component_result=selection,
                                 awaiting_input=False
                             )
