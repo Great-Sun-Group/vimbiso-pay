@@ -18,9 +18,7 @@ from core.utils.utils import format_denomination
 from . import ConfirmBase
 
 # Offer confirmation template
-OFFER_CONFIRMATION = """📝 *Digitally sign your secured credex*
-
-💸💸 *{amount}* 💸💸
+OFFER_CONFIRMATION = """📝💸 Secured Credex *{amount}*
 
 *Payer*
 {active_account_name}
@@ -140,8 +138,8 @@ class ConfirmOfferSecured(ConfirmBase):
         self.state_manager.messaging.send_interactive(
             body=confirmation_message,
             buttons=[
-                Button(id="confirm", title="✅ Confirm"),
-                Button(id="cancel", title="❌ Cancel")
+                Button(id="confirm", title="📝 Digitally Sign And Offer 💸"),
+                Button(id="cancel", title="❌ Cancel Offer ❌")
             ]
         )
         self.set_awaiting_input(True)

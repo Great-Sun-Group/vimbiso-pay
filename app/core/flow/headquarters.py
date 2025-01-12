@@ -170,7 +170,7 @@ def get_next_component(
             if component_result == "cancel_offer":
                 return "cancel_offer", "OfferListDisplay"  # List pending outgoing offers to cancel
             if component_result == "view_ledger":
-                return "view_ledger", "Greeting"  # Send random greeting while api call processes
+                return "view_ledger", "Greeting"  # Send random greeting while API call processes
             if component_result == "upgrade_membertier":
                 return "upgrade_membertier", "ConfirmUpgrade"  # Send upgrade confirmation message
 
@@ -218,23 +218,16 @@ def get_next_component(
 
         # View ledger path
         case ("view_ledger", "Greeting"):
-            return "view_ledger", "LedgerManagement"  # Manages fetching and displaying ledger and selecting a credex
-        case ("view_ledger", "LedgerManagement"):
-            if component_result == "view_credex":
-                return "view_credex", "Greeting"  # Send random greeting while api call processes
-            if component_result == "send_account_dashboard":
+            return "view_ledger", "ViewLedger"  # Show ledger with pagination
+        case ("view_ledger", "ViewLedger"):
+            if component_result == "fetch_ledger":
+                return "view_ledger", "GetLedgerApiCall"  # Fetch ledger entries
+            if component_result == "send_dashboard":
                 return "account", "AccountDashboard"  # Return to account dashboard
+        case ("view_ledger", "GetLedgerApiCall"):
+            return "view_ledger", "ViewLedger"  # Display fetched entries
 
-        # View credex path
-        case ("view_credex", "Greeting"):
-            return "view_credex", "GetAndDisplayCredex"  # Fetches and displays a credex
-        case ("view_credex", "GetAndDisplayCredex"):
-            if component_result == "account_dashboard":
-                return "account", "AccountDashboard"  # Return to account dashboard
-            if component_result == "view_counterparty":  # Placeholder for future implementation
-                return "account", "AccountDashboard"  # Return to account dashboard for now since this won't actually happen
-
-        # Ugrade member tier path
+        # Upgrade member tier path
         case ("upgrade_membertier", "ConfirmUpgrade"):
             return "upgrade_membertier", "Greeting"  # Send random greeting while api call processes
         case ("upgrade_membertier", "Greeting"):

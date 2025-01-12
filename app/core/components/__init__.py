@@ -18,7 +18,6 @@ from .display.greeting import Greeting
 # Input components
 from .input.welcome import Welcome
 from .input.account_dashboard import AccountDashboard
-from .input.display_ledger_section import DisplayLedgerSection
 from .input.offer_list_display import OfferListDisplay
 from .input.view_ledger import ViewLedger
 from .input.amount_input import AmountInput
@@ -56,7 +55,6 @@ __all__ = [
 
     # Input components
     "AccountDashboard",
-    "DisplayLedgerSection",
     "OfferListDisplay",
     "ViewLedger",
     "Welcome",

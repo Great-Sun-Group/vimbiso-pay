@@ -111,14 +111,8 @@ class AccountDashboard(InputComponent):
                 account_info = ACCOUNT_DASHBOARD.format(**formatted_data)
 
                 # Get pending counts from active account
-                pending_in = len([
-                    o for o in active_account.get("offers", [])
-                    if o.get("status") == "pending" and o.get("type") == "incoming"
-                ])
-                pending_out = len([
-                    o for o in active_account.get("offers", [])
-                    if o.get("status") == "pending" and o.get("type") == "outgoing"
-                ])
+                pending_in = len(active_account.get("pendingInData", []))
+                pending_out = len(active_account.get("pendingOutData", []))
 
                 # Format pending counts
                 pending_in_formatted = f" ({pending_in})" if pending_in > 0 else ""
@@ -130,11 +124,10 @@ class AccountDashboard(InputComponent):
                 # Credex Actions
                 menu_options.append({"id": "offer_secured", "title": "Offer secured credex", "description": "💸 Offer secured credex"})
                 if pending_in > 0:
-                    menu_options.append({"id": "accept_offers_bulk", "title": "Accept all pending offers", "description": f"✅ Accept all pending offers{pending_in_formatted}"})
                     menu_options.append({"id": "accept_offer", "title": "Accept a pending offer", "description": f"✅ Accept a pending offer{pending_in_formatted}"})
                     menu_options.append({"id": "decline_offer", "title": "Decline a pending offer", "description": f"❌ Decline a pending offer{pending_in_formatted}"})
                 if pending_out > 0:
-                    menu_options.append({"id": "cancel_offer", "title": "Cancel your offer", "description": f"🚫 Cancel your offer{pending_out_formatted}"})
+                    menu_options.append({"id": "cancel_offer", "title": "Cancel an offer", "description": f"🚫 Cancel an offer{pending_out_formatted}"})
 
                 # Account Actions
                 menu_options.append({"id": "view_ledger", "title": "View account ledger", "description": "📊 View account ledger"})
@@ -180,7 +173,6 @@ class AccountDashboard(InputComponent):
                         # Validate selection matches expected flow paths
                         valid_paths = [
                             "offer_secured",
-                            "accept_offers_bulk",
                             "accept_offer",
                             "decline_offer",
                             "cancel_offer",
