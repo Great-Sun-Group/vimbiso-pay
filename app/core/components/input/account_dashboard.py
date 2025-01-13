@@ -130,7 +130,7 @@ class AccountDashboard(InputComponent):
                     menu_options.append({"id": "cancel_offer", "title": "Cancel an offer", "description": f"🚫 Cancel an offer{pending_out_formatted}"})
 
                 # Account Actions
-                menu_options.append({"id": "view_ledger", "title": "View account ledger", "description": "📊 View account ledger"})
+                # menu_options.append({"id": "view_ledger", "title": "View account ledger", "description": "📊 View account ledger"})
 
                 # Member Actions - only show upgrade option for tier 1
                 if member.get("memberTier") == 1:
@@ -147,7 +147,7 @@ class AccountDashboard(InputComponent):
                             title="Actions",
                             rows=menu_options
                         )],
-                        button_text="🕹️ Select Action"
+                        button_text="🪄 Actions"
                     )
 
                     return ValidationResult.success(formatted_data)

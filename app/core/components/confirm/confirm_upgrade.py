@@ -21,10 +21,8 @@ logger = logging.getLogger(__name__)
 UPGRADE_CONFIRMATION = """📈 *Member Tier Upgrade*
 
 👤 Member: {member_name}
-🌟 Current Tier: Open (free)
-💫 Next Tier: Hustler ($1 USD/month)
-
-Would you like to upgrade your member tier?"""
+🌟 Current Tier: Open (Free)
+💫 Next Tier: Hustler ($1 USD/month)"""
 
 
 class ConfirmUpgrade(ConfirmBase):
@@ -32,6 +30,11 @@ class ConfirmUpgrade(ConfirmBase):
 
     def __init__(self):
         super().__init__("confirm_upgrade")
+        self.state_manager = None
+
+    def set_state_manager(self, state_manager: Any) -> None:
+        """Set state manager for accessing state data"""
+        self.state_manager = state_manager
 
     def validate(self, value: Any) -> ValidationResult:
         """Override parent validate to handle confirmation flow"""
@@ -94,8 +97,8 @@ class ConfirmUpgrade(ConfirmBase):
             self.state_manager.messaging.send_interactive(
                 body=confirmation_message,
                 buttons=[
-                    Button(id="confirm", title="📈 Upgrade Tier 🌟"),
-                    Button(id="cancel", title="❌ Cancel ❌")
+                    Button(id="confirm", title="💫 Upgrade Tier 📈"),
+                    Button(id="cancel", title="❌ No Thanks ❌")
                 ]
             )
             self.set_awaiting_input(True)
