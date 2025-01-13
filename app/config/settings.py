@@ -35,10 +35,11 @@ else:
     BASE_PATH = BASE_DIR / 'data'
     os.makedirs(BASE_PATH, exist_ok=True)
 
-# Database configuration - using dummy backend since we only use Redis for state
+# Database configuration - using in-memory SQLite since we only use Redis for state
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.dummy',
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': ':memory:',  # Pure in-memory database, no file access needed
     }
 }
 
