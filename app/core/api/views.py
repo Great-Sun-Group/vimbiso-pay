@@ -1,9 +1,6 @@
 """Cloud API webhook views"""
 import logging
 import sys
-import redis
-from django.conf import settings
-
 from core.messaging.service import MessagingService
 from core.messaging.types import Message as DomainMessage
 from core.messaging.types import MessageRecipient, TemplateContent
@@ -38,9 +35,12 @@ class HealthCheck(APIView):
     @staticmethod
     def get(request):
         try:
-            # Check Redis connectivity
-            redis_client = redis.from_url(settings.REDIS_URL)
-            redis_client.ping()
+            # Check Redis connectivity using Django's cache framework
+            cache.set('health_check', 'ok', 1)  # Set with 1 second timeout
+            result = cache.get('health_check')
+
+            if result != 'ok':
+                raise Exception("Cache check failed")
 
             return JsonResponse({
                 "status": "healthy",

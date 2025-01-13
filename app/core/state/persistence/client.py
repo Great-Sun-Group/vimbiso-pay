@@ -1,23 +1,19 @@
 """Redis client factory"""
-import redis
-from decouple import config
+from django_redis import get_redis_connection
 
 
-def get_redis_client() -> redis.Redis:
-    """Get Redis client using environment configuration
+def get_redis_client():
+    """Get Redis client using Django's cache framework
 
     Returns:
         Redis client instance
 
-    The client is configured with:
-    - decode_responses=True to automatically decode Redis responses to strings
-    - health_check_interval=30 to detect connection issues
-    - retry_on_timeout=True to handle temporary connection issues
+    Uses Django's cache framework to get a Redis connection from the connection pool.
+    The connection is configured in Django settings with:
+    - decode_responses=True
+    - health_check_interval=30
+    - retry_on_timeout=True
+    - Connection pooling
+    - HiredisParser for performance
     """
-    url = config("REDIS_URL", default="redis://redis-state:6379/0")
-    return redis.from_url(
-        url,
-        decode_responses=True,
-        health_check_interval=30,
-        retry_on_timeout=True
-    )
+    return get_redis_connection("default")

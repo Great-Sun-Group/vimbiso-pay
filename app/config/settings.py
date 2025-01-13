@@ -14,6 +14,7 @@ ALLOWED_HOSTS = env("ALLOWED_HOSTS", default="localhost 127.0.0.1").split(" ")
 INSTALLED_APPS = [
     "django.contrib.auth",  # For basic auth
     "django.contrib.contenttypes",  # Required dependency
+    "django.contrib.sessions",  # For Redis session storage
     "corsheaders",  # For API security
     "core.config.apps.CoreConfig",  # Core bot app
 ]
@@ -21,6 +22,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",  # For Redis session support
     "django.middleware.common.CommonMiddleware",
 ]
 
@@ -45,6 +47,33 @@ DATABASES = {
 
 # Redis configuration
 REDIS_URL = env("REDIS_URL", default="redis://redis-state:6379/0")
+
+# Cache configuration using Redis - shared with application state management
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "SOCKET_CONNECT_TIMEOUT": 5,  # seconds
+            "SOCKET_TIMEOUT": 5,  # seconds
+            "RETRY_ON_TIMEOUT": True,
+            "MAX_CONNECTIONS": 10,
+            "HEALTH_CHECK_INTERVAL": 30,  # seconds
+            "CONNECTION_POOL_CLASS": "redis.ConnectionPool",
+            "PARSER_CLASS": "redis.connection.HiredisParser",
+            "REDIS_CLIENT_KWARGS": {
+                "decode_responses": True  # Match existing client configuration
+            }
+        },
+        "KEY_PREFIX": "vimbiso",  # Namespace cache keys
+        "TIMEOUT": None,  # Disable cache timeouts since we're using it for state
+    }
+}
+
+# Use Redis as the session backend as well for consistency
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"
 
 # Security settings
 CORS_ALLOW_HEADERS = ["apiKey"]  # For WhatsApp webhook
