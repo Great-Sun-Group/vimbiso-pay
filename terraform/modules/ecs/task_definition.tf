@@ -54,15 +54,20 @@ resource "aws_ecs_task_definition" "app" {
         echo "[Redis] Starting initialization..."
 
         # Basic setup
-        echo "[Redis] Installing gosu..."
-        apk add --no-cache gosu
-
-        echo "[Redis] Setting up Redis user..."
-        addgroup -S -g 999 redis
-        adduser -S -u 999 -G redis redis
-
         echo "[Redis] Setting up data directory..."
-        chown redis:redis /redis/state
+        # Use su-exec instead of gosu (built into Alpine)
+        apk add --no-cache su-exec
+
+        # Create redis user/group only if they don't exist
+        if ! getent group redis >/dev/null; then
+          addgroup -S -g 999 redis
+        fi
+        if ! getent passwd redis >/dev/null; then
+          adduser -S -u 999 -G redis redis
+        fi
+
+        # Ensure redis user owns the state directory
+        install -d -m 0755 -o redis -g redis /redis/state
 
         # Log Redis environment
         echo "[Redis] Environment:"
@@ -73,7 +78,7 @@ resource "aws_ecs_task_definition" "app" {
         echo "  Port: ${var.redis_state_port}"
 
         echo "[Redis] Starting Redis server with optimized settings..."
-        exec gosu redis redis-server \
+        exec su-exec redis redis-server \
           --appendonly yes \
           --appendfsync no \
           --no-appendfsync-on-rewrite yes \

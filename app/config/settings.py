@@ -35,6 +35,13 @@ else:
     BASE_PATH = BASE_DIR / 'data'
     os.makedirs(BASE_PATH, exist_ok=True)
 
+# Database configuration - using dummy backend since we only use Redis for state
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.dummy',
+    }
+}
+
 # Redis configuration
 REDIS_URL = env("REDIS_URL", default="redis://redis-state:6379/0")
 
