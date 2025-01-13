@@ -100,10 +100,10 @@ resource "aws_ecs_task_definition" "app" {
       ]
       healthCheck = {
         command     = ["CMD-SHELL", "redis-cli -p ${var.redis_state_port} ping || exit 1"]
-        interval    = 30     # More frequent checks
-        timeout     = 10     # Standard timeout
-        retries     = 15     # Increased retries for reliability
-        startPeriod = 300    # Maximum allowed (5 minutes)
+        interval    = 45     # Longer interval to allow more time between checks
+        timeout     = 15     # Increased timeout for EFS operations
+        retries     = 10     # Maximum allowed by AWS ECS
+        startPeriod = 300    # Maximum allowed by AWS ECS
       }
     },
     {
