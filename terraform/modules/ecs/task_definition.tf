@@ -51,6 +51,9 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
+        # Enable memory overcommit
+        sysctl vm.overcommit_memory=1
+
         echo "[Redis] Starting initialization..."
 
         # Basic setup
@@ -58,16 +61,14 @@ resource "aws_ecs_task_definition" "app" {
         # Use su-exec instead of gosu (built into Alpine)
         apk add --no-cache su-exec
 
-        # Create redis user/group only if they don't exist
-        if ! getent group redis >/dev/null; then
-          addgroup -S -g 999 redis
-        fi
-        if ! getent passwd redis >/dev/null; then
-          adduser -S -u 999 -G redis redis
-        fi
+        # Create redis user/group and setup directory with proper permissions
+        addgroup -S -g 999 redis || true
+        adduser -S -u 999 -G redis redis || true
 
-        # Ensure redis user owns the state directory
-        install -d -m 0755 -o redis -g redis /redis/state
+        # Create and set permissions on state directory
+        mkdir -p /redis/state
+        chown -R redis:redis /redis/state
+        chmod 755 /redis/state
 
         # Log Redis environment
         echo "[Redis] Environment:"
@@ -196,7 +197,12 @@ resource "aws_ecs_task_definition" "app" {
           netcat-traditional \
           dnsutils \
           gosu \
-          redis-tools
+          redis-tools \
+          locales
+
+        # Configure locale
+        locale-gen en_US.UTF-8
+        update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
         rm -rf /var/lib/apt/lists/* 2>&1
         echo "[App] Package installation complete"
 
@@ -275,7 +281,14 @@ EOF
         ln -sfn /efs-vols/app-data/data /app/data
 
         echo "[App] Running database migrations..."
-        python manage.py migrate --noinput 2>&1
+        # Add error handling and verbose output for migrations
+        python manage.py migrate --noinput --verbosity 2 || {
+            echo "[App] Migration failed. Checking database connection..."
+            python manage.py dbshell --command="SELECT 1;" || echo "[App] Database connection failed"
+            echo "[App] Migration error details:"
+            python manage.py showmigrations
+            exit 1
+        }
 
         echo "[App] Collecting static files..."
         python manage.py collectstatic --noinput 2>&1

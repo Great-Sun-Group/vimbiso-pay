@@ -16,7 +16,7 @@ resource "aws_ecs_service" "app" {
   # the failed state for investigation. Remember to re-enable rollback after debugging.
   deployment_circuit_breaker {
     enable   = true
-    rollback = true  # Re-enabled for automatic recovery
+    rollback = false  # Temporarily disabled for debugging deployment issues
   }
 
   deployment_controller {
