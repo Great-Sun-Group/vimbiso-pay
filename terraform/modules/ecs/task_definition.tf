@@ -11,7 +11,7 @@ resource "aws_ecs_task_definition" "app" {
     {
       name         = "redis-state"
       image        = "public.ecr.aws/docker/library/redis:7.0-alpine"
-      essential    = true
+      essential    = false  # Allow Redis to restart without killing the task
       memory       = floor(var.task_memory * 0.3)  # Increased memory allocation
       cpu          = floor(var.task_cpu * 0.3)     # Increased CPU allocation
       user         = "root"  # Need root for initial setup
@@ -25,13 +25,10 @@ resource "aws_ecs_task_definition" "app" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.app.name
-          awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "redis-state"
-          awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
-          awslogs-create-group  = "true"
-          mode                  = "non-blocking"
-          max-buffer-size       = "4m"
+          "awslogs-group"         = aws_cloudwatch_log_group.app.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "redis-state"
+          "awslogs-create-group"  = "true"
         }
       }
       mountPoints = [
@@ -102,11 +99,11 @@ resource "aws_ecs_task_definition" "app" {
         EOT
       ]
       healthCheck = {
-        command     = ["CMD-SHELL", "redis-cli -p ${var.redis_state_port} ping || exit 1"]
-        interval    = 45     # Longer interval to allow more time between checks
-        timeout     = 15     # Increased timeout for EFS operations
-        retries     = 10     # Maximum allowed by AWS ECS
-        startPeriod = 300    # Maximum allowed by AWS ECS
+        command     = ["CMD-SHELL", "redis-cli -p ${var.redis_state_port} ping && redis-cli -p ${var.redis_state_port} info replication | grep -q '^role:master' || exit 1"]
+        interval    = 30     # Check every 30 seconds
+        timeout     = 10     # Allow 10 seconds for check
+        retries     = 3      # Fewer retries but more frequent checks
+        startPeriod = 120    # 2 minutes should be enough for Redis to start
       }
     },
     {
@@ -151,13 +148,10 @@ resource "aws_ecs_task_definition" "app" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.app.name
-          awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "vimbiso-pay-${var.environment}"
-          awslogs-datetime-format = "%Y-%m-%d %H:%M:%S"
-          awslogs-create-group  = "true"
-          mode                  = "non-blocking"
-          max-buffer-size       = "4m"
+          "awslogs-group"         = aws_cloudwatch_log_group.app.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "vimbiso-pay-${var.environment}"
+          "awslogs-create-group"  = "true"
         }
       }
       healthCheck = {
