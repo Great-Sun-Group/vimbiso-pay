@@ -250,15 +250,15 @@ resource "aws_ecs_task_definition" "app" {
 
         # Create subdirectories individually with error checking
         for dir in "db" "static" "media" "logs"; do
-          if ! mkdir -p "/efs-vols/app-data/data/${dir}" 2>&1; then
-            echo "[App] Failed to create directory: /efs-vols/app-data/data/${dir}"
+          if ! mkdir -p "/efs-vols/app-data/data/$${dir}" 2>&1; then
+            echo "[App] Failed to create directory: /efs-vols/app-data/data/$${dir}"
             echo "[App] Current permissions:"
             ls -la /efs-vols/app-data/data/
             echo "[App] Parent directory status:"
             ls -la /efs-vols/app-data/
             exit 1
           fi
-          echo "[App] Created directory: ${dir}"
+          echo "[App] Created directory: $${dir}"
         done
 
         # Set permissions with error checking
