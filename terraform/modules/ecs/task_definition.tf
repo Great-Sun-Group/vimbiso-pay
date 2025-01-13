@@ -55,25 +55,24 @@ resource "aws_ecs_task_definition" "app" {
         echo "[Redis] Setting up data directory..."
 
         # Install required packages
-        apk add --no-cache su-exec
+        apk add --no-cache su-exec shadow
 
         # Create redis user/group if they don't exist
-        addgroup -S -g 1000 redis || true
-        adduser -S -u 999 -G redis redis || true
+        groupadd -g 1000 redis || true
+        useradd -u 999 -g redis -s /sbin/nologin redis || true
 
         # Set up Redis state directory with proper permissions
-        install -d -m 0755 -o redis -g redis /redis/state
+        mkdir -p /redis/state
+        chown -R redis:redis /redis/state
+        chmod 755 /redis/state
 
-        # Enable memory overcommit (with error handling)
-        if ! sysctl vm.overcommit_memory=1; then
-            echo "[Redis] Warning: Could not set vm.overcommit_memory=1"
-            echo "[Redis] This may affect Redis performance under low memory conditions"
-        fi
+        # Skip memory overcommit in ECS (it's a container limitation)
+        echo "[Redis] Note: Memory overcommit setting skipped in container environment"
 
         # Log Redis environment
         echo "[Redis] Environment:"
         echo "  User: $(id redis)"
-        echo "  Mount status: $(mountpoint -v /redis/state)"
+        echo "  Mount status: $(mountpoint -q /redis/state && echo 'mounted' || echo 'not mounted')"
         echo "  Mount details: $(df -h /redis/state)"
         echo "  Directory contents: $(ls -la /redis/state)"
         echo "  Port: ${var.redis_state_port}"
@@ -193,8 +192,10 @@ resource "aws_ecs_task_definition" "app" {
         echo "[App] Configuring locale..."
         apt-get update 2>&1
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends locales 2>&1
-        locale-gen en_US.UTF-8
-        update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+        echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+        locale-gen
+        export LANG=en_US.UTF-8
+        export LC_ALL=en_US.UTF-8
 
         echo "[App] Installing required packages..."
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends 2>&1 \
