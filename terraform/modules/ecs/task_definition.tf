@@ -8,13 +8,12 @@ resource "aws_ecs_task_definition" "app" {
   task_role_arn           = var.task_role_arn
 
   container_definitions = jsonencode([
-
     {
       name         = "redis-state"
       image        = "public.ecr.aws/docker/library/redis:7.0-alpine"
       essential    = true
-      memory       = floor(var.task_memory * 0.2)
-      cpu          = floor(var.task_cpu * 0.2)
+      memory       = floor(var.task_memory * 0.3)  # Increased memory allocation
+      cpu          = floor(var.task_cpu * 0.3)     # Increased CPU allocation
       user         = "root"  # Need root for initial setup
       portMappings = [
         {
@@ -63,37 +62,7 @@ resource "aws_ecs_task_definition" "app" {
         adduser -S -u 999 -G redis redis
 
         echo "[Redis] Setting up data directory..."
-        # The EFS access point creates /redis/state for us
         chown redis:redis /redis/state
-
-        # Check for data in various possible locations and migrate if needed
-        for old_path in "/redis/state/redis/state/appendonlydir" "/redis/state/appendonlydir"; do
-          if [ -d "$old_path" ]; then
-            echo "[Redis] Found data in $old_path, migrating..."
-            mv "$old_path"/* /redis/state/ 2>/dev/null || true
-            rm -rf "$(dirname "$old_path")"
-          fi
-        done
-
-        # Check AOF files in both old and new locations
-        for aof_path in "/redis/state/appendonlydir/appendonly.aof.1.incr.aof" "/redis/state/appendonly.aof.1.incr.aof"; do
-          if [ -f "$aof_path" ]; then
-            echo "[Redis] Found AOF file at $aof_path"
-            if ! redis-check-aof --fix "$aof_path"; then
-              echo "[Redis] AOF file corrupted, removing..."
-              rm -f "$aof_path"
-              rm -f "$(dirname "$aof_path")/appendonly.aof.manifest"
-            else
-              echo "[Redis] AOF file verified"
-              # If file was in old location, move it
-              if [ "$aof_path" != "/redis/state/appendonly.aof.1.incr.aof" ]; then
-                echo "[Redis] Moving AOF file to new location"
-                mv "$aof_path" "/redis/state/appendonly.aof.1.incr.aof"
-                mv "$(dirname "$aof_path")/appendonly.aof.manifest" "/redis/state/appendonly.aof.manifest"
-              fi
-            fi
-          fi
-        done
 
         # Log Redis environment
         echo "[Redis] Environment:"
@@ -106,37 +75,35 @@ resource "aws_ecs_task_definition" "app" {
         echo "[Redis] Starting Redis server with optimized settings..."
         exec gosu redis redis-server \
           --appendonly yes \
-          --appendfsync everysec \
+          --appendfsync no \
           --no-appendfsync-on-rewrite yes \
           --aof-rewrite-incremental-fsync yes \
           --auto-aof-rewrite-percentage 100 \
-          --auto-aof-rewrite-min-size 64mb \
+          --auto-aof-rewrite-min-size 128mb \
           --aof-load-truncated yes \
           --aof-use-rdb-preamble yes \
           --protected-mode no \
           --bind 0.0.0.0 \
           --port ${var.redis_state_port} \
           --dir /redis/state \
-          --timeout 30 \
-          --tcp-keepalive 60 \
+          --timeout 60 \
+          --tcp-keepalive 300 \
           --maxmemory-policy allkeys-lru \
-          --maxmemory ${floor(var.task_memory * 0.2 * 0.90)}mb \
+          --maxmemory ${floor(var.task_memory * 0.3 * 0.90)}mb \
           --save "" \
           --stop-writes-on-bgsave-error no \
           --ignore-warnings ARM64-COW-BUG \
-          --activedefrag yes \
-          --active-defrag-threshold-lower 10 \
-          --active-defrag-threshold-upper 30 \
+          --activedefrag no \
           --logfile "" \
           --daemonize no
         EOT
       ]
       healthCheck = {
         command     = ["CMD-SHELL", "redis-cli -p ${var.redis_state_port} ping || exit 1"]
-        interval    = 30
-        timeout     = 10
-        retries     = 5      # More retries for reliability
-        startPeriod = 300    # 5 minutes to handle AOF loading
+        interval    = 60     # Increased interval
+        timeout     = 15     # Increased timeout
+        retries     = 10     # More retries
+        startPeriod = 600    # 10 minutes to handle AOF loading
       }
     },
     {
@@ -194,7 +161,7 @@ resource "aws_ecs_task_definition" "app" {
         command     = ["CMD-SHELL", "curl -f --max-time 10 --retry 3 --retry-delay 5 --retry-max-time 45 http://127.0.0.1:8000/health/ || exit 1"]
         interval    = 30
         timeout     = 10
-        retries     = 5  # More retries before failing
+        retries     = 5
         startPeriod = 300
       }
       mountPoints = [
