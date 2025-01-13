@@ -4,8 +4,8 @@ resource "aws_ecs_service" "app" {
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = var.min_capacity
-  deployment_minimum_healthy_percent = 0    # Allow all tasks to be stopped for clean slate
-  deployment_maximum_percent        = 100  # Only allow desired count to run
+  deployment_minimum_healthy_percent = 50   # Keep at least half of tasks running during deployment
+  deployment_maximum_percent        = 200  # Allow double capacity during deployment
   scheduling_strategy               = "REPLICA"
   force_new_deployment             = false  # Let ECS control deployments
   health_check_grace_period_seconds = 900   # 15 minutes for complete startup
@@ -39,7 +39,7 @@ resource "aws_ecs_service" "app" {
   capacity_provider_strategy {
     capacity_provider = "FARGATE"
     weight           = 100
-    base             = 1
+    base             = 0  # Remove forced base capacity to allow proper scaling
   }
 
   # Ignore changes to desired_count since it's managed by autoscaling

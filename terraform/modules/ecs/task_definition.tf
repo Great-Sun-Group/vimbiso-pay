@@ -29,6 +29,8 @@ resource "aws_ecs_task_definition" "app" {
           "awslogs-region"        = var.aws_region
           "awslogs-stream-prefix" = "redis-state"
           "awslogs-create-group"  = "true"
+          "mode"                  = "non-blocking"
+          "max-buffer-size"       = "4m"
         }
       }
       mountPoints = [
@@ -52,7 +54,24 @@ resource "aws_ecs_task_definition" "app" {
         echo "[Redis] Setting up data directory..."
 
         # Handle SIGTERM gracefully
-        trap 'echo "[Redis] Received SIGTERM, waiting for Redis to save and exit..."; redis-cli -p ${var.redis_state_port} SHUTDOWN SAVE; exit 0' TERM
+        REDIS_PID=""
+        cleanup() {
+          echo "[Redis] Received SIGTERM..."
+          if [ -n "$REDIS_PID" ] && kill -0 $REDIS_PID 2>/dev/null; then
+            echo "[Redis] Redis server running (PID: $REDIS_PID), initiating graceful shutdown..."
+            # Try graceful shutdown with 30s timeout
+            if timeout 30s redis-cli -p ${var.redis_state_port} SHUTDOWN SAVE; then
+              echo "[Redis] Graceful shutdown completed"
+            else
+              echo "[Redis] Graceful shutdown timed out, forcing exit..."
+              kill -9 $REDIS_PID 2>/dev/null || true
+            fi
+          else
+            echo "[Redis] Redis server not running, cleaning up..."
+          fi
+          exit 0
+        }
+        trap cleanup TERM INT
 
         # Install required packages
         apk add --no-cache su-exec shadow
@@ -113,7 +132,8 @@ resource "aws_ecs_task_definition" "app" {
         echo "  Port: ${var.redis_state_port}"
 
         echo "[Redis] Starting Redis server with optimized settings..."
-        exec su-exec redis redis-server \
+        # Start Redis and capture its PID
+        su-exec redis redis-server \
           --appendonly yes \
           --appendfsync no \
           --no-appendfsync-on-rewrite yes \
@@ -135,7 +155,9 @@ resource "aws_ecs_task_definition" "app" {
           --ignore-warnings ARM64-COW-BUG \
           --activedefrag no \
           --logfile "" \
-          --daemonize no
+          --daemonize no &
+        REDIS_PID=$!
+        wait $REDIS_PID
         EOT
       ]
       healthCheck = {
@@ -192,6 +214,8 @@ resource "aws_ecs_task_definition" "app" {
           "awslogs-region"        = var.aws_region
           "awslogs-stream-prefix" = "vimbiso-pay-${var.environment}"
           "awslogs-create-group"  = "true"
+          "mode"                  = "non-blocking"
+          "max-buffer-size"       = "4m"
         }
       }
       healthCheck = {
