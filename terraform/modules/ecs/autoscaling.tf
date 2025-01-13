@@ -45,15 +45,6 @@ resource "time_sleep" "wait_for_service_stable" {
 # Request Count Scaling Policy disabled during deployment debugging
 # resource "aws_appautoscaling_policy" "requests" { ... }
 
-# Data sources for ALB and target group ARN suffixes
-data "aws_lb" "app" {
-  arn = var.alb_arn
-}
-
-data "aws_lb_target_group" "app" {
-  arn = var.target_group_arn
-}
-
 # CloudWatch Alarms for Auto Scaling
 resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   alarm_name          = "vimbiso-pay-cpu-high-${var.environment}"
