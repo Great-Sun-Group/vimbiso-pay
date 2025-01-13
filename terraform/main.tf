@@ -136,7 +136,18 @@ module "ecs" {
   ]
 }
 
-# Route53 DNS Module - After ECS is ready
+# Health Checks Module
+module "health_checks" {
+  source = "./modules/health_checks"
+
+  alb_dns_name      = module.loadbalancer.alb_dns_name
+  health_check_path = "/health/"
+  tags             = local.common_tags
+
+  depends_on = [module.loadbalancer]
+}
+
+# Route53 DNS Module - After health checks are ready
 module "route53_dns" {
   source = "./modules/route53_dns"
 
@@ -145,8 +156,8 @@ module "route53_dns" {
   create_dns_records = true
   alb_dns_name      = module.loadbalancer.alb_dns_name
   alb_zone_id       = module.loadbalancer.alb_zone_id
-  health_check_path = "/health/"
+  health_check_id   = module.health_checks.health_check_id
   tags             = local.common_tags
 
-  depends_on = [module.ecs]
+  depends_on = [module.health_checks]
 }

@@ -24,10 +24,9 @@ variable "alb_zone_id" {
   type        = string
 }
 
-variable "health_check_path" {
-  description = "The path for health checks"
+variable "health_check_id" {
+  description = "ID of the health check to associate with DNS records"
   type        = string
-  default     = "/health/"
 }
 
 variable "tags" {
