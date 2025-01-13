@@ -240,16 +240,25 @@ resource "aws_ecs_task_definition" "app" {
         done
 
         echo "[App] Creating and configuring data directories..."
-        # More robust directory creation with detailed error reporting
-        for dir in db static media logs; do
-          if ! mkdir -p "/efs-vols/app-data/data/$dir" 2>&1; then
-            echo "[App] Failed to create directory: /efs-vols/app-data/data/$dir"
+        # Create data directory first
+        if ! mkdir -p "/efs-vols/app-data/data" 2>&1; then
+          echo "[App] Failed to create data directory"
+          echo "[App] Parent directory status:"
+          ls -la /efs-vols/app-data/
+          exit 1
+        fi
+
+        # Create subdirectories individually with error checking
+        for dir in "db" "static" "media" "logs"; do
+          if ! mkdir -p "/efs-vols/app-data/data/${dir}" 2>&1; then
+            echo "[App] Failed to create directory: /efs-vols/app-data/data/${dir}"
             echo "[App] Current permissions:"
             ls -la /efs-vols/app-data/data/
             echo "[App] Parent directory status:"
             ls -la /efs-vols/app-data/
             exit 1
           fi
+          echo "[App] Created directory: ${dir}"
         done
 
         # Set permissions with error checking
@@ -331,9 +340,9 @@ EOF
         {
             # Check database connection first
             echo "[App] Verifying database connection..."
-            if ! python manage.py dbshell --command="SELECT 1;" > /dev/null 2>&1; then
+            if ! echo ".tables" | python manage.py dbshell > /dev/null 2>&1; then
                 echo "[App] ERROR: Database connection failed"
-                python manage.py dbshell --command="SELECT 1;"
+                echo ".tables" | python manage.py dbshell
                 exit 1
             fi
 
