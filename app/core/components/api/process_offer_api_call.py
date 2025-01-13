@@ -1,8 +1,8 @@
-"""Accept offer API call component
+"""Process offer API call component
 
-Handles accepting a Credex offer through the API:
+Handles credex offer processing through the API:
 - Gets required data from state (member, account, offer)
-- Makes API call to accept offer
+- Makes API call to process offer (accept/decline/cancel)
 - Updates state with response
 - Sets component_result for flow control
 """
@@ -17,21 +17,45 @@ from ..base import ApiComponent
 
 logger = logging.getLogger(__name__)
 
+# API endpoints and action types for each context
+API_CONFIG = {
+    "process_offer": {  # Default action
+        "url": "acceptCredex",
+        "success_action": "CREDEX_ACCEPTED",
+        "error_prefix": "process"
+    },
+    "accept_offer": {
+        "url": "acceptCredex",
+        "success_action": "CREDEX_ACCEPTED",
+        "error_prefix": "accept"
+    },
+    "decline_offer": {
+        "url": "declineCredex",
+        "success_action": "CREDEX_DECLINED",
+        "error_prefix": "decline"
+    },
+    "cancel_offer": {
+        "url": "cancelCredex",
+        "success_action": "CREDEX_CANCELLED",
+        "error_prefix": "cancel"
+    }
+}
 
-class AcceptOfferApiCall(ApiComponent):
-    """Processes offer acceptance and manages state"""
+
+class ProcessOfferApiCall(ApiComponent):
+    """Processes credex offer actions and manages state"""
 
     def __init__(self):
-        super().__init__("accept_offer_api")
+        super().__init__("process_offer_api")
 
     def validate_api_call(self, value: Any) -> ValidationResult:
-        """Process offer acceptance and update state"""
+        """Process offer action and update state"""
         try:
             # Get required data from state
             member_id, account_id, credex_id = self._get_required_data()
             if not all([member_id, account_id, credex_id]):
                 return ValidationResult.failure(
-                    message="Missing required data for accepting offer",
+                    message="Missing required data for offer action",
                     field="state",
                     details={
                         "member_id": bool(member_id),
@@ -40,23 +64,27 @@ class AcceptOfferApiCall(ApiComponent):
                     }
                 )
 
+            # Get context and config
+            context = self.state_manager.get_path()
+            config = API_CONFIG.get(context, API_CONFIG["process_offer"])
+
             logger.info(
-                f"Accepting offer {credex_id} for member {member_id} "
+                f"{context.replace('_', ' ').title()} offer {credex_id} for member {member_id} "
                 f"on account {account_id}"
             )
 
             # Make API call
-            result = self._make_api_call(member_id, account_id, credex_id)
+            result = self._make_api_call(member_id, account_id, credex_id, config)
             if not result.valid:
                 return result
 
             # Process response and update state
-            return self._process_response(result.value)
+            return self._process_response(result.value, config)
 
         except Exception as e:
-            logger.error(f"Error in accept offer API call: {str(e)}")
+            logger.error(f"Error in offer API call: {str(e)}")
             return ValidationResult.failure(
-                message=f"Failed to accept offer: {str(e)}",
+                message=f"Failed to process offer: {str(e)}",
                 field="api_call",
                 details={"error": str(e)}
             )
@@ -85,14 +113,14 @@ class AcceptOfferApiCall(ApiComponent):
         self,
         member_id: str,
         account_id: str,
-        credex_id: str
+        credex_id: str,
+        config: Dict[str, str]
     ) -> ValidationResult:
-        """Make API call to accept offer"""
+        """Make API call to process offer"""
         try:
             # Make request
-            url = "acceptCredex"
             response = make_api_request(
-                url=url,
+                url=config["url"],
                 payload={"credexID": credex_id},
                 method="POST",
                 state_manager=self.state_manager
@@ -104,9 +132,9 @@ class AcceptOfferApiCall(ApiComponent):
                 state_manager=self.state_manager
             )
             if error:
-                logger.error(f"Failed to accept offer: {error}")
+                logger.error(f"Failed to {config['error_prefix']} offer: {error}")
                 return ValidationResult.failure(
-                    message=f"Failed to accept offer: {error}",
+                    message=f"Failed to {config['error_prefix']} offer: {error}",
                     field="api_call",
                     details={"error": error}
                 )
@@ -116,12 +144,12 @@ class AcceptOfferApiCall(ApiComponent):
         except Exception as e:
             logger.error(f"Error making API call: {str(e)}")
             return ValidationResult.failure(
-                message=f"Failed to accept offer: {str(e)}",
+                message=f"Failed to {config['error_prefix']} offer: {str(e)}",
                 field="api_call",
                 details={"error": str(e)}
             )
 
-    def _process_response(self, response: Dict) -> ValidationResult:
+    def _process_response(self, response: Dict, config: Dict[str, str]) -> ValidationResult:
         """Process API response and update state"""
         try:
             # Clear offer data
@@ -131,8 +159,8 @@ class AcceptOfferApiCall(ApiComponent):
             action = self.state_manager.get_state_value("action", {})
             action_type = action.get("type")
 
-            if action_type == "CREDEX_ACCEPTED":
-                logger.info("Offer accepted successfully")
+            if action_type == config["success_action"]:
+                logger.info(f"Offer {config['error_prefix']}ed successfully")
 
                 # Check for more pending offers
                 dashboard = self.state_manager.get_state_value("dashboard", {})
@@ -142,8 +170,16 @@ class AcceptOfferApiCall(ApiComponent):
                     None
                 )
 
+                # Get context to check correct offer list
+                context = self.state_manager.get_path()
+                offer_list = (
+                    active_account.get("pendingInData", [])
+                    if context in {"process_offer", "accept_offer", "decline_offer"}
+                    else active_account.get("pendingOutData", [])
+                )
+
                 # Return to list if more offers, otherwise to dashboard
-                if active_account and active_account.get("pendingInData", []):
+                if active_account and offer_list:
                     self.update_component_data(component_result="return_to_list")
                 else:
                     self.update_component_data(component_result="send_dashboard")
@@ -153,7 +189,7 @@ class AcceptOfferApiCall(ApiComponent):
 
             return ValidationResult.success({
                 "action": action,
-                "offer_accepted": action_type == "CREDEX_ACCEPTED"
+                "success": action_type == config["success_action"]
             })
 
         except Exception as e:
@@ -168,10 +204,10 @@ class AcceptOfferApiCall(ApiComponent):
         """Convert API response to verified data
 
         Note: Dashboard/action data is handled by handle_api_response.
-        We just track acceptance status here.
+        We just track action status here.
         """
         return {
-            "offer_accepted": value.get("offer_accepted", False),
+            "success": value.get("success", False),
             "action_type": value.get("action", {}).get("type"),
             "action_id": value.get("action", {}).get("id")
         }

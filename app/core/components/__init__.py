@@ -26,10 +26,8 @@ from .input.handle_input import HandleInput
 from .input.last_name_input import LastNameInput
 
 # API components
-from .api.accept_offer_api_call import AcceptOfferApiCall
-from .api.cancel_offer_api_call import CancelOfferApiCall
+from .api.process_offer_api_call import ProcessOfferApiCall
 from .api.create_credex_api_call import CreateCredexApiCall
-from .api.decline_offer_api_call import DeclineOfferApiCall
 from .api.get_ledger_api_call import GetLedgerApiCall
 from .api.login_api_call import LoginApiCall
 from .api.onboard_member_api_call import OnBoardMemberApiCall
@@ -37,8 +35,6 @@ from .api.upgrade_membertier_api_call import UpgradeMembertierApiCall
 from .api.validate_account_api_call import ValidateAccountApiCall
 
 # Confirm components
-from .confirm.confirm_cancel_offer import ConfirmCancelOffer
-from .confirm.confirm_decline_offer import ConfirmDeclineOffer
 from .confirm.confirm_offer_secured import ConfirmOfferSecured
 from .confirm.confirm_upgrade import ConfirmUpgrade
 
@@ -64,10 +60,8 @@ __all__ = [
     "LastNameInput",
 
     # API components
-    "AcceptOfferApiCall",
-    "CancelOfferApiCall",
+    "ProcessOfferApiCall",
     "CreateCredexApiCall",
-    "DeclineOfferApiCall",
     "GetLedgerApiCall",
     "LoginApiCall",
     "OnBoardMemberApiCall",
@@ -75,8 +69,6 @@ __all__ = [
     "ValidateAccountApiCall",
 
     # Confirm components
-    "ConfirmCancelOffer",
-    "ConfirmDeclineOffer",
     "ConfirmOfferSecured",
     "ConfirmUpgrade"
 ]

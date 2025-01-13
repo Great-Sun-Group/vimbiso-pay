@@ -12,8 +12,21 @@ from core.messaging.types import Button
 
 logger = logging.getLogger(__name__)
 
-# Title template
-TITLE = """*Accept An Offer*"""
+# Title templates
+TITLES = {
+    "process_offer": "*Process An Offer*",  # Default
+    "accept_offer": "*Accept An Offer*",
+    "decline_offer": "*Decline An Offer*",
+    "cancel_offer": "*Cancel An Offer*"
+}
+
+# Button templates
+BUTTON_TEMPLATES = {
+    "process_offer": "{amount} to/from {name}",  # Default
+    "accept_offer": "{amount} from {name} ✅",
+    "decline_offer": "{amount} from {name} ❌",
+    "cancel_offer": "{amount} to {name} 🚫"
+}
 
 
 class OfferListDisplay(InputComponent):
@@ -108,6 +121,7 @@ class OfferListDisplay(InputComponent):
         try:
             # Get dashboard data
             dashboard = self.state_manager.get_state_value("dashboard")
+            logger.info(f"Dashboard state: {dashboard}")
             if not dashboard:
                 return ValidationResult.failure(
                     message="No dashboard data found",
@@ -118,8 +132,44 @@ class OfferListDisplay(InputComponent):
             # Get context and offers
             context = self.state_manager.get_path()
             offers = self._get_offers_for_context(context, dashboard)
-            if not offers:
-                # Send error message to user
+            logger.info(f"Got offers in _display_offers: {offers}")
+
+            # Sort offers chronologically (oldest first)
+            if offers and len(offers) > 0:  # Explicitly check length
+                sorted_offers = sorted(offers, key=lambda x: x.get("timestamp", "0"))
+
+                # Get context-specific templates
+                title = TITLES.get(context, TITLES["process_offer"])
+                button_template = BUTTON_TEMPLATES.get(context, BUTTON_TEMPLATES["process_offer"])
+
+                # Create buttons for up to 9 offers + dashboard button
+                buttons = []
+
+                # Add offer buttons (up to 9)
+                for offer in sorted_offers[:9]:
+                    buttons.append(Button(
+                        id=str(offer["credexID"]),
+                        title=button_template.format(
+                            amount=offer['formattedInitialAmount'],
+                            name=offer['counterpartyAccountName']
+                        )
+                    ))
+
+                # Add return to dashboard button
+                buttons.append(Button(
+                    id="return_to_dashboard",
+                    title="💳 Account Dashboard 💳"
+                ))
+
+                # Send context-specific title and buttons
+                self.state_manager.messaging.send_interactive(
+                    body=title,
+                    buttons=buttons
+                )
+                self.set_awaiting_input(True)
+                return ValidationResult.success(None)
+            else:
+                # Send error message for no offers
                 error_msg = f"❌ No {context.replace('_', ' ')}s available at this time."
                 self.state_manager.messaging.send_text(error_msg)
 
@@ -129,33 +179,6 @@ class OfferListDisplay(InputComponent):
                     awaiting_input=False
                 )
                 return ValidationResult.success(None)
-
-            # Sort offers chronologically (oldest first)
-            sorted_offers = sorted(offers, key=lambda x: x.get("timestamp", "0"))
-
-            # Create buttons for up to 9 offers + dashboard button
-            buttons = []
-
-            # Add offer buttons (up to 9)
-            for offer in sorted_offers[:9]:
-                buttons.append(Button(
-                    id=str(offer["credexID"]),
-                    title=f"{offer['formattedInitialAmount']} from {offer['counterpartyAccountName']} ✅"
-                ))
-
-            # Add return to dashboard button
-            buttons.append(Button(
-                id="return_to_dashboard",
-                title="Return to Dashboard 🏠"
-            ))
-
-            # Send title and buttons
-            self.state_manager.messaging.send_interactive(
-                body=TITLE,
-                buttons=buttons
-            )
-            self.set_awaiting_input(True)
-            return ValidationResult.success(None)
 
         except Exception as e:
             logger.error(f"Error displaying offers: {str(e)}")
@@ -173,6 +196,7 @@ class OfferListDisplay(InputComponent):
         # Get active account
         active_account_id = self.state_manager.get_state_value("active_account_id")
         if not active_account_id:
+            logger.info("No active_account_id found in state")
             return []
 
         # Find active account
@@ -182,14 +206,22 @@ class OfferListDisplay(InputComponent):
             None
         )
         if not active_account:
+            logger.info(f"Active account {active_account_id} not found in dashboard accounts")
             return []
 
         # Get offers based on context
-        if context in {"accept_offer", "decline_offer"}:
-            return active_account.get("pendingInData", [])
+        logger.info(f"Context: {context}")
+        logger.info(f"Active account pendingOutData: {active_account.get('pendingOutData')}")
+
+        # Get relevant offers list
+        offers = []
+        if context in {"process_offer", "accept_offer", "decline_offer"}:
+            offers = active_account.get("pendingInData", [])
         if context == "cancel_offer":
-            return active_account.get("pendingOutData", [])
-        return []
+            offers = active_account.get("pendingOutData", [])
+
+        logger.info(f"Returning offers for {context}: {offers}")
+        return offers
 
     def _is_valid_offer(self, credex_id: str) -> bool:
         """Check if credex_id exists in available offers"""

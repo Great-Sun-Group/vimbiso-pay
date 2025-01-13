@@ -164,11 +164,11 @@ def get_next_component(
             if component_result == "offer_secured":
                 return "offer_secured", "AmountInput"  # Start collecting offer details with amount/denom
             if component_result == "accept_offer":
-                return "accept_offer", "OfferListDisplay"  # List pending incoming offers to accept
+                return "accept_offer", "OfferListDisplay"  # List pending offers to accept
             if component_result == "decline_offer":
-                return "decline_offer", "OfferListDisplay"  # List pending incoming offers to decline
+                return "decline_offer", "OfferListDisplay"  # List pending offers to decline
             if component_result == "cancel_offer":
-                return "cancel_offer", "OfferListDisplay"  # List pending outgoing offers to cancel
+                return "cancel_offer", "OfferListDisplay"  # List pending offers to cancel
             if component_result == "view_ledger":
                 return "view_ledger", "Greeting"  # Send random greeting while API call processes
             if component_result == "upgrade_membertier":
@@ -192,10 +192,8 @@ def get_next_component(
         case ("accept_offer", "OfferListDisplay"):
             if component_result == "return_to_dashboard":
                 return "account", "AccountDashboard"  # Return to dashboard when no offers
-            return "accept_offer", "Greeting"  # Send random greeting while api call processes
-        case ("accept_offer", "Greeting"):
-            return "accept_offer", "AcceptOfferApiCall"  # Process selected offer acceptance
-        case ("accept_offer", "AcceptOfferApiCall"):
+            return "accept_offer", "ProcessOfferApiCall"  # Process selected offer action
+        case ("accept_offer", "ProcessOfferApiCall"):
             if component_result == "return_to_list":
                 return "accept_offer", "OfferListDisplay"  # Return to list for more offers
             return "account", "AccountDashboard"  # Return to dashboard when done
@@ -204,25 +202,21 @@ def get_next_component(
         case ("decline_offer", "OfferListDisplay"):
             if component_result == "return_to_dashboard":
                 return "account", "AccountDashboard"  # Return to dashboard when no offers
-            return "decline_offer", "ConfirmDeclineOffer"  # Show offer details and request confirmation
-        case ("decline_offer", "ConfirmDeclineOffer"):
-            return "decline_offer", "Greeting"  # Send random greeting while api call processes
-        case ("decline_offer", "Greeting"):
-            return "decline_offer", "DeclineOfferApiCall"  # Process selected offer decline
-        case ("decline_offer", "DeclineOfferApiCall"):
-            return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
+            return "decline_offer", "ProcessOfferApiCall"  # Process selected offer action
+        case ("decline_offer", "ProcessOfferApiCall"):
+            if component_result == "return_to_list":
+                return "decline_offer", "OfferListDisplay"  # Return to list for more offers
+            return "account", "AccountDashboard"  # Return to dashboard when done
 
         # Cancel offer path
         case ("cancel_offer", "OfferListDisplay"):
             if component_result == "return_to_dashboard":
                 return "account", "AccountDashboard"  # Return to dashboard when no offers
-            return "cancel_offer", "ConfirmCancelOffer"  # Show offer details and request confirmation
-        case ("cancel_offer", "ConfirmCancelOffer"):
-            return "cancel_offer", "Greeting"  # Send random greeting while api call processes
-        case ("cancel_offer", "Greeting"):
-            return "cancel_offer", "CancelOfferApiCall"  # Process selected offer cancel
-        case ("cancel_offer", "CancelOfferApiCall"):
-            return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
+            return "cancel_offer", "ProcessOfferApiCall"  # Process selected offer action
+        case ("cancel_offer", "ProcessOfferApiCall"):
+            if component_result == "return_to_list":
+                return "cancel_offer", "OfferListDisplay"  # Return to list for more offers
+            return "account", "AccountDashboard"  # Return to dashboard when done
 
         # View ledger path
         case ("view_ledger", "Greeting"):
@@ -277,7 +271,7 @@ def process_component(path: str, component: str, state_manager: StateManagerInte
         logger.error(f"Component activation failed: {result.error}")
 
         # Check if we should retry handle input
-        if (path == "offer_secured" and 
+        if (path == "offer_secured" and
                 component == "ValidateAccountApiCall" and
                 isinstance(result.error, dict) and
                 result.error.get("details", {}).get("retry")):

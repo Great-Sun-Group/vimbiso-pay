@@ -4,12 +4,15 @@ This component handles displaying the account dashboard with proper validation.
 Also handles initial state setup after login.
 """
 
+import logging
 from typing import Any
 
 from core.components.base import InputComponent
 from core.error.exceptions import ComponentException
 from core.error.types import ValidationResult
 from core.messaging.types import InteractiveType, MessageType, Section
+
+logger = logging.getLogger(__name__)
 
 # Account template
 ACCOUNT_DASHBOARD = """💳 *{account}*
@@ -113,6 +116,9 @@ class AccountDashboard(InputComponent):
                 # Get pending counts from active account
                 pending_in = len(active_account.get("pendingInData", []))
                 pending_out = len(active_account.get("pendingOutData", []))
+
+                logger.info(f"Active account pendingOutData in dashboard: {active_account.get('pendingOutData')}")
+                logger.info(f"Pending out count: {pending_out}")
 
                 # Format pending counts
                 pending_in_formatted = f" ({pending_in})" if pending_in > 0 else ""
