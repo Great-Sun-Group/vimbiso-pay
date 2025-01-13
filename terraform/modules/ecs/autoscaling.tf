@@ -27,8 +27,10 @@ resource "aws_appautoscaling_policy" "cpu" {
     }
     target_value = var.cpu_threshold
 
-    scale_in_cooldown  = 300  # 5 minutes
-    scale_out_cooldown = 60   # 1 minute
+    # Longer cooldowns to prevent interference during deployments
+    scale_in_cooldown  = 900  # 15 minutes to match health check grace period
+    scale_out_cooldown = 300  # 5 minutes to allow proper initialization
+    disable_scale_in   = true # Prevent scale-in during deployments
   }
 
   depends_on = [aws_appautoscaling_target.app]
@@ -48,8 +50,10 @@ resource "aws_appautoscaling_policy" "memory" {
     }
     target_value = var.memory_threshold
 
-    scale_in_cooldown  = 300  # 5 minutes
-    scale_out_cooldown = 60   # 1 minute
+    # Match CPU policy cooldowns for consistency
+    scale_in_cooldown  = 900  # 15 minutes to match health check grace period
+    scale_out_cooldown = 300  # 5 minutes to allow proper initialization
+    disable_scale_in   = true # Prevent scale-in during deployments
   }
 
   depends_on = [aws_appautoscaling_target.app]
@@ -77,8 +81,10 @@ resource "aws_appautoscaling_policy" "requests" {
     }
     target_value = 1000  # Target requests per target
 
-    scale_in_cooldown  = 300  # 5 minutes
-    scale_out_cooldown = 60   # 1 minute
+    # Match other policy cooldowns
+    scale_in_cooldown  = 900  # 15 minutes to match health check grace period
+    scale_out_cooldown = 300  # 5 minutes to allow proper initialization
+    disable_scale_in   = true # Prevent scale-in during deployments
   }
 
   lifecycle {

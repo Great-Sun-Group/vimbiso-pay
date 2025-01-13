@@ -51,6 +51,9 @@ resource "aws_ecs_task_definition" "app" {
         echo "[Redis] Starting initialization..."
         echo "[Redis] Setting up data directory..."
 
+        # Handle SIGTERM gracefully
+        trap 'echo "[Redis] Received SIGTERM, waiting for Redis to save and exit..."; redis-cli -p ${var.redis_state_port} SHUTDOWN SAVE; exit 0' TERM
+
         # Install required packages
         apk add --no-cache su-exec shadow
 
@@ -173,6 +176,9 @@ resource "aws_ecs_task_definition" "app" {
         "-c",
         <<-EOT
         set -ex
+
+        # Handle SIGTERM gracefully
+        trap 'echo "[App] Received SIGTERM, shutting down Gunicorn..."; kill -TERM $GUNICORN_PID; wait $GUNICORN_PID; exit 0' TERM
 
         # Small delay to ensure log infrastructure is ready
         sleep 2

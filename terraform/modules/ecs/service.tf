@@ -7,8 +7,9 @@ resource "aws_ecs_service" "app" {
   deployment_minimum_healthy_percent = 0    # Allow all tasks to be stopped for clean slate
   deployment_maximum_percent        = 100  # Only allow desired count to run
   scheduling_strategy               = "REPLICA"
-  force_new_deployment             = true
-  health_check_grace_period_seconds = 900  # 15 minutes for complete startup
+  force_new_deployment             = false  # Let ECS control deployments
+  health_check_grace_period_seconds = 900   # 15 minutes for complete startup
+  enable_execute_command           = true   # Allow debugging if needed
 
   # Circuit breaker configuration
   # NOTE: During normal operation, rollback should be enabled (rollback = true).
@@ -41,7 +42,8 @@ resource "aws_ecs_service" "app" {
     base             = 1
   }
 
-  # Only ignore changes to desired_count and capacity strategy
+  # Ignore changes to desired_count since it's managed by autoscaling
+  # But track other changes to ensure proper deployments
   lifecycle {
     ignore_changes = [
       desired_count,
