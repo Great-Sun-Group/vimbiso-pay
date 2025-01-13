@@ -20,10 +20,9 @@ logger = logging.getLogger(__name__)
 # Upgrade confirmation template
 UPGRADE_CONFIRMATION = """📈 *Member Tier Upgrade*
 
-Current Status:
 👤 Member: {member_name}
-🌟 Current Tier: {current_tier}
-💫 Next Tier: {next_tier}
+🌟 Current Tier: Open (free)
+💫 Next Tier: Hustler ($1 USD/month)
 
 Would you like to upgrade your member tier?"""
 

@@ -6,22 +6,14 @@ This component handles displaying a list of Credex offers and processing offer s
 import logging
 from typing import Any, Dict, List
 
+from core.components.base import InputComponent
 from core.error.types import ValidationResult
 from core.messaging.types import Button
-from core.components.base import InputComponent
 
 logger = logging.getLogger(__name__)
 
-# Offer list templates
-OFFER_LIST = """📋 *{title}*
-
-{offers}"""
-
-OFFER_ITEM = """💰 *{amount}*
-👤 From: {counterparty}
-📊 Status: {status}
-🆔 ID: {id}
-"""
+# Title template
+TITLE = """*Accept An Offer*"""
 
 
 class OfferListDisplay(InputComponent):
@@ -76,6 +68,14 @@ class OfferListDisplay(InputComponent):
                     details={"button": button}
                 )
 
+            # Handle return to dashboard
+            if credex_id == "return_to_dashboard":
+                self.update_component_data(
+                    component_result="return_to_dashboard",
+                    awaiting_input=False
+                )
+                return ValidationResult.success(None)
+
             # Validate credex_id exists in available offers
             if not self._is_valid_offer(credex_id):
                 return ValidationResult.failure(
@@ -84,9 +84,10 @@ class OfferListDisplay(InputComponent):
                     details={"credex_id": credex_id}
                 )
 
-            # Store selection and allow flow to progress
+            # Store credex_id and continue to API
             self.update_component_data(
                 data={"credex_id": credex_id},
+                component_result="process_offer",
                 awaiting_input=False
             )
             return ValidationResult.success(None)
@@ -118,31 +119,39 @@ class OfferListDisplay(InputComponent):
             context = self.state_manager.get_path()
             offers = self._get_offers_for_context(context, dashboard)
             if not offers:
-                return ValidationResult.failure(
-                    message=f"No {context.replace('_', ' ')}s available",
-                    field="offers",
-                    details={"context": context}
+                # Send error message to user
+                error_msg = f"❌ No {context.replace('_', ' ')}s available at this time."
+                self.state_manager.messaging.send_text(error_msg)
+
+                # Return to dashboard
+                self.update_component_data(
+                    component_result="return_to_dashboard",
+                    awaiting_input=False
                 )
+                return ValidationResult.success(None)
 
-            # Format message
-            title = self._get_title_for_context(context)
-            message = OFFER_LIST.format(
-                title=title,
-                offers=self._format_offers(offers)
-            )
+            # Sort offers chronologically (oldest first)
+            sorted_offers = sorted(offers, key=lambda x: x.get("timestamp", "0"))
 
-            # Create buttons for each offer
-            buttons = [
-                Button(
+            # Create buttons for up to 9 offers + dashboard button
+            buttons = []
+
+            # Add offer buttons (up to 9)
+            for offer in sorted_offers[:9]:
+                buttons.append(Button(
                     id=str(offer["credexID"]),
-                    title=f"{offer['formattedInitialAmount']} - {offer['counterpartyAccountName']}"
-                )
-                for offer in offers[:3]  # Limit to 3 buttons per message
-            ]
+                    title=f"{offer['formattedInitialAmount']} from {offer['counterpartyAccountName']} ✅"
+                ))
 
-            # Send message with buttons
+            # Add return to dashboard button
+            buttons.append(Button(
+                id="return_to_dashboard",
+                title="Return to Dashboard 🏠"
+            ))
+
+            # Send title and buttons
             self.state_manager.messaging.send_interactive(
-                body=message,
+                body=TITLE,
                 buttons=buttons
             )
             self.set_awaiting_input(True)
@@ -161,31 +170,26 @@ class OfferListDisplay(InputComponent):
 
     def _get_offers_for_context(self, context: str, dashboard: Dict) -> List[Dict]:
         """Get relevant offers based on context"""
-        if context in {"accept_offer", "decline_offer"}:
-            return dashboard.get("incomingOffers", [])
-        if context == "cancel_offer":
-            return dashboard.get("outgoingOffers", [])
-        return []
+        # Get active account
+        active_account_id = self.state_manager.get_state_value("active_account_id")
+        if not active_account_id:
+            return []
 
-    def _get_title_for_context(self, context: str) -> str:
-        """Get display title based on context"""
-        if context in {"accept_offer", "decline_offer"}:
-            return "Incoming Offers"
-        if context == "cancel_offer":
-            return "Outgoing Offers"
-        return "Offers"
-
-    def _format_offers(self, offers: List[Dict]) -> str:
-        """Format offers for display"""
-        return "\n".join(
-            OFFER_ITEM.format(
-                amount=offer.get("formattedInitialAmount", "Unknown"),
-                counterparty=offer.get("counterpartyAccountName", "Unknown"),
-                status=offer.get("status", "Unknown"),
-                id=offer.get("credexID", "Unknown")
-            )
-            for offer in offers
+        # Find active account
+        accounts = dashboard.get("accounts", [])
+        active_account = next(
+            (acc for acc in accounts if acc.get("accountID") == active_account_id),
+            None
         )
+        if not active_account:
+            return []
+
+        # Get offers based on context
+        if context in {"accept_offer", "decline_offer"}:
+            return active_account.get("pendingInData", [])
+        if context == "cancel_offer":
+            return active_account.get("pendingOutData", [])
+        return []
 
     def _is_valid_offer(self, credex_id: str) -> bool:
         """Check if credex_id exists in available offers"""

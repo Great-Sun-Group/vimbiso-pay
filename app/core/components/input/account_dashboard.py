@@ -93,7 +93,7 @@ class AccountDashboard(InputComponent):
                 tier_limit_display = ""
                 if member and member.get("memberTier", 0) < 3:
                     try:
-                        amount_remaining = float(member.get("amountRemainingUSD", "0.00"))
+                        amount_remaining = float(member.get("remainingAvailableUSD", "0.00"))
                         tier_limit_display = f"\n\n⏳ DAILY MEMBER TIER LIMIT: {amount_remaining:.2f} USD"
                     except (ValueError, TypeError):
                         tier_limit_display = "\n\n⏳ DAILY MEMBER TIER LIMIT: 0.00 USD"

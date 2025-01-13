@@ -18,15 +18,15 @@ from core.utils.utils import format_denomination
 from . import ConfirmBase
 
 # Offer confirmation template
-OFFER_CONFIRMATION = """📝💸 Secured Credex *{amount}*
+OFFER_CONFIRMATION = """*{amount} Secured Credex Offer*
 
 *Payer*
 {active_account_name}
 💳{active_account_handle}
 
 *Payee*
-{input_account_name}
-💳{input_account_handle}"""
+{target_account_name}
+💳{target_account_handle}"""
 
 
 class ConfirmOfferSecured(ConfirmBase):
@@ -67,14 +67,21 @@ class ConfirmOfferSecured(ConfirmBase):
         logger.debug("Getting offer details from component data")
         offer_data = self.state_manager.get_state_value("component_data", {}).get("data", {})
         amount = offer_data.get("amount")
+        denom = offer_data.get("denom")
         handle = offer_data.get("handle")
 
-        if not amount or not handle:
+        if not amount or not denom or not handle:
             raise ComponentException(
                 message="Missing offer details",
                 component=self.type,
                 field="offer_data",
-                value=str(offer_data)
+                details={
+                    "missing_fields": [
+                        "amount" if not amount else None,
+                        "denom" if not denom else None,
+                        "handle" if not handle else None
+                    ]
+                }
             )
 
         # Get and validate target account details from action state
@@ -118,8 +125,7 @@ class ConfirmOfferSecured(ConfirmBase):
                 value=str(dashboard)
             )
 
-        # Format amount with denomination from component data
-        denom = offer_data.get("denom", "USD")
+        # Format amount with denomination
         formatted_amount = format_denomination(float(amount), denom)
 
         # Format and send confirmation message
@@ -131,8 +137,8 @@ class ConfirmOfferSecured(ConfirmBase):
             amount=formatted_amount,
             active_account_name=active_account.get("accountName", ""),
             active_account_handle=active_account.get("accountHandle", ""),
-            input_account_name=target_account.get("accountName", ""),
-            input_account_handle=handle
+            target_account_name=target_account.get("accountName", ""),
+            target_account_handle=handle
         )
 
         self.state_manager.messaging.send_interactive(
@@ -168,15 +174,17 @@ class ConfirmOfferSecured(ConfirmBase):
                 details={"component": "confirm_offer_secured"}
             )
         amount = offer_data.get("amount")
+        denom = offer_data.get("denom")
         handle = offer_data.get("handle")
 
-        if not amount or not handle:
+        if not amount or not denom or not handle:
             return ValidationResult.failure(
                 message="Missing offer details",
                 field="offer_data",
                 details={
                     "missing_fields": [
                         "amount" if not amount else None,
+                        "denom" if not denom else None,
                         "handle" if not handle else None
                     ]
                 }

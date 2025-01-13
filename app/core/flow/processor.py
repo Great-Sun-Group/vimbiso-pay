@@ -81,6 +81,9 @@ class FlowProcessor:
             # Create message recipient for error handling
             recipient = get_recipient(self.state_manager)
 
+            # Get existing state before processing any message
+            current_state = self.state_manager.get_state_value("component_data")
+
             # Get message type
             message_type = message.get("type", "")
 
@@ -96,9 +99,6 @@ class FlowProcessor:
             else:
                 logger.debug(f"Unsupported message type: {message_type}")
                 return None
-
-            # Get current flow state
-            current_state = self.state_manager.get_state_value("component_data")
 
             # For greetings, always start fresh
             if message_type == MessageType.TEXT.value and message_text in GREETING_COMMANDS:

@@ -190,14 +190,20 @@ def get_next_component(
 
         # Accept offer path
         case ("accept_offer", "OfferListDisplay"):
+            if component_result == "return_to_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard when no offers
             return "accept_offer", "Greeting"  # Send random greeting while api call processes
         case ("accept_offer", "Greeting"):
             return "accept_offer", "AcceptOfferApiCall"  # Process selected offer acceptance
         case ("accept_offer", "AcceptOfferApiCall"):
-            return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
+            if component_result == "return_to_list":
+                return "accept_offer", "OfferListDisplay"  # Return to list for more offers
+            return "account", "AccountDashboard"  # Return to dashboard when done
 
         # Decline offer path
         case ("decline_offer", "OfferListDisplay"):
+            if component_result == "return_to_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard when no offers
             return "decline_offer", "ConfirmDeclineOffer"  # Show offer details and request confirmation
         case ("decline_offer", "ConfirmDeclineOffer"):
             return "decline_offer", "Greeting"  # Send random greeting while api call processes
@@ -208,6 +214,8 @@ def get_next_component(
 
         # Cancel offer path
         case ("cancel_offer", "OfferListDisplay"):
+            if component_result == "return_to_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard when no offers
             return "cancel_offer", "ConfirmCancelOffer"  # Show offer details and request confirmation
         case ("cancel_offer", "ConfirmCancelOffer"):
             return "cancel_offer", "Greeting"  # Send random greeting while api call processes
@@ -264,9 +272,17 @@ def process_component(path: str, component: str, state_manager: StateManagerInte
     logger.info(f"Activation result: {result}")
     logger.info(f"Awaiting input after activation: {state_manager.is_awaiting_input()}")
 
-    # Only proceed if activation was successful
+    # Handle validation failures
     if not result.valid:
         logger.error(f"Component activation failed: {result.error}")
+
+        # Check if we should retry handle input
+        if (path == "offer_secured" and 
+                component == "ValidateAccountApiCall" and
+                isinstance(result.error, dict) and
+                result.error.get("details", {}).get("retry")):
+            return "offer_secured", "HandleInput"
+
         return None
 
     # Check if still awaiting input after activation

@@ -107,10 +107,19 @@ class ValidateAccountApiCall(ApiComponent):
 
         # Check for not found error
         if action_type == "ERROR_NOT_FOUND":
+            # Send friendly error message
+            self.state_manager.messaging.send_text(
+                text="❌ Oops, that 💳accountHandle doesn't exist. Please try again."
+            )
+            # Return to handle input
+            self.update_component_data(
+                data={"handle": None},  # Clear invalid handle but preserve other data like amount
+                awaiting_input=False
+            )
             return ValidationResult.failure(
                 message="Account not found",
                 field="handle",
-                details={"error": "ACCOUNT_NOT_FOUND"}
+                details={"error": "ACCOUNT_NOT_FOUND", "retry": True}
             )
 
         # Check for success

@@ -24,7 +24,9 @@ class FirstNameInput(InputComponent):
         # Initial activation - send prompt
         if not current_data.get("awaiting_input"):
             self.state_manager.messaging.send_text(
-                text="Please enter your first name:"
+                text="""🔥 Excellent, let's get you signed up.
+
+                🌞 What's your first name?"""
             )
             self.set_awaiting_input(True)
             return ValidationResult.success(None)

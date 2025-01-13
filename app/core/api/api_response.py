@@ -47,12 +47,10 @@ def update_state_from_response(
         # Update dashboard if present, preserving existing data
         if "dashboard" in data and data["dashboard"]:  # Only if not empty
             dashboard = data["dashboard"]
-            # Convert remainingAvailableUSD to float if present
             if "member" in dashboard and "remainingAvailableUSD" in dashboard["member"]:
-                try:
-                    dashboard["member"]["remainingAvailableUSD"] = float(dashboard["member"]["remainingAvailableUSD"])
-                except (TypeError, ValueError):
-                    dashboard["member"]["remainingAvailableUSD"] = None
+                value = dashboard["member"]["remainingAvailableUSD"]
+                if isinstance(value, int):
+                    dashboard["member"]["remainingAvailableUSD"] = float(value)
             state_update["dashboard"] = dashboard
 
         # Always update action with latest

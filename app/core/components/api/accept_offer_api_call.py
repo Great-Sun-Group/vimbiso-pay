@@ -10,8 +10,8 @@ Handles accepting a Credex offer through the API:
 import logging
 from typing import Any, Dict, Optional, Tuple
 
+from core.api.base import handle_api_response, make_api_request
 from core.error.types import ValidationResult
-from core.api.base import make_api_request, handle_api_response
 
 from ..base import ApiComponent
 
@@ -90,10 +90,10 @@ class AcceptOfferApiCall(ApiComponent):
         """Make API call to accept offer"""
         try:
             # Make request
-            url = f"acceptOffer/{member_id}/{account_id}/{credex_id}"
+            url = "acceptCredex"
             response = make_api_request(
                 url=url,
-                payload={},
+                payload={"credexID": credex_id},
                 method="POST",
                 state_manager=self.state_manager
             )
@@ -131,16 +131,29 @@ class AcceptOfferApiCall(ApiComponent):
             action = self.state_manager.get_state_value("action", {})
             action_type = action.get("type")
 
-            if action_type == "OFFER_ACCEPTED":
+            if action_type == "CREDEX_ACCEPTED":
                 logger.info("Offer accepted successfully")
-                self.update_component_data(component_result="send_dashboard")
+
+                # Check for more pending offers
+                dashboard = self.state_manager.get_state_value("dashboard", {})
+                active_account_id = self.state_manager.get_state_value("active_account_id")
+                active_account = next(
+                    (acc for acc in dashboard.get("accounts", []) if acc.get("accountID") == active_account_id),
+                    None
+                )
+
+                # Return to list if more offers, otherwise to dashboard
+                if active_account and active_account.get("pendingInData", []):
+                    self.update_component_data(component_result="return_to_list")
+                else:
+                    self.update_component_data(component_result="send_dashboard")
             else:
                 logger.warning(f"Unexpected action type: {action_type}")
                 self.update_component_data(component_result="show_error")
 
             return ValidationResult.success({
                 "action": action,
-                "offer_accepted": action_type == "OFFER_ACCEPTED"
+                "offer_accepted": action_type == "CREDEX_ACCEPTED"
             })
 
         except Exception as e:

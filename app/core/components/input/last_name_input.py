@@ -25,7 +25,7 @@ class LastNameInput(InputComponent):
         # Initial activation - send prompt
         if not current_data.get("awaiting_input"):
             self.state_manager.messaging.send_text(
-                text="Please enter your last name:"
+                text="👍🏿 And your last name?"
             )
             self.set_awaiting_input(True)
             return ValidationResult.success(None)
