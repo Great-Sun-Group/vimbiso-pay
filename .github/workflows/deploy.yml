@@ -175,17 +175,45 @@ jobs:
             local TASK_ID=$1
             local CONTAINER_NAME=$2
             local START_TIME=$3
-            local LINES=${4:-200}  # Default to 200 lines
+            local LINES=${4:-500}  # Increased to 500 lines for more context
 
-            echo "${CONTAINER_NAME} Container Logs:"
             echo "===================="
-            aws logs get-log-events \
+            echo "${CONTAINER_NAME} Container Logs (Task ID: ${TASK_ID}):"
+            echo "Start Time: $(date -d @${START_TIME})"
+            echo "===================="
+
+            # Try to get container status first
+            local CONTAINER_STATUS=$(aws ecs describe-tasks \
+              --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+              --tasks "arn:aws:ecs:af-south-1:$(aws sts get-caller-identity --query Account --output text):task/${TASK_ID}" \
+              --query "tasks[0].containers[?name=='${CONTAINER_NAME}'].{status: lastStatus, reason: reason, exit_code: exitCode}" \
+              --output json)
+
+            echo "Container Status:"
+            echo "$CONTAINER_STATUS" | jq '.'
+
+            # Get the logs with error handling
+            if ! aws logs get-log-events \
               --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
               --log-stream-name "${CONTAINER_NAME}/${CONTAINER_NAME}/${TASK_ID}" \
               --start-time ${START_TIME}000 \
               --limit $LINES \
               --query 'events[].message' \
-              --output text || echo "No ${CONTAINER_NAME} logs available"
+              --output text; then
+
+              echo "Failed to get logs. Checking log group and streams..."
+
+              # List log streams for debugging
+              echo "Available log streams:"
+              aws logs describe-log-streams \
+                --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
+                --log-stream-name-prefix "${CONTAINER_NAME}/${CONTAINER_NAME}/" \
+                --order-by LastEventTime \
+                --descending \
+                --limit 5 \
+                --query 'logStreams[*].logStreamName'
+            fi
+            echo "===================="
           }
 
           function check_health_endpoint() {
@@ -274,7 +302,50 @@ jobs:
             fi
 
             if [ "$FAILED_TASKS" -gt 0 ]; then
-              echo "Failed tasks detected. Fetching logs..."
+              echo "Failed tasks detected. Gathering diagnostic information..."
+
+              # Get EFS mount status
+              echo "EFS Mount Status:"
+              aws efs describe-mount-targets \
+                --file-system-id $(cd terraform && terraform output -raw efs_file_system_id) \
+                --query 'MountTargets[].{ID: MountTargetId, State: LifeCycleState, SubnetId: SubnetId, IP: IpAddress}' \
+                --output json | jq '.'
+
+              # Get network interface info for running tasks
+              if [ ! -z "$RUNNING_TASKS" ]; then
+                echo "Network Interface Details:"
+                aws ecs describe-tasks \
+                  --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+                  --tasks $RUNNING_TASKS \
+                  --query 'tasks[].attachments[].details[] | select(.name == "networkInterfaceId").value' \
+                  --output text | xargs -I {} aws ec2 describe-network-interfaces \
+                    --network-interface-ids {} \
+                    --query 'NetworkInterfaces[].{ID: NetworkInterfaceId, Status: Status, SubnetId: SubnetId, Groups: Groups[].GroupName}' \
+                    --output json | jq '.'
+              fi
+
+              # Get service events
+              echo "Recent Service Events:"
+              aws ecs describe-services \
+                --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+                --services "vimbiso-pay-service-$ENVIRONMENT" \
+                --query 'services[0].events[:10]' \
+                --output json | jq '.'
+
+              # Get stopped tasks with reasons
+              echo "Stopped Tasks Information:"
+              aws ecs describe-tasks \
+                --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+                --tasks $(aws ecs list-tasks \
+                  --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+                  --service-name "vimbiso-pay-service-$ENVIRONMENT" \
+                  --desired-status STOPPED \
+                  --query 'taskArns[]' \
+                  --output text) \
+                --query 'tasks[].{taskArn: taskArn, lastStatus: lastStatus, stoppedReason: stoppedReason, containers: containers[].{name: name, lastStatus: lastStatus, exitCode: exitCode, reason: reason}}' \
+                --output json | jq '.'
+
+              echo "Fetching container logs..."
               TASKS=$(aws ecs list-tasks \
                 --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
                 --service-name "vimbiso-pay-service-$ENVIRONMENT" \
@@ -300,11 +371,25 @@ jobs:
               fi
             fi
 
-            # If containers are healthy and tasks are running, check health endpoint
-            if [ "$ALL_CONTAINERS_HEALTHY" = true ] && \
-               [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ] && \
-               [ "$DESIRED_COUNT" -gt 0 ] && \
-               [ "$PENDING_COUNT" = "0" ]; then
+              # Enhanced health check verification
+              if [ "$ALL_CONTAINERS_HEALTHY" = true ] && \
+                 [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ] && \
+                 [ "$DESIRED_COUNT" -gt 0 ] && \
+                 [ "$PENDING_COUNT" = "0" ]; then
+
+                echo "Task Status Summary:"
+                echo "- Running Count: $RUNNING_COUNT"
+                echo "- Desired Count: $DESIRED_COUNT"
+                echo "- Failed Tasks: $FAILED_TASKS"
+                echo "- Pending Count: $PENDING_COUNT"
+
+                # Get detailed task information
+                echo "Running Tasks Details:"
+                aws ecs describe-tasks \
+                  --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+                  --tasks $RUNNING_TASKS \
+                  --query 'tasks[].{taskArn: taskArn, lastStatus: lastStatus, healthStatus: healthStatus, containers: containers[].{name: name, lastStatus: lastStatus, healthStatus: healthStatus}}' \
+                  --output json | jq '.'
 
               echo "All containers healthy, verifying health endpoint..."
               ALB_DNS=$(cd terraform && terraform output -raw alb_dns_name)

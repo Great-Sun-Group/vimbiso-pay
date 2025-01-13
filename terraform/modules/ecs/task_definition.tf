@@ -51,24 +51,24 @@ resource "aws_ecs_task_definition" "app" {
         "sh",
         "-c",
         <<-EOT
-        # Enable memory overcommit
-        sysctl vm.overcommit_memory=1
-
         echo "[Redis] Starting initialization..."
-
-        # Basic setup
         echo "[Redis] Setting up data directory..."
-        # Use su-exec instead of gosu (built into Alpine)
+
+        # Install required packages
         apk add --no-cache su-exec
 
-        # Create redis user/group and setup directory with proper permissions
-        addgroup -S -g 999 redis || true
+        # Create redis user/group if they don't exist
+        addgroup -S -g 1000 redis || true
         adduser -S -u 999 -G redis redis || true
 
-        # Create and set permissions on state directory
-        mkdir -p /redis/state
-        chown -R redis:redis /redis/state
-        chmod 755 /redis/state
+        # Set up Redis state directory with proper permissions
+        install -d -m 0755 -o redis -g redis /redis/state
+
+        # Enable memory overcommit (with error handling)
+        if ! sysctl vm.overcommit_memory=1; then
+            echo "[Redis] Warning: Could not set vm.overcommit_memory=1"
+            echo "[Redis] This may affect Redis performance under low memory conditions"
+        fi
 
         # Log Redis environment
         echo "[Redis] Environment:"
@@ -164,11 +164,11 @@ resource "aws_ecs_task_definition" "app" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f --max-time 10 --retry 3 --retry-delay 5 --retry-max-time 45 http://127.0.0.1:8000/health/ || exit 1"]
-        interval    = 30
-        timeout     = 10
-        retries     = 5
-        startPeriod = 300
+        command     = ["CMD-SHELL", "curl -f --max-time 30 --retry 5 --retry-delay 10 --retry-max-time 90 http://127.0.0.1:8000/health/ || exit 1"]
+        interval    = 60      # Increased to reduce check frequency
+        timeout     = 30      # Increased for EFS operations
+        retries     = 10      # Maximum allowed retries
+        startPeriod = 300     # Keep 5 minute grace period
       }
       mountPoints = [
         {
@@ -189,20 +189,23 @@ resource "aws_ecs_task_definition" "app" {
         echo "[App] Starting initialization..."
         echo "[App] Container environment: ${var.environment}"
 
-        echo "[App] Installing required packages..."
+        # Configure locale first to avoid warnings
+        echo "[App] Configuring locale..."
         apt-get update 2>&1
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends locales 2>&1
+        locale-gen en_US.UTF-8
+        update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+
+        echo "[App] Installing required packages..."
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends 2>&1 \
           curl \
           iproute2 \
           netcat-traditional \
           dnsutils \
           gosu \
-          redis-tools \
-          locales
+          redis-tools
 
-        # Configure locale
-        locale-gen en_US.UTF-8
-        update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+        # Clean up
         rm -rf /var/lib/apt/lists/* 2>&1
         echo "[App] Package installation complete"
 
@@ -213,17 +216,60 @@ resource "aws_ecs_task_definition" "app" {
         done
 
         echo "[App] Checking EFS mount point..."
-        if ! mountpoint -q /efs-vols/app-data; then
-          echo "[App] Error: /efs-vols/app-data is not a mount point"
-          exit 1
-        fi
-        echo "[App] EFS mount point verified"
+        # More robust EFS mount check with retries
+        max_mount_attempts=30
+        mount_attempt=1
+        while [ $mount_attempt -le $max_mount_attempts ]; do
+          if mountpoint -q /efs-vols/app-data; then
+            echo "[App] EFS mount point verified"
+            break
+          else
+            echo "[App] EFS mount not ready (attempt $mount_attempt/$max_mount_attempts) - sleeping 10s"
+            sleep 10
+            mount_attempt=$((mount_attempt + 1))
+          fi
+
+          if [ $mount_attempt -gt $max_mount_attempts ]; then
+            echo "[App] Error: Failed to verify EFS mount after $max_mount_attempts attempts"
+            echo "[App] Mount debug info:"
+            mount
+            df -h
+            ls -la /efs-vols/
+            exit 1
+          fi
+        done
 
         echo "[App] Creating and configuring data directories..."
-        mkdir -p /efs-vols/app-data/data/{db,static,media,logs} 2>&1 || { echo "[App] Failed to create data directories"; exit 1; }
-        chown -R 10001:10001 /efs-vols/app-data 2>&1 || { echo "[App] Failed to set directory ownership"; exit 1; }
-        chmod 777 /efs-vols/app-data/data/db 2>&1 || { echo "[App] Failed to set directory permissions"; exit 1; }
+        # More robust directory creation with detailed error reporting
+        for dir in db static media logs; do
+          if ! mkdir -p "/efs-vols/app-data/data/$dir" 2>&1; then
+            echo "[App] Failed to create directory: /efs-vols/app-data/data/$dir"
+            echo "[App] Current permissions:"
+            ls -la /efs-vols/app-data/data/
+            echo "[App] Parent directory status:"
+            ls -la /efs-vols/app-data/
+            exit 1
+          fi
+        done
+
+        # Set permissions with error checking
+        if ! chown -R 10001:10001 /efs-vols/app-data 2>&1; then
+          echo "[App] Failed to set directory ownership"
+          echo "[App] Current ownership:"
+          ls -la /efs-vols/app-data/
+          exit 1
+        fi
+
+        if ! chmod 777 /efs-vols/app-data/data/db 2>&1; then
+          echo "[App] Failed to set directory permissions"
+          echo "[App] Current permissions:"
+          ls -la /efs-vols/app-data/data/
+          exit 1
+        fi
+
         echo "[App] Data directories configured successfully"
+        echo "[App] Directory structure:"
+        ls -la /efs-vols/app-data/data/
 
         echo "[App] Waiting for Redis State..."
         until nc -z localhost ${var.redis_state_port}; do
@@ -281,14 +327,29 @@ EOF
         ln -sfn /efs-vols/app-data/data /app/data
 
         echo "[App] Running database migrations..."
-        # Add error handling and verbose output for migrations
-        python manage.py migrate --noinput --verbosity 2 || {
-            echo "[App] Migration failed. Checking database connection..."
-            python manage.py dbshell --command="SELECT 1;" || echo "[App] Database connection failed"
-            echo "[App] Migration error details:"
-            python manage.py showmigrations
-            exit 1
-        }
+        # Enhanced migration error handling
+        {
+            # Check database connection first
+            echo "[App] Verifying database connection..."
+            if ! python manage.py dbshell --command="SELECT 1;" > /dev/null 2>&1; then
+                echo "[App] ERROR: Database connection failed"
+                python manage.py dbshell --command="SELECT 1;"
+                exit 1
+            fi
+
+            # Show pending migrations
+            echo "[App] Pending migrations:"
+            python manage.py showmigrations --plan
+
+            # Run migrations with detailed output
+            if ! python manage.py migrate --noinput --verbosity 2; then
+                echo "[App] Migration failed. Full migration status:"
+                python manage.py showmigrations
+                echo "[App] Database connection status:"
+                python manage.py dbshell --command="\conninfo"
+                exit 1
+            fi
+        } || exit 1
 
         echo "[App] Collecting static files..."
         python manage.py collectstatic --noinput 2>&1
