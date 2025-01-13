@@ -21,21 +21,25 @@ The state manager provides:
 """
 
 import logging
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 from core import components
+from core.error.exceptions import ComponentException
 from core.error.types import ValidationResult
 from core.state.interface import StateManagerInterface
-from core.error.exceptions import ComponentException
 
 logger = logging.getLogger(__name__)
 
 
+# Cache for active component instances
+_active_components = {}
+
+
 def activate_component(component_type: str, state_manager: StateManagerInterface) -> ValidationResult:
-    """Create and activate a component for the current path step.
+    """Create or retrieve and activate a component for the current path step.
 
     Handles component processing:
-    1. Creates component instance
+    1. Creates new component instance or retrieves existing one if awaiting input
     2. Configures state management
     3. Returns component result
 
@@ -49,29 +53,48 @@ def activate_component(component_type: str, state_manager: StateManagerInterface
     Raises:
         ComponentException: If component creation or activation fails
     """
-    if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"Creating component for step: {component_type}")
+    # Get channel identifier for component cache key
+    channel_id = state_manager.get_channel_id()
+    cache_key = f"{channel_id}:{component_type}"
 
     try:
-        # Create component for this step
-        component_class = getattr(components, component_type)
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Found component class: {component_class.__name__}")
+        # Check if we have an active instance awaiting input
+        if state_manager.is_awaiting_input() and cache_key in _active_components:
+            component = _active_components[cache_key]
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Retrieved active component instance: {component.type}")
+        else:
+            # Create new component instance
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Creating component for step: {component_type}")
 
-        component = component_class()
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Created component instance: {component.type}")
+            component_class = getattr(components, component_type)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Found component class: {component_class.__name__}")
 
+            component = component_class()
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Created component instance: {component.type}")
+
+            # Cache the new instance
+            _active_components[cache_key] = component
+
+        # Ensure state manager is set
         component.set_state_manager(state_manager)
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Set state manager on component")
 
-        # Validate all components
+        # Activate component
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Validating component")
+            logger.debug("Activating component")
         result = component.validate(None)
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Validation result: {result}")
+            logger.debug(f"Activation result: {result}")
+
+        # Clear from cache if no longer awaiting input
+        if not state_manager.is_awaiting_input():
+            _active_components.pop(cache_key, None)
+
         return result
 
     except AttributeError as e:
@@ -109,12 +132,8 @@ def get_next_component(
     Returns:
         Tuple[str, str]: Next path/Component
     """
-    # Check if component is awaiting input
-    if state_manager.is_awaiting_input():
-        return path, component  # Stay at current step until input received
-
-    # Get component result for branching (using new state manager API)
-    component_result = state_manager.get_state_value("component_data", {}).get("component_result")
+    # Get component result for branching
+    component_result = state_manager.get_component_result()
 
     # Branch based on current path
     match (path, component):
@@ -145,13 +164,13 @@ def get_next_component(
             if component_result == "offer_secured":
                 return "offer_secured", "AmountInput"  # Start collecting offer details with amount/denom
             if component_result == "accept_offer":
-                return "accept_offer", "OfferListDisplay"  # List pending incoming offers to accept
+                return "accept_offer", "OfferListDisplay"  # List pending offers to accept
             if component_result == "decline_offer":
-                return "decline_offer", "OfferListDisplay"  # List pending incoming offers to decline
+                return "decline_offer", "OfferListDisplay"  # List pending offers to decline
             if component_result == "cancel_offer":
-                return "cancel_offer", "OfferListDisplay"  # List pending outgoing offers to cancel
+                return "cancel_offer", "OfferListDisplay"  # List pending offers to cancel
             if component_result == "view_ledger":
-                return "view_ledger", "Greeting"  # Send random greeting while api call processes
+                return "view_ledger", "Greeting"  # Send random greeting while API call processes
             if component_result == "upgrade_membertier":
                 return "upgrade_membertier", "ConfirmUpgrade"  # Send upgrade confirmation message
 
@@ -159,8 +178,10 @@ def get_next_component(
         case ("offer_secured", "AmountInput"):
             return "offer_secured", "HandleInput"  # Get recipient handle from member and account details from credex-core
         case ("offer_secured", "HandleInput"):
-            return "offer_secured", "ConfirmInput"  # Confirm amount, denom, issuer and recipient accounts
-        case ("offer_secured", "ConfirmInput"):
+            return "offer_secured", "ValidateAccountApiCall"  # Validate account exists and get details
+        case ("offer_secured", "ValidateAccountApiCall"):
+            return "offer_secured", "ConfirmOfferSecured"  # Confirm amount, denom, issuer and recipient accounts
+        case ("offer_secured", "ConfirmOfferSecured"):
             return "offer_secured", "Greeting"  # Send random greeting while api call processes
         case ("offer_secured", "Greeting"):
             return "offer_secured", "CreateCredexApiCall"  # Create offer
@@ -169,51 +190,52 @@ def get_next_component(
 
         # Accept offer path
         case ("accept_offer", "OfferListDisplay"):
+            if component_result == "return_to_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard when no offers
             return "accept_offer", "Greeting"  # Send random greeting while api call processes
         case ("accept_offer", "Greeting"):
-            return "accept_offer", "AcceptOfferApiCall"  # Process selected offer acceptance
-        case ("accept_offer", "AcceptOfferApiCall"):
-            return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
+            return "accept_offer", "ProcessOfferApiCall"  # Process selected offer action
+        case ("accept_offer", "ProcessOfferApiCall"):
+            if component_result == "return_to_list":
+                return "accept_offer", "OfferListDisplay"  # Return to list for more offers
+            return "account", "AccountDashboard"  # Return to dashboard when done
 
         # Decline offer path
         case ("decline_offer", "OfferListDisplay"):
-            return "decline_offer", "ConfirmDeclineOffer"  # Show offer details and request confirmation
-        case ("decline_offer", "ConfirmDeclineOffer"):
+            if component_result == "return_to_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard when no offers
             return "decline_offer", "Greeting"  # Send random greeting while api call processes
         case ("decline_offer", "Greeting"):
-            return "decline_offer", "DeclineOfferApiCall"  # Process selected offer decline
-        case ("decline_offer", "DeclineOfferApiCall"):
-            return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
+            return "decline_offer", "ProcessOfferApiCall"  # Process selected offer action
+        case ("decline_offer", "ProcessOfferApiCall"):
+            if component_result == "return_to_list":
+                return "decline_offer", "OfferListDisplay"  # Return to list for more offers
+            return "account", "AccountDashboard"  # Return to dashboard when done
 
         # Cancel offer path
         case ("cancel_offer", "OfferListDisplay"):
-            return "cancel_offer", "ConfirmCancelOffer"  # Show offer details and request confirmation
-        case ("cancel_offer", "ConfirmCancelOffer"):
+            if component_result == "return_to_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard when no offers
             return "cancel_offer", "Greeting"  # Send random greeting while api call processes
         case ("cancel_offer", "Greeting"):
-            return "cancel_offer", "CancelOfferApiCall"  # Process selected offer cancel
-        case ("cancel_offer", "CancelOfferApiCall"):
-            return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
+            return "cancel_offer", "ProcessOfferApiCall"  # Process selected offer action
+        case ("cancel_offer", "ProcessOfferApiCall"):
+            if component_result == "return_to_list":
+                return "cancel_offer", "OfferListDisplay"  # Return to list for more offers
+            return "account", "AccountDashboard"  # Return to dashboard when done
 
         # View ledger path
         case ("view_ledger", "Greeting"):
-            return "view_ledger", "LedgerManagement"  # Manages fetching and displaying ledger and selecting a credex
-        case ("view_ledger", "LedgerManagement"):
-            if component_result == "view_credex":
-                return "view_credex", "Greeting"  # Send random greeting while api call processes
-            if component_result == "send_account_dashboard":
+            return "view_ledger", "ViewLedger"  # Show ledger with pagination
+        case ("view_ledger", "ViewLedger"):
+            if component_result == "fetch_ledger":
+                return "view_ledger", "GetLedgerApiCall"  # Fetch ledger entries
+            if component_result == "send_dashboard":
                 return "account", "AccountDashboard"  # Return to account dashboard
+        case ("view_ledger", "GetLedgerApiCall"):
+            return "view_ledger", "ViewLedger"  # Display fetched entries
 
-        # View credex path
-        case ("view_credex", "Greeting"):
-            return "view_credex", "GetAndDisplayCredex"  # Fetches and displays a credex
-        case ("view_credex", "GetAndDisplayCredex"):
-            if component_result == "account_dashboard":
-                return "account", "AccountDashboard"  # Return to account dashboard
-            if component_result == "view_counterparty":  # Placeholder for future implementation
-                return "account", "AccountDashboard"  # Return to account dashboard for now since this won't actually happen
-
-        # Ugrade member tier path
+        # Upgrade member tier path
         case ("upgrade_membertier", "ConfirmUpgrade"):
             return "upgrade_membertier", "Greeting"  # Send random greeting while api call processes
         case ("upgrade_membertier", "Greeting"):
@@ -250,10 +272,23 @@ def process_component(path: str, component: str, state_manager: StateManagerInte
     logger.info(f"Activation result: {result}")
     logger.info(f"Awaiting input after activation: {state_manager.is_awaiting_input()}")
 
-    # Only proceed if activation was successful
+    # Handle validation failures
     if not result.valid:
         logger.error(f"Component activation failed: {result.error}")
+
+        # Check if we should retry handle input
+        if (path == "offer_secured" and
+                component == "ValidateAccountApiCall" and
+                isinstance(result.error, dict) and
+                result.error.get("details", {}).get("retry")):
+            return "offer_secured", "HandleInput"
+
         return None
+
+    # Check if still awaiting input after activation
+    if state_manager.is_awaiting_input():
+        logger.info("Still awaiting input after activation")
+        return path, component
 
     # Determine next step in path
     logger.info("Getting next component...")

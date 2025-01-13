@@ -4,17 +4,28 @@ This component handles displaying the account dashboard with proper validation.
 Also handles initial state setup after login.
 """
 
-from typing import Any, Dict
+import logging
+from typing import Any
 
-from core.messaging.types import Message
-from core.messaging.utils import get_recipient
-from core.error.types import ValidationResult
+from core.components.base import InputComponent
 from core.error.exceptions import ComponentException
+from core.error.types import ValidationResult
+from core.messaging.types import InteractiveType, MessageType, Section
 
-from ..base import DisplayComponent
+logger = logging.getLogger(__name__)
+
+# Account template
+ACCOUNT_DASHBOARD = """💳 *{account}*
+{handle}
+
+*💰 Secured Balances*
+{secured_balances}
+
+*📊 Net Assets*
+{net_assets}{tier_limit_display}"""
 
 
-class AccountDashboard(DisplayComponent):
+class AccountDashboard(InputComponent):
     """Handles account dashboard display and initial state"""
 
     def __init__(self):
@@ -31,8 +42,8 @@ class AccountDashboard(DisplayComponent):
             )
 
         try:
-            # Display Phase - First time through
-            if not isinstance(value, dict) or "type" not in value:
+            # Display Phase - When not awaiting input
+            if not self.state_manager.is_awaiting_input():
                 # Get and validate dashboard data
                 dashboard = self.state_manager.get_state_value("dashboard")
                 if not dashboard:
@@ -85,7 +96,7 @@ class AccountDashboard(DisplayComponent):
                 tier_limit_display = ""
                 if member and member.get("memberTier", 0) < 3:
                     try:
-                        amount_remaining = float(member.get("amountRemainingUSD", "0.00"))
+                        amount_remaining = float(member.get("remainingAvailableUSD", "0.00"))
                         tier_limit_display = f"\n\n⏳ DAILY MEMBER TIER LIMIT: {amount_remaining:.2f} USD"
                     except (ValueError, TypeError):
                         tier_limit_display = "\n\n⏳ DAILY MEMBER TIER LIMIT: 0.00 USD"
@@ -99,45 +110,50 @@ class AccountDashboard(DisplayComponent):
                     "tier_limit_display": tier_limit_display
                 }
 
-                # Get recipient for messages
-                recipient = get_recipient(self.state_manager)
-
                 # Get account info text
-                account_info = self.to_message_content(formatted_data)
+                account_info = ACCOUNT_DASHBOARD.format(**formatted_data)
 
-                # Create menu options aligned with flow paths
-                from core.messaging.types import (InteractiveContent,
-                                                  InteractiveType,
-                                                  Section)
+                # Get pending counts from active account
+                pending_in = len(active_account.get("pendingInData", []))
+                pending_out = len(active_account.get("pendingOutData", []))
 
-                # Define menu options matching headquarters.py flow paths
-                menu_options = [
-                    {"id": "offer_secured", "title": "Create Offer"},
-                    {"id": "accept_offer", "title": "Accept Offer"},
-                    {"id": "decline_offer", "title": "Decline Offer"},
-                    {"id": "cancel_offer", "title": "Cancel Offer"},
-                    {"id": "view_ledger", "title": "View Ledger"},
-                    {"id": "upgrade_membertier", "title": "Upgrade Tier"}
-                ]
+                logger.info(f"Active account pendingOutData in dashboard: {active_account.get('pendingOutData')}")
+                logger.info(f"Pending out count: {pending_out}")
 
-                # Create menu content
-                menu_content = InteractiveContent(
-                    interactive_type=InteractiveType.LIST,
-                    body=account_info,
-                    sections=[
-                        Section(
-                            title="Account Actions",
-                            rows=menu_options
-                        )
-                    ],
-                    button_text="Select Action"
-                )
+                # Format pending counts
+                pending_in_formatted = f" ({pending_in})" if pending_in > 0 else ""
+                pending_out_formatted = f" ({pending_out})" if pending_out > 0 else ""
+
+                # Define menu options with emojis and counts
+                menu_options = []
+
+                # Credex Actions
+                menu_options.append({"id": "offer_secured", "title": "Offer secured credex", "description": "💸 Offer secured credex"})
+                if pending_in > 0:
+                    menu_options.append({"id": "accept_offer", "title": "Accept a pending offer", "description": f"✅ Accept a pending offer{pending_in_formatted}"})
+                    menu_options.append({"id": "decline_offer", "title": "Decline a pending offer", "description": f"❌ Decline a pending offer{pending_in_formatted}"})
+                if pending_out > 0:
+                    menu_options.append({"id": "cancel_offer", "title": "Cancel an offer", "description": f"🚫 Cancel an offer{pending_out_formatted}"})
+
+                # Account Actions
+                # menu_options.append({"id": "view_ledger", "title": "View account ledger", "description": "📊 View account ledger"})
+
+                # Member Actions - only show upgrade option for tier 1
+                if member.get("memberTier") == 1:
+                    menu_options.append({"id": "upgrade_membertier", "title": "Upgrade your member tier", "description": "⭐ Upgrade your member tier"})
+
                 try:
                     # Set component to await input before sending menu
                     self.set_awaiting_input(True)
 
-                    self.state_manager.messaging.send_message(
-                        Message(recipient=recipient, content=menu_content)
+                    # Pass properly structured menu data to messaging service
+                    self.state_manager.messaging.send_interactive(
+                        body=account_info,
+                        sections=[Section(
+                            title="Actions",
+                            rows=menu_options
+                        )],
+                        button_text="🪄 Actions"
                     )
 
                     return ValidationResult.success(formatted_data)
@@ -146,21 +162,19 @@ class AccountDashboard(DisplayComponent):
                         message=f"Failed to send menu message: {str(e)}",
                         component=self.type,
                         field="messaging",
-                        value=str(menu_content),
+                        value=str(account_info),
                         validation=self.validation_state
                     )
 
             # Input Phase - When we get a response
-            from core.messaging.menus import WhatsAppMenus
             component_data = self.state_manager.get_state_value("component_data", {})
-            message = component_data.get("message", {})
+            incoming_message = component_data.get("incoming_message", {})
 
             # For interactive messages, extract selection ID
-            if (message.get("type") == "interactive" and
-               WhatsAppMenus.is_valid_option(message)):
-                interactive = message.get("interactive", {})
-                if interactive.get("type") == "list_reply":
-                    selection = interactive.get("list_reply", {}).get("id")
+            if incoming_message.get("type") == MessageType.INTERACTIVE.value:
+                text = incoming_message.get("text", {})
+                if text.get("interactive_type") == InteractiveType.LIST.value:
+                    selection = text.get("list_reply", {}).get("id")
                     if selection:
                         # Validate selection matches expected flow paths
                         valid_paths = [
@@ -171,10 +185,9 @@ class AccountDashboard(DisplayComponent):
                             "view_ledger",
                             "upgrade_membertier"
                         ]
-
                         if selection in valid_paths:
                             # Set result and release flow
-                            self.update_component_state(
+                            self.update_component_data(
                                 component_result=selection,
                                 awaiting_input=False
                             )
@@ -196,8 +209,3 @@ class AccountDashboard(DisplayComponent):
                     "error": str(e)
                 }
             )
-
-    def to_message_content(self, value: Dict) -> str:
-        """Format dashboard data using template"""
-        from core.messaging.messages import ACCOUNT_DASHBOARD
-        return ACCOUNT_DASHBOARD.format(**value)

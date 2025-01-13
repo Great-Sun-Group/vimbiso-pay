@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional
 
 from core.error.exceptions import SystemException
 from core.messaging.interface import MessagingServiceInterface
-from core.messaging.types import ChannelType
 from core.state.interface import StateManagerInterface
 from core.state.manager import StateManager as CoreStateManager
 
@@ -15,14 +14,7 @@ class StateManager(StateManagerInterface):  # type: ignore
     """WhatsApp state management delegating to core StateManager"""
 
     def __init__(self, state_manager: CoreStateManager):
-        """Initialize with core state manager
-
-        Args:
-            state_manager: Core state manager instance
-
-        Raises:
-            SystemException: If state manager is not properly initialized
-        """
+        """Initialize with core state manager"""
         if not state_manager:
             raise SystemException(
                 message="Core state manager is required: state_manager is None",
@@ -82,8 +74,6 @@ class StateManager(StateManagerInterface):  # type: ignore
     def update_state(self, updates: Dict[str, Any]) -> None:
         """Update state using core state manager"""
         try:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("Updating state")
             self._core.update_state(updates)
         except Exception as e:
             raise SystemException(
@@ -149,22 +139,8 @@ class StateManager(StateManagerInterface):  # type: ignore
         component_result: Optional[str] = None,
         awaiting_input: bool = False
     ) -> None:
-        """Update flow state including path and component
-
-        This is the low-level interface used by the flow processor to manage transitions.
-        It requires all schema fields including path and component. Components should
-        never use this directly - they should use Component.update_component_data() instead.
-
-        Args:
-            path: Current flow path
-            component: Current component
-            data: Optional component data (unvalidated)
-            component_result: Optional result for flow branching
-            awaiting_input: Whether component is waiting for input
-        """
+        """Update flow state including path and component"""
         try:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("Updating flow state")
             self._core.update_flow_state(
                 path=path,
                 component=component,
@@ -216,8 +192,8 @@ class StateManager(StateManagerInterface):  # type: ignore
                 action="get_channel_id"
             )
 
-    def get_channel_type(self) -> ChannelType:
-        """Get channel type"""
+    def get_channel_type(self) -> str:
+        """Get channel type as string (e.g. "whatsapp", "sms")"""
         try:
             return self._core.get_channel_type()  # Returns ChannelType enum
         except Exception as e:
@@ -264,7 +240,31 @@ class StateManager(StateManagerInterface):  # type: ignore
                 action="is_mock_testing"
             )
 
-    def initialize_channel(self, channel_type: ChannelType, channel_id: str, mock_testing: bool = False) -> None:
+    def get_incoming_message(self) -> Optional[Dict[str, Any]]:
+        """Get current incoming message if it exists"""
+        try:
+            return self._core.get_incoming_message()
+        except Exception as e:
+            raise SystemException(
+                message=f"Failed to get incoming message: {str(e)}",
+                code="MESSAGE_ERROR",
+                service="whatsapp_state",
+                action="get_incoming_message"
+            )
+
+    def set_incoming_message(self, message: Dict[str, Any]) -> None:
+        """Set the incoming message with validation"""
+        try:
+            self._core.set_incoming_message(message)
+        except Exception as e:
+            raise SystemException(
+                message=f"Failed to set incoming message: {str(e)}",
+                code="MESSAGE_ERROR",
+                service="whatsapp_state",
+                action="set_incoming_message"
+            )
+
+    def initialize_channel(self, channel_type: str, channel_id: str, mock_testing: bool = False) -> None:
         """Initialize or update channel info"""
         try:
             self._core.initialize_channel(channel_type, channel_id, mock_testing)

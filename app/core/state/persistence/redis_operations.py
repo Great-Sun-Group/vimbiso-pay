@@ -3,24 +3,32 @@
 This module provides atomic Redis operations for storing and retrieving state.
 All state is schema-validated at a higher level - this layer only handles
 persistence of the validated state.
-
-Note: The _validation field is stripped before storage since validation state
-is not persisted (components can store their own data in component_data.data).
 """
 import json
-import logging
 from typing import Any, Dict, Optional, Tuple
 
-from redis import Redis, WatchError
-
-logger = logging.getLogger(__name__)
+from redis import WatchError
 
 
 class RedisAtomic:
     """Atomic Redis operations for schema-validated state persistence"""
 
-    def __init__(self, redis_client: Redis):
+    def __init__(self, redis_client):
+        """Initialize with Redis client
+
+        Args:
+            redis_client: Redis client from django-redis or direct redis-py
+                        Must support pipeline() and watch() operations
+
+        Raises:
+            RuntimeError: If client doesn't support required operations
+        """
+        # Use the provided Redis client directly since it's already the raw client
         self.redis = redis_client
+
+        # Verify client supports required operations
+        if not hasattr(self.redis, 'pipeline') or not hasattr(self.redis, 'watch'):
+            raise RuntimeError("Redis client must support pipeline() and watch() operations")
 
     def execute_atomic(
         self,
@@ -79,27 +87,21 @@ class RedisAtomic:
                         return True, None, None
 
                     else:
-                        error_msg = f"Unknown operation: {operation}"
-                        logger.error(error_msg)
-                        return False, None, error_msg
+                        return False, None, f"Unknown operation: {operation}"
 
                 except WatchError:
                     retry_count += 1
                     if retry_count == max_retries:
-                        logger.error(f"Max retries ({max_retries}) exceeded for {operation} on key: {key}")
+                        return False, None, f"Max retries ({max_retries}) exceeded for {operation}"
                     continue
 
                 except json.JSONDecodeError as e:
-                    error_msg = f"Invalid JSON data for key {key}: {str(e)}"
-                    logger.error(error_msg)
-                    return False, None, error_msg
+                    return False, None, f"Invalid JSON data for key {key}: {str(e)}"
 
                 finally:
                     pipe.reset()
 
             except Exception as e:
-                error_msg = f"Redis operation failed: {str(e)}"
-                logger.error(error_msg)
-                return False, None, error_msg
+                return False, None, f"Redis operation failed: {str(e)}"
 
         return False, None, "Max retries exceeded"

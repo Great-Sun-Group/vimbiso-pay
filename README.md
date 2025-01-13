@@ -1,29 +1,63 @@
 # Vimbiso ChatServer
 
-Facilitates transactions through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API, enabling users to manage their credex accounts and perform financial operations directly in secure WhatsApp and SMS chats:
-- Login and member onboarding
+Secure credex ecosystem account and transaction management via WhatsApp and SMS. Operations secured by auditable digital signatures through the [credex-core](https://github.com/Great-Sun-Group/credex-core) API.
+
+## Core Features
+
+#### Member Operations
+- Login
+- Onboard and open an account
+- Upgrade member tier
+
+#### Account Operations
 - Account dashboard with multi-denominational balance display
+- View account ledgers with pagination
+
+#### Credex Operations
 - Offer secured credex
 - Accept/decline/cancel credex offers
-- Account ledgers with pagination
-- View credex
-- Upgrade member tier
+- View credex details
 
 ## Core Architecture
 
-See [Core Architecture](docs/architecture.md) for detailed architectural principles and patterns. The system is built around a central flow headquarters that coordinates operations as one of five core pillars:
+The system follows a specific message flow pattern through five core pillars:
 
-- [Flow Headquarters:](docs/flow-headquarters.md) Coordinates operations
-- [State Manager:](docs/state-manager.md) Source of truth for data
-- [Components:](docs/components.md) Self-contained operational units for display, input, API, and confirm component types
-- [API Services:](docs/api-services.md) Service communication with credex-core API
-- [Messaging System:](docs/messaging.md) Channel-agnostic user interaction handling with WhatsApp and SMS (coming) implementations
+### 1. Flow Headquarters
+- Manages member flows through the application
+- Receives incoming messages and initializes state
+- Controls flow through awaiting_input mechanism
+- Determines next steps through pattern matching
+
+### 2. State Manager
+- Single source of truth for all data
+- Schema validation for core state
+- Component freedom in data storage
+- Clear state boundaries
+
+### 3. Component System
+- Self-contained operational units
+- Display components for UI/messaging
+- Input components for validation
+- API components for external calls
+- Confirm components for authorizations
+
+### 4. API Services
+- Integration with credex-core API
+- State-based API handling
+- Clear validation patterns
+- Standard error handling
+
+### 5. Messaging System
+- Channel-agnostic messaging (WhatsApp, SMS)
+- Stateless message sending
+- Flow control through awaiting_input
+- Clear component boundaries
+
+See [Architecture Documentation](docs/architecture.md) for detailed implementation patterns and guidelines.
 
 ## Infrastructure
-- [Security](docs/infrastructure/security.md) - Security measures and best practices
-- [Docker](docs/infrastructure/docker.md) - Container configuration and services
-- [Deployment](docs/infrastructure/deployment.md) - Deployment process and infrastructure
-- [Redis](docs/infrastructure/redis-memory-management.md) - Redis configuration and management
+
+See [Infrastructure Documentation](docs/infrastructure.md) for detailed deployment, security, and operations guidelines.
 
 ## Quick Start
 

@@ -5,11 +5,7 @@ from typing import Any, Dict
 
 from core.error.exceptions import ComponentException
 from core.flow.processor import FlowProcessor
-from core.messaging.types import (
-    ChannelType,
-    InteractiveType,
-    MessageType,
-)
+from core.messaging.types import InteractiveType, MessageType
 
 logger = logging.getLogger(__name__)
 
@@ -51,25 +47,20 @@ class WhatsAppFlowProcessor(FlowProcessor):
             if not value:
                 raise ValueError("Missing value object")
 
-            # Check if this is a status update
+            # Skip non-message updates
             if "statuses" in value:
-                logger.debug("Received status update - skipping processing")
                 return {}
 
-            # Check for messages
             messages = value.get("messages", [])
             if not messages:
-                logger.debug("No messages to process")
                 return {}
 
             message = messages[0]
             if not message:
-                logger.debug("Empty message object")
                 return {}
 
             # Only process user-initiated messages
             if not message.get("from"):
-                logger.debug("Skipping non-user message")
                 return {}
 
             # Get channel info from payload
@@ -89,47 +80,66 @@ class WhatsAppFlowProcessor(FlowProcessor):
             if not channel_id:
                 raise ValueError("Missing WhatsApp ID")
 
-            # Create base message data
-            mock_testing = bool(value.get("metadata", {}).get("mock_testing", False))
-            base_data = {
-                "channel_type": ChannelType.WHATSAPP.value,  # Store enum value as string
-                "channel_id": channel_id,
-                "mock_testing": mock_testing
+            # Return channel info and message content separately
+            channel_info = {
+                "type": "whatsapp",
+                "identifier": channel_id,
+                "mock_testing": bool(value.get("metadata", {}).get("mock_testing", False))
             }
 
+            # Extract message content
             message_type = message.get("type")
             if message_type == "text":
                 # Handle text messages
-                message_data = message.copy()
-                message_data.update(base_data)
-                return message_data
+                text_content = message.get("text", {})
+                return {
+                    "channel": channel_info,
+                    "message": {
+                        "type": MessageType.TEXT.value,
+                        "text": {
+                            "body": text_content.get("body", "")
+                        }
+                    }
+                }
 
             elif message_type == "interactive":
                 # Handle interactive messages
                 interactive = message.get("interactive", {})
                 if interactive.get("type") == "button_reply":
                     button = interactive.get("button_reply", {})
-                    # Create message data with button info as dict
-                    message_data = {
-                        "type": MessageType.INTERACTIVE.value,
-                        "interactive_type": InteractiveType.BUTTON.value,
-                        "button": {
-                            "id": button.get("id"),
-                            "title": button.get("title"),
-                            "type": "reply"
+                    return {
+                        "channel": channel_info,
+                        "message": {
+                            "type": MessageType.INTERACTIVE.value,
+                            "text": {
+                                "interactive_type": InteractiveType.BUTTON.value,
+                                "button": {
+                                    "id": button.get("id"),
+                                    "title": button.get("title"),
+                                    "type": "reply"
+                                }
+                            }
                         }
                     }
-                    message_data.update(base_data)
 
-                    if logger.isEnabledFor(logging.DEBUG):
-                        # Log serializable data
-                        logger.debug(f"Extracted message data: {message_data}")
-                        logger.debug(f"Channel type: {message_data['channel_type']}")
-                        logger.debug(f"Mock testing: {message_data['mock_testing']}")
+                elif interactive.get("type") == "list_reply":
+                    list_reply = interactive.get("list_reply", {})
+                    return {
+                        "channel": channel_info,
+                        "message": {
+                            "type": MessageType.INTERACTIVE.value,
+                            "text": {
+                                "interactive_type": InteractiveType.LIST.value,
+                                "list_reply": {
+                                    "id": list_reply.get("id"),
+                                    "title": list_reply.get("title"),
+                                    "description": list_reply.get("description")
+                                }
+                            }
+                        }
+                    }
 
-                    return message_data
-
-            logger.debug(f"Skipping non-user message: {message.get('type')}")
+            # Return empty dict for unsupported message types
             return {}
 
         except (IndexError, KeyError, ValueError) as e:

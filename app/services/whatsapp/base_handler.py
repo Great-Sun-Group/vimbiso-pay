@@ -8,39 +8,35 @@ validation. Only component_data.data is unvalidated to give components freedom.
 import logging
 
 from core.error.exceptions import ComponentException, SystemException
-from core.messaging.messages import INVALID_ACTION
+from core.error.types import INVALID_ACTION_MESSAGE
 from core.state.interface import StateManagerInterface
 from .types import WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 
 
-def handle_default_action(state_manager: StateManagerInterface) -> WhatsAppMessage:
+def handle_default_action(channel_id: str = None, state_manager: StateManagerInterface = None) -> WhatsAppMessage:
     """Handle default or unknown actions
 
     Args:
-        state_manager: State manager instance for state access
+        channel_id: Optional direct channel ID for stateless operation
+        state_manager: Optional state manager for stateful operation
 
     Returns:
         WhatsAppMessage: Error message for invalid actions
     """
     try:
-        # Validate state manager
-        if not state_manager:
-            raise ComponentException(
-                message="State manager is required",
-                component="base_handler",
-                field="state_manager",
-                value="None"
-            )
+        # Get channel ID from either source
+        if not channel_id and state_manager:
+            channel_id = state_manager.get_channel_id()
 
-        # Get channel info (schema validated)
-        channel_id = state_manager.get_channel_id()
+        if not channel_id:
+            channel_id = "unknown"  # Fallback for error messages
 
         # Create error response
         return WhatsAppMessage.create_text(
             channel_id,
-            INVALID_ACTION
+            INVALID_ACTION_MESSAGE
         )
 
     except ComponentException as e:
@@ -102,26 +98,19 @@ def format_synopsis(synopsis: str, style: str = None) -> str:
     return formatted_synopsis.strip()
 
 
-def get_response_template(state_manager: StateManagerInterface, message_text: str) -> WhatsAppMessage:
+def get_response_template(message_text: str, channel_id: str = None, state_manager: StateManagerInterface = None) -> WhatsAppMessage:
     """Get a basic WhatsApp message template
 
     Args:
-        state_manager: State manager instance for state access
         message_text: Text content for the message
+        channel_id: Optional direct channel ID for stateless operation
+        state_manager: Optional state manager for stateful operation
 
     Returns:
         WhatsAppMessage: Basic formatted WhatsApp message
     """
     try:
-        # Validate inputs
-        if not state_manager:
-            raise ComponentException(
-                message="State manager is required",
-                component="base_handler",
-                field="state_manager",
-                value="None"
-            )
-
+        # Validate message text
         if not message_text:
             raise ComponentException(
                 message="Message text is required",
@@ -130,8 +119,17 @@ def get_response_template(state_manager: StateManagerInterface, message_text: st
                 value="None"
             )
 
-        # Get channel info (schema validated)
-        channel_id = state_manager.get_channel_id()
+        # Get channel ID from either source
+        if not channel_id and state_manager:
+            channel_id = state_manager.get_channel_id()
+
+        if not channel_id:
+            raise ComponentException(
+                message="Channel ID required from either state or direct input",
+                component="base_handler",
+                field="channel_id",
+                value="None"
+            )
 
         # Create template response
         return WhatsAppMessage.create_text(channel_id, message_text)
@@ -166,31 +164,27 @@ def get_response_template(state_manager: StateManagerInterface, message_text: st
         )
 
 
-def format_error_response(state_manager: StateManagerInterface, error_message: str) -> WhatsAppMessage:
+def format_error_response(error_message: str, channel_id: str = None, state_manager: StateManagerInterface = None) -> WhatsAppMessage:
     """Format an error response message
 
     Args:
-        state_manager: State manager instance for state access
         error_message: Error message to format
+        channel_id: Optional direct channel ID for stateless operation
+        state_manager: Optional state manager for stateful operation
 
     Returns:
         WhatsAppMessage: Formatted error message
     """
     try:
-        # Validate inputs
-        if not state_manager:
-            raise ComponentException(
-                message="State manager is required",
-                component="base_handler",
-                field="state_manager",
-                value="None"
-            )
-
         if not error_message:
             error_message = "An unknown error occurred"
 
-        # Get channel info (schema validated)
-        channel_id = state_manager.get_channel_id()
+        # Get channel ID from either source
+        if not channel_id and state_manager:
+            channel_id = state_manager.get_channel_id()
+
+        if not channel_id:
+            channel_id = "unknown"  # Fallback for error messages
 
         # Create error response
         return WhatsAppMessage.create_text(

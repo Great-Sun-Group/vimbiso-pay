@@ -1,89 +1,278 @@
 """Upgrade member tier API call component
 
-This component handles the upgrade member tier API call with proper validation.
-Dashboard data is schema-validated at the state manager level.
-Components can store their own data in component_data.data.
+Handles upgrading a member's tier through the API:
+- Gets required data from state (member, account)
+- Makes API call to upgrade tier
+- Updates state with response
+- Sets component_result for flow control
 """
 
-from typing import Any, Dict
+import logging
+from typing import Any, Dict, Optional, Tuple
 
-from decouple import config
-
+from core.api.base import handle_api_response, make_api_request
 from core.error.types import ValidationResult
-from core.api.base import make_api_request, handle_api_response
 
 from ..base import ApiComponent
 
+logger = logging.getLogger(__name__)
+
 
 class UpgradeMembertierApiCall(ApiComponent):
-    """Handles upgrade member tier API call"""
+    """Processes member tier upgrade and manages state"""
 
     def __init__(self):
         super().__init__("upgrade_membertier_api")
         self.state_manager = None
 
     def set_state_manager(self, state_manager: Any) -> None:
-        """Set state manager for accessing member data"""
+        """Set state manager for accessing state data"""
         self.state_manager = state_manager
 
     def validate_api_call(self, value: Any) -> ValidationResult:
-        """Call upgradeMemberTier endpoint and validate response"""
-        # Get dashboard data from state
-        dashboard = self.state_manager.get_state_value("dashboard")
-        if not dashboard:
+        """Process member tier upgrade and update state"""
+        # Validate state manager is set
+        if not self.state_manager:
             return ValidationResult.failure(
-                message="No dashboard data found",
-                field="dashboard",
-                details={"component": "upgrade_membertier"}
+                message="State manager not set",
+                field="state_manager",
+                details={"component": "upgrade_membertier_api"}
             )
 
-        # Get member ID from dashboard
-        member_id = dashboard.get("member", {}).get("memberID")
-        if not member_id:
-            return ValidationResult.failure(
-                message="No member ID found in dashboard",
-                field="member_id",
-                details={"component": "upgrade_membertier"}
+        try:
+            # Get confirmation data from component_data
+            component_data = self.state_manager.get_state_value("component_data", {})
+            confirmation_data = component_data.get("data", {})
+            if not confirmation_data:
+                return ValidationResult.failure(
+                    message="No confirmation data found",
+                    field="component_data.data",
+                    details={"component": self.type}
+                )
+
+            # Get and validate required fields
+            member_id = confirmation_data.get("member_id")
+            if not member_id:
+                return ValidationResult.failure(
+                    message="Missing member ID",
+                    field="member_id",
+                    details={"component": self.type}
+                )
+
+            logger.info(
+                f"Creating tier 3 subscription for member {member_id}"
             )
 
-        # Make API call
-        url = f"upgradeMemberTier/{member_id}"
-        headers = {
-            "Content-Type": "application/json",
-            "x-client-api-key": config("CLIENT_API_KEY"),
-        }
+            # Make API call
+            result = self._make_api_call(member_id)
+            if not result.valid:
+                return result
 
-        response = make_api_request(url, headers, {})
+            # Clear confirmation data after successful operation
+            self.update_component_data(data={})
 
-        # Let handlers update state
-        response_data, error = handle_api_response(
-            response=response,
-            state_manager=self.state_manager
-        )
-        if error:
+            # Process response and update state
+            return self._process_response(result.value)
+
+        except Exception as e:
+            logger.error(f"Error in upgrade member tier API call: {str(e)}")
             return ValidationResult.failure(
-                message=f"Upgrade failed: {error}",
+                message=f"Failed to upgrade member: {str(e)}",
                 field="api_call",
-                details={"error": error}
+                details={"error": str(e)}
             )
 
-        # Get action data from component data (schema-validated except for data dict)
-        component_data = self.state_manager.get_state_value("component_data", {})
-        action_data = component_data.get("action", {})
+    def _get_required_data(self) -> Tuple[Optional[str], Optional[int]]:
+        """Get required data from state"""
+        try:
+            # Get member data from dashboard
+            dashboard = self.state_manager.get_state_value("dashboard", {})
+            member = dashboard.get("member", {})
+            member_id = member.get("memberID")
+            current_tier = member.get("memberTier")
 
-        return ValidationResult.success({
-            "action": action_data,
-            "upgraded": True
-        })
+            return member_id, current_tier
+
+        except Exception as e:
+            logger.error(f"Error getting required data: {str(e)}")
+            return None, None
+
+    def _make_api_call(self, member_id: str) -> ValidationResult:
+        """Make API calls to create tier 3 subscription"""
+        try:
+            # First get the greatsun_ops account ID
+            url = "getAccountByHandle"
+            payload = {
+                "accountHandle": "greatsun_ops"
+            }
+
+            # Make request and let handle_api_response store action in state
+            response = make_api_request(
+                url=url,
+                payload=payload,
+                state_manager=self.state_manager
+            )
+
+            # Process response
+            result, error = handle_api_response(
+                response=response,
+                state_manager=self.state_manager
+            )
+            if error:
+                logger.error(f"Failed to get greatsun_ops account: {error}")
+                return ValidationResult.failure(
+                    message=f"Failed to get operations account: {error}",
+                    field="api_call",
+                    details={"error": error}
+                )
+
+            # Get action from state after API call
+            action = self.state_manager.get_state_value("action", {})
+            action_type = action.get("type")
+            logger.debug(f"Got action type: {action_type}")
+
+            # Check for validation error
+            if action_type == "ERROR_VALIDATION":
+                details = action.get("details", {})
+                return ValidationResult.failure(
+                    message=f"Invalid account handle: {details.get('reason')}",
+                    field=details.get("field", "handle"),
+                    details={"error": "INVALID_HANDLE"}
+                )
+
+            # Check for not found error
+            if action_type == "ERROR_NOT_FOUND":
+                return ValidationResult.failure(
+                    message="Operations account not found",
+                    field="handle",
+                    details={"error": "ACCOUNT_NOT_FOUND"}
+                )
+
+            # Check for success
+            if action_type != "ACCOUNT_FOUND":
+                return ValidationResult.failure(
+                    message="Account validation failed",
+                    field="api_call",
+                    details={"action_type": action_type}
+                )
+
+            # Get account details directly from action.details
+            details = action.get("details", {})
+            logger.debug(f"Got account details: {details}")
+
+            target_account_id = details.get("accountID")
+            if not target_account_id:
+                return ValidationResult.failure(
+                    message="Could not get operations account ID",
+                    field="api_call",
+                    details={"error": "Missing accountID in response", "action": action}
+                )
+
+            logger.debug(f"Got operations account ID: {target_account_id}")
+
+            # Get source account ID from state
+            source_account_id = self.state_manager.get_state_value("active_account_id")
+            if not source_account_id:
+                return ValidationResult.failure(
+                    message="No active account selected",
+                    field="api_call",
+                    details={"error": "Missing active_account_id in state"}
+                )
+
+            # Get today's date for start date
+            from datetime import datetime
+            start_date = datetime.now().strftime("%Y-%m-%d")
+
+            # Create subscription
+            subscription_payload = {
+                "sourceAccountID": source_account_id,
+                "targetAccountID": target_account_id,
+                "templateType": "MEMBERTIER_SUBSCRIPTION",
+                "memberTier": 3,
+                "payFrequency": 28,
+                "startDate": start_date,
+                "amount": 1.00,  # Required $1.00 for tier 3
+                "denomination": "USD",  # Always USD for tier subscriptions
+                "securedCredex": True  # Required for subscription payments
+            }
+
+            response = make_api_request(
+                url="createRecurring",
+                payload=subscription_payload,
+                method="POST",
+                state_manager=self.state_manager
+            )
+
+            # Process response
+            result, error = handle_api_response(
+                response=response,
+                state_manager=self.state_manager
+            )
+            if error:
+                logger.error(f"Failed to create tier 3 subscription: {error}")
+                return ValidationResult.failure(
+                    message=f"Failed to create subscription: {error}",
+                    field="api_call",
+                    details={"error": error}
+                )
+
+            return ValidationResult.success(result)
+
+        except Exception as e:
+            logger.error(f"Error making API call: {str(e)}")
+            return ValidationResult.failure(
+                message=f"Failed to upgrade member tier: {str(e)}",
+                field="api_call",
+                details={"error": str(e)}
+            )
+
+    def _process_response(self, response: Dict) -> ValidationResult:
+        """Process API response and update state"""
+        try:
+            # Get action from state after API call
+            action = self.state_manager.get_state_value("action", {})
+            action_type = action.get("type")
+
+            # Send notification based on action type
+            if action_type == "RECURRING_CREATED":
+                logger.info("Tier 3 subscription created successfully")
+                self.state_manager.messaging.send_text("Hustle hard 💥")
+                self.update_component_data(component_result="send_dashboard")
+            else:
+                logger.warning(f"Unexpected action type: {action_type}")
+                self.state_manager.messaging.send_text("❌ Failed to upgrade member tier")
+                self.update_component_data(component_result="show_error")
+
+            # Get tier info from scheduleInfo
+            schedule_info = response.get("data", {}).get("action", {}).get("details", {}).get("scheduleInfo", {})
+            previous_tier = schedule_info.get("previousTier")
+            new_tier = schedule_info.get("memberTier")
+
+            return ValidationResult.success({
+                "action": action,
+                "upgraded": action_type == "RECURRING_CREATED",
+                "previous_tier": previous_tier,
+                "new_tier": new_tier
+            })
+
+        except Exception as e:
+            logger.error(f"Error processing response: {str(e)}")
+            return ValidationResult.failure(
+                message=f"Failed to process response: {str(e)}",
+                field="response",
+                details={"error": str(e)}
+            )
 
     def to_verified_data(self, value: Any) -> Dict:
-        """Convert upgrade response to verified data
+        """Convert API response to verified data
 
-        Note: Member data is in dashboard state, we just need
-        upgrade status and action details here.
+        Note: Dashboard/action data is handled by handle_api_response.
+        We just track upgrade status here.
         """
         return {
-            "upgrade_complete": True,
+            "upgrade_complete": value.get("upgraded", False),
+            "previous_tier": value.get("previous_tier"),
+            "new_tier": value.get("new_tier"),
             "action_type": value.get("action", {}).get("type"),
             "action_id": value.get("action", {}).get("id")
         }

@@ -36,51 +36,63 @@ class LoginApiCall(ApiComponent):
 
             logger.info(f"Making login API call for channel: {channel['identifier']}")
 
-            # Make API call
-            response = make_api_request(
+            # Make API call and inject response into state
+            result = make_api_request(
                 url="login",
                 payload={"phone": channel["identifier"]},
                 method="POST",
                 retry_auth=False,
                 state_manager=self.state_manager
             )
-            logger.info(f"API response received: {response}")
 
-            # Check for 404 status which indicates new member
-            if response.status_code == 404:
-                logger.info("New member detected - starting onboarding flow")
-                # Set result for onboarding flow
-                self.update_component_data(component_result="start_onboarding")
-                return ValidationResult.success(None)  # Success but no result data needed
-
-            # For existing members, let handlers update state
+            # Process response
             result, error = handle_api_response(
-                response=response,
+                response=result,
                 state_manager=self.state_manager
             )
-            logger.info(f"API response handled - Result: {result}, Error: {error}")
-
             if error:
-                logger.error(f"Login API error: {error}")
                 return ValidationResult.failure(
                     message=f"Login failed: {error}",
                     field="api_call",
                     details={"error": error}
                 )
 
-            # Get personal account ID from dashboard (schema-validated)
-            dashboard = self.state_manager.get_state_value("dashboard", {})
-            personal_account = dashboard["accounts"][0]  # First account is always PERSONAL
+            # Check action state to determine flow
+            action = self.state_manager.get_state_value("action", {})
+            if action.get("type") == "ERROR_NOT_FOUND":
+                logger.info("New member detected - starting onboarding flow")
+                self.update_component_data(component_result="start_onboarding")
+                return ValidationResult.success(None)
 
-            # Set active account and transition to dashboard
-            self.state_manager.update_state({
-                "active_account_id": personal_account["accountID"]
-            })
+            # For existing members, set active account
+            try:
+                dashboard = self.state_manager.get_state_value("dashboard", {})
+                accounts = dashboard.get("accounts", [])
+                personal_account = next(
+                    (acc for acc in accounts if acc.get("accountType") == "PERSONAL"),
+                    None
+                )
+                if not personal_account:
+                    return ValidationResult.failure(
+                        message="Login failed: No personal account found",
+                        field="accounts",
+                        details={"error": "missing_personal_account"}
+                    )
 
-            # Set result for dashboard flow
-            self.update_component_data(component_result="send_dashboard")
+                self.state_manager.update_state({
+                    "active_account_id": personal_account["accountID"]
+                })
 
-            return ValidationResult.success(result)
+                # Set result for dashboard flow
+                self.update_component_data(component_result="send_dashboard")
+                return ValidationResult.success(result)
+            except Exception as e:
+                logger.error(f"Failed to process dashboard data: {e}")
+                return ValidationResult.failure(
+                    message="Login failed: Invalid dashboard data",
+                    field="dashboard",
+                    details={"error": str(e)}
+                )
 
         except Exception as e:
             logger.error(f"Error in login API call: {str(e)}")

@@ -2,17 +2,9 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from .exceptions import (
-    MessageDeliveryError,
-    MessageHandlerError,
-    MessageTemplateError,
-    MessageValidationError,
-)
-from .types import (
-    Button,
-    Message,
-    MessageRecipient,
-)
+from .exceptions import (MessageDeliveryError, MessageHandlerError,
+                         MessageTemplateError, MessageValidationError)
+from .types import Button, Message, MessageRecipient
 
 __all__ = [
     'MessagingServiceInterface',
@@ -48,12 +40,15 @@ class MessagingServiceInterface(ABC):
 
     @abstractmethod
     def send_text(
-        self, recipient: MessageRecipient, text: str, preview_url: bool = False
+        self,
+        text: str,
+        preview_url: bool = False
     ) -> Message:
         """Send a text message
 
+        The recipient will be injected from state by MessagingService.
+
         Args:
-            recipient: Message recipient
             text: Text content
             preview_url: Whether to show URL previews
 
@@ -70,20 +65,24 @@ class MessagingServiceInterface(ABC):
     @abstractmethod
     def send_interactive(
         self,
-        recipient: MessageRecipient,
         body: str,
-        buttons: List[Button],
+        buttons: Optional[List[Button]] = None,
         header: Optional[str] = None,
         footer: Optional[str] = None,
+        sections: Optional[List[Dict[str, Any]]] = None,
+        button_text: Optional[str] = None
     ) -> Message:
         """Send an interactive message
 
+        The recipient will be injected from state by MessagingService.
+
         Args:
-            recipient: Message recipient
             body: Message body text
-            buttons: Interactive buttons
+            buttons: Optional buttons array for button type messages
             header: Optional header text
             footer: Optional footer text
+            sections: Optional sections array for list type messages
+            button_text: Optional button text for list type messages
 
         Returns:
             Sent message with delivery details
@@ -98,15 +97,15 @@ class MessagingServiceInterface(ABC):
     @abstractmethod
     def send_template(
         self,
-        recipient: MessageRecipient,
         template_name: str,
         language: Dict[str, str],
-        components: Optional[List[Dict[str, Any]]] = None,
+        components: Optional[List[Dict[str, Any]]] = None
     ) -> Message:
         """Send a template message
 
+        The recipient will be injected from state by MessagingService.
+
         Args:
-            recipient: Message recipient
             template_name: Name of template to use
             language: Language parameters
             components: Optional template components
@@ -134,5 +133,23 @@ class MessagingServiceInterface(ABC):
 
         Raises:
             MessageValidationError: If validation fails with details
+        """
+        pass
+
+    @abstractmethod
+    def handle_incoming_message(self, payload: Dict[str, Any]) -> None:
+        """Handle incoming message from channel
+
+        This method is responsible for:
+        1. Extracting message data from channel-specific payload
+        2. Converting to standard Message format
+        3. Storing in state_manager.incoming_message
+
+        Args:
+            payload: Raw message payload from channel
+
+        Raises:
+            MessageValidationError: If message validation fails
+            MessageHandlerError: If message handling fails
         """
         pass

@@ -18,8 +18,8 @@ echo "Port: $PORT"
 echo "DEPLOYED_TO_AWS: ${DEPLOYED_TO_AWS:-false}"
 
 # Debug Redis configuration
-echo "REDIS_STATE_URL from environment: ${REDIS_STATE_URL:-not set}"
-REDIS_HOST=$(echo "${REDIS_STATE_URL:-redis://localhost:6379/0}" | sed -E 's|redis://([^:/]+).*|\1|')
+echo "REDIS_URL from environment: ${REDIS_URL:-not set}"
+REDIS_HOST=$(echo "${REDIS_URL:-redis://localhost:6379/0}" | sed -E 's|redis://([^:/]+).*|\1|')
 echo "Extracted Redis host: $REDIS_HOST"
 
 # Test Redis connectivity with increased attempts to match task definition grace period
@@ -83,6 +83,10 @@ if [ "${DJANGO_ENV:-development}" = "production" ]; then
     echo "Collecting static files..."
     python manage.py collectstatic --noinput
 fi
+
+# Apply database migrations
+echo "Applying database migrations..."
+python manage.py migrate --noinput
 
 # Restore original stdout/stderr for runtime logs
 if [ "${DEPLOYED_TO_AWS:-false}" = "false" ]; then

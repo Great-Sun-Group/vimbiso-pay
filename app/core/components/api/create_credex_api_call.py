@@ -1,22 +1,21 @@
 """Create Credex API call component
 
-This component handles creating a new Credex offer through the API.
-Dashboard data is schema-validated at the state manager level.
-Components can store their own data in component_data.data.
+Handles creating a new Credex offer through the API:
+- Gets offer data from component_data.data (unvalidated)
+- Creates new Credex offer via API
+- Updates state with schema-validated dashboard data
 """
 
 from typing import Any, Dict
 
-from decouple import config
-
+from core.api.base import handle_api_response, make_api_request
 from core.error.types import ValidationResult
-from core.api.base import make_api_request, handle_api_response
 
 from ..base import ApiComponent
 
 
 class CreateCredexApiCall(ApiComponent):
-    """Handles creating a new Credex offer"""
+    """Handles creating a new Credex offer and managing state"""
 
     def __init__(self):
         super().__init__("create_credex_api")
@@ -27,14 +26,46 @@ class CreateCredexApiCall(ApiComponent):
         self.state_manager = state_manager
 
     def validate_api_call(self, value: Any) -> ValidationResult:
-        """Call createCredex endpoint and validate response"""
+        """Process offer creation and update state
+
+        - Gets offer data (amount, handle) from flow state
+        - Creates new Credex offer via API
+        - Updates state with dashboard data via handle_api_response
+        - Returns success status
+        """
+        # Get offer data from component data
+        component_data = self.state_manager.get_state_value("component_data", {})
+        offer_data = component_data.get("data", {})
+        if not offer_data:
+            return ValidationResult.failure(
+                message="No offer data found",
+                field="component_data.data",
+                details={"component": self.type}
+            )
+        # Get and validate required fields
+        amount = offer_data.get("amount")
+        denom = offer_data.get("denom")
+
+        if not amount or not denom:
+            return ValidationResult.failure(
+                message="Missing required offer fields",
+                field="offer_data",
+                details={
+                    "component": self.type,
+                    "missing_fields": {
+                        "amount": not amount,
+                        "denom": not denom
+                    }
+                }
+            )
+
         # Get member data from dashboard
         dashboard = self.state_manager.get_state_value("dashboard")
         if not dashboard:
             return ValidationResult.failure(
                 message="No dashboard data found",
                 field="dashboard",
-                details={"component": "create_credex"}
+                details={"component": self.type}
             )
 
         member_id = dashboard.get("member", {}).get("memberID")
@@ -42,7 +73,7 @@ class CreateCredexApiCall(ApiComponent):
             return ValidationResult.failure(
                 message="No member ID found in dashboard",
                 field="member_id",
-                details={"component": "create_credex"}
+                details={"component": self.type}
             )
 
         # Get active account ID from state
@@ -51,74 +82,80 @@ class CreateCredexApiCall(ApiComponent):
             return ValidationResult.failure(
                 message="No active account selected",
                 field="active_account",
-                details={"component": "create_credex"}
+                details={"component": self.type}
             )
 
-        # Get offer details from component data (components can store their own data in component_data.data)
-        offer_data = self.state_manager.get_state_value("component_data", {})
-        if not offer_data:
+        # Get recipient account ID from action state
+        action = self.state_manager.get_state_value("action", {})
+        recipient_account = action.get("details", {})
+        if not recipient_account or not recipient_account.get("accountID"):
             return ValidationResult.failure(
-                message="No offer data found",
-                field="component_data",
-                details={"component": "create_credex"}
-            )
-        amount = offer_data.get("amount")
-        handle = offer_data.get("handle")
-
-        if not amount or not handle:
-            return ValidationResult.failure(
-                message="Missing required offer fields",
-                field="offer_data",
-                details={
-                    "missing_fields": [
-                        "amount" if not amount else None,
-                        "handle" if not handle else None
-                    ]
-                }
+                message="Missing recipient account details",
+                field="action",
+                details={"component": self.type}
             )
 
         # Make API call
-        url = f"createCredex/{member_id}/{active_account_id}"
-        headers = {
-            "Content-Type": "application/json",
-            "x-client-api-key": config("CLIENT_API_KEY"),
-        }
+        url = "createCredex"
         payload = {
-            "amount": amount,
-            "handle": handle
+            "receiverAccountID": recipient_account["accountID"],
+            "issuerAccountID": active_account_id,
+            "Denomination": offer_data.get("denom"),
+            "InitialAmount": amount,
+            "credexType": "PURCHASE",
+            "OFFERSorREQUESTS": "OFFERS",
+            "securedCredex": True,
         }
 
-        response = make_api_request(url, headers, payload)
+        # Make request and store response
+        response = make_api_request(
+            url=url,
+            payload=payload,
+            state_manager=self.state_manager
+        )
 
-        # Let handlers update state
+        # Store response data in state
         response_data, error = handle_api_response(
             response=response,
             state_manager=self.state_manager
         )
-        if error:
+
+        # Validate response has required data
+        if not response_data.get("data", {}).get("action", {}).get("type") == "CREDEX_CREATED":
             return ValidationResult.failure(
-                message=f"Failed to create Credex: {error}",
+                message="Credex creation failed: Invalid response data",
                 field="api_call",
-                details={"error": error}
+                details={"error": error or "Unexpected action type"}
             )
 
-        # Get action data from component data (schema-validated except for data dict)
-        component_data = self.state_manager.get_state_value("component_data", {})
-        action_data = component_data.get("action", {})
+        # Get action from state after API call
+        action = self.state_manager.get_state_value("action", {})
+
+        # Send notification based on action type
+        if action.get("type") == "CREDEX_CREATED":
+            self.state_manager.messaging.send_text("✅ Secured credex offered")
+        else:
+            self.state_manager.messaging.send_text("❌ Failed offer secured credex")
+
+        # Clear offer data after creation
+        self.update_component_data(data={})
+
+        # Set component result for flow control
+        self.update_component_data(component_result="show_dashboard")
 
         return ValidationResult.success({
-            "action": action_data,
-            "credex_created": True
+            "status": "success" if action.get("type") == "CREDEX_CREATED" else "error",
+            "action": action
         })
 
     def to_verified_data(self, value: Any) -> Dict:
         """Convert API response to verified data
 
-        Note: Most data is in dashboard state, we just need
-        success indicators and action details here.
+        Note: Dashboard/action data is handled by handle_api_response.
+        We just track creation status here.
         """
         return {
-            "credex_created": True,
+            "credex_created": value.get("status") == "success",
             "action_type": value.get("action", {}).get("type"),
             "action_id": value.get("action", {}).get("id")
         }

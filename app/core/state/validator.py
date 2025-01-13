@@ -20,18 +20,18 @@ class StateValidator:
 
     # State schema defining field types when present
     STATE_SCHEMA = {
-        # Required initially
+        # Required initially - channel info for messaging
         "channel": {
             "type": dict,
             "fields": {
-                "type": {"type": str},  # Channel type as string (e.g. "whatsapp", "sms")
-                "identifier": {"type": str}
+                "type": {"type": str},      # Channel type (e.g. "whatsapp", "sms")
+                "identifier": {"type": str}  # Channel ID (e.g. phone number)
             },
-            "required": ["type", "identifier"]  # Both fields are required
+            "required": ["type", "identifier"]
         },
-        # Required flag that controls validation and service behavior
-        # Set to true for mock testing mode, false for normal requests
-        "mock_testing": {"type": bool},  # Already in correct format
+
+        # Required flag for mock testing mode
+        "mock_testing": {"type": bool},
 
         # Added during login
         "auth": {
@@ -48,17 +48,17 @@ class StateValidator:
                 "member": {
                     "type": dict,
                     "fields": {
-                        "memberID": {"type": str},
-                        "memberTier": {"type": int},
-                        "firstname": {"type": str},
-                        "lastname": {"type": str},
-                        "memberHandle": {"type": str},
-                        "defaultDenom": {"type": str},
-                        "remainingAvailableUSD": {"type": float}
+                        "memberID": {"type": (str, type(None))},
+                        "memberTier": {"type": (int, type(None))},
+                        "firstname": {"type": (str, type(None))},
+                        "lastname": {"type": (str, type(None))},
+                        "memberHandle": {"type": (str, type(None))},
+                        "defaultDenom": {"type": (str, type(None))},
+                        "remainingAvailableUSD": {"type": (float, type(None))}
                     }
                 },
                 "accounts": {
-                    "type": list,
+                    "type": (list, type(None)),
                     "item_fields": {
                         "type": dict,
                         "fields": {
@@ -78,7 +78,7 @@ class StateValidator:
         "action": {
             "type": dict,
             "fields": {
-                "id": {"type": str},
+                "id": {"type": (str, type(None))},
                 "type": {"type": str},
                 "timestamp": {"type": str},
                 "actor": {"type": str},
@@ -87,19 +87,29 @@ class StateValidator:
         },
 
         # Added during account selection or by default
-        "active_account_id": {"type": str},  # Already in correct format
+        "active_account_id": {"type": str},
 
         # Used internally by components
         # Used for component-to-flow communication
+        # Used to pass Message data to component for member control of component operations
         # Wiped on component initialization for clean slate
         "component_data": {
             "type": dict,
             "fields": {
+                # Optional fields - validated only if present
                 "path": {"type": str},
                 "component": {"type": str},
-                "component_result": {"type": (str, type(None))},  # Allow str or None
+                "component_result": {"type": (str, type(None))},
                 "awaiting_input": {"type": bool},
-                "data": {"type": dict}
+                "data": {"type": dict},
+                # Message structure - validated only if present
+                "incoming_message": {
+                    "type": dict,
+                    "fields": {
+                        "type": {"type": str},
+                        "text": {"type": dict}  # Structure varies by type
+                    }
+                }
             }
         }
     }
@@ -174,7 +184,12 @@ class StateValidator:
             if not channel or not isinstance(channel, dict):
                 return ValidationResult(
                     is_valid=False,
-                    error_message="Channel is required for authentication"
+                    error_message="Channel info is required for authentication"
+                )
+            if not channel.get("type") or not channel.get("identifier"):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message="Channel type and identifier are required for authentication"
                 )
 
         # Valid JWT is required for other fields
@@ -193,40 +208,26 @@ class StateValidator:
                 error_message="Invalid or expired authentication token"
             )
 
-        # Dashboard requires complete member data and personal account
+        # Dashboard validation is optional
         dashboard = state.get("dashboard")
-        if dashboard:
-            member = dashboard.get("member", {})
-            if not all(field in member for field in [
-                "memberID", "memberTier", "firstname", "lastname",
-                "memberHandle", "defaultDenom", "remainingAvailableUSD"
-            ]):
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Incomplete member data in dashboard"
-                )
-
-            accounts = dashboard.get("accounts", [])
-            has_personal = any(
-                account.get("accountType") == "personal" and
-                all(field in account for field in [
+        if dashboard and dashboard.get("accounts"):
+            accounts = dashboard["accounts"]
+            for account in accounts:
+                if not all(field in account for field in [
                     "accountID", "accountName", "accountHandle",
                     "accountType", "defaultDenom", "isOwnedAccount"
-                ])
-                for account in accounts
-            )
-            if not has_personal:
-                return ValidationResult(
-                    is_valid=False,
-                    error_message="Dashboard requires a complete personal account"
-                )
+                ]):
+                    return ValidationResult(
+                        is_valid=False,
+                        error_message="Incomplete account data in dashboard"
+                    )
 
-        # Action requires all fields
+        # Action requires type for flow control
         action = state.get("action")
-        if action and not all(field in action for field in ["id", "type", "timestamp", "actor", "details"]):
+        if action and "type" not in action:
             return ValidationResult(
                 is_valid=False,
-                error_message="Incomplete action data"
+                error_message="Action requires type field"
             )
 
         return ValidationResult(is_valid=True)

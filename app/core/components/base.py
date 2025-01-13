@@ -36,12 +36,11 @@ class Component:
         }
 
     def set_state_manager(self, state_manager: StateManagerInterface) -> None:
-        """Set state manager and initialize component state
+        """Set state manager for component
 
-        When a component is initialized, it starts with clean state:
-        - Empty data dict for component-specific data
-        - No component_result since previous result was used for branching
-        - Inherits current path/component and awaiting_input
+        Components use the state manager to access and update state, but the
+        flow processor manages the actual flow state (path, component, etc).
+        Components should only initialize their internal validation state.
 
         Args:
             state_manager: State manager instance
@@ -67,11 +66,27 @@ class Component:
 
         self.state_manager = state_manager
 
-        # Initialize clean component state
-        self.update_component_data(
-            data={},  # Start with empty data
-            component_result=None  # Clear any previous result
-        )
+    def send(self) -> None:
+        """Send component's initial message/prompt
+
+        Components implement _send() to define their specific messaging logic.
+        This is called on initial activation to display prompts or messages.
+        """
+        if not self.state_manager:
+            raise ComponentException(
+                message="State manager not set",
+                component=self.type,
+                field="state_manager",
+                value="None"
+            )
+        self._send()
+
+    def _send(self) -> None:
+        """Component-specific send logic
+
+        Override this to implement component-specific messaging.
+        """
+        pass
 
     def validate(self, value: Any) -> ValidationResult:
         """Validate component input with standardized tracking
@@ -227,11 +242,15 @@ class Component:
             path = current.get("path", "")
             component = current.get("component", "")
 
+            # Merge new data with existing data
+            existing_data = current.get("data", {})
+            merged_data = {**existing_data, **(data or {})}
+
             # Use flow state update but preserve flow control fields
             self.state_manager.update_flow_state(
                 path=path,
                 component=component,
-                data=data if data is not None else current.get("data", {}),
+                data=merged_data,
                 component_result=component_result if component_result is not None else current.get("component_result"),
                 awaiting_input=awaiting_input if awaiting_input is not None else current.get("awaiting_input", False)
             )
@@ -266,31 +285,26 @@ class Component:
 
 
 class DisplayComponent(Component):
-    """Base class for display components"""
+    """Base class for display-only components that don't handle input"""
 
     def __init__(self, component_type: str):
         super().__init__(component_type)
 
     def _validate(self, value: Any) -> ValidationResult:
-        """Validate display data with proper tracking"""
-        logger = logging.getLogger(__name__)
+        """Display components just format and show data, no validation needed"""
         try:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Validating display component {self.type}")
-
-            # Subclasses implement specific validation
-            result = self.validate_display(value)
-
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Display validation result: {result}")
-            return result
-
+            # Format and display the data
+            self.display(value)
+            return ValidationResult.success(value)
         except Exception as e:
-            logger.error(f"Display validation error in {self.type}: {str(e)}")
-            raise
+            return ValidationResult.failure(
+                message=f"Failed to display: {str(e)}",
+                field="display",
+                details={"error": str(e)}
+            )
 
-    def validate_display(self, value: Any) -> ValidationResult:
-        """Component-specific display validation logic"""
+    def display(self, value: Any) -> None:
+        """Component-specific display logic"""
         raise NotImplementedError
 
 
@@ -299,6 +313,28 @@ class InputComponent(Component):
 
     def __init__(self, component_type: str):
         super().__init__(component_type)
+
+    def _validate(self, value: Any) -> ValidationResult:
+        """Validate input with proper tracking"""
+        logger = logging.getLogger(__name__)
+        try:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Validating input component {self.type}")
+
+            # Subclasses implement specific validation
+            result = self.validate_display(value)
+
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Input validation result: {result}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Input validation error in {self.type}: {str(e)}")
+            raise
+
+    def validate_display(self, value: Any) -> ValidationResult:
+        """Component-specific display validation logic"""
+        raise NotImplementedError
 
     def _validate_type(self, value: Any, expected_type: Union[Type, tuple], type_name: str) -> ValidationResult:
         """Validate value type with proper error context

@@ -1,9 +1,7 @@
 """Cloud API webhook views"""
 import logging
 import sys
-
 from core.messaging.service import MessagingService
-from core.messaging.types import ChannelIdentifier, ChannelType
 from core.messaging.types import Message as DomainMessage
 from core.messaging.types import MessageRecipient, TemplateContent
 from core.state.manager import StateManager
@@ -15,7 +13,8 @@ from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
 from services.whatsapp.flow_processor import WhatsAppFlowProcessor
 from services.whatsapp.service import WhatsAppMessagingService
-from services.whatsapp.state_manager import StateManager as WhatsAppStateManager
+from services.whatsapp.state_manager import \
+    StateManager as WhatsAppStateManager
 
 # Configure logging with a standardized format
 logging.basicConfig(
@@ -28,20 +27,47 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_messaging_service(state_manager, channel_type: ChannelType):
+class HealthCheck(APIView):
+    """Health check endpoint for container health monitoring"""
+    permission_classes = []
+    throttle_classes = []
+
+    @staticmethod
+    def get(request):
+        try:
+            # Check Redis connectivity using Django's cache framework
+            cache.set('health_check', 'ok', 1)  # Set with 1 second timeout
+            result = cache.get('health_check')
+
+            if result != 'ok':
+                raise Exception("Cache check failed")
+
+            return JsonResponse({
+                "status": "healthy",
+                "redis": "connected"
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Health check failed: {str(e)}")
+            return JsonResponse({
+                "status": "unhealthy",
+                "error": str(e)
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+def get_messaging_service(state_manager, channel_type: str):
     """Get properly initialized messaging service with state and channel
 
     Args:
         state_manager: State manager instance
-        channel_type: Type of messaging channel (WhatsApp, SMS)
+        channel_type: Type of messaging channel ("whatsapp", "sms")
 
     Returns:
         MessagingService: Initialized messaging service
     """
     # Create channel-specific service based on type
-    if channel_type == ChannelType.WHATSAPP:
+    if channel_type == "whatsapp":
         channel_service = WhatsAppMessagingService()
-    elif channel_type == ChannelType.SMS:
+    elif channel_type == "sms":
         # TODO: Implement SMS service
         raise NotImplementedError("SMS channel not yet implemented")
     else:
@@ -64,7 +90,7 @@ class CredexCloudApiWebhook(APIView):
     throttle_classes = []  # Disable throttling for webhook endpoint
 
     @staticmethod
-    def _extract_whatsapp_info(value: dict, is_mock_testing: bool) -> tuple[ChannelType, str] | None:
+    def _extract_whatsapp_info(value: dict, is_mock_testing: bool) -> tuple[str, str] | None:
         """Extract WhatsApp channel info from payload"""
         # Validate WhatsApp value
         if not is_mock_testing:
@@ -89,10 +115,10 @@ class CredexCloudApiWebhook(APIView):
         if not channel_id:
             return None
 
-        return ChannelType.WHATSAPP, channel_id
+        return "whatsapp", channel_id
 
     @staticmethod
-    def _extract_channel_info(value: dict, is_mock_testing: bool) -> tuple[ChannelType, str] | None:
+    def _extract_channel_info(value: dict, is_mock_testing: bool) -> tuple[str, str] | None:
         """Extract channel info from payload"""
         if "messaging_product" in value and value["messaging_product"] == "whatsapp":
             return CredexCloudApiWebhook._extract_whatsapp_info(value, is_mock_testing)
@@ -150,7 +176,7 @@ class CredexCloudApiWebhook(APIView):
             core_state_manager = StateManager(f"channel:{channel_id}")
             state_manager = (
                 WhatsAppStateManager(core_state_manager)
-                if channel_type == ChannelType.WHATSAPP
+                if channel_type == "whatsapp"
                 else core_state_manager
             )
 
@@ -166,7 +192,7 @@ class CredexCloudApiWebhook(APIView):
                 service = get_messaging_service(state_manager, channel_type)
 
                 # Create flow processor for channel type
-                if channel_type == ChannelType.WHATSAPP:
+                if channel_type == "whatsapp":
                     flow_processor = WhatsAppFlowProcessor(service, state_manager)
                 else:
                     raise ValueError(f"Unsupported channel type: {channel_type}")
@@ -235,9 +261,8 @@ class CredexSendMessageWebhook(APIView):
 
         try:
             # Get channel type from request
-            try:
-                channel_type = ChannelType[request.data["channel"].upper()]
-            except (KeyError, ValueError):
+            channel_type = request.data["channel"].lower()
+            if channel_type not in ["whatsapp", "sms"]:
                 return JsonResponse(
                     {"status": "error", "message": f"Unsupported channel: {request.data['channel']}"},
                     status=status.HTTP_400_BAD_REQUEST
@@ -245,10 +270,8 @@ class CredexSendMessageWebhook(APIView):
 
             # Create channel-agnostic message
             recipient = MessageRecipient(
-                channel_id=ChannelIdentifier(
-                    channel=channel_type,
-                    value=request.data["phoneNumber"]
-                )
+                type=channel_type,
+                identifier=request.data["phoneNumber"]
             )
 
             # Create template message
@@ -273,23 +296,24 @@ class CredexSendMessageWebhook(APIView):
                 )
             )
 
-            # Initialize state managers
-            core_state_manager = StateManager(f"channel:{request.data['phoneNumber']}")
-            state_manager = (
-                WhatsAppStateManager(core_state_manager)
-                if channel_type == ChannelType.WHATSAPP
-                else core_state_manager
-            )
+            # Get mock testing flag from header
+            is_mock_testing = request.headers.get('X-Mock-Testing') == 'true'
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Mock testing: {is_mock_testing}")
 
-            # Initialize channel state
-            state_manager.initialize_channel(
-                channel_type=channel_type,
-                channel_id=request.data["phoneNumber"],
-                mock_testing=False
-            )
+            # Create channel-specific service based on type
+            if channel_type == "whatsapp":
+                service = WhatsAppMessagingService()
+            elif channel_type == "sms":
+                # TODO: Implement SMS service
+                raise NotImplementedError("SMS channel not yet implemented")
+            else:
+                raise ValueError(f"Unsupported channel type: {channel_type}")
 
-            # Get messaging service for channel
-            service = get_messaging_service(state_manager, channel_type)
+            # Set mock mode in message metadata
+            if is_mock_testing:
+                message.metadata = message.metadata or {}
+                message.metadata["mock_testing"] = True
 
             # Send through service
             response = service.send_message(message)

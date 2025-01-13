@@ -22,8 +22,9 @@ class ConfirmBase(Component):
         Converts string inputs to boolean and validates type.
         Subclasses handle specific confirmation logic.
         """
-        # If no value provided, we're being activated - await input
+        # If no value provided, we're being activated - send initial message and await input
         if value is None:
+            self.send()  # Send initial confirmation message
             self.set_awaiting_input(True)
             return ValidationResult.success(None)
 

@@ -71,7 +71,7 @@ resource "aws_service_discovery_service" "app" {
   }
 
   health_check_custom_config {
-    failure_threshold = 1
+    failure_threshold = 3  # Allow more failures before marking unhealthy
   }
 
   tags = merge(var.tags, {
@@ -95,7 +95,7 @@ resource "aws_service_discovery_service" "redis" {
   }
 
   health_check_custom_config {
-    failure_threshold = 1
+    failure_threshold = 3  # Match app's failure threshold
   }
 
   tags = merge(var.tags, {

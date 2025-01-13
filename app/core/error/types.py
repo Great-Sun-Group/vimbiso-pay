@@ -108,6 +108,17 @@ SYSTEM_ERRORS = {
     "UNKNOWN_ERROR": "unknown_error"
 }
 
+# Error messages
+INVALID_ACTION_MESSAGE = """❌ Invalid option selected
+
+⚠️ Your session has expired
+
+Send me a greeting to log back in:
+• hi
+• ndeipi
+• sawubona
+... or any other greeting you prefer 👋"""
+
 # HTTP status code mappings
 ERROR_STATUS_CODES = {
     "component": 400,  # Bad Request

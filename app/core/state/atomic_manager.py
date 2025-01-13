@@ -3,9 +3,6 @@
 This module provides atomic operations for persisting schema-validated state.
 It tracks operation attempts, timestamps, and errors in memory only - this is
 separate from the schema validation that happens at the state manager level.
-
-Note: The operation tracking here is for debugging/monitoring purposes and is
-not persisted. Components can store their own data in component_data.data.
 """
 import logging
 from datetime import datetime
@@ -18,27 +15,19 @@ logger = logging.getLogger(__name__)
 
 
 class AtomicStateManager:
-    """Atomic persistence operations with in-memory operation tracking
-
-    Tracks operation attempts, timestamps, and errors in memory for debugging.
-    This is separate from schema validation which happens at state manager level.
-    """
+    """Atomic persistence operations with in-memory operation tracking"""
 
     def __init__(self, redis_client):
         """Initialize with Redis client"""
         self.storage = RedisAtomic(redis_client)
         self._validation_state = {
-            "attempts": {},  # Track attempts per key
+            "attempts": {},      # Track attempts per key
             "last_attempts": {},  # Track last attempt timestamps
-            "errors": {}  # Track errors per key
+            "errors": {}        # Track errors per key
         }
 
     def _track_attempt(self, key: str, operation: str, error: Optional[str] = None) -> Dict[str, Any]:
-        """Track operation attempt in memory
-
-        This tracking is for debugging/monitoring only and is separate from
-        the schema validation that happens at the state manager level.
-        """
+        """Track operation attempt in memory"""
         # Initialize tracking for key if needed
         if key not in self._validation_state["attempts"]:
             self._validation_state["attempts"][key] = {}
@@ -108,11 +97,6 @@ class AtomicStateManager:
         # Track attempt in memory only
         self._track_attempt(key, "update")
 
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Executing atomic update for key: {key}")
-            logger.debug(f"Value to store: {value}")
-            logger.debug(f"TTL: {ttl}")
-
         success, _, error = self.storage.execute_atomic(
             key=key,
             operation='set',
@@ -129,9 +113,6 @@ class AtomicStateManager:
                 service="atomic_state",
                 action="update"
             )
-
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Atomic update successful")
 
     def atomic_delete(self, key: str) -> None:
         """Delete schema-validated state with operation tracking"""

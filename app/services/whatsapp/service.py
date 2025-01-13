@@ -7,7 +7,7 @@ import requests
 from core.messaging.base import BaseMessagingService
 from core.messaging.exceptions import MessageValidationError
 from core.messaging.types import (Button, InteractiveContent, InteractiveType,
-                                  Message, MessageRecipient, TemplateContent,
+                                  Message, MessageType, Section, TemplateContent,
                                   TextContent)
 from core.state.interface import StateManagerInterface
 from decouple import config
@@ -24,6 +24,11 @@ class WhatsAppMessagingService(BaseMessagingService):
         """Initialize WhatsApp messaging service"""
         super().__init__()
         self.state_manager: Optional[StateManagerInterface] = None  # Will be set by MessagingService
+        self._mock_testing: bool = False  # Internal mock testing state
+
+    def set_mock_testing(self, mock_testing: bool) -> None:
+        """Set mock testing mode"""
+        self._mock_testing = mock_testing
 
     @classmethod
     def wrap_text(
@@ -40,25 +45,7 @@ class WhatsAppMessagingService(BaseMessagingService):
         plain: bool = False,
         include_menu: bool = True,
     ) -> Dict:
-        """Wrap text message with WhatsApp formatting
-
-        Args:
-            message: Text message to wrap
-            channel_identifier: Channel identifier from state (e.g. WhatsApp number)
-            proceed_option: Whether to include proceed option
-            x_is_menu: Whether X button is menu
-            navigate_is: Navigation button text
-            extra_rows: Additional row options
-            use_buttons: Whether to use button format
-            yes_or_no: Whether to show yes/no buttons
-            custom: Custom button configuration
-            plain: Whether to use plain text format
-            include_menu: Whether to include menu option
-
-        Returns:
-            Dict: Formatted WhatsApp message
-        """
-        logger.debug(f"Wrapping text message: {message}")
+        """Wrap text message with WhatsApp formatting"""
         if use_buttons:
             rows = [
                 {"type": "reply", "reply": {"id": "N", "title": "❌ No"}},
@@ -177,40 +164,36 @@ class WhatsAppMessagingService(BaseMessagingService):
 
         return message_data
 
-    def _is_mock_mode(self) -> bool:
+    def _is_mock_mode(self, message: Message = None) -> bool:
         """Check if service is in mock testing mode"""
-        return hasattr(self, 'state_manager') and self.state_manager.is_mock_testing()
+        # First check internal mock testing state
+        if self._mock_testing:
+            return True
+
+        # Then check message metadata for direct sends
+        if message and message.metadata and message.metadata.get("mock_testing"):
+            return True
+
+        # Default to production mode
+        return False
 
     def send_message(self, message: Message) -> Message:
-        """Send a message through WhatsApp Cloud API or mock.
-
-        This method:
-        1. Converts core Message to WhatsApp format
-        2. Determines if message should go to mock or real API
-        3. Sends and processes response
-        4. Updates message metadata
-
-        Args:
-            message: Core Message object to send
-
-        Returns:
-            Message: Sent message with metadata
-
-        Raises:
-            MessageValidationError: If message sending fails
-        """
+        """Send a message through WhatsApp Cloud API or mock"""
         try:
-            # Convert message to WhatsApp format
-            whatsapp_message = WhatsAppMessage.from_core_message(message)
+            # Convert to WhatsApp format using state if available
+            whatsapp_message = WhatsAppMessage.from_core_message(
+                message,
+                state_manager=self.state_manager
+            )
 
             # Log basic info - full payload not needed since we're async
             logger.info("Sending %s message to %s",
                         message.content.type,
-                        message.recipient.channel_id.value)
+                        message.recipient.identifier)
 
-            # Send through appropriate handler
+            # Determine mock mode from state or message metadata
             handler = (
-                self._handle_mock_send if self._is_mock_mode()
+                self._handle_mock_send if self._is_mock_mode(message)
                 else self._handle_production_send
             )
             return handler(message, whatsapp_message)
@@ -228,15 +211,7 @@ class WhatsAppMessagingService(BaseMessagingService):
             )
 
     def _handle_mock_send(self, message: Message, whatsapp_message: Dict) -> Message:
-        """Handle mock message sending path
-
-        Args:
-            message: Original core Message
-            whatsapp_message: Converted WhatsApp format message
-
-        Returns:
-            Message: Message with mock metadata
-        """
+        """Handle mock message sending path"""
         logger.info("Mock mode: sending to mock server")
 
         try:
@@ -245,7 +220,7 @@ class WhatsAppMessagingService(BaseMessagingService):
                 "http://mock:8001/bot/webhook",
                 json=whatsapp_message,
                 headers={"Content-Type": "application/json"},
-                timeout=10  # Increased timeout
+                timeout=10
             )
 
             # Track when sent and response
@@ -259,7 +234,6 @@ class WhatsAppMessagingService(BaseMessagingService):
             try:
                 response_data = response.json()
                 message.metadata["response"] = response_data
-                logger.debug(f"Mock server response: {response_data}")
 
                 # Check if response indicates success
                 if response.status_code != 200 or not response_data.get("messaging_product"):
@@ -299,15 +273,7 @@ class WhatsAppMessagingService(BaseMessagingService):
             return message
 
     def _handle_production_send(self, message: Message, whatsapp_message: Dict) -> Message:
-        """Handle production message sending path
-
-        Args:
-            message: Original core Message
-            whatsapp_message: Converted WhatsApp format message
-
-        Returns:
-            Message: Message with metadata
-        """
+        """Handle production message sending path"""
         logger.info("Production mode: sending to WhatsApp")
 
         # Get API configuration
@@ -325,7 +291,7 @@ class WhatsAppMessagingService(BaseMessagingService):
                 url,
                 json=whatsapp_message,
                 headers=headers,
-                timeout=10  # Increased timeout
+                timeout=10
             )
 
             # Track when sent and response
@@ -353,7 +319,6 @@ class WhatsAppMessagingService(BaseMessagingService):
 
     def send_text(
         self,
-        recipient: MessageRecipient,
         text: str,
         preview_url: bool = False
     ) -> Message:
@@ -371,37 +336,75 @@ class WhatsAppMessagingService(BaseMessagingService):
                 }
             )
 
-        # Create message with validated content
+        # Create message with just content
         message = Message(
-            recipient=recipient,
             content=TextContent(body=text, preview_url=preview_url)
         )
         return self.send_message(message)
 
     def send_interactive(
         self,
-        recipient: MessageRecipient,
         body: str,
         buttons: Optional[List[Button]] = None,
         sections: Optional[List[Dict[str, Any]]] = None,
         header: Optional[str] = None,
         footer: Optional[str] = None,
-        button_text: Optional[str] = None,
+        button_text: Optional[str] = None
     ) -> Message:
-        """Send an interactive message
+        """Send an interactive message"""
+        # WhatsApp-specific validation
+        if len(body) > 4096:
+            raise MessageValidationError(
+                message="Body text exceeds 4096 characters",
+                service="whatsapp",
+                action="send_interactive",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "body",
+                    "length": len(body),
+                    "max_length": 4096
+                }
+            )
 
-        Args:
-            recipient: Message recipient
-            body: Message body text
-            buttons: Optional list of buttons for button type messages
-            sections: Optional list of sections for list type messages
-            header: Optional header text
-            footer: Optional footer text
-            button_text: Optional custom button text for list messages
+        if header and len(header) > 60:
+            raise MessageValidationError(
+                message="Header text exceeds 60 characters",
+                service="whatsapp",
+                action="send_interactive",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "header",
+                    "length": len(header),
+                    "max_length": 60
+                }
+            )
 
-        Returns:
-            Message: Sent message
-        """
+        if footer and len(footer) > 60:
+            raise MessageValidationError(
+                message="Footer text exceeds 60 characters",
+                service="whatsapp",
+                action="send_interactive",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "footer",
+                    "length": len(footer),
+                    "max_length": 60
+                }
+            )
+
+        if button_text and len(button_text) > 20:
+            raise MessageValidationError(
+                message="Button text exceeds 20 characters",
+                service="whatsapp",
+                action="send_interactive",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "button_text",
+                    "length": len(button_text),
+                    "max_length": 20
+                }
+            )
+
         if buttons and sections:
             raise MessageValidationError(
                 message="Cannot specify both buttons and sections",
@@ -413,10 +416,136 @@ class WhatsAppMessagingService(BaseMessagingService):
                 }
             )
 
+        if buttons and len(buttons) > 3:
+            raise MessageValidationError(
+                message="Too many buttons (max 3)",
+                service="whatsapp",
+                action="send_interactive",
+                validation_details={
+                    "error": "too_many_buttons",
+                    "count": len(buttons),
+                    "max_count": 3
+                }
+            )
+
+        if sections:
+            if len(sections) > 10:
+                raise MessageValidationError(
+                    message="Too many sections (max 10)",
+                    service="whatsapp",
+                    action="send_interactive",
+                    validation_details={
+                        "error": "too_many_sections",
+                        "count": len(sections),
+                        "max_count": 10
+                    }
+                )
+
+            for section in sections:
+                # Validate section has required fields
+                if "title" not in section:
+                    raise MessageValidationError(
+                        message="Section missing title",
+                        service="whatsapp",
+                        action="send_interactive",
+                        validation_details={
+                            "error": "missing_field",
+                            "field": "title",
+                            "section": section
+                        }
+                    )
+
+                if "rows" not in section:
+                    raise MessageValidationError(
+                        message="Section missing rows",
+                        service="whatsapp",
+                        action="send_interactive",
+                        validation_details={
+                            "error": "missing_field",
+                            "field": "rows",
+                            "section": section
+                        }
+                    )
+
+                # Validate section title length
+                if len(section["title"]) > 24:
+                    raise MessageValidationError(
+                        message="Section title exceeds 24 characters",
+                        service="whatsapp",
+                        action="send_interactive",
+                        validation_details={
+                            "error": "text_too_long",
+                            "field": "section_title",
+                            "section": section["title"],
+                            "length": len(section["title"]),
+                            "max_length": 24
+                        }
+                    )
+
+                # Validate rows count
+                if len(section["rows"]) > 10:
+                    raise MessageValidationError(
+                        message=f"Too many rows in section '{section['title']}' (max 10)",
+                        service="whatsapp",
+                        action="send_interactive",
+                        validation_details={
+                            "error": "too_many_rows",
+                            "section": section["title"],
+                            "count": len(section["rows"]),
+                            "max_count": 10
+                        }
+                    )
+
+                # Validate each row
+                for row in section["rows"]:
+                    if len(row["id"]) > 200:
+                        raise MessageValidationError(
+                            message="Row ID exceeds 200 characters",
+                            service="whatsapp",
+                            action="send_interactive",
+                            validation_details={
+                                "error": "text_too_long",
+                                "field": "row_id",
+                                "section": section["title"],
+                                "row_id": row["id"],
+                                "length": len(row["id"]),
+                                "max_length": 200
+                            }
+                        )
+
+                    if len(row["title"]) > 24:
+                        raise MessageValidationError(
+                            message="Row title exceeds 24 characters",
+                            service="whatsapp",
+                            action="send_interactive",
+                            validation_details={
+                                "error": "text_too_long",
+                                "field": "row_title",
+                                "section": section["title"],
+                                "row_title": row["title"],
+                                "length": len(row["title"]),
+                                "max_length": 24
+                            }
+                        )
+
+                    if "description" in row and len(row["description"]) > 72:
+                        raise MessageValidationError(
+                            message="Row description exceeds 72 characters",
+                            service="whatsapp",
+                            action="send_interactive",
+                            validation_details={
+                                "error": "text_too_long",
+                                "field": "row_description",
+                                "section": section["title"],
+                                "row_title": row["title"],
+                                "length": len(row["description"]),
+                                "max_length": 72
+                            }
+                        )
+
         interactive_type = InteractiveType.BUTTON if buttons else InteractiveType.LIST
         if buttons:
             message = Message(
-                recipient=recipient,
                 content=InteractiveContent(
                     interactive_type=interactive_type,
                     body=body,
@@ -427,13 +556,18 @@ class WhatsAppMessagingService(BaseMessagingService):
                 )
             )
         elif sections:
+            # Convert dictionary sections to Section objects
+            section_objects = [
+                Section(title=section["title"], rows=section["rows"])
+                for section in sections
+            ]
+
             message = Message(
-                recipient=recipient,
                 content=InteractiveContent(
                     interactive_type=interactive_type,
                     body=body,
                     buttons=[],  # Empty buttons for list messages
-                    sections=sections,
+                    sections=section_objects,
                     button_text=button_text or "Select",
                     header=header,
                     footer=footer
@@ -443,16 +577,14 @@ class WhatsAppMessagingService(BaseMessagingService):
 
     def send_template(
         self,
-        recipient: MessageRecipient,
         template_name: str,
         language: Dict[str, str],
-        components: Optional[List[Dict[str, Any]]] = None,
+        components: Optional[List[Dict[str, Any]]] = None
     ) -> Message:
         """Send template message through WhatsApp"""
         try:
-            # Create template message with proper content type
+            # Create template message with just content
             message = Message(
-                recipient=recipient,
                 content=TemplateContent(
                     name=template_name,
                     language=language,
@@ -470,5 +602,146 @@ class WhatsAppMessagingService(BaseMessagingService):
                     "error": str(e),
                     "template_name": template_name,
                     "language": language
+                }
+            )
+
+    def extract_message_data(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract message data from WhatsApp payload"""
+        if not payload:
+            raise MessageValidationError(
+                message="Message payload is required",
+                service="whatsapp",
+                action="extract_message",
+                validation_details={"error": "missing_payload"}
+            )
+
+        try:
+            # Extract and validate each level
+            entry = payload.get("entry", [])
+            if not entry:
+                raise ValueError("Missing entry array")
+
+            changes = entry[0].get("changes", [])
+            if not changes:
+                raise ValueError("Missing changes array")
+
+            value = changes[0].get("value", {})
+            if not value:
+                raise ValueError("Missing value object")
+
+            # Check if this is a status update
+            if "statuses" in value:
+                return {}
+
+            # Check for messages
+            messages = value.get("messages", [])
+            if not messages:
+                return {}
+
+            message = messages[0]
+            if not message:
+                return {}
+
+            # Only process user-initiated messages
+            if not message.get("from"):
+                return {}
+
+            # Validate this is a WhatsApp message
+            if not value.get("messaging_product") == "whatsapp":
+                raise ValueError("Expected messaging_product 'whatsapp'")
+
+            # Get contact info
+            contacts = value.get("contacts", [])
+            if not contacts:
+                raise ValueError("Missing contacts array")
+
+            contact = contacts[0]
+            if not contact or not isinstance(contact, dict):
+                raise ValueError("Invalid contact object")
+
+            channel_id = contact.get("wa_id")
+            if not channel_id:
+                raise ValueError("Missing WhatsApp ID")
+
+            # Extract message content
+            message_type = message.get("type")
+            if message_type == "text":
+                # Handle text messages
+                text_content = message.get("text", {})
+                return {
+                    "channel": {
+                        "type": "whatsapp",
+                        "identifier": channel_id,
+                        "mock_testing": bool(value.get("metadata", {}).get("mock_testing", False))
+                    },
+                    "message": {
+                        "type": MessageType.TEXT.value,
+                        "text": {
+                            "body": text_content.get("body", "")
+                        }
+                    }
+                }
+            elif message_type == "interactive":
+                # Handle interactive messages
+                interactive = message.get("interactive", {})
+                if interactive.get("type") == "button_reply":
+                    button = interactive.get("button_reply", {})
+                    return {
+                        "channel": {
+                            "type": "whatsapp",
+                            "identifier": channel_id,
+                            "mock_testing": bool(value.get("metadata", {}).get("mock_testing", False))
+                        },
+                        "message": {
+                            "type": MessageType.INTERACTIVE.value,
+                            "text": {
+                                "interactive_type": InteractiveType.BUTTON.value,
+                                "button": {
+                                    "id": button.get("id"),
+                                    "title": button.get("title"),
+                                    "type": "reply"
+                                }
+                            }
+                        }
+                    }
+                elif interactive.get("type") == "list_reply":
+                    list_reply = interactive.get("list_reply", {})
+                    return {
+                        "channel": {
+                            "type": "whatsapp",
+                            "identifier": channel_id,
+                            "mock_testing": bool(value.get("metadata", {}).get("mock_testing", False))
+                        },
+                        "message": {
+                            "type": MessageType.INTERACTIVE.value,
+                            "text": {
+                                "interactive_type": InteractiveType.LIST.value,
+                                "list_reply": {
+                                    "id": list_reply.get("id"),
+                                    "title": list_reply.get("title"),
+                                    "description": list_reply.get("description")
+                                }
+                            }
+                        }
+                    }
+
+            # Unsupported message type
+            return {}
+
+        except (IndexError, KeyError, ValueError) as e:
+            # Get as much info as possible for error context
+            value = payload.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
+            messages = value.get("messages", [])
+            message = messages[0] if messages else {}
+
+            raise MessageValidationError(
+                message=f"Invalid message payload format: {str(e)}",
+                service="whatsapp",
+                action="extract_message",
+                validation_details={
+                    "error": str(e),
+                    "payload": payload,
+                    "value": value,
+                    "message": message
                 }
             )

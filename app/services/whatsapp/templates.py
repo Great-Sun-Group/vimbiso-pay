@@ -1,15 +1,14 @@
 """Message templates for progressive WhatsApp interactions"""
 from typing import Any, Dict, List
 
-from .types import (
+from core.messaging.types import (
     Message,
     MessageRecipient,
     TextContent,
     InteractiveContent,
     InteractiveType,
     Button,
-    ChannelIdentifier,
-    ChannelType
+    Section
 )
 
 
@@ -17,16 +16,13 @@ class ProgressiveInput:
     """Templates for progressive text input"""
 
     @staticmethod
-    def create_prompt(text: str, examples: List[str], channel_identifier: str, member_id: str) -> Message:
+    def create_prompt(text: str, examples: List[str], channel_identifier: str) -> Message:
         """Create initial prompt with examples"""
         example_text = "\n".join([f"• {example}" for example in examples])
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_identifier
-                )
+                type="whatsapp",
+                identifier=channel_identifier
             ),
             content=TextContent(
                 body=f"{text}\n\nExamples:\n{example_text}"
@@ -34,15 +30,12 @@ class ProgressiveInput:
         )
 
     @staticmethod
-    def create_validation_error(error: str, channel_identifier: str, member_id: str) -> Message:
+    def create_validation_error(error: str, channel_identifier: str) -> Message:
         """Create validation error message"""
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_identifier
-                )
+                type="whatsapp",
+                identifier=channel_identifier
             ),
             content=TextContent(
                 body=f"❌ {error}\n\nPlease try again."
@@ -50,15 +43,12 @@ class ProgressiveInput:
         )
 
     @staticmethod
-    def create_confirmation(value: Any, channel_identifier: str, member_id: str) -> Message:
+    def create_confirmation(value: Any, channel_identifier: str) -> Message:
         """Create value confirmation message with buttons"""
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_identifier
-                )
+                type="whatsapp",
+                identifier=channel_identifier
             ),
             content=InteractiveContent(
                 interactive_type=InteractiveType.BUTTON,
@@ -75,7 +65,7 @@ class ListSelection:
     """Templates for list selection"""
 
     @staticmethod
-    def create_list(params: Dict[str, Any], channel_identifier: str, member_id: str) -> Message:
+    def create_list(params: Dict[str, Any], channel_identifier: str) -> Message:
         """Create list selection message"""
         sections = []
         for section in params.get("sections", []):
@@ -89,36 +79,23 @@ class ListSelection:
                     list_item["description"] = item["description"]
                 section_items.append(list_item)
 
-            sections.append({
-                "title": section["title"],
-                "rows": section_items
-            })
+            sections.append(Section(
+                title=section["title"],
+                rows=section_items
+            ))
 
-        # Create interactive content with proper button text
+        # Create interactive content with sections and button text
         content = InteractiveContent(
             interactive_type=InteractiveType.LIST,
             body=params.get("text", "Select an option:"),
-            action_items=sections
+            sections=sections,  # Use sections field directly
+            button_text=params.get("button", "Select")  # Use button_text field
         )
-        # Set the button text from params or use default
-        if "button" in params:
-            content.action_items = {
-                "button": params["button"],
-                "sections": sections
-            }
-        else:
-            content.action_items = {
-                "button": "Select",
-                "sections": sections
-            }
 
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_identifier
-                )
+                type="whatsapp",
+                identifier=channel_identifier
             ),
             content=content
         )
@@ -128,7 +105,7 @@ class ButtonSelection:
     """Templates for button selection"""
 
     @staticmethod
-    def create_buttons(params: Dict[str, Any], channel_identifier: str, member_id: str) -> Message:
+    def create_buttons(params: Dict[str, Any], channel_identifier: str) -> Message:
         """Create button selection message following WhatsApp Cloud API format"""
         # Ensure we don't exceed WhatsApp's 3 button limit
         buttons = [
@@ -139,11 +116,8 @@ class ButtonSelection:
         # Create message with proper recipient structure
         return Message(
             recipient=MessageRecipient(
-                member_id=member_id,
-                channel_id=ChannelIdentifier(
-                    channel=ChannelType.WHATSAPP,
-                    value=channel_identifier
-                )
+                type="whatsapp",
+                identifier=channel_identifier
             ),
             content=InteractiveContent(
                 interactive_type=InteractiveType.BUTTON,

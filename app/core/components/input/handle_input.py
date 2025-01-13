@@ -7,7 +7,11 @@ from typing import Any
 
 from core.error.types import ValidationResult
 
-from core.components.base import InputComponent
+from ..base import InputComponent
+
+# Handle prompt template
+HANDLE_PROMPT = """What's the 💳***accountHandle*** of the account are you offering too?
+"""
 
 
 class HandleInput(InputComponent):
@@ -16,7 +20,7 @@ class HandleInput(InputComponent):
     def __init__(self):
         super().__init__("handle_input")
 
-    def validate(self, value: Any) -> ValidationResult:
+    def _validate(self, value: Any) -> ValidationResult:
         """Validate handle format only
 
         Only checks basic format requirements:
@@ -26,18 +30,40 @@ class HandleInput(InputComponent):
 
         Business validation (availability etc) happens in service layer
         """
-        # If no value provided, we're being activated - await input
-        if value is None:
+        # Get current state
+        current_data = self.state_manager.get_state_value("component_data", {})
+        incoming_message = current_data.get("incoming_message")
+
+        # Initial activation - send prompt
+        if not current_data.get("awaiting_input"):
+            self.state_manager.messaging.send_text(
+                text=HANDLE_PROMPT
+            )
             self.set_awaiting_input(True)
             return ValidationResult.success(None)
 
-        # Validate type
-        type_result = self._validate_type(value, str, "text")
-        if not type_result.valid:
-            return type_result
+        # Process input
+        if not incoming_message:
+            return ValidationResult.success(None)
+
+        # Get text from message
+        if not isinstance(incoming_message, dict):
+            return ValidationResult.failure(
+                message="Expected text message",
+                field="type",
+                details={"message": incoming_message}
+            )
+
+        text = incoming_message.get("text", {}).get("body", "")
+        if not text:
+            return ValidationResult.failure(
+                message="No text provided",
+                field="text",
+                details={"message": incoming_message}
+            )
 
         # Validate basic format
-        handle = value.strip()
+        handle = text.strip()
         if not handle:
             return ValidationResult.failure(
                 message="Handle required",
@@ -47,10 +73,13 @@ class HandleInput(InputComponent):
         if len(handle) > 30:
             return ValidationResult.failure(
                 message="Handle too long (max 30 chars)",
-                field="handle"
+                field="handle",
+                details={"length": len(handle)}
             )
 
-        # Update state and release our hold on the flow
-        self.update_state(handle, ValidationResult.success(handle))
-        self.set_awaiting_input(False)  # Release our own hold
-        return ValidationResult.success(handle)
+        # Store validated handle and prepare for next component
+        self.update_component_data(
+            data={"handle": handle},
+            awaiting_input=False
+        )
+        return ValidationResult.success(None)  # Signal to move to ConfirmOfferSecured

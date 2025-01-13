@@ -1,23 +1,33 @@
 """Redis client factory"""
-import redis
-from decouple import config
+import warnings
+
+from django.core.cache import CacheKeyWarning, cache
+from django_redis.client.default import DefaultClient
 
 
-def get_redis_client() -> redis.Redis:
-    """Get Redis client using environment configuration
+def get_redis_client():
+    """Get Redis client using Django's cache framework
 
     Returns:
         Redis client instance
 
-    The client is configured with:
-    - decode_responses=True to automatically decode Redis responses to strings
-    - health_check_interval=30 to detect connection issues
-    - retry_on_timeout=True to handle temporary connection issues
+    Uses Django's cache framework to get a Redis connection from the connection pool.
+    The connection is configured in Django settings with:
+    - decode_responses=True
+    - health_check_interval=30
+    - retry_on_timeout=True
+    - Connection pooling
+    - Automatic parser selection
+
+    Note:
+        Suppresses CacheKeyWarning since we're using Redis for state management,
+        not traditional caching, so key format warnings aren't relevant.
     """
-    url = config("REDIS_STATE_URL", default="redis://redis-state:6379/0")
-    return redis.from_url(
-        url,
-        decode_responses=True,
-        health_check_interval=30,
-        retry_on_timeout=True
-    )
+    # Suppress cache key warnings since we're using Redis for state management
+    warnings.filterwarnings("ignore", category=CacheKeyWarning)
+
+    # Get the raw Redis client from django-redis
+    if not isinstance(cache.client, DefaultClient):
+        raise RuntimeError("Cache backend is not django-redis DefaultClient")
+
+    return cache.client.get_client(write=True)  # write=True ensures we get a client that can pipeline
