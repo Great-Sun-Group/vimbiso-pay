@@ -204,7 +204,8 @@ resource "aws_ecs_task_definition" "app" {
           netcat-traditional \
           dnsutils \
           gosu \
-          redis-tools
+          redis-tools \
+          sqlite3
 
         # Clean up
         rm -rf /var/lib/apt/lists/* 2>&1
