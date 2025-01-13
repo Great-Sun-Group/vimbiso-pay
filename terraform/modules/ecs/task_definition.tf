@@ -61,8 +61,45 @@ resource "aws_ecs_task_definition" "app" {
         groupadd -g 999 redis || true
         useradd -u 999 -g redis -s /sbin/nologin redis || true
 
-        # Set up Redis state directory (permissions handled by EFS access point)
-        mkdir -p /redis/state
+        # Verify EFS mount point
+        echo "[Redis] Checking EFS mount point..."
+        if ! mountpoint -q /redis/state; then
+          echo "[Redis] Error: /redis/state is not mounted"
+          echo "[Redis] Mount details:"
+          mount
+          df -h
+          exit 1
+        fi
+        echo "[Redis] EFS mount verified"
+
+        # Set up Redis state directory as redis user
+        echo "[Redis] Creating state directory as redis user..."
+        if ! su-exec redis mkdir -p /redis/state 2>/dev/null; then
+          echo "[Redis] Failed to create state directory as redis user"
+          echo "[Redis] Current permissions:"
+          ls -la /redis
+          echo "[Redis] Parent directory status:"
+          ls -la /
+          echo "[Redis] Mount status:"
+          mount | grep redis
+          echo "[Redis] Process status:"
+          ps aux | grep redis
+          exit 1
+        fi
+
+        # Verify directory ownership and permissions
+        echo "[Redis] Verifying directory permissions..."
+        dir_owner=$(stat -c '%u:%g' /redis/state)
+        if [ "$dir_owner" != "999:999" ]; then
+          echo "[Redis] Directory has incorrect ownership: $dir_owner (expected 999:999)"
+          echo "[Redis] Attempting to fix ownership..."
+          if ! chown -R redis:redis /redis/state 2>/dev/null; then
+            echo "[Redis] Failed to fix directory ownership"
+            echo "[Redis] Current state:"
+            ls -la /redis/state
+            exit 1
+          fi
+        fi
 
         # Skip memory overcommit in ECS (it's a container limitation)
         echo "[Redis] Note: Memory overcommit setting skipped in container environment"
@@ -104,9 +141,9 @@ resource "aws_ecs_task_definition" "app" {
       healthCheck = {
         command     = ["CMD-SHELL", "redis-cli -p ${var.redis_state_port} ping && redis-cli -p ${var.redis_state_port} info replication | grep -q '^role:master' || exit 1"]
         interval    = 30     # Check every 30 seconds
-        timeout     = 10     # Allow 10 seconds for check
-        retries     = 3      # Fewer retries but more frequent checks
-        startPeriod = 120    # 2 minutes should be enough for Redis to start
+        timeout     = 15     # Increased timeout for EFS operations
+        retries     = 5      # More retries during startup
+        startPeriod = 180    # Increased grace period for EFS initialization
       }
     },
     {
