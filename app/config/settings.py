@@ -61,7 +61,7 @@ CACHES = {
             "MAX_CONNECTIONS": 10,
             "HEALTH_CHECK_INTERVAL": 30,  # seconds
             "CONNECTION_POOL_CLASS": "redis.ConnectionPool",
-            "PARSER_CLASS": "redis.connection.HiredisParser",
+            # Removed PARSER_CLASS since it's causing issues with newer Redis versions
             "REDIS_CLIENT_KWARGS": {
                 "decode_responses": True  # Match existing client configuration
             }

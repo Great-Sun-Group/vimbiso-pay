@@ -1,5 +1,8 @@
 """Redis client factory"""
-from django_redis import get_redis_connection
+import warnings
+
+from django.core.cache import CacheKeyWarning, cache
+from django_redis.client.default import DefaultClient
 
 
 def get_redis_client():
@@ -14,6 +17,17 @@ def get_redis_client():
     - health_check_interval=30
     - retry_on_timeout=True
     - Connection pooling
-    - HiredisParser for performance
+    - Automatic parser selection
+
+    Note:
+        Suppresses CacheKeyWarning since we're using Redis for state management,
+        not traditional caching, so key format warnings aren't relevant.
     """
-    return get_redis_connection("default")
+    # Suppress cache key warnings since we're using Redis for state management
+    warnings.filterwarnings("ignore", category=CacheKeyWarning)
+
+    # Get the raw Redis client from django-redis
+    if not isinstance(cache.client, DefaultClient):
+        raise RuntimeError("Cache backend is not django-redis DefaultClient")
+
+    return cache.client.get_client(write=True)  # write=True ensures we get a client that can pipeline

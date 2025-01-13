@@ -7,14 +7,28 @@ persistence of the validated state.
 import json
 from typing import Any, Dict, Optional, Tuple
 
-from redis import Redis, WatchError
+from redis import WatchError
 
 
 class RedisAtomic:
     """Atomic Redis operations for schema-validated state persistence"""
 
-    def __init__(self, redis_client: Redis):
+    def __init__(self, redis_client):
+        """Initialize with Redis client
+
+        Args:
+            redis_client: Redis client from django-redis or direct redis-py
+                        Must support pipeline() and watch() operations
+
+        Raises:
+            RuntimeError: If client doesn't support required operations
+        """
+        # Use the provided Redis client directly since it's already the raw client
         self.redis = redis_client
+
+        # Verify client supports required operations
+        if not hasattr(self.redis, 'pipeline') or not hasattr(self.redis, 'watch'):
+            raise RuntimeError("Redis client must support pipeline() and watch() operations")
 
     def execute_atomic(
         self,

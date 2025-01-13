@@ -84,6 +84,10 @@ if [ "${DJANGO_ENV:-development}" = "production" ]; then
     python manage.py collectstatic --noinput
 fi
 
+# Apply database migrations
+echo "Applying database migrations..."
+python manage.py migrate --noinput
+
 # Restore original stdout/stderr for runtime logs
 if [ "${DEPLOYED_TO_AWS:-false}" = "false" ]; then
     exec 1>&3 2>&4
