@@ -98,78 +98,8 @@ class UpgradeMembertierApiCall(ApiComponent):
             return None, None
 
     def _make_api_call(self, member_id: str) -> ValidationResult:
-        """Make API calls to create tier 3 subscription"""
+        """Make API call to create tier 3 subscription"""
         try:
-            # First get the greatsun_ops account ID
-            url = "getAccountByHandle"
-            payload = {
-                "accountHandle": "greatsun_ops"
-            }
-
-            # Make request and let handle_api_response store action in state
-            response = make_api_request(
-                url=url,
-                payload=payload,
-                state_manager=self.state_manager
-            )
-
-            # Process response
-            result, error = handle_api_response(
-                response=response,
-                state_manager=self.state_manager
-            )
-            if error:
-                logger.error(f"Failed to get greatsun_ops account: {error}")
-                return ValidationResult.failure(
-                    message=f"Failed to get operations account: {error}",
-                    field="api_call",
-                    details={"error": error}
-                )
-
-            # Get action from state after API call
-            action = self.state_manager.get_state_value("action", {})
-            action_type = action.get("type")
-            logger.debug(f"Got action type: {action_type}")
-
-            # Check for validation error
-            if action_type == "ERROR_VALIDATION":
-                details = action.get("details", {})
-                return ValidationResult.failure(
-                    message=f"Invalid account handle: {details.get('reason')}",
-                    field=details.get("field", "handle"),
-                    details={"error": "INVALID_HANDLE"}
-                )
-
-            # Check for not found error
-            if action_type == "ERROR_NOT_FOUND":
-                return ValidationResult.failure(
-                    message="Operations account not found",
-                    field="handle",
-                    details={"error": "ACCOUNT_NOT_FOUND"}
-                )
-
-            # Check for success
-            if action_type != "ACCOUNT_FOUND":
-                return ValidationResult.failure(
-                    message="Account validation failed",
-                    field="api_call",
-                    details={"action_type": action_type}
-                )
-
-            # Get account details directly from action.details
-            details = action.get("details", {})
-            logger.debug(f"Got account details: {details}")
-
-            target_account_id = details.get("accountID")
-            if not target_account_id:
-                return ValidationResult.failure(
-                    message="Could not get operations account ID",
-                    field="api_call",
-                    details={"error": "Missing accountID in response", "action": action}
-                )
-
-            logger.debug(f"Got operations account ID: {target_account_id}")
-
             # Get source account ID from state
             source_account_id = self.state_manager.get_state_value("active_account_id")
             if not source_account_id:
@@ -186,7 +116,6 @@ class UpgradeMembertierApiCall(ApiComponent):
             # Create subscription
             subscription_payload = {
                 "sourceAccountID": source_account_id,
-                "targetAccountID": target_account_id,
                 "templateType": "MEMBERTIER_SUBSCRIPTION",
                 "memberTier": 3,
                 "payFrequency": 28,
