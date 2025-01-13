@@ -135,7 +135,7 @@ class CreateCredexApiCall(ApiComponent):
         if action.get("type") == "CREDEX_CREATED":
             self.state_manager.messaging.send_text("✅ Secured credex offered")
         else:
-            self.state_manager.messaging.send_text("❌ Failed offer secured credex")
+            self.state_manager.messaging.send_text("❌ Failed to offer secured credex")
 
         # Clear offer data after creation
         self.update_component_data(data={})

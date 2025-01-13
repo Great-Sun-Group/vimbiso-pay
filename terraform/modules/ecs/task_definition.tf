@@ -58,13 +58,11 @@ resource "aws_ecs_task_definition" "app" {
         apk add --no-cache su-exec shadow
 
         # Create redis user/group if they don't exist
-        groupadd -g 1000 redis || true
+        groupadd -g 999 redis || true
         useradd -u 999 -g redis -s /sbin/nologin redis || true
 
-        # Set up Redis state directory with proper permissions
+        # Set up Redis state directory (permissions handled by EFS access point)
         mkdir -p /redis/state
-        chown -R redis:redis /redis/state
-        chmod 755 /redis/state
 
         # Skip memory overcommit in ECS (it's a container limitation)
         echo "[Redis] Note: Memory overcommit setting skipped in container environment"
