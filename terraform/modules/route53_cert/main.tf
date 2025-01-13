@@ -1,6 +1,6 @@
-# Data source to fetch existing zone
-data "aws_route53_zone" "existing" {
-  name         = var.domain_name
+# Data source to fetch existing root zone
+data "aws_route53_zone" "root" {
+  name         = regex("(?:[^.]+\\.)*([^.]+\\.[^.]+)$", var.domain_name)[0]
   private_zone = false
 }
 
@@ -18,13 +18,13 @@ resource "aws_acm_certificate" "app" {
   }
 }
 
-# Create DNS validation record
+# Create DNS validation record in the root zone
 resource "aws_route53_record" "cert_validation" {
   allow_overwrite = true
   name            = tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_name
   records         = [tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_value]
   type            = tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_type
-  zone_id         = data.aws_route53_zone.existing.zone_id
+  zone_id         = data.aws_route53_zone.root.zone_id
   ttl             = 60
 }
 
