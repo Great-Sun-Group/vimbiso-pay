@@ -23,7 +23,7 @@ output "alb_dns_name" {
 # DNS Outputs
 output "route53_nameservers" {
   description = "Nameservers for the Route53 zone. Provide these to the root domain administrator."
-  value       = module.route53_dns.name_servers
+  value       = module.route53_dns.nameservers
 }
 
 output "domain_name" {
