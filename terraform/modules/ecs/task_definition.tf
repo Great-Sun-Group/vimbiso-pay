@@ -100,10 +100,10 @@ resource "aws_ecs_task_definition" "app" {
       ]
       healthCheck = {
         command     = ["CMD-SHELL", "redis-cli -p ${var.redis_state_port} ping || exit 1"]
-        interval    = 60     # Increased interval
-        timeout     = 15     # Increased timeout
-        retries     = 10     # More retries
-        startPeriod = 600    # 10 minutes to handle AOF loading
+        interval    = 30     # More frequent checks
+        timeout     = 10     # Standard timeout
+        retries     = 15     # Increased retries for reliability
+        startPeriod = 300    # Maximum allowed (5 minutes)
       }
     },
     {
