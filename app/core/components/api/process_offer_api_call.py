@@ -22,22 +22,26 @@ API_CONFIG = {
     "process_offer": {  # Default action
         "url": "acceptCredex",
         "success_action": "CREDEX_ACCEPTED",
-        "error_prefix": "process"
+        "error_prefix": "process",
+        "emoji": "✅"
     },
     "accept_offer": {
         "url": "acceptCredex",
         "success_action": "CREDEX_ACCEPTED",
-        "error_prefix": "accept"
+        "error_prefix": "accept",
+        "emoji": "✅"
     },
     "decline_offer": {
         "url": "declineCredex",
         "success_action": "CREDEX_DECLINED",
-        "error_prefix": "decline"
+        "error_prefix": "decline",
+        "emoji": "❌"
     },
     "cancel_offer": {
         "url": "cancelCredex",
         "success_action": "CREDEX_CANCELLED",
-        "error_prefix": "cancel"
+        "error_prefix": "cancel",
+        "emoji": "🚫"
     }
 }
 
@@ -161,6 +165,9 @@ class ProcessOfferApiCall(ApiComponent):
 
             if action_type == config["success_action"]:
                 logger.info(f"Offer {config['error_prefix']}ed successfully")
+
+                # Send success notification
+                self.state_manager.messaging.send_text(f"{config['emoji']} Credex offer {config['error_prefix']}ed")
 
                 # Check for more pending offers
                 dashboard = self.state_manager.get_state_value("dashboard", {})

@@ -192,6 +192,8 @@ def get_next_component(
         case ("accept_offer", "OfferListDisplay"):
             if component_result == "return_to_dashboard":
                 return "account", "AccountDashboard"  # Return to dashboard when no offers
+            return "accept_offer", "Greeting"  # Send random greeting while api call processes
+        case ("accept_offer", "Greeting"):
             return "accept_offer", "ProcessOfferApiCall"  # Process selected offer action
         case ("accept_offer", "ProcessOfferApiCall"):
             if component_result == "return_to_list":
@@ -202,6 +204,8 @@ def get_next_component(
         case ("decline_offer", "OfferListDisplay"):
             if component_result == "return_to_dashboard":
                 return "account", "AccountDashboard"  # Return to dashboard when no offers
+            return "decline_offer", "Greeting"  # Send random greeting while api call processes
+        case ("decline_offer", "Greeting"):
             return "decline_offer", "ProcessOfferApiCall"  # Process selected offer action
         case ("decline_offer", "ProcessOfferApiCall"):
             if component_result == "return_to_list":
@@ -212,6 +216,8 @@ def get_next_component(
         case ("cancel_offer", "OfferListDisplay"):
             if component_result == "return_to_dashboard":
                 return "account", "AccountDashboard"  # Return to dashboard when no offers
+            return "cancel_offer", "Greeting"  # Send random greeting while api call processes
+        case ("cancel_offer", "Greeting"):
             return "cancel_offer", "ProcessOfferApiCall"  # Process selected offer action
         case ("cancel_offer", "ProcessOfferApiCall"):
             if component_result == "return_to_list":
