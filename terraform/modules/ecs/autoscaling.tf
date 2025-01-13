@@ -7,10 +7,6 @@ resource "aws_appautoscaling_target" "app" {
   service_namespace  = "ecs"
 
   depends_on = [aws_ecs_service.app]
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-autoscaling-target-${var.environment}"
-  })
 }
 
 # CPU Scaling Policy
@@ -75,10 +71,6 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high" {
     ClusterName = aws_ecs_cluster.main.name
     ServiceName = aws_ecs_service.app.name
   }
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-cpu-alarm-${var.environment}"
-  })
 }
 
 # Memory CloudWatch Alarm disabled during deployment debugging

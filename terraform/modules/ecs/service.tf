@@ -55,8 +55,4 @@ resource "aws_ecs_service" "app" {
     aws_ecs_cluster.main,
     var.efs_mount_targets  # Ensure EFS mount targets are ready
   ]
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-service-${var.environment}"
-  })
 }

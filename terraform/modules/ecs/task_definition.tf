@@ -478,8 +478,4 @@ EOF
       }
     }
   }
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-task-${var.environment}"
-  })
 }

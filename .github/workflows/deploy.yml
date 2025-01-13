@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/prod' || github.ref == 'refs/heads/stage'
     environment: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
-    timeout-minutes: 30  # Back to original 30 minutes
+    timeout-minutes: 30
 
     env:
       ENVIRONMENT: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
@@ -94,26 +94,6 @@ jobs:
             done
           fi
 
-      - name: Deploy Infrastructure
-        run: |
-          cd terraform
-          # Deploy all infrastructure except ECS (which needs the latest image)
-          terraform plan -input=false -lock-timeout=20m \
-            -target=module.networking \
-            -target=module.route53_cert \
-            -target=module.loadbalancer \
-            -target=module.route53_dns \
-            -target=module.iam \
-            -target=module.ecr \
-            -target=module.efs \
-            -out=infra.tfplan
-
-          terraform apply -input=false -lock-timeout=20m infra.tfplan
-
-          # Display NS records for reference
-          echo "NS records for ${DOMAIN}:"
-          terraform output -json route53_nameservers | jq -r '.[]' | sed 's/^/- /'
-
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -129,7 +109,7 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
 
-      - name: Deploy Application
+      - name: Deploy Infrastructure and Application
         env:
           TF_VAR_docker_image: ${{ env.IMAGE }}
           TF_VAR_django_secret: ${{ secrets.DJANGO_SECRET }}
@@ -143,12 +123,8 @@ jobs:
           TF_VAR_whatsapp_company_registration_flow_id: ${{ secrets.WHATSAPP_COMPANY_REGISTRATION_FLOW_ID }}
         run: |
           cd terraform
-          # Deploy only ECS with the new image
-          terraform plan -input=false -lock-timeout=20m \
-            -target=module.ecs \
-            -out=app.tfplan
-
-          terraform apply -input=false -lock-timeout=20m app.tfplan
+          terraform plan -input=false -lock-timeout=20m -out=plan.tfplan
+          terraform apply -input=false -lock-timeout=20m plan.tfplan
 
       - name: Wait for Deployment
         run: |
