@@ -14,6 +14,7 @@ ALLOWED_HOSTS = env("ALLOWED_HOSTS", default="localhost 127.0.0.1").split(" ")
 INSTALLED_APPS = [
     "django.contrib.auth",  # Required by DRF
     "django.contrib.contenttypes",  # Required by DRF
+    "django.contrib.staticfiles",  # Required for collectstatic
     "corsheaders",  # For API security
     "core.config.apps.CoreConfig",  # Core bot app
 ]
@@ -48,6 +49,10 @@ if DEPLOYED_TO_AWS:
 else:
     BASE_PATH = BASE_DIR / 'data'
     os.makedirs(BASE_PATH, exist_ok=True)
+
+# Static files configuration
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_PATH / "static"
 
 # Minimal SQLite database for Django internals (migrations, etc.)
 # All application state is managed in Redis
