@@ -49,10 +49,10 @@ resource "aws_ecs_task_definition" "app" {
       ]
       healthCheck = {
         command     = ["CMD-SHELL", "redis-cli ping"]
-        interval    = "30"
-        timeout     = "5"
-        retries     = "3"
-        startPeriod = "10"
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 10
       }
     },
     {
@@ -129,10 +129,10 @@ resource "aws_ecs_task_definition" "app" {
       ]
       healthCheck = {
         command     = ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
-        interval    = "30"
-        timeout     = "5"
-        retries     = "3"
-        startPeriod = "60"
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 60
       }
       dependsOn = [
         {
