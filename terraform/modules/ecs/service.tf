@@ -4,11 +4,11 @@ resource "aws_ecs_service" "app" {
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = var.min_capacity
-  deployment_minimum_healthy_percent = 50   # Keep some capacity during deployment
+  deployment_minimum_healthy_percent = 50   # Higher minimum since startup is faster without DB
   deployment_maximum_percent        = 200  # Allow temporary extra capacity for smoother deployment
   scheduling_strategy               = "REPLICA"
   force_new_deployment             = false
-  health_check_grace_period_seconds = 300   # Reduced to 5 minutes now that startup is simpler
+  health_check_grace_period_seconds = 120   # Reduced to 2 minutes since no DB migrations
   enable_execute_command           = true
 
   deployment_circuit_breaker {

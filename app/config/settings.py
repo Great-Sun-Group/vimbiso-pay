@@ -49,11 +49,12 @@ else:
     BASE_PATH = BASE_DIR / 'data'
     os.makedirs(BASE_PATH, exist_ok=True)
 
-# Database configuration - using in-memory SQLite since we only use Redis for state
+# Minimal SQLite database for Django internals (migrations, etc.)
+# All application state is managed in Redis
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': ':memory:',  # Pure in-memory database, no file access needed
+        'NAME': BASE_PATH / 'db.sqlite3',  # Store in data directory
     }
 }
 

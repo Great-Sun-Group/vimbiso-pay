@@ -114,10 +114,10 @@ resource "aws_ecs_task_definition" "app" {
         "-c",
         <<-EOT
         set -e
-        mkdir -p /efs-vols/app-data/data/{db,static,media,logs}
+        mkdir -p /efs-vols/app-data/data/{static,media,logs}
+        chmod 755 /efs-vols/app-data/data  # Ensure directory is writable for SQLite
         ln -sfn /efs-vols/app-data/data /app/data
         cd /app
-        python manage.py migrate --noinput
         python manage.py collectstatic --noinput
         exec gunicorn config.wsgi:application \
           --bind "0.0.0.0:8000" \
