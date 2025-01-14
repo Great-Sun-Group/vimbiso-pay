@@ -155,6 +155,18 @@ class StateManager(StateManagerInterface):  # type: ignore
                 action="set_component_awaiting"
             )
 
+    def update_component_data(self, data: Dict) -> None:
+        """Update component's data"""
+        try:
+            self._core.update_component_data(data)
+        except Exception as e:
+            raise SystemException(
+                message=f"Failed to update component data: {str(e)}",
+                code="FLOW_DATA_ERROR",
+                service="whatsapp_state",
+                action="update_component_data"
+            )
+
     def transition_flow(self, path: str, component: str) -> None:
         """Transition flow to new path/component.
         ONLY used by flow processor for managing transitions."""

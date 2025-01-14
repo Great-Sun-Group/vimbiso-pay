@@ -34,7 +34,7 @@ class ConfirmUpgrade(ConfirmBase):
 
     def set_state_manager(self, state_manager: Any) -> None:
         """Set state manager for accessing state data"""
-        self.state_manager = state_manager
+        super().set_state_manager(state_manager)
 
     def validate(self, value: Any) -> ValidationResult:
         """Override parent validate to handle confirmation flow"""

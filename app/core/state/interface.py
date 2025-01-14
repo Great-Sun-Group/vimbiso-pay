@@ -115,6 +115,16 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
+    def update_component_data(self, data: Dict) -> None:
+        """Update component's data.
+        Used by components to store their state between messages.
+
+        Args:
+            data: Component-specific data to store
+        """
+        pass
+
+    @abstractmethod
     def update_flow_state(
         self,
         path: str,

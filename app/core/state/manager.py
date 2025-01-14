@@ -326,7 +326,11 @@ class StateManager(StateManagerInterface):
 
     def set_component_awaiting(self, awaiting: bool) -> None:
         """Set component's awaiting input state.
-        Used by components to indicate they are waiting for input."""
+        Used by components to indicate they are waiting for input.
+
+        Args:
+            awaiting: Whether component is waiting for input
+        """
         try:
             # Get current state to preserve
             current = self.get_state_value("component_data", {})
@@ -356,16 +360,73 @@ class StateManager(StateManagerInterface):
                 message=error_context.message
             )
 
+    def update_flow_state(
+        self,
+        path: str,
+        component: str,
+        data: Optional[Dict] = None,
+        component_result: Optional[str] = None,
+        awaiting_input: bool = False
+    ) -> None:
+        """Update flow state including path and component
+
+        This is the low-level interface used by the flow processor to manage transitions.
+        It requires all schema fields including path and component. Components should
+        never use this directly - they should use Component.update_state() instead.
+
+        Args:
+            path: Current flow path (required)
+            component: Current component (required)
+            data: Optional component data
+            component_result: Optional result for flow branching
+            awaiting_input: Whether component is waiting for input
+        """
+        try:
+            # Build new component data state
+            new_data = {
+                "path": path,
+                "component": component,
+                "data": data if data is not None else {},
+                "component_result": component_result,
+                "awaiting_input": awaiting_input
+            }
+
+            # Only preserve incoming_message if it exists and is valid
+            current = self.get_state_value("component_data", {})
+            incoming_message = current.get("incoming_message")
+            if incoming_message and isinstance(incoming_message, dict):
+                if "type" in incoming_message and "text" in incoming_message:
+                    new_data["incoming_message"] = incoming_message
+
+            # Update state
+            self.update_state({"component_data": new_data})
+
+        except Exception as e:
+            error_context = ErrorContext(
+                error_type="flow",
+                message=str(e),
+                details={
+                    "path": path,
+                    "component": component,
+                    "action": "update_flow_state",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+            ErrorHandler.handle_flow_error(
+                step=path,
+                action=error_context.details["action"],
+                data={"component": component},
+                message=error_context.message
+            )
+
     def update_component_data(self, data: Dict) -> None:
-        """Update component-specific data.
-        Used by components to store their state."""
+        """Update component's data.
+        Used by components to store their state between messages."""
         try:
             # Get current state to preserve
             current = self.get_state_value("component_data", {})
-
             # Merge new data with existing
             merged_data = {**current.get("data", {}), **data}
-
             # Use update_flow_state preserving current values except data
             self.update_flow_state(
                 path=current.get("path", ""),
@@ -387,66 +448,6 @@ class StateManager(StateManagerInterface):
                 step="component_data",
                 action=error_context.details["action"],
                 data={},
-                message=error_context.message
-            )
-
-    def update_flow_state(
-        self,
-        path: str,
-        component: str,
-        data: Optional[Dict] = None,
-        component_result: Optional[str] = None,
-        awaiting_input: bool = False
-    ) -> None:
-        """Update flow state including path and component.
-
-        This is the low-level interface used by the flow processor to manage transitions.
-        It requires all schema fields including path and component. Components should
-        never use this directly - they should use Component.update_state() instead.
-
-        Args:
-            path: Current flow path (required)
-            component: Current component (required)
-            data: Optional component data
-            component_result: Optional result for flow branching
-            awaiting_input: Whether component is waiting for input
-        """
-        try:
-            # Get current component data
-            current = self.get_state_value("component_data", {})
-
-            # Build new component data state
-            new_data = {
-                "path": path,
-                "component": component,
-                "data": data if data is not None else current.get("data", {}),
-                "component_result": component_result,
-                "awaiting_input": awaiting_input
-            }
-
-            # Only preserve incoming_message if it exists and is valid
-            incoming_message = current.get("incoming_message")
-            if incoming_message and isinstance(incoming_message, dict) and "type" in incoming_message and "text" in incoming_message:
-                new_data["incoming_message"] = incoming_message
-
-            # Update state
-            self.update_state({"component_data": new_data})
-
-        except Exception as e:
-            error_context = ErrorContext(
-                error_type="flow",
-                message=str(e),
-                details={
-                    "path": path,
-                    "component": component,
-                    "action": "update_flow_state",
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-            )
-            ErrorHandler.handle_flow_error(
-                step=error_context.details["path"],
-                action=error_context.details["action"],
-                data={"component": error_context.details["component"]},
                 message=error_context.message
             )
 
