@@ -13,10 +13,13 @@ from ..base import InputComponent
 VALID_DENOMS: Set[str] = {"CXX", "XAU", "USD", "CAD", "ZWG"}
 
 # Amount prompt template
-AMOUNT_PROMPT = """💸 *What offer amount and denomination?*
-- Defaults to USD ✨ *9 || 99 || 9999.99 || 0.99*
-- Denom placement ✨ *99 ZWG || ZWG 99*
-- Denoms ✨ *CXX || XAU || USD || CAD || ZWG*"""
+AMOUNT_PROMPT = """💸 *Offer how much❓*
+✨ Defaults to USD:
+*9* || *99* || *9999.99* || *0.99*
+✨ Denom placement:
+*99 ZWG* || *ZWG 99*
+✨ Denominations:
+*CXX* || *XAU* || *USD* || *CAD* || *ZWG*"""
 
 
 class AmountInput(InputComponent):
@@ -109,14 +112,14 @@ class AmountInput(InputComponent):
                     details={"amount": amount}
                 )
 
-            # Store validated amount and denom in component_data.data
-            self.update_component_data(
-                data={
-                    "amount": str(amount),
-                    "denom": denom
-                },
-                awaiting_input=False
-            )
+            # Store validated amount and denom
+            self.update_data({
+                "amount": str(amount),
+                "denom": denom
+            })
+
+            # Release input wait
+            self.set_awaiting_input(False)
             return ValidationResult.success({"amount": amount, "denom": denom})
 
         except ValueError:

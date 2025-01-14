@@ -54,7 +54,8 @@ export function formatInteractiveMessage(interactive) {
                             ${section.title ? `<div class="section-title">${section.title}</div>` : ''}
                             ${section.rows.map(row => `
                                 <div class="list-item" data-id="${row.id}">
-                                    <div class="item-description">${row.description || row.title}</div>
+                                    <div class="item-title">${row.title}</div>
+                                    ${row.description ? `<div class="item-description">${row.description}</div>` : ''}
                                 </div>
                             `).join('')}
                         </div>

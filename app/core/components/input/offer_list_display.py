@@ -8,24 +8,15 @@ from typing import Any, Dict, List
 
 from core.components.base import InputComponent
 from core.error.types import ValidationResult
-from core.messaging.types import Button
+from core.messaging.types import Section
 
 logger = logging.getLogger(__name__)
 
 # Title templates
 TITLES = {
-    "process_offer": "*Process An Offer*",  # Default
-    "accept_offer": "*Accept An Offer*",
+    "accept_offer": "*Accept An Offer*",  # Default
     "decline_offer": "*Decline An Offer*",
     "cancel_offer": "*Cancel An Offer*"
-}
-
-# Button templates
-BUTTON_TEMPLATES = {
-    "process_offer": "{amount} to/from {name}",  # Default
-    "accept_offer": "{amount} from {name} ✅",
-    "decline_offer": "{amount} from {name} ❌",
-    "cancel_offer": "{amount} to {name} 🚫"
 }
 
 
@@ -57,36 +48,37 @@ class OfferListDisplay(InputComponent):
             # Validate interactive message
             if incoming_message.get("type") != "interactive":
                 return ValidationResult.failure(
-                    message="Please select an offer using the buttons provided",
+                    message="Please select an offer from the list provided",
                     field="type",
                     details={"message": incoming_message}
                 )
 
-            # Get button info
+            # Get selection info from interactive message
             text = incoming_message.get("text", {})
-            if text.get("interactive_type") != "button":
+            if text.get("interactive_type") != "list":
                 return ValidationResult.failure(
-                    message="Please select an offer using the buttons provided",
+                    message="Please select an offer from the list provided",
                     field="interactive_type",
                     details={"text": text}
                 )
 
-            # Get button ID (credex_id)
-            button = text.get("button", {})
-            credex_id = button.get("id")
+            # Get selected item ID (credex_id)
+            list_reply = text.get("list_reply", {})
+            credex_id = list_reply.get("id")
             if not credex_id:
                 return ValidationResult.failure(
                     message="Invalid offer selection",
-                    field="button",
-                    details={"button": button}
+                    field="list_reply",
+                    details={"list_reply": list_reply}
                 )
 
             # Handle return to dashboard
             if credex_id == "return_to_dashboard":
-                self.update_component_data(
-                    component_result="return_to_dashboard",
-                    awaiting_input=False
-                )
+                # Tell headquarters to return to dashboard
+                self.set_result("return_to_dashboard")
+
+                # Release input wait
+                self.set_awaiting_input(False)
                 return ValidationResult.success(None)
 
             # Validate credex_id exists in available offers
@@ -97,12 +89,14 @@ class OfferListDisplay(InputComponent):
                     details={"credex_id": credex_id}
                 )
 
-            # Store credex_id and continue to API
-            self.update_component_data(
-                data={"credex_id": credex_id},
-                component_result="process_offer",
-                awaiting_input=False
-            )
+            # Store credex_id
+            self.update_data({"credex_id": credex_id})
+
+            # Tell headquarters to process offer (keep name since headquarters expects it)
+            self.set_result("process_offer")
+
+            # Release input wait
+            self.set_awaiting_input(False)
             return ValidationResult.success(None)
 
         except Exception as e:
@@ -134,37 +128,53 @@ class OfferListDisplay(InputComponent):
             offers = self._get_offers_for_context(context, dashboard)
             logger.info(f"Got offers in _display_offers: {offers}")
 
-            # Sort offers chronologically (oldest first)
+            # Display offers if available
             if offers and len(offers) > 0:  # Explicitly check length
-                sorted_offers = sorted(offers, key=lambda x: x.get("timestamp", "0"))
+                # No need to sort since we don't have timestamps
+                sorted_offers = offers
 
                 # Get context-specific templates
-                title = TITLES.get(context, TITLES["process_offer"])
-                button_template = BUTTON_TEMPLATES.get(context, BUTTON_TEMPLATES["process_offer"])
+                title = TITLES.get(context, TITLES["accept_offer"])  # Use accept_offer as default
 
-                # Create buttons for up to 9 offers + dashboard button
-                buttons = []
+                # Create list message sections using Section objects
+                sections = [
+                    Section(
+                        title="Available Offers 💸",
+                        rows=[]
+                    ),
+                    Section(
+                        title="⬅️ Back",
+                        rows=[
+                            {
+                                "id": "return_to_dashboard",
+                                "title": "💳 Account Dashboard 💳",
+                                "description": "Account balances and actions"
+                            }
+                        ]
+                    )
+                ]
 
-                # Add offer buttons (up to 9)
-                for offer in sorted_offers[:9]:
-                    buttons.append(Button(
-                        id=str(offer["credexID"]),
-                        title=button_template.format(
-                            amount=offer['formattedInitialAmount'],
-                            name=offer['counterpartyAccountName']
-                        )
-                    ))
+                # Add offer rows (up to 10)
+                for offer in sorted_offers[:10]:
+                    direction = "to" if context == "cancel_offer" else "from"
 
-                # Add return to dashboard button
-                buttons.append(Button(
-                    id="return_to_dashboard",
-                    title="💳 Account Dashboard 💳"
-                ))
+                    # Title shows amount (24 char limit)
+                    row_title = f"💸 {offer['formattedInitialAmount']} 💸"
 
-                # Send context-specific title and buttons
+                    # Description shows full details (72 char limit)
+                    row_description = f"{direction} {offer['counterpartyAccountName']}"
+
+                    sections[0].rows.append({
+                        "id": str(offer["credexID"]),
+                        "title": row_title,
+                        "description": row_description
+                    })
+
+                # Send list message using interactive type
                 self.state_manager.messaging.send_interactive(
                     body=title,
-                    buttons=buttons
+                    sections=sections,
+                    button_text="Select Offer"
                 )
                 self.set_awaiting_input(True)
                 return ValidationResult.success(None)
@@ -173,11 +183,11 @@ class OfferListDisplay(InputComponent):
                 error_msg = f"❌ No {context.replace('_', ' ')}s available at this time."
                 self.state_manager.messaging.send_text(error_msg)
 
-                # Return to dashboard
-                self.update_component_data(
-                    component_result="return_to_dashboard",
-                    awaiting_input=False
-                )
+                # Tell headquarters to return to dashboard
+                self.set_result("return_to_dashboard")
+
+                # Release input wait
+                self.set_awaiting_input(False)
                 return ValidationResult.success(None)
 
         except Exception as e:
@@ -215,9 +225,9 @@ class OfferListDisplay(InputComponent):
 
         # Get relevant offers list
         offers = []
-        if context in {"process_offer", "accept_offer", "decline_offer"}:
+        if context in {"accept_offer", "decline_offer"}:
             offers = active_account.get("pendingInData", [])
-        if context == "cancel_offer":
+        elif context == "cancel_offer":
             offers = active_account.get("pendingOutData", [])
 
         logger.info(f"Returning offers for {context}: {offers}")

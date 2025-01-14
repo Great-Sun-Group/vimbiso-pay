@@ -14,21 +14,21 @@ data "aws_elb_service_account" "current" {}
 # Target Group for application
 resource "aws_lb_target_group" "app" {
   name        = "vimbiso-pay-tg-${var.environment}"
-  port        = 8000  # Match container port
-  protocol    = "HTTP"  # Keep as HTTP since ALB handles SSL termination
+  port        = 8000
+  protocol    = "HTTP"
   vpc_id      = var.vpc_id
   target_type = "ip"
 
   health_check {
     enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
+    healthy_threshold   = 3      # Increased - need more consistent health signals
+    interval            = 60     # Aligned with Route53 check interval
     matcher             = "200"
     path                = var.health_check_path
     port                = "traffic-port"
-    protocol            = "HTTP"  # Keep as HTTP since ALB handles SSL termination
-    timeout             = 5  # Reduced from 15
-    unhealthy_threshold = 3  # Reduced from 10
+    protocol            = "HTTP"
+    timeout             = 10     # Increased to be more tolerant
+    unhealthy_threshold = 5      # Increased to match Route53 failure threshold
   }
 
   stickiness {
@@ -37,8 +37,8 @@ resource "aws_lb_target_group" "app" {
     enabled         = true
   }
 
-  # Slow start gives targets time to warm up before receiving full share of requests
-  slow_start = 30  # Reduced from 60 seconds
+  # Increased slow start to give containers more warm-up time
+  slow_start = 60
 
   tags = merge(var.tags, {
     Name = "vimbiso-pay-tg-${var.environment}"
@@ -46,10 +46,6 @@ resource "aws_lb_target_group" "app" {
 
   lifecycle {
     create_before_destroy = true
-    ignore_changes = [
-      tags,
-      stickiness
-    ]
   }
 }
 
@@ -169,16 +165,6 @@ resource "aws_wafv2_web_acl" "main" {
   tags = merge(var.tags, {
     Name = "vimbiso-pay-waf-${var.environment}"
   })
-
-  lifecycle {
-    create_before_destroy = true
-    ignore_changes = [
-      tags,
-      description,
-      rule,
-      visibility_config
-    ]
-  }
 }
 
 # Application Load Balancer
@@ -189,16 +175,12 @@ resource "aws_lb" "main" {
   security_groups    = [var.alb_security_group_id]
   subnets           = var.public_subnet_ids
 
-  # Enable access logs
   access_logs {
     bucket  = aws_s3_bucket.alb_logs.id
     enabled = true
   }
 
-  # Enable deletion protection for production
   enable_deletion_protection = var.environment == "production"
-
-  # Enable cross-zone load balancing
   enable_cross_zone_load_balancing = true
 
   tags = merge(var.tags, {
@@ -207,11 +189,6 @@ resource "aws_lb" "main" {
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes = [
-      access_logs,
-      tags,
-      subnets  # Removed security_groups from ignore_changes
-    ]
   }
 }
 
@@ -219,16 +196,9 @@ resource "aws_lb" "main" {
 resource "aws_wafv2_web_acl_association" "main" {
   resource_arn = aws_lb.main.arn
   web_acl_arn  = aws_wafv2_web_acl.main.arn
-
-  lifecycle {
-    create_before_destroy = true
-    ignore_changes = [
-      web_acl_arn
-    ]
-  }
 }
 
-# HTTPS Listener with SSL termination and health check rule
+# HTTPS Listener with SSL termination
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
@@ -240,18 +210,9 @@ resource "aws_lb_listener" "https" {
     type             = "forward"
     target_group_arn = aws_lb_target_group.app.arn
   }
-
-  lifecycle {
-    create_before_destroy = true
-    ignore_changes = [
-      default_action,
-      ssl_policy,
-      certificate_arn
-    ]
-  }
 }
 
-# HTTP Listener with health check rule
+# HTTP Listener with redirect
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
@@ -265,16 +226,9 @@ resource "aws_lb_listener" "http" {
       status_code = "HTTP_301"
     }
   }
-
-  lifecycle {
-    create_before_destroy = true
-    ignore_changes = [
-      default_action
-    ]
-  }
 }
 
-# Health check listener rule for HTTP
+# Health check listener rules
 resource "aws_lb_listener_rule" "health_check_http" {
   listener_arn = aws_lb_listener.http.arn
   priority     = 1
@@ -291,7 +245,6 @@ resource "aws_lb_listener_rule" "health_check_http" {
   }
 }
 
-# Health check listener rule for HTTPS
 resource "aws_lb_listener_rule" "health_check_https" {
   listener_arn = aws_lb_listener.https.arn
   priority     = 1

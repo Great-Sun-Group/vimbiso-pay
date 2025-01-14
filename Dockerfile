@@ -38,7 +38,16 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements and install dependencies
 COPY requirements /app/requirements
-RUN pip install -r requirements/dev.txt
+COPY app/start_app.sh /app/start_app.sh
+COPY app /app
+RUN pip install -r requirements/dev.txt && \
+    chmod +x /app/start_app.sh && \
+    mkdir -p \
+    /app/data/logs \
+    /app/data/db \
+    /app/data/static \
+    /app/data/media \
+    && chmod -R 755 /app/data
 
 # Production stage
 FROM base AS production

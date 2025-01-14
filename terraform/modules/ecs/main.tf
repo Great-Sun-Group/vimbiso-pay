@@ -46,8 +46,8 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
 
 # Service Discovery Namespace
 resource "aws_service_discovery_private_dns_namespace" "main" {
-  name        = "vimbiso-pay-${var.environment}.local"
-  description = "Service Discovery namespace for VimbisoPay ${var.environment}"
+  name        = "vimbiso-pay-${var.environment}.internal"
+  description = "Internal service discovery namespace for VimbisoPay ${var.environment}"
   vpc         = var.vpc_id
 
   tags = merge(var.tags, {

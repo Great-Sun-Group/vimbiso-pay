@@ -67,10 +67,10 @@ class LastNameInput(InputComponent):
         current_data = self.state_manager.get_state_value("component_data", {}).get("data", {})
 
         # Add lastname while preserving firstname
-        self.update_component_data(
-            data={**current_data, "lastname": lastname},
-            awaiting_input=False
-        )
+        self.update_data({**current_data, "lastname": lastname})
+
+        # Release input wait
+        self.set_awaiting_input(False)
         return ValidationResult.success(lastname)
 
     def to_verified_data(self, value: Any) -> Dict:

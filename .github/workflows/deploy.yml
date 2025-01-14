@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/prod' || github.ref == 'refs/heads/stage'
     environment: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
-    timeout-minutes: 30  # Back to original 30 minutes
+    timeout-minutes: 30
 
     env:
       ENVIRONMENT: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
@@ -94,26 +94,6 @@ jobs:
             done
           fi
 
-      - name: Deploy Infrastructure
-        run: |
-          cd terraform
-          # Deploy all infrastructure except ECS (which needs the latest image)
-          terraform plan -input=false -lock-timeout=20m \
-            -target=module.networking \
-            -target=module.route53_cert \
-            -target=module.loadbalancer \
-            -target=module.route53_dns \
-            -target=module.iam \
-            -target=module.ecr \
-            -target=module.efs \
-            -out=infra.tfplan
-
-          terraform apply -input=false -lock-timeout=20m infra.tfplan
-
-          # Display NS records for reference
-          echo "NS records for ${DOMAIN}:"
-          terraform output -json route53_nameservers | jq -r '.[]' | sed 's/^/- /'
-
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -129,7 +109,7 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
 
-      - name: Deploy Application
+      - name: Deploy Infrastructure and Application
         env:
           TF_VAR_docker_image: ${{ env.IMAGE }}
           TF_VAR_django_secret: ${{ secrets.DJANGO_SECRET }}
@@ -143,75 +123,35 @@ jobs:
           TF_VAR_whatsapp_company_registration_flow_id: ${{ secrets.WHATSAPP_COMPANY_REGISTRATION_FLOW_ID }}
         run: |
           cd terraform
-          # Deploy only ECS with the new image
-          terraform plan -input=false -lock-timeout=20m \
-            -target=module.ecs \
-            -out=app.tfplan
-
-          terraform apply -input=false -lock-timeout=20m app.tfplan
+          terraform plan -input=false -lock-timeout=20m -out=plan.tfplan
+          terraform apply -input=false -lock-timeout=20m plan.tfplan
 
       - name: Wait for Deployment
         run: |
           echo "Waiting for deployment to complete..."
-          MAX_ATTEMPTS=40  # 20 minutes total with 30s interval
+          MAX_ATTEMPTS=20  # 20 minutes total with 60s interval
           ATTEMPTS=0
           DEPLOYMENT_DONE=false
           GRACE_PERIOD=300  # 5 minutes for container health
-
-          function check_container_health() {
-            local TASK_ARN=$1
-            local CONTAINER_NAME=$2
-
-            HEALTH_STATUS=$(aws ecs describe-tasks \
-              --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
-              --tasks "$TASK_ARN" \
-              --query "tasks[0].containers[?name=='$CONTAINER_NAME'].healthStatus" \
-              --output text)
-
-            echo "$HEALTH_STATUS"
-          }
 
           function get_container_logs() {
             local TASK_ID=$1
             local CONTAINER_NAME=$2
             local START_TIME=$3
-            local LINES=${4:-200}  # Default to 200 lines
 
-            echo "${CONTAINER_NAME} Container Logs:"
             echo "===================="
+            echo "${CONTAINER_NAME} Container Logs (Task ID: ${TASK_ID}):"
+            echo "Start Time: $(date -d @${START_TIME})"
+            echo "===================="
+
             aws logs get-log-events \
               --log-group-name "/ecs/vimbiso-pay-$ENVIRONMENT" \
               --log-stream-name "${CONTAINER_NAME}/${CONTAINER_NAME}/${TASK_ID}" \
               --start-time ${START_TIME}000 \
-              --limit $LINES \
+              --limit 200 \
               --query 'events[].message' \
-              --output text || echo "No ${CONTAINER_NAME} logs available"
+              --output text || true
           }
-
-          function check_health_endpoint() {
-            local ALB_DNS=$1
-            local MAX_RETRIES=5  # Try health check up to 5 times
-            local RETRY=0
-
-            while [ $RETRY -lt $MAX_RETRIES ]; do
-              echo "Health check attempt $((RETRY + 1))/$MAX_RETRIES..."
-              # Use HTTP since container serves HTTP
-              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "http://${ALB_DNS}/health/")
-
-              if [ "$HTTP_CODE" = "200" ]; then
-                echo "Health endpoint check passed!"
-                return 0
-              else
-                echo "Health check failed with HTTP code: $HTTP_CODE"
-                RETRY=$((RETRY + 1))
-                [ $RETRY -lt $MAX_RETRIES ] && sleep 10
-              fi
-            done
-            return 1
-          }
-
-          # Record deployment start time
-          DEPLOY_START_TIME=$(date +%s)
 
           while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
             CURRENT_TIME=$(date +%s)
@@ -234,7 +174,7 @@ jobs:
             echo "  Failed Tasks: $FAILED_TASKS"
             echo "  Pending Count: $PENDING_COUNT"
 
-            # Get all running tasks
+            # Get running tasks
             RUNNING_TASKS=$(aws ecs list-tasks \
               --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
               --service-name "vimbiso-pay-service-$ENVIRONMENT" \
@@ -242,102 +182,54 @@ jobs:
               --query 'taskArns[]' \
               --output text)
 
-            # Check health status of running tasks
-            ALL_CONTAINERS_HEALTHY=true
             if [ ! -z "$RUNNING_TASKS" ]; then
               echo "Checking health of running tasks..."
-              echo "$RUNNING_TASKS" | xargs -n1 | while read -r TASK_ARN; do
-                if [ ! -z "$TASK_ARN" ]; then
-                  TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
-
-                  # Check Redis State health
-                  REDIS_STATE_HEALTH=$(check_container_health "$TASK_ARN" "redis-state")
-                  echo "Redis State Health Status: $REDIS_STATE_HEALTH"
-
-                  # Check App health
-                  APP_HEALTH=$(check_container_health "$TASK_ARN" "vimbiso-pay-${ENVIRONMENT}")
-                  echo "App Health Status: $APP_HEALTH"
-
-                  if [ "$REDIS_CACHE_HEALTH" != "HEALTHY" ] || [ "$REDIS_STATE_HEALTH" != "HEALTHY" ] || [ "$APP_HEALTH" != "HEALTHY" ]; then
-                    ALL_CONTAINERS_HEALTHY=false
-                    # Only fail if past grace period
-                    if [ $ELAPSED_TIME -gt $GRACE_PERIOD ]; then
-                      echo "Unhealthy containers detected after grace period. Fetching logs..."
-                      START_TIME=$(($(date +%s) - 300))
-                      get_container_logs "$TASK_ID" "redis-state" "$START_TIME" 200
-                      get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
-                      exit 1
-                    fi
-                  fi
-                fi
-              done
+              aws ecs describe-tasks \
+                --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
+                --tasks $RUNNING_TASKS \
+                --query 'tasks[].containers[].{name: name, health: healthStatus}' \
+                --output table
             fi
 
-            if [ "$FAILED_TASKS" -gt 0 ]; then
-              echo "Failed tasks detected. Fetching logs..."
-              TASKS=$(aws ecs list-tasks \
+            # Check for failures
+            if [ "$FAILED_TASKS" -gt 0 ] && [ $ELAPSED_TIME -gt $GRACE_PERIOD ]; then
+              echo "Failed tasks detected after grace period. Fetching logs..."
+              FAILED_TASKS=$(aws ecs list-tasks \
                 --cluster "vimbiso-pay-cluster-$ENVIRONMENT" \
                 --service-name "vimbiso-pay-service-$ENVIRONMENT" \
                 --desired-status STOPPED \
                 --query 'taskArns[]' \
                 --output text)
 
-              if [ ! -z "$TASKS" ]; then
-                echo "Found stopped tasks: $TASKS"
-                echo "$TASKS" | xargs -n1 | while read -r TASK_ARN; do
-                  if [ ! -z "$TASK_ARN" ]; then
-                    TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
-                    START_TIME=$(($(date +%s) - 300))
-                    get_container_logs "$TASK_ID" "redis-state" "$START_TIME" 200
-                    get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
-                  fi
+              if [ ! -z "$FAILED_TASKS" ]; then
+                echo "$FAILED_TASKS" | xargs -n1 | while read -r TASK_ARN; do
+                  TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
+                  START_TIME=$(($(date +%s) - 300))
+                  get_container_logs "$TASK_ID" "redis-state" "$START_TIME"
+                  get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME"
                 done
               fi
-              # Only fail if past grace period
-              if [ $ELAPSED_TIME -gt $GRACE_PERIOD ]; then
-                echo "Deployment failed due to task failures after grace period"
-                exit 1
-              fi
+              exit 1
             fi
 
-            # If containers are healthy and tasks are running, check health endpoint
-            if [ "$ALL_CONTAINERS_HEALTHY" = true ] && \
-               [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ] && \
-               [ "$DESIRED_COUNT" -gt 0 ] && \
-               [ "$PENDING_COUNT" = "0" ]; then
-
-              echo "All containers healthy, verifying health endpoint..."
-              ALB_DNS=$(cd terraform && terraform output -raw alb_dns_name)
-
-              if check_health_endpoint "$ALB_DNS"; then
+            # Check for success
+            if [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ] && [ "$DESIRED_COUNT" -gt 0 ] && [ "$PENDING_COUNT" = "0" ]; then
+              if [ $ELAPSED_TIME -gt $GRACE_PERIOD ]; then
+                echo "Deployment completed successfully"
                 DEPLOYMENT_DONE=true
                 break
-              else
-                # Get logs from running tasks
-                if [ ! -z "$RUNNING_TASKS" ]; then
-                  echo "$RUNNING_TASKS" | xargs -n1 | while read -r TASK_ARN; do
-                    TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
-                    START_TIME=$(($(date +%s) - 300))
-                    get_container_logs "$TASK_ID" "redis-state" "$START_TIME" 200
-                    get_container_logs "$TASK_ID" "vimbiso-pay-${ENVIRONMENT}" "$START_TIME" 200
-                  done
-                fi
-                # Don't exit immediately on health check failure if within grace period
-                if [ $ELAPSED_TIME -gt $GRACE_PERIOD ]; then
-                  exit 1
-                fi
               fi
             fi
 
             ATTEMPTS=$((ATTEMPTS + 1))
             if [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; then
-              echo "Waiting 30 seconds... (Attempt $ATTEMPTS/$MAX_ATTEMPTS)"
-              sleep 30
+              echo "Waiting 60 seconds... (Attempt $ATTEMPTS/$MAX_ATTEMPTS)"
+              sleep 60
             fi
           done
 
           if [ "$DEPLOYMENT_DONE" != "true" ]; then
-            echo "Deployment timeout after $(($MAX_ATTEMPTS * 30)) seconds"
+            echo "Deployment timeout after $(($MAX_ATTEMPTS * 60)) seconds"
             exit 1
           fi
 

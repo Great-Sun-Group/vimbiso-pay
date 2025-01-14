@@ -5,7 +5,10 @@ services:
       target: development
     volumes:
       - ./data:/app/data
-      - .:/app
+      - ./core:/app/core
+      - ./config:/app/config
+      - ./services:/app/services
+      - ./manage.py:/app/manage.py
     ports:
       - "8000:8000"
     environment:

@@ -1,22 +1,19 @@
 # ECS Service
 resource "aws_ecs_service" "app" {
-  name                               = "vimbiso-pay-service-${var.environment}"
+  name                               = local.service_name
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = var.min_capacity
-  deployment_minimum_healthy_percent = 50  # Keep at least half running during deployment
-  deployment_maximum_percent        = 200  # Allow new tasks to start before old ones stop
+  deployment_minimum_healthy_percent = 0    # Allow all old tasks to be stopped since we don't need state transfer
+  deployment_maximum_percent        = 100  # No need for extra capacity since we start fresh
   scheduling_strategy               = "REPLICA"
-  force_new_deployment             = true
-  health_check_grace_period_seconds = 900  # 15 minutes for complete startup
+  force_new_deployment             = false
+  health_check_grace_period_seconds = 60    # Reduced to 1 minute since Redis starts fresh
+  enable_execute_command           = true
 
-  # Circuit breaker configuration
-  # NOTE: During normal operation, rollback should be enabled (rollback = true).
-  # However, when debugging deployment issues, setting rollback = false helps preserve
-  # the failed state for investigation. Remember to re-enable rollback after debugging.
   deployment_circuit_breaker {
     enable   = true
-    rollback = true  # Re-enabled for automatic recovery
+    rollback = false  # Auto-rollback for failed deployments
   }
 
   deployment_controller {
@@ -26,7 +23,7 @@ resource "aws_ecs_service" "app" {
   network_configuration {
     security_groups  = [var.ecs_tasks_security_group_id]
     subnets         = var.private_subnet_ids
-    assign_public_ip = false  # Tasks in private subnets
+    assign_public_ip = false
   }
 
   load_balancer {
@@ -38,23 +35,19 @@ resource "aws_ecs_service" "app" {
   capacity_provider_strategy {
     capacity_provider = "FARGATE"
     weight           = 100
-    base             = 1
+    base             = 0
   }
 
-  # Only ignore changes to desired_count and capacity strategy
   lifecycle {
     ignore_changes = [
       desired_count,
       capacity_provider_strategy
     ]
+    create_before_destroy = true
   }
 
   depends_on = [
     aws_ecs_cluster.main,
-    var.efs_mount_targets  # Ensure EFS mount targets are ready
+    var.efs_mount_targets
   ]
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-service-${var.environment}"
-  })
 }

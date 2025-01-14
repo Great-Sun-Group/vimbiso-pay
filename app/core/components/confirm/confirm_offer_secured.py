@@ -18,16 +18,16 @@ from core.utils.utils import format_denomination
 from . import ConfirmBase
 
 # Offer confirmation template
-OFFER_CONFIRMATION = """*{amount}*
-Secured Credex Offer
+OFFER_CONFIRMATION = """*💰 {amount}*
+💰 Secured Credex Offer
 
-*Payer*
-{active_account_name}
-💳{active_account_handle}
+_From:_
+💳 *{active_account_name}*
+💳 {active_account_handle}
 
-*Payee*
-{target_account_name}
-💳{target_account_handle}"""
+_To:_
+💳 *{target_account_name}*
+💳 {target_account_handle}"""
 
 
 class ConfirmOfferSecured(ConfirmBase):
@@ -127,7 +127,15 @@ class ConfirmOfferSecured(ConfirmBase):
             )
 
         # Format amount with denomination
-        formatted_amount = format_denomination(float(amount), denom)
+        try:
+            formatted_amount = format_denomination(float(amount), denom)
+        except (ValueError, TypeError):
+            raise ComponentException(
+                message="Invalid amount format",
+                component=self.type,
+                field="amount",
+                details={"amount": amount, "denom": denom}
+            )
 
         # Format and send confirmation message
         logger.debug(
@@ -145,8 +153,8 @@ class ConfirmOfferSecured(ConfirmBase):
         self.state_manager.messaging.send_interactive(
             body=confirmation_message,
             buttons=[
-                Button(id="confirm", title="📝 Digitally Sign And Offer 💸"),
-                Button(id="cancel", title="❌ Cancel Offer ❌")
+                Button(id="confirm", title="📝 Sign and Send 💸"),
+                Button(id="cancel", title="❌ Cancel ❌")
             ]
         )
         self.set_awaiting_input(True)
@@ -220,10 +228,11 @@ class ConfirmOfferSecured(ConfirmBase):
         logger.debug(f"Button ID: {button_id}")
         if button_id == "cancel":
             logger.info("Offer cancelled")
-            self.update_component_data(
-                data={"confirmed": False},
-                awaiting_input=False
-            )
+            # Store confirmation status
+            self.update_data({"confirmed": False})
+
+            # Release input wait
+            self.set_awaiting_input(False)
             return ValidationResult.success({"confirmed": False})
 
         if button_id != "confirm":
@@ -233,12 +242,12 @@ class ConfirmOfferSecured(ConfirmBase):
                 details={"button": button}
             )
 
-        # Add confirmation status
+        # Store confirmation status
         logger.info("Offer confirmed")
-        self.update_component_data(
-            data={"confirmed": True},
-            awaiting_input=False
-        )
+        self.update_data({"confirmed": True})
+
+        # Release input wait
+        self.set_awaiting_input(False)
         return ValidationResult.success({"confirmed": True})
 
     def get_rejection_message(self) -> str:

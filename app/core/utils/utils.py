@@ -146,10 +146,15 @@ def format_denomination(amount: float, denomination: str) -> str:
                 value=str(amount)
             )
 
-        if denomination.upper() == "USD":
-            return f"${amount:.2f}"
+        # Special decimal place handling for specific denominations
+        if denomination.upper() == "CXX":
+            formatted = f"{amount:.3f}"
+        elif denomination.upper() == "XAU":
+            formatted = f"{amount:.4f}"
         else:
-            return f"{amount:.2f} {denomination}"
+            formatted = f"{amount:.2f}"
+
+        return f"{formatted} {denomination}"
 
     except ComponentException:
         raise
