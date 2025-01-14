@@ -1,17 +1,6 @@
 #!/bin/bash
 set -e
 
-# Set up startup logging to file only when not deployed to AWS
-if [ "${DEPLOYED_TO_AWS:-false}" = "false" ]; then
-    LOG_FILE="/app/data/logs/startup.log"
-    mkdir -p /app/data/logs
-    touch "$LOG_FILE"
-    chmod 666 "$LOG_FILE"  # Make log file readable/writable by all users
-    # Only redirect startup logs to file
-    exec 3>&1 4>&2  # Save original stdout/stderr
-    exec 1>"$LOG_FILE" 2>&1
-fi
-
 echo "Starting application..."
 echo "Environment: $DJANGO_ENV"
 echo "Port: $PORT"
@@ -87,11 +76,6 @@ fi
 # Apply database migrations
 echo "Applying database migrations..."
 python manage.py migrate --noinput
-
-# Restore original stdout/stderr for runtime logs
-if [ "${DEPLOYED_TO_AWS:-false}" = "false" ]; then
-    exec 1>&3 2>&4
-fi
 
 # Determine environment and set appropriate server command
 if [ "${DJANGO_ENV:-development}" = "production" ]; then
