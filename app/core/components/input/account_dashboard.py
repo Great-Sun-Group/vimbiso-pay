@@ -15,14 +15,14 @@ from core.messaging.types import InteractiveType, MessageType, Section
 logger = logging.getLogger(__name__)
 
 # Account template
-ACCOUNT_DASHBOARD = """*{account}*
-💳{handle}
+ACCOUNT_DASHBOARD = """*💳 {account}*
+💳 {handle}
 
 *💰 Secured Balances*
-- {secured_balances}
+  {secured_balances}
 
 *📊 Net Assets*
-- {net_assets}{tier_limit_display}"""
+  {net_assets}{tier_limit_display}"""
 
 
 class AccountDashboard(InputComponent):
@@ -105,9 +105,9 @@ class AccountDashboard(InputComponent):
                 if member and member.get("memberTier", 0) < 3:
                     try:
                         amount_remaining = float(member.get("remainingAvailableUSD", "0.00"))
-                        tier_limit_display = f"\n\n⏳ *Daily Member Tier Limit*\n- {amount_remaining:.2f} USD"
+                        tier_limit_display = f"\n\n⏳ *Daily Member Tier Limit*\n  {amount_remaining:.2f} USD"
                     except (ValueError, TypeError):
-                        tier_limit_display = "\n\n⏳ *Daily Member Tier Limit*\n- 0.00 USD"
+                        tier_limit_display = "\n\n⏳ *Daily Member Tier Limit*\n0.00 USD"
 
                 # Format final display data
                 formatted_data = {
@@ -133,12 +133,12 @@ class AccountDashboard(InputComponent):
 
                 # Credex Actions section
                 credex_options = []
-                credex_options.append({"id": "offer_secured", "title": "💸 Offer secured credex", "description": "Send a credex backed by currency or gold from your Secured Balances"})
+                credex_options.append({"id": "offer_secured", "title": "💸 Offer Secured Credex 💸", "description": "Send a credex backed by currency or gold from your Secured Balances"})
                 if pending_in > 0:
-                    credex_options.append({"id": "accept_offer", "title": "✅ Accept offers", "description": f"You have {pending_in} offers waiting"})
-                    credex_options.append({"id": "decline_offer", "title": "❌ Decline offers", "description": f"You have {pending_in} offers waiting"})
+                    credex_options.append({"id": "accept_offer", "title": "✅ Accept Offers ✅", "description": f"You have {pending_in} offers waiting"})
+                    credex_options.append({"id": "decline_offer", "title": "❌ Decline Offers ❌", "description": f"You have {pending_in} offers waiting"})
                 if pending_out > 0:
-                    credex_options.append({"id": "cancel_offer", "title": "🚫 Cancel offers", "description": f"You have {pending_out} offers pending"})
+                    credex_options.append({"id": "cancel_offer", "title": "🚫 Cancel Offers 🚫", "description": f"You have {pending_out} offers pending"})
 
                 if credex_options:
                     sections.append(Section(

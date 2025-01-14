@@ -18,16 +18,16 @@ from core.utils.utils import format_denomination
 from . import ConfirmBase
 
 # Offer confirmation template
-OFFER_CONFIRMATION = """💰 *{amount}*
+OFFER_CONFIRMATION = """*💰 {amount} 💰*
 Secured Credex Offer
 
-**From:**
-*{active_account_name}*
-💳{active_account_handle}
+_From:_
+💳 *{active_account_name}*
+💳 {active_account_handle}
 
-**To:**
-*{target_account_name}*
-💳{target_account_handle}"""
+_To:_
+💳 *{target_account_name}*
+💳 {target_account_handle}"""
 
 
 class ConfirmOfferSecured(ConfirmBase):

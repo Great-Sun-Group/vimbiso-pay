@@ -26,7 +26,7 @@ class FirstNameInput(InputComponent):
             self.state_manager.messaging.send_text(
                 text="""🔥 Excellent, let's get you signed up.
 
-                🌞 What's your first name?"""
+🌞 What's your first name?"""
             )
             self.set_awaiting_input(True)
             return ValidationResult.success(None)
