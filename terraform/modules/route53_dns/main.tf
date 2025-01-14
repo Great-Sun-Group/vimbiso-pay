@@ -26,13 +26,18 @@ resource "aws_route53_record" "ns" {
   records = aws_route53_zone.app[0].name_servers
 }
 
-# Create A record for the application
+# Create weighted A record for the application
 resource "aws_route53_record" "app" {
   count = var.create_dns_records ? 1 : 0
 
   zone_id = aws_route53_zone.app[0].zone_id
   name    = var.domain_name
   type    = "A"
+
+  weighted_routing_policy {
+    weight = 100
+  }
+  set_identifier = "primary"
 
   alias {
     name                   = var.alb_dns_name
