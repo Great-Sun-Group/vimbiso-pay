@@ -42,17 +42,17 @@ resource "aws_ecs_task_definition" "app" {
         "--appendonly", "yes",
         "--protected-mode", "no",
         "--bind", "0.0.0.0",
-        "--port", "${var.redis_state_port}",
+        "--port", tostring(var.redis_state_port),
         "--dir", "/redis/state",
         "--maxmemory-policy", "allkeys-lru",
-        "--maxmemory", "${floor(var.task_memory * 0.3 * 0.90)}mb"
+        "--maxmemory", "${tostring(floor(var.task_memory * 0.3 * 0.90))}mb"
       ]
       healthCheck = {
         command     = ["CMD-SHELL", "redis-cli ping"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 10
+        interval    = "30"
+        timeout     = "5"
+        retries     = "3"
+        startPeriod = "10"
       }
     },
     {
@@ -129,10 +129,10 @@ resource "aws_ecs_task_definition" "app" {
       ]
       healthCheck = {
         command     = ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 60
+        interval    = "30"
+        timeout     = "5"
+        retries     = "3"
+        startPeriod = "60"
       }
       dependsOn = [
         {
