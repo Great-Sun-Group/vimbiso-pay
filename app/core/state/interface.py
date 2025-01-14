@@ -84,6 +84,37 @@ class StateManagerInterface(ABC):
         pass
 
     @abstractmethod
+    def transition_flow(self, path: str, component: str) -> None:
+        """Transition flow to new path/component.
+        ONLY used by flow processor for managing transitions.
+
+        Args:
+            path: New flow path
+            component: New component
+        """
+        pass
+
+    @abstractmethod
+    def set_component_awaiting(self, awaiting: bool) -> None:
+        """Set component's awaiting input state.
+        Used by components to indicate they are waiting for input.
+
+        Args:
+            awaiting: Whether component is waiting for input
+        """
+        pass
+
+    @abstractmethod
+    def set_component_result(self, result: Optional[str]) -> None:
+        """Set component result for flow branching.
+        Used by components to indicate their result.
+
+        Args:
+            result: Optional result string for flow branching
+        """
+        pass
+
+    @abstractmethod
     def update_flow_state(
         self,
         path: str,

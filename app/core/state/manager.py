@@ -262,22 +262,18 @@ class StateManager(StateManagerInterface):
         """Transition flow to new path/component.
         ONLY used by flow processor for managing transitions."""
         try:
-            # Get current component data to preserve
+            # Get current data to preserve
             current = self.get_state_value("component_data", {})
             data = current.get("data", {})
-            incoming_message = current.get("incoming_message")
 
-            # Update state with new path/component
-            self.update_state({
-                "component_data": {
-                    "path": path,
-                    "component": component,
-                    "data": data,
-                    "component_result": None,  # Clear result for new component
-                    "awaiting_input": False,  # Let component set this
-                    "incoming_message": incoming_message  # Preserve message
-                }
-            })
+            # Use update_flow_state with cleared result and awaiting
+            self.update_flow_state(
+                path=path,
+                component=component,
+                data=data,
+                component_result=None,  # Clear result for new component
+                awaiting_input=False  # Let component set this
+            )
         except Exception as e:
             error_context = ErrorContext(
                 error_type="flow",
@@ -300,9 +296,17 @@ class StateManager(StateManagerInterface):
         """Set component result for flow branching.
         Used by components to indicate their result."""
         try:
+            # Get current state to preserve
             current = self.get_state_value("component_data", {})
-            current["component_result"] = result
-            self.update_state({"component_data": current})
+
+            # Use update_flow_state preserving current values except result
+            self.update_flow_state(
+                path=current.get("path", ""),
+                component=current.get("component", ""),
+                data=current.get("data", {}),
+                component_result=result,
+                awaiting_input=current.get("awaiting_input", False)
+            )
         except Exception as e:
             error_context = ErrorContext(
                 error_type="flow",
@@ -324,9 +328,17 @@ class StateManager(StateManagerInterface):
         """Set component's awaiting input state.
         Used by components to indicate they are waiting for input."""
         try:
+            # Get current state to preserve
             current = self.get_state_value("component_data", {})
-            current["awaiting_input"] = awaiting
-            self.update_state({"component_data": current})
+
+            # Use update_flow_state preserving current values except awaiting
+            self.update_flow_state(
+                path=current.get("path", ""),
+                component=current.get("component", ""),
+                data=current.get("data", {}),
+                component_result=current.get("component_result"),
+                awaiting_input=awaiting
+            )
         except Exception as e:
             error_context = ErrorContext(
                 error_type="flow",
@@ -348,9 +360,20 @@ class StateManager(StateManagerInterface):
         """Update component-specific data.
         Used by components to store their state."""
         try:
+            # Get current state to preserve
             current = self.get_state_value("component_data", {})
-            current["data"] = {**current.get("data", {}), **data}
-            self.update_state({"component_data": current})
+
+            # Merge new data with existing
+            merged_data = {**current.get("data", {}), **data}
+
+            # Use update_flow_state preserving current values except data
+            self.update_flow_state(
+                path=current.get("path", ""),
+                component=current.get("component", ""),
+                data=merged_data,
+                component_result=current.get("component_result"),
+                awaiting_input=current.get("awaiting_input", False)
+            )
         except Exception as e:
             error_context = ErrorContext(
                 error_type="flow",
@@ -364,6 +387,66 @@ class StateManager(StateManagerInterface):
                 step="component_data",
                 action=error_context.details["action"],
                 data={},
+                message=error_context.message
+            )
+
+    def update_flow_state(
+        self,
+        path: str,
+        component: str,
+        data: Optional[Dict] = None,
+        component_result: Optional[str] = None,
+        awaiting_input: bool = False
+    ) -> None:
+        """Update flow state including path and component.
+
+        This is the low-level interface used by the flow processor to manage transitions.
+        It requires all schema fields including path and component. Components should
+        never use this directly - they should use Component.update_state() instead.
+
+        Args:
+            path: Current flow path (required)
+            component: Current component (required)
+            data: Optional component data
+            component_result: Optional result for flow branching
+            awaiting_input: Whether component is waiting for input
+        """
+        try:
+            # Get current component data
+            current = self.get_state_value("component_data", {})
+
+            # Build new component data state
+            new_data = {
+                "path": path,
+                "component": component,
+                "data": data if data is not None else current.get("data", {}),
+                "component_result": component_result,
+                "awaiting_input": awaiting_input
+            }
+
+            # Only preserve incoming_message if it exists and is valid
+            incoming_message = current.get("incoming_message")
+            if incoming_message and isinstance(incoming_message, dict) and "type" in incoming_message and "text" in incoming_message:
+                new_data["incoming_message"] = incoming_message
+
+            # Update state
+            self.update_state({"component_data": new_data})
+
+        except Exception as e:
+            error_context = ErrorContext(
+                error_type="flow",
+                message=str(e),
+                details={
+                    "path": path,
+                    "component": component,
+                    "action": "update_flow_state",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+            ErrorHandler.handle_flow_error(
+                step=error_context.details["path"],
+                action=error_context.details["action"],
+                data={"component": error_context.details["component"]},
                 message=error_context.message
             )
 

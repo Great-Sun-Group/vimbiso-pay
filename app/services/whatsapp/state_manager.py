@@ -131,6 +131,43 @@ class StateManager(StateManagerInterface):  # type: ignore
                 action="is_awaiting_input"
             )
 
+    def set_component_result(self, result: Optional[str]) -> None:
+        """Set component result for flow branching"""
+        try:
+            self._core.set_component_result(result)
+        except Exception as e:
+            raise SystemException(
+                message=f"Failed to set component result: {str(e)}",
+                code="FLOW_RESULT_ERROR",
+                service="whatsapp_state",
+                action="set_component_result"
+            )
+
+    def set_component_awaiting(self, awaiting: bool) -> None:
+        """Set component's awaiting input state"""
+        try:
+            self._core.set_component_awaiting(awaiting)
+        except Exception as e:
+            raise SystemException(
+                message=f"Failed to set awaiting input: {str(e)}",
+                code="FLOW_INPUT_ERROR",
+                service="whatsapp_state",
+                action="set_component_awaiting"
+            )
+
+    def transition_flow(self, path: str, component: str) -> None:
+        """Transition flow to new path/component.
+        ONLY used by flow processor for managing transitions."""
+        try:
+            self._core.transition_flow(path, component)
+        except Exception as e:
+            raise SystemException(
+                message=f"Failed to transition flow to {path}.{component}: {str(e)}",
+                code="FLOW_TRANSITION_ERROR",
+                service="whatsapp_state",
+                action="transition_flow"
+            )
+
     def update_flow_state(
         self,
         path: str,

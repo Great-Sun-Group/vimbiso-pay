@@ -103,9 +103,10 @@ class FlowProcessor:
             # For greetings, always start fresh
             if message_type == MessageType.TEXT.value and message_text in GREETING_COMMANDS:
                 try:
-                    # Get channel info - this will raise ComponentException if not found
+                    # Preserve channel and message info
                     channel_type = self.state_manager.get_channel_type()
                     channel_id = self.state_manager.get_channel_id()
+                    current_message = self.state_manager.get_incoming_message()
 
                     # Clear all state (mock_testing is preserved)
                     self.state_manager.clear_all_state()
@@ -115,6 +116,10 @@ class FlowProcessor:
                         channel_type=channel_type,
                         channel_id=channel_id
                     )
+
+                    # Restore message and start login flow
+                    if current_message:
+                        self.state_manager.set_incoming_message(current_message)
 
                     # Start login flow through headquarters
                     self.state_manager.transition_flow(
