@@ -13,7 +13,7 @@ resource "aws_ecs_service" "app" {
 
   deployment_circuit_breaker {
     enable   = true
-    rollback = true  # Auto-rollback for failed deployments
+    rollback = false  # Auto-rollback for failed deployments
   }
 
   deployment_controller {

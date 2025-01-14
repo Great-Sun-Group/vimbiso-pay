@@ -12,17 +12,29 @@ ALLOWED_HOSTS = env("ALLOWED_HOSTS", default="localhost 127.0.0.1").split(" ")
 
 # Application definition
 INSTALLED_APPS = [
-    "django.contrib.auth",  # For basic auth
-    "django.contrib.contenttypes",  # Required dependency
-    "django.contrib.sessions",  # For Redis session storage
+    "django.contrib.auth",  # Required by DRF
+    "django.contrib.contenttypes",  # Required by DRF
     "corsheaders",  # For API security
     "core.config.apps.CoreConfig",  # Core bot app
 ]
 
+# Django REST Framework settings
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [],  # Disable default auth
+    'DEFAULT_PERMISSION_CLASSES': [],  # Disable default permissions
+    'UNAUTHENTICATED_USER': None,  # Don't use django.contrib.auth.models.AnonymousUser
+    'UNAUTHENTICATED_TOKEN': None,  # Don't use token authentication
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+}
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",  # For Redis session support
     "django.middleware.common.CommonMiddleware",
 ]
 
@@ -71,9 +83,6 @@ CACHES = {
     }
 }
 
-# Use Redis as the session backend as well for consistency
-SESSION_ENGINE = "django.contrib.sessions.backends.cache"
-SESSION_CACHE_ALIAS = "default"
 
 # Security settings
 CORS_ALLOW_HEADERS = ["apiKey"]  # For WhatsApp webhook
