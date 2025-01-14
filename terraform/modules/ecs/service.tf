@@ -1,6 +1,6 @@
 # ECS Service
 resource "aws_ecs_service" "app" {
-  name                               = "vimbiso-pay-service-${var.environment}"
+  name                               = local.service_name
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = var.min_capacity
@@ -49,6 +49,7 @@ resource "aws_ecs_service" "app" {
       desired_count,
       capacity_provider_strategy
     ]
+    create_before_destroy = true
   }
 
   depends_on = [

@@ -478,4 +478,9 @@ EOF
       }
     }
   }
+
+  # Prevent cycles with service
+  lifecycle {
+    create_before_destroy = true
+  }
 }

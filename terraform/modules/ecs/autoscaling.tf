@@ -1,12 +1,14 @@
+locals {
+  service_name = "vimbiso-pay-service-${var.environment}"
+}
+
 # Auto Scaling Target
 resource "aws_appautoscaling_target" "app" {
   max_capacity       = var.max_capacity
   min_capacity       = var.min_capacity
-  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app.name}"
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${local.service_name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
-
-  depends_on = [aws_ecs_service.app]
 }
 
 # CPU Scaling Policy
@@ -60,7 +62,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high" {
 
   dimensions = {
     ClusterName = aws_ecs_cluster.main.name
-    ServiceName = aws_ecs_service.app.name
+    ServiceName = local.service_name
   }
 }
 
