@@ -19,10 +19,10 @@ ACCOUNT_DASHBOARD = """*💳 {account}*
 💳 {handle}
 
 *💰 Secured Balances*
-  {secured_balances}
+💰 {secured_balances}
 
 *📊 Net Assets*
-  {net_assets}{tier_limit_display}"""
+*📊 {net_assets}{tier_limit_display}*"""
 
 
 class AccountDashboard(InputComponent):
@@ -81,7 +81,7 @@ class AccountDashboard(InputComponent):
 
                 # Format secured balances
                 secured_balances = active_account.get("balanceData", {}).get("securedNetBalancesByDenom", [])
-                secured_balances_str = "\n- ".join(secured_balances) if secured_balances else "- 0.00 USD"
+                secured_balances_str = "\n💰 ".join(secured_balances) if secured_balances else "- 0.00 USD"
 
                 # Format net assets
                 try:

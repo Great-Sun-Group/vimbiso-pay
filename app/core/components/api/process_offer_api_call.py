@@ -19,13 +19,7 @@ logger = logging.getLogger(__name__)
 
 # API endpoints and action types for each context
 API_CONFIG = {
-    "process_offer": {  # Default action
-        "url": "acceptCredex",
-        "success_action": "CREDEX_ACCEPTED",
-        "error_prefix": "process",
-        "emoji": "✅"
-    },
-    "accept_offer": {
+    "accept_offer": {  # Default action
         "url": "acceptCredex",
         "success_action": "CREDEX_ACCEPTED",
         "error_prefix": "accept",
@@ -70,7 +64,7 @@ class ProcessOfferApiCall(ApiComponent):
 
             # Get context and config
             context = self.state_manager.get_path()
-            config = API_CONFIG.get(context, API_CONFIG["process_offer"])
+            config = API_CONFIG.get(context, API_CONFIG["accept_offer"])  # Use accept_offer as default
 
             logger.info(
                 f"{context.replace('_', ' ').title()} offer {credex_id} for member {member_id} "
@@ -179,19 +173,25 @@ class ProcessOfferApiCall(ApiComponent):
 
                 # Get context to check correct offer list
                 context = self.state_manager.get_path()
-                offer_list = (
-                    active_account.get("pendingInData", [])
-                    if context in {"process_offer", "accept_offer", "decline_offer"}
-                    else active_account.get("pendingOutData", [])
-                )
+                offer_list = []
+                if active_account:
+                    if context in {"accept_offer", "decline_offer"}:
+                        offer_list = active_account.get("pendingInData", [])
+                    elif context == "cancel_offer":
+                        offer_list = active_account.get("pendingOutData", [])
+
+                # Log offer list status
+                logger.info(f"Remaining offers for {context}: {len(offer_list)}")
 
                 # Return to list if more offers, otherwise to dashboard
-                if active_account and offer_list:
+                if offer_list and len(offer_list) > 0:
                     # Tell headquarters to return to list
                     self.set_result("return_to_list")
+                    logger.info(f"Returning to list with {len(offer_list)} remaining offers")
                 else:
                     # Tell headquarters to show dashboard
                     self.set_result("send_dashboard")
+                    logger.info("No more offers, returning to dashboard")
             else:
                 logger.warning(f"Unexpected action type: {action_type}")
                 # Tell headquarters to show error

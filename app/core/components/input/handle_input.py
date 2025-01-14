@@ -10,7 +10,7 @@ from core.error.types import ValidationResult
 from ..base import InputComponent
 
 # Handle prompt template
-HANDLE_PROMPT = "💳 What's the account handle❓"
+HANDLE_PROMPT = "*💳 What's the account handle❓*"
 
 
 class HandleInput(InputComponent):

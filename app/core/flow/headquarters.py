@@ -91,3 +91,44 @@ def get_next_component(
         case ("upgrade_membertier", "UpgradeMembertierApiCall"):
             return "account", "AccountDashboard"  # Return to dashboard after upgrade
 
+        # Accept offer path
+        case ("accept_offer", "OfferListDisplay"):
+            if component_result == "process_offer":
+                return "accept_offer", "Greeting"  # Send random greeting while API call processes
+            if component_result == "return_to_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard if no offers or user selected back
+        case ("accept_offer", "Greeting"):
+            return "accept_offer", "ProcessOfferApiCall"  # Process selected offer
+        case ("accept_offer", "ProcessOfferApiCall"):
+            if component_result == "return_to_list":
+                return "accept_offer", "OfferListDisplay"  # Return to list for more offers
+            if component_result == "send_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard when done
+
+        # Decline offer path
+        case ("decline_offer", "OfferListDisplay"):
+            if component_result == "process_offer":
+                return "decline_offer", "Greeting"  # Send random greeting while API call processes
+            if component_result == "return_to_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard if no offers or user selected back
+        case ("decline_offer", "Greeting"):
+            return "decline_offer", "ProcessOfferApiCall"  # Process selected offer
+        case ("decline_offer", "ProcessOfferApiCall"):
+            if component_result == "return_to_list":
+                return "decline_offer", "OfferListDisplay"  # Return to list for more offers
+            if component_result == "send_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard when done
+
+        # Cancel offer path
+        case ("cancel_offer", "OfferListDisplay"):
+            if component_result == "process_offer":
+                return "cancel_offer", "Greeting"  # Send random greeting while API call processes
+            if component_result == "return_to_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard if no offers or user selected back
+        case ("cancel_offer", "Greeting"):
+            return "cancel_offer", "ProcessOfferApiCall"  # Process selected offer
+        case ("cancel_offer", "ProcessOfferApiCall"):
+            if component_result == "return_to_list":
+                return "cancel_offer", "OfferListDisplay"  # Return to list for more offers
+            if component_result == "send_dashboard":
+                return "account", "AccountDashboard"  # Return to dashboard when done
