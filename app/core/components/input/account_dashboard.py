@@ -15,14 +15,14 @@ from core.messaging.types import InteractiveType, MessageType, Section
 logger = logging.getLogger(__name__)
 
 # Account template
-ACCOUNT_DASHBOARD = """💳 *{account}*
-{handle}
+ACCOUNT_DASHBOARD = """*{account}*
+💳{handle}
 
 *💰 Secured Balances*
-{secured_balances}
+- {secured_balances}
 
 *📊 Net Assets*
-{net_assets}{tier_limit_display}"""
+- {net_assets}{tier_limit_display}"""
 
 
 class AccountDashboard(InputComponent):
@@ -81,15 +81,23 @@ class AccountDashboard(InputComponent):
 
                 # Format secured balances
                 secured_balances = active_account.get("balanceData", {}).get("securedNetBalancesByDenom", [])
-                secured_balances_str = "\n".join(secured_balances) if secured_balances else "0.00 USD"
+                secured_balances_str = "\n- ".join(secured_balances) if secured_balances else "- 0.00 USD"
 
                 # Format net assets
                 try:
-                    net_value = float(active_account.get("balanceData", {}).get("netCredexAssetsInDefaultDenom", "0.00"))
-                    denom = active_account.get("defaultDenom", "USD")
+                    net_assets_str = active_account.get("balanceData", {}).get("netCredexAssetsInDefaultDenom", "0.00")
+                    # Split into value and denomination
+                    parts = net_assets_str.split()
+                    if len(parts) == 2:
+                        net_value = float(parts[0])
+                        denom = parts[1]
+                    else:
+                        # If no denomination in string, use account default
+                        net_value = float(net_assets_str)
+                        denom = active_account.get("defaultDenom", "USD")
                     net_assets = f"  {net_value:.2f} {denom}"
-                except (ValueError, TypeError):
-                    net_assets = f"  0.00 {active_account.get('defaultDenom', 'USD')}"
+                except (ValueError, TypeError, AttributeError):
+                    net_assets = f"- 0.00 {active_account.get('defaultDenom', 'USD')}"
 
                 # Format tier limit display
                 member = dashboard.get("member", {})
@@ -120,27 +128,45 @@ class AccountDashboard(InputComponent):
                 logger.info(f"Active account pendingOutData in dashboard: {active_account.get('pendingOutData')}")
                 logger.info(f"Pending out count: {pending_out}")
 
-                # Format pending counts
-                pending_in_formatted = f" ({pending_in})" if pending_in > 0 else ""
-                pending_out_formatted = f" ({pending_out})" if pending_out > 0 else ""
+                # Define sections for menu options
+                sections = []
 
-                # Define menu options with emojis and counts
-                menu_options = []
-
-                # Credex Actions
-                menu_options.append({"id": "offer_secured", "title": "Offer secured credex", "description": "💸 Offer secured credex"})
+                # Credex Actions section
+                credex_options = []
+                credex_options.append({"id": "offer_secured", "title": "💸 Offer secured credex", "description": "Send a credex backed by currency or gold from your Secured Balances"})
                 if pending_in > 0:
-                    menu_options.append({"id": "accept_offer", "title": "Accept a pending offer", "description": f"✅ Accept a pending offer{pending_in_formatted}"})
-                    menu_options.append({"id": "decline_offer", "title": "Decline a pending offer", "description": f"❌ Decline a pending offer{pending_in_formatted}"})
+                    credex_options.append({"id": "accept_offer", "title": "✅ Accept offers", "description": f"You have {pending_in} offers waiting"})
+                    credex_options.append({"id": "decline_offer", "title": "❌ Decline offers", "description": f"You have {pending_in} offers waiting"})
                 if pending_out > 0:
-                    menu_options.append({"id": "cancel_offer", "title": "Cancel an offer", "description": f"🚫 Cancel an offer{pending_out_formatted}"})
+                    credex_options.append({"id": "cancel_offer", "title": "🚫 Cancel offers", "description": f"You have {pending_out} offers pending"})
 
-                # Account Actions
-                # menu_options.append({"id": "view_ledger", "title": "View account ledger", "description": "📊 View account ledger"})
+                if credex_options:
+                    sections.append(Section(
+                        title="Credex Actions",
+                        rows=credex_options
+                    ))
 
-                # Member Actions - only show upgrade option for tier 1
+                # Account Actions section
+                account_options = []
+                # Commented out for now
+                # account_options.append({"id": "view_ledger", "title": "📊 View account ledger", "description": "View account ledger"})
+
+                if account_options:
+                    sections.append(Section(
+                        title="Account Actions",
+                        rows=account_options
+                    ))
+
+                # Member Actions section - only show if there are member actions
+                member_options = []
                 if member.get("memberTier") == 1:
-                    menu_options.append({"id": "upgrade_membertier", "title": "Upgrade your member tier", "description": "⭐ Upgrade your member tier"})
+                    member_options.append({"id": "upgrade_membertier", "title": "⭐ Upgrade your member tier", "description": "Upgrade your member tier"})
+
+                if member_options:
+                    sections.append(Section(
+                        title="Member Actions",
+                        rows=member_options
+                    ))
 
                 try:
                     # Set component to await input before sending menu
@@ -149,11 +175,8 @@ class AccountDashboard(InputComponent):
                     # Pass properly structured menu data to messaging service
                     self.state_manager.messaging.send_interactive(
                         body=account_info,
-                        sections=[Section(
-                            title="Actions",
-                            rows=menu_options
-                        )],
-                        button_text="🪄 Actions"
+                        sections=sections,
+                        button_text="Actions 🪄"
                     )
 
                     return ValidationResult.success(formatted_data)

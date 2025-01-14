@@ -8,7 +8,6 @@ from typing import Any, Dict, List
 
 from core.components.base import InputComponent
 from core.error.types import ValidationResult
-from core.messaging.types import Button
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +17,6 @@ TITLES = {
     "accept_offer": "*Accept An Offer*",
     "decline_offer": "*Decline An Offer*",
     "cancel_offer": "*Cancel An Offer*"
-}
-
-# Button templates
-BUTTON_TEMPLATES = {
-    "process_offer": "{amount} to/from {name}",  # Default
-    "accept_offer": "{amount} from {name} ✅",
-    "decline_offer": "{amount} from {name} ❌",
-    "cancel_offer": "{amount} to {name} 🚫"
 }
 
 
@@ -57,28 +48,28 @@ class OfferListDisplay(InputComponent):
             # Validate interactive message
             if incoming_message.get("type") != "interactive":
                 return ValidationResult.failure(
-                    message="Please select an offer using the buttons provided",
+                    message="Please select an offer from the list provided",
                     field="type",
                     details={"message": incoming_message}
                 )
 
-            # Get button info
-            text = incoming_message.get("text", {})
-            if text.get("interactive_type") != "button":
+            # Get selection info from interactive message
+            interactive = incoming_message.get("interactive", {})
+            if interactive.get("type") != "list_reply":
                 return ValidationResult.failure(
-                    message="Please select an offer using the buttons provided",
+                    message="Please select an offer from the list provided",
                     field="interactive_type",
-                    details={"text": text}
+                    details={"interactive": interactive}
                 )
 
-            # Get button ID (credex_id)
-            button = text.get("button", {})
-            credex_id = button.get("id")
+            # Get selected item ID (credex_id)
+            list_reply = interactive.get("list_reply", {})
+            credex_id = list_reply.get("id")
             if not credex_id:
                 return ValidationResult.failure(
                     message="Invalid offer selection",
-                    field="button",
-                    details={"button": button}
+                    field="list_reply",
+                    details={"list_reply": list_reply}
                 )
 
             # Handle return to dashboard
@@ -140,31 +131,46 @@ class OfferListDisplay(InputComponent):
 
                 # Get context-specific templates
                 title = TITLES.get(context, TITLES["process_offer"])
-                button_template = BUTTON_TEMPLATES.get(context, BUTTON_TEMPLATES["process_offer"])
 
-                # Create buttons for up to 9 offers + dashboard button
-                buttons = []
+                # Create list message sections
+                sections = [
+                    {
+                        "title": "Available Offers",
+                        "rows": []
+                    },
+                    {
+                        "title": "Navigation",
+                        "rows": [
+                            {
+                                "id": "return_to_dashboard",
+                                "title": "Return to Dashboard",
+                                "description": "Go back to account overview"
+                            }
+                        ]
+                    }
+                ]
 
-                # Add offer buttons (up to 9)
-                for offer in sorted_offers[:9]:
-                    buttons.append(Button(
-                        id=str(offer["credexID"]),
-                        title=button_template.format(
-                            amount=offer['formattedInitialAmount'],
-                            name=offer['counterpartyAccountName']
-                        )
-                    ))
+                # Add offer rows (up to 10)
+                for offer in sorted_offers[:10]:
+                    direction = "to" if context == "cancel_offer" else "from"
 
-                # Add return to dashboard button
-                buttons.append(Button(
-                    id="return_to_dashboard",
-                    title="💳 Account Dashboard 💳"
-                ))
+                    # Title shows amount (24 char limit)
+                    row_title = f"{offer['formattedInitialAmount']}"
 
-                # Send context-specific title and buttons
+                    # Description shows full details (72 char limit)
+                    row_description = f"{direction} {offer['counterpartyAccountName']}"
+
+                    sections[0]["rows"].append({
+                        "id": str(offer["credexID"]),
+                        "title": row_title,
+                        "description": row_description
+                    })
+
+                # Send list message using interactive type
                 self.state_manager.messaging.send_interactive(
                     body=title,
-                    buttons=buttons
+                    sections=sections,
+                    button_text="Select Offer"
                 )
                 self.set_awaiting_input(True)
                 return ValidationResult.success(None)

@@ -351,60 +351,26 @@ class WhatsAppMessagingService(BaseMessagingService):
         footer: Optional[str] = None,
         button_text: Optional[str] = None
     ) -> Message:
-        """Send an interactive message"""
-        # WhatsApp-specific validation
-        if len(body) > 4096:
-            raise MessageValidationError(
-                message="Body text exceeds 4096 characters",
-                service="whatsapp",
-                action="send_interactive",
-                validation_details={
-                    "error": "text_too_long",
-                    "field": "body",
-                    "length": len(body),
-                    "max_length": 4096
-                }
-            )
+        """Send an interactive message following WhatsApp Cloud API format"""
+        # Import WhatsApp limits
+        from .types import WhatsAppMessage
+        LIMITS = WhatsAppMessage.LIMITS
 
-        if header and len(header) > 60:
-            raise MessageValidationError(
-                message="Header text exceeds 60 characters",
-                service="whatsapp",
-                action="send_interactive",
-                validation_details={
-                    "error": "text_too_long",
-                    "field": "header",
-                    "length": len(header),
-                    "max_length": 60
-                }
-            )
+        # Validate and truncate body text
+        if len(body) > LIMITS["text_body"]:
+            body = body[:LIMITS["text_body"]]
 
-        if footer and len(footer) > 60:
-            raise MessageValidationError(
-                message="Footer text exceeds 60 characters",
-                service="whatsapp",
-                action="send_interactive",
-                validation_details={
-                    "error": "text_too_long",
-                    "field": "footer",
-                    "length": len(footer),
-                    "max_length": 60
-                }
-            )
+        # Validate and truncate header/footer
+        if header and len(header) > LIMITS["header"]:
+            header = header[:LIMITS["header"]]
+        if footer and len(footer) > LIMITS["footer"]:
+            footer = footer[:LIMITS["footer"]]
 
-        if button_text and len(button_text) > 20:
-            raise MessageValidationError(
-                message="Button text exceeds 20 characters",
-                service="whatsapp",
-                action="send_interactive",
-                validation_details={
-                    "error": "text_too_long",
-                    "field": "button_text",
-                    "length": len(button_text),
-                    "max_length": 20
-                }
-            )
+        # Validate button text for list messages
+        if button_text and len(button_text) > LIMITS["button_text"]:
+            button_text = button_text[:LIMITS["button_text"]]
 
+        # Validate buttons and sections are mutually exclusive
         if buttons and sections:
             raise MessageValidationError(
                 message="Cannot specify both buttons and sections",
@@ -416,163 +382,79 @@ class WhatsAppMessagingService(BaseMessagingService):
                 }
             )
 
-        if buttons and len(buttons) > 3:
-            raise MessageValidationError(
-                message="Too many buttons (max 3)",
-                service="whatsapp",
-                action="send_interactive",
-                validation_details={
-                    "error": "too_many_buttons",
-                    "count": len(buttons),
-                    "max_count": 3
-                }
-            )
-
-        if sections:
-            if len(sections) > 10:
-                raise MessageValidationError(
-                    message="Too many sections (max 10)",
-                    service="whatsapp",
-                    action="send_interactive",
-                    validation_details={
-                        "error": "too_many_sections",
-                        "count": len(sections),
-                        "max_count": 10
-                    }
-                )
-
-            for section in sections:
-                # Validate section has required fields
-                if "title" not in section:
-                    raise MessageValidationError(
-                        message="Section missing title",
-                        service="whatsapp",
-                        action="send_interactive",
-                        validation_details={
-                            "error": "missing_field",
-                            "field": "title",
-                            "section": section
-                        }
-                    )
-
-                if "rows" not in section:
-                    raise MessageValidationError(
-                        message="Section missing rows",
-                        service="whatsapp",
-                        action="send_interactive",
-                        validation_details={
-                            "error": "missing_field",
-                            "field": "rows",
-                            "section": section
-                        }
-                    )
-
-                # Validate section title length
-                if len(section["title"]) > 24:
-                    raise MessageValidationError(
-                        message="Section title exceeds 24 characters",
-                        service="whatsapp",
-                        action="send_interactive",
-                        validation_details={
-                            "error": "text_too_long",
-                            "field": "section_title",
-                            "section": section["title"],
-                            "length": len(section["title"]),
-                            "max_length": 24
-                        }
-                    )
-
-                # Validate rows count
-                if len(section["rows"]) > 10:
-                    raise MessageValidationError(
-                        message=f"Too many rows in section '{section['title']}' (max 10)",
-                        service="whatsapp",
-                        action="send_interactive",
-                        validation_details={
-                            "error": "too_many_rows",
-                            "section": section["title"],
-                            "count": len(section["rows"]),
-                            "max_count": 10
-                        }
-                    )
-
-                # Validate each row
-                for row in section["rows"]:
-                    if len(row["id"]) > 200:
-                        raise MessageValidationError(
-                            message="Row ID exceeds 200 characters",
-                            service="whatsapp",
-                            action="send_interactive",
-                            validation_details={
-                                "error": "text_too_long",
-                                "field": "row_id",
-                                "section": section["title"],
-                                "row_id": row["id"],
-                                "length": len(row["id"]),
-                                "max_length": 200
-                            }
-                        )
-
-                    if len(row["title"]) > 24:
-                        raise MessageValidationError(
-                            message="Row title exceeds 24 characters",
-                            service="whatsapp",
-                            action="send_interactive",
-                            validation_details={
-                                "error": "text_too_long",
-                                "field": "row_title",
-                                "section": section["title"],
-                                "row_title": row["title"],
-                                "length": len(row["title"]),
-                                "max_length": 24
-                            }
-                        )
-
-                    if "description" in row and len(row["description"]) > 72:
-                        raise MessageValidationError(
-                            message="Row description exceeds 72 characters",
-                            service="whatsapp",
-                            action="send_interactive",
-                            validation_details={
-                                "error": "text_too_long",
-                                "field": "row_description",
-                                "section": section["title"],
-                                "row_title": row["title"],
-                                "length": len(row["description"]),
-                                "max_length": 72
-                            }
-                        )
-
         interactive_type = InteractiveType.BUTTON if buttons else InteractiveType.LIST
+
         if buttons:
+            # Validate and process buttons
+            validated_buttons = []
+            for button in buttons[:LIMITS["buttons_count"]]:  # Limit number of buttons
+                title = button.title[:LIMITS["button_text"]] if len(button.title) > LIMITS["button_text"] else button.title
+                validated_buttons.append(Button(id=button.id, title=title))
+
             message = Message(
                 content=InteractiveContent(
                     interactive_type=interactive_type,
                     body=body,
-                    buttons=buttons or [],
+                    buttons=validated_buttons,
                     sections=[],  # Empty sections for button messages
                     header=header,
                     footer=footer
                 )
             )
+
         elif sections:
-            # Convert dictionary sections to Section objects
-            section_objects = [
-                Section(title=section["title"], rows=section["rows"])
-                for section in sections
-            ]
+            # Validate and process sections
+            validated_sections = []
+            for section in sections[:LIMITS["sections_count"]]:  # Limit number of sections
+                # Validate section title
+                title = section["title"][:LIMITS["list_title"]] if len(section["title"]) > LIMITS["list_title"] else section["title"]
+
+                # Validate and process rows
+                validated_rows = []
+                for row in section["rows"][:LIMITS["rows_per_section"]]:  # Limit rows per section
+                    # Validate row title and description
+                    row_title = row["title"][:LIMITS["list_title"]]
+                    row_desc = row.get("description", "")
+                    if row_desc:
+                        row_desc = row_desc[:LIMITS["list_description"]]
+
+                    validated_row = {
+                        "id": row["id"],
+                        "title": row_title
+                    }
+                    if row_desc:
+                        validated_row["description"] = row_desc
+
+                    validated_rows.append(validated_row)
+
+                validated_sections.append(Section(
+                    title=title,
+                    rows=validated_rows
+                ))
 
             message = Message(
                 content=InteractiveContent(
                     interactive_type=interactive_type,
                     body=body,
                     buttons=[],  # Empty buttons for list messages
-                    sections=section_objects,
+                    sections=validated_sections,
                     button_text=button_text or "Select",
                     header=header,
                     footer=footer
                 )
             )
+
+        else:
+            raise MessageValidationError(
+                message="Either buttons or sections must be provided",
+                service="whatsapp",
+                action="send_interactive",
+                validation_details={
+                    "error": "missing_content",
+                    "detail": "interactive message requires buttons or sections"
+                }
+            )
+
         return self.send_message(message)
 
     def send_template(

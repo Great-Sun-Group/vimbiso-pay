@@ -18,15 +18,15 @@ from core.utils.utils import format_denomination
 from . import ConfirmBase
 
 # Offer confirmation template
-OFFER_CONFIRMATION = """*{amount}*
+OFFER_CONFIRMATION = """💰 *{amount}*
 Secured Credex Offer
 
-*Payer*
-{active_account_name}
+**From:**
+*{active_account_name}*
 💳{active_account_handle}
 
-*Payee*
-{target_account_name}
+**To:**
+*{target_account_name}*
 💳{target_account_handle}"""
 
 
@@ -127,7 +127,15 @@ class ConfirmOfferSecured(ConfirmBase):
             )
 
         # Format amount with denomination
-        formatted_amount = format_denomination(float(amount), denom)
+        try:
+            formatted_amount = format_denomination(float(amount), denom)
+        except (ValueError, TypeError):
+            raise ComponentException(
+                message="Invalid amount format",
+                component=self.type,
+                field="amount",
+                details={"amount": amount, "denom": denom}
+            )
 
         # Format and send confirmation message
         logger.debug(
@@ -145,8 +153,8 @@ class ConfirmOfferSecured(ConfirmBase):
         self.state_manager.messaging.send_interactive(
             body=confirmation_message,
             buttons=[
-                Button(id="confirm", title="📝 Digitally Sign And Offer 💸"),
-                Button(id="cancel", title="❌ Cancel Offer ❌")
+                Button(id="confirm", title="📝 Sign and Send 💸"),
+                Button(id="cancel", title="❌ Cancel ❌")
             ]
         )
         self.set_awaiting_input(True)

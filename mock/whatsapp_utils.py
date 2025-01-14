@@ -22,9 +22,17 @@ def create_message_template(
         "type": "interactive",
         "interactive": {
             "type": template_type,
-            "body": {"text": content.get("body_text", "")}
+            "body": {"text": content.get("body_text", "")},
+            "header": {"type": "text", "text": header_text} if header_text else None,
+            "footer": {"text": footer_text} if footer_text else None
         }
     }
+
+    # Remove None values
+    if template["interactive"]["header"] is None:
+        del template["interactive"]["header"]
+    if template["interactive"]["footer"] is None:
+        del template["interactive"]["footer"]
 
     # Add header if provided
     if header_text:
@@ -160,20 +168,23 @@ def _get_message_content(message_type: str, message_text: Union[str, Dict]) -> D
                 }
             }
 
-        # Handle list selection with full details
-        if isinstance(message_text, dict) and message_text.get("type") == "list":
-            selection = message_text.get("selection", {})
-            return {
-                "type": "interactive",
-                "interactive": {
-                    "type": "list_reply",
-                    "list_reply": {
-                        "id": selection.get("id", "")[:200],  # WhatsApp's ID limit
-                        "title": selection.get("title", "")[:24],  # WhatsApp's title limit
-                        "description": selection.get("description", "")[:72]  # WhatsApp's description limit
+            # Handle list selection with full details
+            if isinstance(message_text, dict) and message_text.get("type") == "list":
+                selection = message_text.get("selection", {})
+                return {
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "list_reply",
+                        "list_reply": {
+                            "id": selection.get("id", "")[:200],  # WhatsApp's ID limit
+                            "title": selection.get("title", "")[:24],  # WhatsApp's title limit
+                            "description": selection.get("description", "")[:72],  # WhatsApp's description limit
+                            "row_id": selection.get("id", ""),  # Original row ID for context
+                            "row_title": selection.get("title", ""),  # Original title for context
+                            "row_description": selection.get("description", "")  # Original description for context
+                        }
                     }
                 }
-            }
 
         # Handle button/list replies by ID
         if isinstance(message_text, str) and ":" in message_text:

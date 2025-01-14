@@ -114,9 +114,23 @@ class Button:
         }
 
 
+# WhatsApp Cloud API limits
+WHATSAPP_LIMITS = {
+    "text_body": 4096,      # Maximum text message length
+    "header": 60,           # Maximum header text length
+    "footer": 60,           # Maximum footer text length
+    "button_text": 20,      # Maximum button text length
+    "list_title": 24,       # Maximum list item title length
+    "list_description": 72,  # Maximum list item description length
+    "buttons_count": 3,     # Maximum number of buttons
+    "sections_count": 10,   # Maximum number of sections
+    "rows_per_section": 10  # Maximum rows per section
+}
+
+
 @dataclass
 class InteractiveContent(MessageContent):
-    """Interactive message content"""
+    """Interactive message content following WhatsApp Cloud API format"""
     interactive_type: InteractiveType
     body: str
     header: Optional[str] = None
@@ -128,10 +142,10 @@ class InteractiveContent(MessageContent):
     type: MessageType = field(init=False, default=MessageType.INTERACTIVE)
 
     def __post_init__(self):
-        """Initialize after dataclass creation"""
+        """Initialize after dataclass creation and validate WhatsApp limits"""
         super().__init__()
 
-        # Basic structure validation
+        # Validate body text
         if not self.body:
             raise MessageValidationError(
                 message="Message body is required",
@@ -142,8 +156,87 @@ class InteractiveContent(MessageContent):
                     "field": "body"
                 }
             )
+        if len(self.body) > WHATSAPP_LIMITS["text_body"]:
+            raise MessageValidationError(
+                message=f"Body text exceeds {WHATSAPP_LIMITS['text_body']} characters",
+                service="messaging",
+                action="create_message",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "body",
+                    "length": len(self.body),
+                    "max_length": WHATSAPP_LIMITS["text_body"]
+                }
+            )
 
-        # Validate sections have required fields
+        # Validate header/footer length
+        if self.header and len(self.header) > WHATSAPP_LIMITS["header"]:
+            raise MessageValidationError(
+                message=f"Header text exceeds {WHATSAPP_LIMITS['header']} characters",
+                service="messaging",
+                action="create_message",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "header",
+                    "length": len(self.header),
+                    "max_length": WHATSAPP_LIMITS["header"]
+                }
+            )
+
+        if self.footer and len(self.footer) > WHATSAPP_LIMITS["footer"]:
+            raise MessageValidationError(
+                message=f"Footer text exceeds {WHATSAPP_LIMITS['footer']} characters",
+                service="messaging",
+                action="create_message",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "footer",
+                    "length": len(self.footer),
+                    "max_length": WHATSAPP_LIMITS["footer"]
+                }
+            )
+
+        # Validate button text for list messages
+        if self.button_text and len(self.button_text) > WHATSAPP_LIMITS["button_text"]:
+            raise MessageValidationError(
+                message=f"Button text exceeds {WHATSAPP_LIMITS['button_text']} characters",
+                service="messaging",
+                action="create_message",
+                validation_details={
+                    "error": "text_too_long",
+                    "field": "button_text",
+                    "length": len(self.button_text),
+                    "max_length": WHATSAPP_LIMITS["button_text"]
+                }
+            )
+
+        # Validate buttons
+        if len(self.buttons) > WHATSAPP_LIMITS["buttons_count"]:
+            raise MessageValidationError(
+                message=f"Too many buttons (max {WHATSAPP_LIMITS['buttons_count']})",
+                service="messaging",
+                action="create_message",
+                validation_details={
+                    "error": "too_many_buttons",
+                    "count": len(self.buttons),
+                    "max_count": WHATSAPP_LIMITS["buttons_count"]
+                }
+            )
+
+        # Validate sections
+        if len(self.sections) > WHATSAPP_LIMITS["sections_count"]:
+            raise MessageValidationError(
+                message=f"Too many sections (max {WHATSAPP_LIMITS['sections_count']})",
+                service="messaging",
+                action="create_message",
+                validation_details={
+                    "error": "too_many_sections",
+                    "count": len(self.sections),
+                    "max_count": WHATSAPP_LIMITS["sections_count"]
+                }
+            )
+
+        # Validate each section
         for section in self.sections:
             if not section.title:
                 raise MessageValidationError(
@@ -156,6 +249,34 @@ class InteractiveContent(MessageContent):
                     }
                 )
 
+            if len(section.title) > WHATSAPP_LIMITS["list_title"]:
+                raise MessageValidationError(
+                    message=f"Section title exceeds {WHATSAPP_LIMITS['list_title']} characters",
+                    service="messaging",
+                    action="create_message",
+                    validation_details={
+                        "error": "text_too_long",
+                        "field": "section_title",
+                        "section": section.title,
+                        "length": len(section.title),
+                        "max_length": WHATSAPP_LIMITS["list_title"]
+                    }
+                )
+
+            if len(section.rows) > WHATSAPP_LIMITS["rows_per_section"]:
+                raise MessageValidationError(
+                    message=f"Too many rows in section (max {WHATSAPP_LIMITS['rows_per_section']})",
+                    service="messaging",
+                    action="create_message",
+                    validation_details={
+                        "error": "too_many_rows",
+                        "section": section.title,
+                        "count": len(section.rows),
+                        "max_count": WHATSAPP_LIMITS["rows_per_section"]
+                    }
+                )
+
+            # Validate each row
             for row in section.rows:
                 if "id" not in row or "title" not in row:
                     raise MessageValidationError(
@@ -166,6 +287,36 @@ class InteractiveContent(MessageContent):
                             "error": "missing_required_fields",
                             "section": section.title,
                             "row": row
+                        }
+                    )
+
+                if len(row["title"]) > WHATSAPP_LIMITS["list_title"]:
+                    raise MessageValidationError(
+                        message=f"Row title exceeds {WHATSAPP_LIMITS['list_title']} characters",
+                        service="messaging",
+                        action="create_message",
+                        validation_details={
+                            "error": "text_too_long",
+                            "field": "row_title",
+                            "section": section.title,
+                            "row_title": row["title"],
+                            "length": len(row["title"]),
+                            "max_length": WHATSAPP_LIMITS["list_title"]
+                        }
+                    )
+
+                if "description" in row and len(row["description"]) > WHATSAPP_LIMITS["list_description"]:
+                    raise MessageValidationError(
+                        message=f"Row description exceeds {WHATSAPP_LIMITS['list_description']} characters",
+                        service="messaging",
+                        action="create_message",
+                        validation_details={
+                            "error": "text_too_long",
+                            "field": "row_description",
+                            "section": section.title,
+                            "row_title": row["title"],
+                            "length": len(row["description"]),
+                            "max_length": WHATSAPP_LIMITS["list_description"]
                         }
                     )
 

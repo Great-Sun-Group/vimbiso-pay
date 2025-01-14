@@ -445,11 +445,14 @@ button:active {
 .list-item {
     background: var(--bright-blue);
     color: var(--white);
-    padding: 10px 15px;
+    padding: 12px 15px;
     border-radius: 5px;
     cursor: pointer;
     transition: all 0.3s ease;
-    margin-bottom: 5px;
+    margin-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .list-item:hover {
@@ -460,11 +463,15 @@ button:active {
 .item-title {
     font-weight: bold;
     margin-bottom: 4px;
+    color: var(--gold);
+    font-size: 16px;
 }
 
 .item-description {
-    font-size: 16px;
-    opacity: 1;
+    font-size: 14px;
+    opacity: 0.9;
+    color: var(--white);
+    line-height: 1.4;
 }
 
 .error {

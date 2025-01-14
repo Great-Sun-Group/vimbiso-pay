@@ -13,10 +13,10 @@ from ..base import InputComponent
 VALID_DENOMS: Set[str] = {"CXX", "XAU", "USD", "CAD", "ZWG"}
 
 # Amount prompt template
-AMOUNT_PROMPT = """💸 *What offer amount and denomination?*
-- Defaults to USD ✨ *9 || 99 || 9999.99 || 0.99*
-- Denom placement ✨ *99 ZWG || ZWG 99*
-- Denoms ✨ *CXX || XAU || USD || CAD || ZWG*"""
+AMOUNT_PROMPT = """💸 *What amount and denomination?*
+✨ Defaults to USD: 9 || 99 || 9999.99 || 0.99
+✨ Denom placement: 99 ZWG || ZWG 99
+✨ Denoms: CXX || XAU || USD || CAD || ZWG"""
 
 
 class AmountInput(InputComponent):
