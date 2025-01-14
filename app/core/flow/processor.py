@@ -24,7 +24,7 @@ from core.messaging.utils import get_recipient
 from core.state.interface import StateManagerInterface
 
 from .constants import GREETING_COMMANDS
-from .headquarters import process_component
+from .component_manager import process_component
 
 logger = logging.getLogger(__name__)
 
