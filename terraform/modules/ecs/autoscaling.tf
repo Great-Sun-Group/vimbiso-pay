@@ -25,36 +25,38 @@ resource "aws_appautoscaling_policy" "cpu" {
     }
     target_value = var.cpu_threshold
 
-    # Longer cooldowns to prevent interference during deployments
-    scale_in_cooldown  = 900  # 15 minutes to match health check grace period
-    scale_out_cooldown = 300  # 5 minutes to allow proper initialization
-    disable_scale_in   = true # Prevent scale-in during deployments
+    scale_in_cooldown  = 300  # 5 minutes to match grace period
+    scale_out_cooldown = 60   # Quick scale out for responsiveness
   }
-
-  depends_on = [aws_appautoscaling_target.app]
 }
 
-# Memory Scaling Policy disabled during deployment debugging
-# resource "aws_appautoscaling_policy" "memory" { ... }
+# Memory Scaling Policy
+resource "aws_appautoscaling_policy" "memory" {
+  name               = "vimbiso-pay-memory-autoscaling-${var.environment}"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.app.resource_id
+  scalable_dimension = aws_appautoscaling_target.app.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.app.service_namespace
 
-# Wait for ECS service to be stable
-resource "time_sleep" "wait_for_service_stable" {
-  depends_on = [aws_ecs_service.app]
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+    }
+    target_value = 80  # Scale at 80% memory utilization
 
-  create_duration = "30s"
+    scale_in_cooldown  = 300  # 5 minutes to match grace period
+    scale_out_cooldown = 60   # Quick scale out for responsiveness
+  }
 }
 
-# Request Count Scaling Policy disabled during deployment debugging
-# resource "aws_appautoscaling_policy" "requests" { ... }
-
-# CloudWatch Alarms for Auto Scaling
+# CloudWatch Alarms
 resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   alarm_name          = "vimbiso-pay-cpu-high-${var.environment}"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "2"
-  metric_name        = "CPUUtilization"
-  namespace          = "AWS/ECS"
-  period             = "60"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ECS"
+  period             = "60"  # Aligned with other intervals
   statistic          = "Average"
   threshold          = var.cpu_threshold
   alarm_description  = "This metric monitors ECS CPU utilization"
@@ -66,5 +68,20 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   }
 }
 
-# Memory CloudWatch Alarm disabled during deployment debugging
-# resource "aws_cloudwatch_metric_alarm" "memory_high" { ... }
+resource "aws_cloudwatch_metric_alarm" "memory_high" {
+  alarm_name          = "vimbiso-pay-memory-high-${var.environment}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "MemoryUtilization"
+  namespace           = "AWS/ECS"
+  period             = "60"  # Aligned with other intervals
+  statistic          = "Average"
+  threshold          = 80    # Align with memory scaling policy
+  alarm_description  = "This metric monitors ECS memory utilization"
+  alarm_actions      = [aws_appautoscaling_policy.memory.arn]
+
+  dimensions = {
+    ClusterName = aws_ecs_cluster.main.name
+    ServiceName = local.service_name
+  }
+}

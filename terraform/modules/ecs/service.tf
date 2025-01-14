@@ -4,20 +4,16 @@ resource "aws_ecs_service" "app" {
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app.arn
   desired_count                     = var.min_capacity
-  deployment_minimum_healthy_percent = 0    # Allow complete replacement during deployment
-  deployment_maximum_percent        = 100  # Don't allow extra capacity during deployment
+  deployment_minimum_healthy_percent = 50   # Keep some capacity during deployment
+  deployment_maximum_percent        = 200  # Allow temporary extra capacity for smoother deployment
   scheduling_strategy               = "REPLICA"
-  force_new_deployment             = false  # Let ECS control deployments
-  health_check_grace_period_seconds = 900   # 15 minutes for complete startup
-  enable_execute_command           = true   # Allow debugging if needed
+  force_new_deployment             = false
+  health_check_grace_period_seconds = 300   # Reduced to 5 minutes now that startup is simpler
+  enable_execute_command           = true
 
-  # Circuit breaker configuration
-  # NOTE: During normal operation, rollback should be enabled (rollback = true).
-  # However, when debugging deployment issues, setting rollback = false helps preserve
-  # the failed state for investigation. Remember to re-enable rollback after debugging.
   deployment_circuit_breaker {
     enable   = true
-    rollback = false  # Temporarily disabled for debugging deployment issues
+    rollback = true  # Auto-rollback for failed deployments
   }
 
   deployment_controller {
@@ -27,7 +23,7 @@ resource "aws_ecs_service" "app" {
   network_configuration {
     security_groups  = [var.ecs_tasks_security_group_id]
     subnets         = var.private_subnet_ids
-    assign_public_ip = false  # Tasks in private subnets
+    assign_public_ip = false
   }
 
   load_balancer {
@@ -39,11 +35,9 @@ resource "aws_ecs_service" "app" {
   capacity_provider_strategy {
     capacity_provider = "FARGATE"
     weight           = 100
-    base             = 0  # Remove forced base capacity to allow proper scaling
+    base             = 0
   }
 
-  # Ignore changes to desired_count since it's managed by autoscaling
-  # But track other changes to ensure proper deployments
   lifecycle {
     ignore_changes = [
       desired_count,
@@ -54,6 +48,6 @@ resource "aws_ecs_service" "app" {
 
   depends_on = [
     aws_ecs_cluster.main,
-    var.efs_mount_targets  # Ensure EFS mount targets are ready
+    var.efs_mount_targets
   ]
 }
