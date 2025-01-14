@@ -61,7 +61,8 @@ class LoginApiCall(ApiComponent):
             action = self.state_manager.get_state_value("action", {})
             if action.get("type") == "ERROR_NOT_FOUND":
                 logger.info("New member detected - starting onboarding flow")
-                self.update_component_data(component_result="start_onboarding")
+                # Tell headquarters to start onboarding
+                self.set_result("start_onboarding")
                 return ValidationResult.success(None)
 
             # For existing members, set active account
@@ -83,8 +84,8 @@ class LoginApiCall(ApiComponent):
                     "active_account_id": personal_account["accountID"]
                 })
 
-                # Set result for dashboard flow
-                self.update_component_data(component_result="send_dashboard")
+                # Tell headquarters to show dashboard
+                self.set_result("send_dashboard")
                 return ValidationResult.success(result)
             except Exception as e:
                 logger.error(f"Failed to process dashboard data: {e}")

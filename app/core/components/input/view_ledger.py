@@ -114,14 +114,14 @@ class ViewLedger(InputComponent):
                 )
 
             # Store pagination state
-            self.update_component_data(
-                data={
-                    "account_id": active_account_id,
-                    "start_row": start_row,
-                    "num_rows": 7  # Fixed to 7 rows per page
-                },
-                awaiting_input=False
-            )
+            self.update_data({
+                "account_id": active_account_id,
+                "start_row": start_row,
+                "num_rows": 7  # Fixed to 7 rows per page
+            })
+
+            # Release input wait
+            self.set_awaiting_input(False)
 
             # Signal API component to fetch data
             return ValidationResult.success({
@@ -157,12 +157,14 @@ class ViewLedger(InputComponent):
                 return self._display_ledger(max(0, start_row - 7))
 
             if button_id == "dashboard":
-                # Return to dashboard
-                self.update_component_data(
-                    data={},
-                    awaiting_input=False,
-                    component_result="send_dashboard"
-                )
+                # Clear data
+                self.update_data({})
+
+                # Tell headquarters to return to dashboard
+                self.set_result("send_dashboard")
+
+                # Release input wait
+                self.set_awaiting_input(False)
                 return ValidationResult.success(None)
 
             return ValidationResult.failure(

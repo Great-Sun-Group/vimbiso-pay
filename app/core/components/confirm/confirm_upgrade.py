@@ -145,10 +145,11 @@ class ConfirmUpgrade(ConfirmBase):
             logger.debug(f"Button ID: {button_id}")
             if button_id == "cancel":
                 logger.info("Upgrade rejected")
-                self.update_component_data(
-                    data={"confirmed": False},
-                    awaiting_input=False
-                )
+                # Store confirmation status
+                self.update_data({"confirmed": False})
+
+                # Release input wait
+                self.set_awaiting_input(False)
                 return ValidationResult.success({"confirmed": False})
 
             if button_id != "confirm":
@@ -173,16 +174,16 @@ class ConfirmUpgrade(ConfirmBase):
                     }
                 )
 
-            # Add confirmation status and required data
+            # Store confirmation status and required data
             logger.info("Upgrade confirmed")
-            self.update_component_data(
-                data={
-                    "confirmed": True,
-                    "member_id": member_id,
-                    "account_id": active_account_id
-                },
-                awaiting_input=False
-            )
+            self.update_data({
+                "confirmed": True,
+                "member_id": member_id,
+                "account_id": active_account_id
+            })
+
+            # Release input wait
+            self.set_awaiting_input(False)
             return ValidationResult.success({
                 "confirmed": True,
                 "member_id": member_id,

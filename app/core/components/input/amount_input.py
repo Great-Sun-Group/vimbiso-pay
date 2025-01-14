@@ -109,14 +109,14 @@ class AmountInput(InputComponent):
                     details={"amount": amount}
                 )
 
-            # Store validated amount and denom in component_data.data
-            self.update_component_data(
-                data={
-                    "amount": str(amount),
-                    "denom": denom
-                },
-                awaiting_input=False
-            )
+            # Store validated amount and denom
+            self.update_data({
+                "amount": str(amount),
+                "denom": denom
+            })
+
+            # Release input wait
+            self.set_awaiting_input(False)
             return ValidationResult.success({"amount": amount, "denom": denom})
 
         except ValueError:

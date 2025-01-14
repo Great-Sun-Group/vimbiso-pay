@@ -64,11 +64,11 @@ class FirstNameInput(InputComponent):
                 }
             )
 
-        # Store validated firstname in component_data.data for subsequent components
-        self.update_component_data(
-            data={"firstname": firstname},
-            awaiting_input=False
-        )
+        # Store validated firstname for subsequent components
+        self.update_data({"firstname": firstname})
+
+        # Release input wait
+        self.set_awaiting_input(False)
         return ValidationResult.success(firstname)
 
     def to_verified_data(self, value: Any) -> Dict:

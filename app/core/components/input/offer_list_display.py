@@ -74,10 +74,11 @@ class OfferListDisplay(InputComponent):
 
             # Handle return to dashboard
             if credex_id == "return_to_dashboard":
-                self.update_component_data(
-                    component_result="return_to_dashboard",
-                    awaiting_input=False
-                )
+                # Tell headquarters to return to dashboard
+                self.set_result("return_to_dashboard")
+
+                # Release input wait
+                self.set_awaiting_input(False)
                 return ValidationResult.success(None)
 
             # Validate credex_id exists in available offers
@@ -88,12 +89,14 @@ class OfferListDisplay(InputComponent):
                     details={"credex_id": credex_id}
                 )
 
-            # Store credex_id and continue to API
-            self.update_component_data(
-                data={"credex_id": credex_id},
-                component_result="process_offer",
-                awaiting_input=False
-            )
+            # Store credex_id
+            self.update_data({"credex_id": credex_id})
+
+            # Tell headquarters to process offer
+            self.set_result("process_offer")
+
+            # Release input wait
+            self.set_awaiting_input(False)
             return ValidationResult.success(None)
 
         except Exception as e:
@@ -179,11 +182,11 @@ class OfferListDisplay(InputComponent):
                 error_msg = f"❌ No {context.replace('_', ' ')}s available at this time."
                 self.state_manager.messaging.send_text(error_msg)
 
-                # Return to dashboard
-                self.update_component_data(
-                    component_result="return_to_dashboard",
-                    awaiting_input=False
-                )
+                # Tell headquarters to return to dashboard
+                self.set_result("return_to_dashboard")
+
+                # Release input wait
+                self.set_awaiting_input(False)
                 return ValidationResult.success(None)
 
         except Exception as e:

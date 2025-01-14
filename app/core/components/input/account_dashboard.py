@@ -105,9 +105,9 @@ class AccountDashboard(InputComponent):
                 if member and member.get("memberTier", 0) < 3:
                     try:
                         amount_remaining = float(member.get("remainingAvailableUSD", "0.00"))
-                        tier_limit_display = f"\n\n⏳ DAILY MEMBER TIER LIMIT: {amount_remaining:.2f} USD"
+                        tier_limit_display = f"\n\n⏳ *Daily Member Tier Limit*\n- {amount_remaining:.2f} USD"
                     except (ValueError, TypeError):
-                        tier_limit_display = "\n\n⏳ DAILY MEMBER TIER LIMIT: 0.00 USD"
+                        tier_limit_display = "\n\n⏳ *Daily Member Tier Limit*\n- 0.00 USD"
 
                 # Format final display data
                 formatted_data = {
@@ -160,7 +160,7 @@ class AccountDashboard(InputComponent):
                 # Member Actions section - only show if there are member actions
                 member_options = []
                 if member.get("memberTier") == 1:
-                    member_options.append({"id": "upgrade_membertier", "title": "⭐ Upgrade your member tier", "description": "Upgrade your member tier"})
+                    member_options.append({"id": "upgrade_membertier", "title": "⭐ Upgrade Member Tier", "description": "Upgrade to the Hustler tier for $1"})
 
                 if member_options:
                     sections.append(Section(
@@ -209,11 +209,9 @@ class AccountDashboard(InputComponent):
                             "upgrade_membertier"
                         ]
                         if selection in valid_paths:
-                            # Set result and release flow
-                            self.update_component_data(
-                                component_result=selection,
-                                awaiting_input=False
-                            )
+                            # Tell headquarters which path to take and release input wait
+                            self.set_result(selection)
+                            self.set_awaiting_input(False)
                             return ValidationResult.success(True)
 
             # Invalid selection, return failure but stay on component

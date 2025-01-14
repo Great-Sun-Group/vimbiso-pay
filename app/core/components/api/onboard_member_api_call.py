@@ -96,8 +96,8 @@ class OnBoardMemberApiCall(ApiComponent):
                 details={"error": error or "No member ID in response"}
             )
 
-        # Clear firstname/lastname from earlier components in flow
-        self.update_component_data(data={})
+        # Clear firstname/lastname from earlier components
+        self.update_data({})
 
         # Set active_account_id to the personal account
         dashboard = response_data.get("data", {}).get("dashboard", {})

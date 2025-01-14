@@ -203,57 +203,35 @@ class Component:
         """
         raise NotImplementedError
 
-    def set_awaiting_input(self, awaiting: bool) -> None:
-        """Update component's awaiting input state
-
-        Components can store their own data in component_data.data which is not
-        validated by the schema. The awaiting_input field and other component_data
-        fields are schema-validated.
+    def set_result(self, result: Optional[str]) -> None:
+        """Set component result for flow branching.
+        This is how components tell headquarters which path to take next.
 
         Args:
-            awaiting: Whether component is awaiting input
-        """
-        self.update_component_data(awaiting_input=awaiting)
-
-    def update_component_data(
-        self,
-        component_result: Optional[str] = None,
-        awaiting_input: Optional[bool] = None,
-        data: Optional[Dict] = None
-    ) -> None:
-        """Update component's data fields
-
-        Components can update any combination of:
-        - component_result: For flow branching through headquarters
-        - awaiting_input: Whether component is waiting for input
-        - data: Component-specific data (unvalidated)
-
-        This updates the component_data section of state, which is separate from
-        other state sections like channel, auth, dashboard, etc. Path and component
-        fields are managed by the flow processor through StateManager.update_flow_state().
-
-        Args:
-            component_result: Optional result for flow branching
-            awaiting_input: Optional input waiting state
-            data: Optional component-specific data
+            result: Result that headquarters will use for branching
         """
         if self.state_manager:
-            current = self.state_manager.get_state_value("component_data", {})
-            path = current.get("path", "")
-            component = current.get("component", "")
+            self.state_manager.set_component_result(result)
 
-            # Merge new data with existing data
-            existing_data = current.get("data", {})
-            merged_data = {**existing_data, **(data or {})}
+    def set_awaiting_input(self, awaiting: bool) -> None:
+        """Set whether component is waiting for user input.
+        Components must set this to True before sending messages that need response.
 
-            # Use flow state update but preserve flow control fields
-            self.state_manager.update_flow_state(
-                path=path,
-                component=component,
-                data=merged_data,
-                component_result=component_result if component_result is not None else current.get("component_result"),
-                awaiting_input=awaiting_input if awaiting_input is not None else current.get("awaiting_input", False)
-            )
+        Args:
+            awaiting: Whether component is waiting for input
+        """
+        if self.state_manager:
+            self.state_manager.set_component_awaiting(awaiting)
+
+    def update_data(self, data: Dict) -> None:
+        """Update component's data.
+        Components can use this to store any data they need between messages.
+
+        Args:
+            data: Component-specific data to store
+        """
+        if self.state_manager:
+            self.state_manager.update_component_data(data)
 
     def update_validation_state(self, value: Any, validation_result: ValidationResult) -> None:
         """Update component's internal validation tracking state

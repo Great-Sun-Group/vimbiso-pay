@@ -138,10 +138,10 @@ class CreateCredexApiCall(ApiComponent):
             self.state_manager.messaging.send_text("❌ Failed to offer secured credex")
 
         # Clear offer data after creation
-        self.update_component_data(data={})
+        self.update_data({})
 
-        # Set component result for flow control
-        self.update_component_data(component_result="show_dashboard")
+        # Tell headquarters to show dashboard
+        self.set_result("show_dashboard")
 
         return ValidationResult.success({
             "status": "success" if action.get("type") == "CREDEX_CREATED" else "error",

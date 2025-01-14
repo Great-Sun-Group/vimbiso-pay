@@ -76,9 +76,9 @@ class HandleInput(InputComponent):
                 details={"length": len(handle)}
             )
 
-        # Store validated handle and prepare for next component
-        self.update_component_data(
-            data={"handle": handle},
-            awaiting_input=False
-        )
+        # Store validated handle
+        self.update_data({"handle": handle})
+
+        # Release input wait
+        self.set_awaiting_input(False)
         return ValidationResult.success(None)  # Signal to move to ConfirmOfferSecured

@@ -117,13 +117,9 @@ class FlowProcessor:
                     )
 
                     # Start login flow through headquarters
-                    # Initialize component data with empty values
-                    self.state_manager.update_flow_state(
+                    self.state_manager.transition_flow(
                         path="login",
-                        component="Greeting",
-                        component_result="",  # Empty string instead of None
-                        awaiting_input=False,
-                        data={}
+                        component="Greeting"
                     )
 
                     # Get updated state after initialization
@@ -182,13 +178,10 @@ class FlowProcessor:
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(f"Current flow state: {component_data}")
 
-                    # Update flow state while preserving shared data
-                    self.state_manager.update_flow_state(
+                    # Transition to next component
+                    self.state_manager.transition_flow(
                         path=next_context,
-                        component=next_component,
-                        data=None,  # Let state manager preserve existing data
-                        component_result=None,  # Clear for next component
-                        awaiting_input=False  # Let component set this
+                        component=next_component
                     )
 
                     # Update for next iteration - process_component will handle activation

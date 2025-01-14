@@ -258,32 +258,26 @@ class StateManager(StateManagerInterface):
                 value=str(message)
             ) from e
 
-    def update_flow_state(
-        self,
-        path: str,
-        component: str,
-        data: Optional[Dict] = None,
-        component_result: Optional[str] = None,
-        awaiting_input: bool = False
-    ) -> None:
-        """Update flow state including path and component"""
+    def transition_flow(self, path: str, component: str) -> None:
+        """Transition flow to new path/component.
+        ONLY used by flow processor for managing transitions."""
         try:
-            # Preserve existing component data if not provided
-            if data is None:
-                component_data = self.get_state_value("component_data", {})
-                data = component_data.get("data", {})
+            # Get current component data to preserve
+            current = self.get_state_value("component_data", {})
+            data = current.get("data", {})
+            incoming_message = current.get("incoming_message")
 
-            # Update state
+            # Update state with new path/component
             self.update_state({
                 "component_data": {
                     "path": path,
                     "component": component,
                     "data": data,
-                    "component_result": component_result,
-                    "awaiting_input": awaiting_input
+                    "component_result": None,  # Clear result for new component
+                    "awaiting_input": False,  # Let component set this
+                    "incoming_message": incoming_message  # Preserve message
                 }
             })
-
         except Exception as e:
             error_context = ErrorContext(
                 error_type="flow",
@@ -291,7 +285,7 @@ class StateManager(StateManagerInterface):
                 details={
                     "path": path,
                     "component": component,
-                    "action": "update_current",
+                    "action": "transition_flow",
                     "timestamp": datetime.utcnow().isoformat()
                 }
             )
@@ -299,6 +293,77 @@ class StateManager(StateManagerInterface):
                 step=error_context.details["path"],
                 action=error_context.details["action"],
                 data={"component": error_context.details["component"]},
+                message=error_context.message
+            )
+
+    def set_component_result(self, result: Optional[str]) -> None:
+        """Set component result for flow branching.
+        Used by components to indicate their result."""
+        try:
+            current = self.get_state_value("component_data", {})
+            current["component_result"] = result
+            self.update_state({"component_data": current})
+        except Exception as e:
+            error_context = ErrorContext(
+                error_type="flow",
+                message=str(e),
+                details={
+                    "action": "set_result",
+                    "result": result,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+            ErrorHandler.handle_flow_error(
+                step="component_result",
+                action=error_context.details["action"],
+                data={"result": error_context.details["result"]},
+                message=error_context.message
+            )
+
+    def set_component_awaiting(self, awaiting: bool) -> None:
+        """Set component's awaiting input state.
+        Used by components to indicate they are waiting for input."""
+        try:
+            current = self.get_state_value("component_data", {})
+            current["awaiting_input"] = awaiting
+            self.update_state({"component_data": current})
+        except Exception as e:
+            error_context = ErrorContext(
+                error_type="flow",
+                message=str(e),
+                details={
+                    "action": "set_awaiting",
+                    "awaiting": awaiting,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+            ErrorHandler.handle_flow_error(
+                step="awaiting_input",
+                action=error_context.details["action"],
+                data={"awaiting": error_context.details["awaiting"]},
+                message=error_context.message
+            )
+
+    def update_component_data(self, data: Dict) -> None:
+        """Update component-specific data.
+        Used by components to store their state."""
+        try:
+            current = self.get_state_value("component_data", {})
+            current["data"] = {**current.get("data", {}), **data}
+            self.update_state({"component_data": current})
+        except Exception as e:
+            error_context = ErrorContext(
+                error_type="flow",
+                message=str(e),
+                details={
+                    "action": "update_data",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+            ErrorHandler.handle_flow_error(
+                step="component_data",
+                action=error_context.details["action"],
+                data={},
                 message=error_context.message
             )
 

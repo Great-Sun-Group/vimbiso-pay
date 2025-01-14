@@ -69,7 +69,7 @@ class UpgradeMembertierApiCall(ApiComponent):
                 return result
 
             # Clear confirmation data after successful operation
-            self.update_component_data(data={})
+            self.update_data({})
 
             # Process response and update state
             return self._process_response(result.value)
@@ -162,15 +162,20 @@ class UpgradeMembertierApiCall(ApiComponent):
             action = self.state_manager.get_state_value("action", {})
             action_type = action.get("type")
 
-            # Send notification based on action type
+            # Handle different action types and errors
             if action_type == "RECURRING_CREATED":
                 logger.info("Tier 3 subscription created successfully")
                 self.state_manager.messaging.send_text("Hustle hard 💥")
-                self.update_component_data(component_result="send_dashboard")
+            elif action_type == "ERROR":
+                error_message = action.get("details", {}).get("message", "Unknown error occurred")
+                logger.error(f"Upgrade failed with error: {error_message}")
+                self.state_manager.messaging.send_text(f"❌ Failed to upgrade member tier: {error_message}")
             else:
                 logger.warning(f"Unexpected action type: {action_type}")
-                self.state_manager.messaging.send_text("❌ Failed to upgrade member tier")
-                self.update_component_data(component_result="show_error")
+                self.state_manager.messaging.send_text("❌ Failed to upgrade member tier - please try again later")
+
+            # Tell headquarters to return to dashboard
+            self.set_result("send_dashboard")
 
             # Get tier info from scheduleInfo
             schedule_info = response.get("data", {}).get("action", {}).get("details", {}).get("scheduleInfo", {})

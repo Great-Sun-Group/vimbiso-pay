@@ -82,3 +82,12 @@ def get_next_component(
             return "offer_secured", "CreateCredexApiCall"  # Create offer
         case ("offer_secured", "CreateCredexApiCall"):
             return "account", "AccountDashboard"  # Return to account dashboard (success/fail message passed in state for dashboard display)
+
+        # Upgrade member tier path
+        case ("upgrade_membertier", "ConfirmUpgrade"):
+            return "upgrade_membertier", "Greeting"  # Process upgrade after confirmation
+        case ("upgrade_membertier", "Greeting"):
+            return "upgrade_membertier", "UpgradeMembertierApiCall"  # Process upgrade after confirmation
+        case ("upgrade_membertier", "UpgradeMembertierApiCall"):
+            return "account", "AccountDashboard"  # Return to dashboard after upgrade
+

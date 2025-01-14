@@ -157,7 +157,7 @@ class ProcessOfferApiCall(ApiComponent):
         """Process API response and update state"""
         try:
             # Clear offer data
-            self.update_component_data(data={})
+            self.update_data({})
 
             # Set component result based on action
             action = self.state_manager.get_state_value("action", {})
@@ -187,12 +187,15 @@ class ProcessOfferApiCall(ApiComponent):
 
                 # Return to list if more offers, otherwise to dashboard
                 if active_account and offer_list:
-                    self.update_component_data(component_result="return_to_list")
+                    # Tell headquarters to return to list
+                    self.set_result("return_to_list")
                 else:
-                    self.update_component_data(component_result="send_dashboard")
+                    # Tell headquarters to show dashboard
+                    self.set_result("send_dashboard")
             else:
                 logger.warning(f"Unexpected action type: {action_type}")
-                self.update_component_data(component_result="show_error")
+                # Tell headquarters to show error
+                self.set_result("show_error")
 
             return ValidationResult.success({
                 "action": action,
