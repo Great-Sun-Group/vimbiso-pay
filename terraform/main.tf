@@ -142,7 +142,6 @@ module "health_checks" {
 
   alb_dns_name      = module.loadbalancer.alb_dns_name
   health_check_path = "/health/"
-  tags             = local.common_tags
 
   depends_on = [module.loadbalancer]
 }
