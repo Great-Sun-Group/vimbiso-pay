@@ -1,8 +1,7 @@
 """Flow Headquarters
 
 This module defines the core branching logic that determines the next step in member flows
-through the vimbiso-chatserver application. Component activation and processing is delegated
-to the component manager.
+through the vimbiso-chatserver application.
 """
 import logging
 from typing import Tuple
