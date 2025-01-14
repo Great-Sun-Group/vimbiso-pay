@@ -30,20 +30,11 @@ resource "aws_ecs_task_definition" "app" {
           "awslogs-create-group"  = "true"
         }
       }
-      mountPoints = [
-        {
-          sourceVolume  = "redis-state-data"
-          containerPath = "/redis/state"
-          readOnly     = false
-        }
-      ]
       command = [
         "redis-server",
-        "--appendonly", "yes",
         "--protected-mode", "no",
         "--bind", "0.0.0.0",
         "--port", tostring(var.redis_state_port),
-        "--dir", "/redis/state",
         "--maxmemory-policy", "allkeys-lru",
         "--maxmemory", "${tostring(floor(var.task_memory * 0.3 * 0.90))}mb"
       ]
@@ -151,19 +142,6 @@ resource "aws_ecs_task_definition" "app" {
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = var.app_access_point_id
-        iam = "ENABLED"
-      }
-    }
-  }
-
-  volume {
-    name = "redis-state-data"
-    efs_volume_configuration {
-      file_system_id = var.efs_file_system_id
-      root_directory = "/"
-      transit_encryption = "ENABLED"
-      authorization_config {
-        access_point_id = var.redis_state_access_point_id
         iam = "ENABLED"
       }
     }
