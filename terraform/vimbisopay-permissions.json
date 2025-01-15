@@ -70,11 +70,12 @@
         {
             "Effect": "Allow",
             "Action": [
-                "ecr:GetAuthorizationToken",
-                "ecr:PutRegistryScanningConfiguration",
-                "ecr:GetRegistryScanningConfiguration",
-                "inspector2:Enable",
-                "inspector2:Disable"
+        "ecr:GetAuthorizationToken",
+        "ecr:PutRegistryScanningConfiguration",
+        "ecr:GetRegistryScanningConfiguration",
+        "inspector2:Enable",
+        "inspector2:Disable",
+        "inspector2:ListAccountPermissions"
             ],
             "Resource": "*"
         },
