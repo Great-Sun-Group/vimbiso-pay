@@ -5,7 +5,7 @@ on:
     branches:
       - prod
       - dev
-      - *deploy*
+      - "*deploy*"
   workflow_dispatch:
 
 jobs:
@@ -29,8 +29,6 @@ jobs:
       TF_VAR_whatsapp_access_token: "dummy-token"
       TF_VAR_whatsapp_phone_number_id: "dummy-id"
       TF_VAR_whatsapp_business_id: "dummy-id"
-      TF_VAR_whatsapp_registration_flow_id: "dummy-id"
-      TF_VAR_whatsapp_company_registration_flow_id: "dummy-id"
 
     steps:
       - name: Checkout code
@@ -41,8 +39,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.VIMBISOPAY_DEVELOPMENT_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.VIMBISOPAY_DEVELOPMENT_AWS_SECRET_ACCESS_KEY }}
           aws-region: af-south-1
 
       - name: Setup Terraform
@@ -121,8 +119,6 @@ jobs:
           TF_VAR_whatsapp_access_token: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
           TF_VAR_whatsapp_phone_number_id: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
           TF_VAR_whatsapp_business_id: ${{ secrets.WHATSAPP_BUSINESS_ID }}
-          TF_VAR_whatsapp_registration_flow_id: ${{ secrets.WHATSAPP_REGISTRATION_FLOW_ID }}
-          TF_VAR_whatsapp_company_registration_flow_id: ${{ secrets.WHATSAPP_COMPANY_REGISTRATION_FLOW_ID }}
         run: |
           cd terraform
           terraform plan -input=false -lock-timeout=20m -out=plan.tfplan
