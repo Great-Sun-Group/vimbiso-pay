@@ -11,7 +11,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/prod' || github.ref == 'refs/heads/development'
+    if: github.ref == 'refs/heads/prod' || github.ref == 'refs/heads/dev'
     environment: ${{ github.ref == 'refs/heads/prod' && 'production' || 'development' }}
     timeout-minutes: 30
 
