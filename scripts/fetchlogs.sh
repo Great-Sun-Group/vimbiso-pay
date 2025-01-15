@@ -3,7 +3,7 @@
 # Help text
 show_help() {
     echo "Usage: fetchlogs [SECONDS]"
-    echo "Fetch CloudWatch logs from staging environment"
+    echo "Fetch CloudWatch logs from development environment"
     echo ""
     echo "Options:"
     echo "  -h --help       Show this help message"
@@ -19,7 +19,7 @@ show_help() {
 
 # Default values
 SECONDS_TO_FETCH=""
-LOG_GROUP="/ecs/vimbiso-pay-staging"
+LOG_GROUP="/ecs/vimbiso-pay-development"
 AWS_REGION="af-south-1"
 
 # Check required environment variables

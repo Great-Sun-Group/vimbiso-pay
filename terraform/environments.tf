@@ -3,19 +3,19 @@ data "local_file" "production" {
   filename = "${path.module}/environments/production.json"
 }
 
-data "local_file" "staging" {
-  filename = "${path.module}/environments/staging.json"
+data "local_file" "development" {
+  filename = "${path.module}/environments/development.json"
 }
 
 locals {
   # Parse JSON content from files
   production = jsondecode(data.local_file.production.content)
-  staging    = jsondecode(data.local_file.staging.content)
+  development    = jsondecode(data.local_file.development.content)
 
   # Environment configuration map
   env_config = {
     production = local.production
-    staging    = local.staging
+    development    = local.development
   }
 
   # Get current environment config

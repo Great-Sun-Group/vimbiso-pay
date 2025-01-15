@@ -93,7 +93,7 @@ make prod-down
 ```
 
 ### Fetching Logs
-The `scripts/fetchlogs.sh` script allows you to fetch CloudWatch logs from the staging environment. It supports both real-time log streaming and historical log retrieval.
+The `scripts/fetchlogs.sh` script allows you to fetch CloudWatch logs from the development environment. It supports both real-time log streaming and historical log retrieval.
 
 Requirements:
 - AWS CLI installed

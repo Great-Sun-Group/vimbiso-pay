@@ -1,6 +1,6 @@
 {
-  "environment": "staging",
-  "subdomain": "stage.whatsapp",
+  "environment": "development",
+  "subdomain": "dev.vimbiso-chatserver",
   "dev_domain_base": "vimbisopay.africa",
   "aws_region": "af-south-1",
   "vpc_cidr": "10.2.0.0/16",

@@ -78,7 +78,7 @@ export class ChatUI {
     updateStatus() {
         const text = this.targetSelect.value === 'local' ?
             'Local Server (localhost:8000)' :
-            'Staging Server (stage.whatsapp.vimbisopay.africa)';
+            'Development Server (dev.vimbisi-chatserver.vimbisopay.africa)';
         this.statusDiv.innerHTML = `Connected to: ${text}`;
         this.statusDiv.className = `status ${this.targetSelect.value}`;
     }

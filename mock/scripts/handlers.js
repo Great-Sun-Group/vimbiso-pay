@@ -182,7 +182,7 @@ export function createMessagePayload(messageType, messageText, phoneNumber, cont
         }
     }
 
-    // Create full webhook payload matching staging format
+    // Create full webhook payload matching development format
     return {
         object: "whatsapp_business_account",
         entry: [{
@@ -191,8 +191,8 @@ export function createMessagePayload(messageType, messageText, phoneNumber, cont
                 value: {
                     messaging_product: "whatsapp",
                     metadata: {
-                        display_phone_number: "263787274250",  // Match staging
-                        phone_number_id: "390447444143042",    // Match staging
+                        display_phone_number: "263787274250",  // Match development
+                        phone_number_id: "390447444143042",    // Match development
                         timestamp: Math.floor(Date.now() / 1000).toString()
                     },
                     contacts: [{
