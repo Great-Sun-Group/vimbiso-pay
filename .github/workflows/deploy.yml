@@ -3,22 +3,22 @@ name: Deploy VimbisoPay
 on:
   push:
     branches:
-      - stage
+      - dev
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/prod' || github.ref == 'refs/heads/stage'
-    environment: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
+    if: github.ref == 'refs/heads/prod' || github.ref == 'refs/heads/development'
+    environment: ${{ github.ref == 'refs/heads/prod' && 'production' || 'development' }}
     timeout-minutes: 30
 
     env:
-      ENVIRONMENT: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
+      ENVIRONMENT: ${{ github.ref == 'refs/heads/prod' && 'production' || 'development' }}
       BUILD_TARGET: production
-      DOMAIN: ${{ github.ref == 'refs/heads/prod' && 'whatsapp.vimbisopay.africa' || 'stage.whatsapp.vimbisopay.africa' }}
+      DOMAIN: ${{ github.ref == 'refs/heads/prod' && 'vimbiso-chatserver.vimbisopay.africa' || 'dev.vimbiso-chatserver.vimbisopay.africa' }}
       # Common Terraform variables
-      TF_VAR_environment: ${{ github.ref == 'refs/heads/prod' && 'production' || 'staging' }}
+      TF_VAR_environment: ${{ github.ref == 'refs/heads/prod' && 'production' || 'development' }}
       TF_VAR_docker_image: "dummy-image:latest"
       TF_VAR_django_secret: "dummy-secret"
       TF_VAR_mycredex_app_url: "https://dummy-url"

@@ -1,11 +1,11 @@
 # Required Environment Variables
 variable "environment" {
-  description = "The deployment environment (staging, production)"
+  description = "The deployment environment (development, production)"
   type        = string
 
   validation {
-    condition     = contains(["production", "staging"], var.environment)
-    error_message = "Environment must be one of: production, staging"
+    condition     = contains(["production", "development"], var.environment)
+    error_message = "Environment must be one of: production, development"
   }
 }
 

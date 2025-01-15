@@ -176,7 +176,7 @@ button:active {
     color: var(--gold);
 }
 
-.status.staging {
+.status.development {
     color: var(--bright-blue);
 }
 

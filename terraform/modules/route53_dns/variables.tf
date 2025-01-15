@@ -4,7 +4,7 @@ variable "domain_name" {
 }
 
 variable "environment" {
-  description = "The environment (staging/production)"
+  description = "The environment (development/production)"
   type        = string
 }
 
