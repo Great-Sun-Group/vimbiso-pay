@@ -62,15 +62,3 @@ variable "whatsapp_business_id" {
   type        = string
   sensitive   = true
 }
-
-variable "whatsapp_registration_flow_id" {
-  description = "WhatsApp registration flow ID"
-  type        = string
-  sensitive   = true
-}
-
-variable "whatsapp_company_registration_flow_id" {
-  description = "WhatsApp company registration flow ID"
-  type        = string
-  sensitive   = true
-}

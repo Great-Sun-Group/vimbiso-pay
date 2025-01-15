@@ -29,8 +29,6 @@ jobs:
       TF_VAR_whatsapp_access_token: "dummy-token"
       TF_VAR_whatsapp_phone_number_id: "dummy-id"
       TF_VAR_whatsapp_business_id: "dummy-id"
-      TF_VAR_whatsapp_registration_flow_id: "dummy-id"
-      TF_VAR_whatsapp_company_registration_flow_id: "dummy-id"
 
     steps:
       - name: Checkout code
@@ -121,8 +119,6 @@ jobs:
           TF_VAR_whatsapp_access_token: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
           TF_VAR_whatsapp_phone_number_id: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
           TF_VAR_whatsapp_business_id: ${{ secrets.WHATSAPP_BUSINESS_ID }}
-          TF_VAR_whatsapp_registration_flow_id: ${{ secrets.WHATSAPP_REGISTRATION_FLOW_ID }}
-          TF_VAR_whatsapp_company_registration_flow_id: ${{ secrets.WHATSAPP_COMPANY_REGISTRATION_FLOW_ID }}
         run: |
           cd terraform
           terraform plan -input=false -lock-timeout=20m -out=plan.tfplan

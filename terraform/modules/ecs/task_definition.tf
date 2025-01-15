@@ -63,8 +63,6 @@ resource "aws_ecs_task_definition" "app" {
         { name = "WHATSAPP_ACCESS_TOKEN", value = var.django_env.whatsapp_access_token },
         { name = "WHATSAPP_PHONE_NUMBER_ID", value = var.django_env.whatsapp_phone_number_id },
         { name = "WHATSAPP_BUSINESS_ID", value = var.django_env.whatsapp_business_id },
-        { name = "WHATSAPP_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_registration_flow_id },
-        { name = "WHATSAPP_COMPANY_REGISTRATION_FLOW_ID", value = var.django_env.whatsapp_company_registration_flow_id },
         { name = "GUNICORN_WORKERS", value = "2" },
         { name = "GUNICORN_TIMEOUT", value = "120" },
         { name = "DJANGO_LOG_LEVEL", value = "DEBUG" },

@@ -169,8 +169,6 @@ variable "django_env" {
     whatsapp_access_token                = string
     whatsapp_phone_number_id             = string
     whatsapp_business_id                 = string
-    whatsapp_registration_flow_id        = string
-    whatsapp_company_registration_flow_id = string
   })
   sensitive = true
 }

@@ -122,8 +122,6 @@ module "ecs" {
     whatsapp_access_token                = var.whatsapp_access_token
     whatsapp_phone_number_id             = var.whatsapp_phone_number_id
     whatsapp_business_id                 = var.whatsapp_business_id
-    whatsapp_registration_flow_id        = var.whatsapp_registration_flow_id
-    whatsapp_company_registration_flow_id = var.whatsapp_company_registration_flow_id
   }
 
   tags = local.common_tags
