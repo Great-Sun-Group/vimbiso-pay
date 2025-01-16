@@ -72,12 +72,35 @@ resource "aws_efs_access_point" "redis_state" {
   })
 }
 
-# Mount Targets (one per subnet)
-resource "aws_efs_mount_target" "main" {
+# Get existing mount targets
+data "aws_efs_mount_target" "existing" {
   count = length(var.private_subnet_ids)
 
+  mount_target_id = tolist(data.aws_efs_mount_targets.all[0].mount_targets)[count.index].mount_target_id
+
+  depends_on = [aws_efs_file_system.main]
+}
+
+data "aws_efs_mount_targets" "all" {
+  count = 1
+  file_system_id = aws_efs_file_system.main.id
+}
+
+locals {
+  # Get list of subnets that don't have mount targets
+  existing_subnet_ids = try(
+    toset([for mt in data.aws_efs_mount_targets.all[0].mount_targets : mt.subnet_id]),
+    toset([])
+  )
+  subnets_needing_mounts = toset(var.private_subnet_ids) - local.existing_subnet_ids
+}
+
+# Mount Targets (only for subnets without existing targets)
+resource "aws_efs_mount_target" "main" {
+  for_each = local.subnets_needing_mounts
+
   file_system_id  = aws_efs_file_system.main.id
-  subnet_id       = var.private_subnet_ids[count.index]
+  subnet_id       = each.value
   security_groups = [var.efs_security_group_id]
 }
 

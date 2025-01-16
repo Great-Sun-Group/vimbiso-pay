@@ -39,7 +39,7 @@ resource "aws_route53_record" "cert_validation" {
   records         = [tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_value]
   type            = tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_type
   zone_id         = data.aws_route53_zone.root.zone_id
-  ttl             = 300  # Increased TTL to reduce DNS propagation issues
+  ttl             = 600  # Further increased TTL for validation records
 
   depends_on = [aws_acm_certificate.app]
 }
@@ -50,7 +50,11 @@ resource "aws_acm_certificate_validation" "app" {
   validation_record_fqdns = [aws_route53_record.cert_validation.fqdn]
 
   timeouts {
-    create = "45m"  # Explicit timeout setting
+    create = "60m"  # Increased timeout for validation
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 
   depends_on = [aws_route53_record.cert_validation]
