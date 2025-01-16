@@ -20,36 +20,6 @@ locals {
   zone_id = var.create_dns_records ? aws_route53_zone.app[0].zone_id : data.aws_route53_zone.existing[0].zone_id
 }
 
-# Create ACM certificate
-resource "aws_acm_certificate" "app" {
-  domain_name       = var.domain_name
-  validation_method = "DNS"
-
-  tags = merge(var.tags, {
-    Name = "vimbiso-pay-cert-${var.environment}"
-  })
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-# Create DNS validation record
-resource "aws_route53_record" "cert_validation" {
-  allow_overwrite = true
-  name            = tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_name
-  records         = [tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_value]
-  type            = tolist(aws_acm_certificate.app.domain_validation_options)[0].resource_record_type
-  zone_id         = local.zone_id
-  ttl             = 60
-}
-
-# Validate the certificate
-resource "aws_acm_certificate_validation" "app" {
-  certificate_arn         = aws_acm_certificate.app.arn
-  validation_record_fqdns = [aws_route53_record.cert_validation.fqdn]
-}
-
 # Create A record for the application
 resource "aws_route53_record" "app" {
   count = var.create_dns_records ? 1 : 0
