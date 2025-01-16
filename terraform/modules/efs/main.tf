@@ -72,36 +72,38 @@ resource "aws_efs_access_point" "redis_state" {
   })
 }
 
-# Get existing mount targets
-data "aws_efs_mount_target" "existing" {
-  count = length(var.private_subnet_ids)
-
-  mount_target_id = tolist(data.aws_efs_mount_targets.all[0].mount_targets)[count.index].mount_target_id
-
-  depends_on = [aws_efs_file_system.main]
-}
-
-data "aws_efs_mount_targets" "all" {
-  count = 1
-  file_system_id = aws_efs_file_system.main.id
-}
-
-locals {
-  # Get list of subnets that don't have mount targets
-  existing_subnet_ids = try(
-    toset([for mt in data.aws_efs_mount_targets.all[0].mount_targets : mt.subnet_id]),
-    toset([])
-  )
-  subnets_needing_mounts = toset(var.private_subnet_ids) - local.existing_subnet_ids
-}
-
-# Mount Targets (only for subnets without existing targets)
+# Mount Targets with better error handling
 resource "aws_efs_mount_target" "main" {
-  for_each = local.subnets_needing_mounts
+  for_each = toset(var.private_subnet_ids)
 
   file_system_id  = aws_efs_file_system.main.id
   subnet_id       = each.value
   security_groups = [var.efs_security_group_id]
+
+  lifecycle {
+    # Prevent destroy of existing mount targets
+    prevent_destroy = true
+
+    # Ignore changes to security groups to prevent unnecessary updates
+    ignore_changes = [
+      security_groups
+    ]
+  }
+}
+
+# Output mount target information for debugging
+output "mount_target_info" {
+  value = {
+    file_system_id = aws_efs_file_system.main.id
+    mount_targets  = {
+      for k, v in aws_efs_mount_target.main : k => {
+        id        = v.id
+        subnet_id = v.subnet_id
+        status    = v.mount_target_dns_name
+      }
+    }
+  }
+  description = "Mount target information for debugging"
 }
 
 # EFS File System Policy
