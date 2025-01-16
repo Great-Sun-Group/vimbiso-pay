@@ -91,21 +91,6 @@ resource "aws_efs_mount_target" "main" {
   }
 }
 
-# Output mount target information for debugging
-output "mount_target_info" {
-  value = {
-    file_system_id = aws_efs_file_system.main.id
-    mount_targets  = {
-      for k, v in aws_efs_mount_target.main : k => {
-        id        = v.id
-        subnet_id = v.subnet_id
-        status    = v.mount_target_dns_name
-      }
-    }
-  }
-  description = "Mount target information for debugging"
-}
-
 # EFS File System Policy
 resource "aws_efs_file_system_policy" "main" {
   file_system_id = aws_efs_file_system.main.id
